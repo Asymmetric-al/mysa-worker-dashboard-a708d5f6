@@ -145,10 +145,9 @@ function ReviewedRequestFacts({ payload, recipient, locale }: { readonly payload
         ]
       : [{ term: REQUESTED_TERMS_COPY.nonFinancialLabel, value: <span className="block whitespace-pre-wrap wrap-anywhere text-pretty">{nonFinancial.description}</span> }]),
   ];
-  return <FactList className="flex min-w-0 flex-col gap-3 text-sm" rows={facts} row={(fact) => <ReviewFact key={fact.term} label={fact.term} value={fact.value} />} />;
+  return <FactList className="flex min-w-0 flex-col gap-3 text-sm" rows={facts} row={(fact) => <ReviewFact key={fact.term} term={fact.term} value={fact.value} />} />;
 }
-/** The request composer: the form, the review that names what it will draft, and the receipt for one attempt. */
-export default function RequestComposer({ initiativeId, envelope, onDrafted, onCheckResult, locale = "en-GB", headingLevel = 3, className }: RequestComposerProps): ReactElement {
+/** The request composer: the form, the review that names what it will draft, and the receipt for one attempt. */ export default function RequestComposer({ initiativeId, envelope, onDrafted, onCheckResult, locale = "en-GB", headingLevel = 3, className }: RequestComposerProps): ReactElement {
   const scope = envelope.scope;
   const headingId = useId();
   const optionIdPrefix = useId();

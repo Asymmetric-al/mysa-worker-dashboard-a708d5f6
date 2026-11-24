@@ -24,8 +24,7 @@ type ReceivingListRequest = NonNullable<UseReceivingListParams["params"]>;
 /** The persona whose reading experience this preview shows, as the development runtime named it. It is an identifier and a word, never an inferred audience. */ export type ReceivingPersonaView = { readonly id: string; readonly label: string };
 /** Props of {@link ReceivingList}. */ export interface ReceivingListProps {
   readonly scope: Scope;
-  /** The interface locale this surface formats its counts in, stated by the route that composes it. */
-  readonly locale: string;
+  /** The interface locale this surface formats its counts in, stated by the route that composes it. */ readonly locale: string;
   readonly initialEnvelope: ReadResult<ReceivingListEnvelope>;
   readonly persona: ReceivingPersonaView;
   readonly params?: ReceivingListRequest;

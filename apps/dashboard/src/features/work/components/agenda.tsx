@@ -7,7 +7,7 @@ import type { Scope } from "@/modules/data-service/envelope";
 import { parseCivilDate, serialiseCivilDate } from "@/modules/time/civil";
 import { PLANNED_VERSUS_HELD_NOTE, TASK_LIST_LABELS, UNDATED_LABEL } from "../copy/task-status";
 import { useAgenda, type AgendaQuery, type AgendaResult } from "../hooks/use-agenda";
-import TaskActions from "./task-actions";
+import TaskActions, { TaskActionResult, type TaskActionReceipt } from "./task-actions";
 import { taskListColumns } from "./task-lists";
 type AgendaEnvelope = Extract<AgendaResult, { readonly kind: "envelope" }>["envelope"];
 type AgendaDays = AgendaEnvelope["data"]["days"];
@@ -92,9 +92,10 @@ interface AgendaBodyProps {
   readonly columnVisibility: RecordListQueryState["columnVisibility"];
   readonly onQueryStateChange: (next: RecordListQueryState) => void;
   readonly onEdit: () => void;
+  readonly onReceiptChange: (receipt: TaskActionReceipt | null) => void;
   readonly onCheckResult: () => void;
 }
-function AgendaBody({ scope, envelope, partnerLabels, columnVisibility, onQueryStateChange, onEdit, onCheckResult }: AgendaBodyProps): ReactElement {
+function AgendaBody({ scope, envelope, partnerLabels, columnVisibility, onQueryStateChange, onEdit, onReceiptChange, onCheckResult }: AgendaBodyProps): ReactElement {
   const { data } = envelope;
   const layout = useMemo<AgendaLayout>(() => layoutOf(data.days), [data.days]);
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<AgendaRow>>>(() => {
@@ -106,28 +107,43 @@ function AgendaBody({ scope, envelope, partnerLabels, columnVisibility, onQueryS
     }
     return listColumns;
   }, [layout, partnerLabels]);
-  if ((envelope.valueStates["total"] ?? "value") === "zero") return <StateNotice kind="empty" headingLevel={2} title={EMPTY_COPY.title} description={EMPTY_COPY.body} action={{ label: EMPTY_COPY.action, href: WORK_HREF }} />;
+  // This agenda's own notice for a read that holds no dated work is handed to the one table pattern rather than returned in the list's place, so an agenda with no day states its total and its page size as every other list does.
+  const emptyState = <StateNotice kind="empty" headingLevel={2} title={EMPTY_COPY.title} description={EMPTY_COPY.body} action={{ label: EMPTY_COPY.action, href: WORK_HREF }} />;
   const queryState: RecordListQueryState = { sort: NO_SORT, page: data.page, pageSize: data.pageSize, columnVisibility };
   const hasPlannedTime = layout.rows.some((row) => row.plannedTime !== null);
-  const rowActions = (row: AgendaRow): ReactElement => <TaskActions taskId={row.taskId} title={row.title} status={row.status} revision={row.revision} scope={scope} actions={row.actions} presentation="row" onEdit={onEdit} onCheckResult={onCheckResult} headingLevel={3} />;
+  const rowActions = (row: AgendaRow): ReactElement => <TaskActions taskId={row.taskId} title={row.title} status={row.status} revision={row.revision} scope={scope} actions={row.actions} presentation="row" onEdit={onEdit} onReceiptChange={onReceiptChange} onCheckResult={onCheckResult} />;
+  const list = <RecordList label="Dated agenda" columns={columns} rows={layout.rows} rowCount={data.total} getRowId={(row) => row.taskId} rowLabel={(row) => row.title} queryState={queryState} onQueryStateChange={onQueryStateChange} rowActions={rowActions} itemNoun="tasks" emptyState={emptyState} />;
+  // An agenda holding no dated work states that notice and the pager in place of the table, and both notes below describe rows to complete, reopen or edit, so they are stated only where the agenda holds one.
+  if ((envelope.valueStates["total"] ?? "value") === "zero") return list;
   return (
     <>
-      <RecordList label="Dated agenda" columns={columns} rows={layout.rows} rowCount={data.total} getRowId={(row) => row.taskId} rowLabel={(row) => row.title} queryState={queryState} onQueryStateChange={onQueryStateChange} rowActions={rowActions} itemNoun="tasks" />
+      {list}
       {hasPlannedTime ? <p className={QUIET_CLASS}>{PLANNED_VERSUS_HELD_NOTE}</p> : null}
       <p className={QUIET_CLASS}>{"Completing, reopening and cancelling a task happen here exactly as they do on the lists. Editing a task's date, title, category or link opens the composer on the lists, because a date is changed by choosing it there and never by dragging a row onto a day."}</p>
     </>
   );
 }
-type AgendaProps = { readonly scope: Scope; readonly envelope: AgendaEnvelope; readonly partnerLabels: Readonly<Record<string, string>>; readonly className?: string };
-/** One agenda for one context: the read the route already made, the window a worker widens or pages into, and the read's own refusals stated in their own words. */ export default function Agenda({ scope, envelope, partnerLabels, className }: AgendaProps): ReactElement {
+export type AgendaProps = {
+  readonly scope: Scope;
+  readonly envelope: AgendaEnvelope;
+  readonly partnerLabels: Readonly<Record<string, string>>;
+  /** The display time zone the browser chose in Settings, handed down by the route: the zone this surface asks its read to resolve the day today in, so the day a row is grouped under is judged in the zone the worker chose rather than one this surface assumes. */ readonly displayTimeZone: string;
+  readonly className?: string;
+};
+/** One agenda for one context: the read the route already made, the window a worker widens or pages into, and the read's own refusals stated in their own words. */ export default function Agenda({ scope, envelope, partnerLabels, displayTimeZone, className }: AgendaProps): ReactElement {
   const router = useRouter();
   const [window, setWindow] = useState<{ readonly page: number; readonly pageSize: number }>({ page: envelope.data.page, pageSize: envelope.data.pageSize });
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(DEFAULT_COLUMN_VISIBILITY);
-  const query = useMemo<AgendaQuery>(() => ({ displayTimeZone: envelope.data.displayTimeZone, page: window.page, pageSize: window.pageSize }), [envelope.data.displayTimeZone, window.page, window.pageSize]);
+  // The one receipt a row action publishes, held here rather than by the row: completing a task takes its row out of the dated read, and a surface whose body states that no day is left would otherwise say nothing about the change it accepted.
+  const [receipt, setReceipt] = useState<TaskActionReceipt | null>(null);
+  // The read asks for the zone the browser chose in Settings rather than the zone the server render assumed, so today is resolved in the zone the worker picked and a window the worker pages into keeps that zone.
+  const query = useMemo<AgendaQuery>(() => ({ displayTimeZone, page: window.page, pageSize: window.pageSize }), [displayTimeZone, window.page, window.pageSize]);
   const seed = sameWindow(envelope, query) ? envelope : undefined; // The window the server already read, when it is the one on screen: seeding the read with it means mounting the agenda asks for nothing the page has already read, and a window the worker pages into is still asked for.
   const seededAnswer: AgendaResult | undefined = seed === undefined ? undefined : { kind: "envelope", envelope: seed };
   const read = useAgenda(scope, query, seededAnswer);
   const reading: AgendaResult | undefined = read.data ?? seededAnswer;
+  // The zone the days on this surface were judged in: the reading's own, which is the zone the read resolved its today in, and the queried zone only until that reading exists.
+  const judgedZone = reading !== undefined && reading.kind === "envelope" ? reading.envelope.data.displayTimeZone : displayTimeZone;
   const readAgain = read.refetch;
   const refresh = useCallback((): void => void readAgain(), [readAgain]);
   const openEdit = useCallback((): void => router.push(WORK_HREF), [router]);
@@ -142,7 +158,7 @@ type AgendaProps = { readonly scope: Scope; readonly envelope: AgendaEnvelope; r
     }
     switch (reading.kind) {
       case "envelope":
-        return <AgendaBody scope={scope} envelope={reading.envelope} partnerLabels={partnerLabels} columnVisibility={columnVisibility} onQueryStateChange={handleQueryStateChange} onEdit={openEdit} onCheckResult={refresh} />;
+        return <AgendaBody scope={scope} envelope={reading.envelope} partnerLabels={partnerLabels} columnVisibility={columnVisibility} onQueryStateChange={handleQueryStateChange} onEdit={openEdit} onReceiptChange={setReceipt} onCheckResult={refresh} />;
       case "denied":
         return <StateNotice kind="denied" headingLevel={2} title={DENIED_COPY.title} description={DENIED_COPY.body} reasonCode={reading.denied.reasonCode} />;
       case "unavailable":
@@ -151,9 +167,12 @@ type AgendaProps = { readonly scope: Scope; readonly envelope: AgendaEnvelope; r
         return <StateNotice kind="refused" headingLevel={2} title={REFUSED_COPY.title} description={REFUSED_COPY.body} />;
     }
   }
-  const surfaceClass = className === undefined || className.trim() === "" ? SURFACE_CLASS : `${SURFACE_CLASS} ${className}`;
   return (
-    <div data-slot="work-agenda" data-page={String(window.page)} data-page-size={String(window.pageSize)} className={surfaceClass}>
+    <div data-slot="work-agenda" data-page={String(window.page)} data-page-size={String(window.pageSize)} className={className === undefined || className.trim() === "" ? SURFACE_CLASS : `${SURFACE_CLASS} ${className}`}>
+      {/* Stated once above the surface's own content, so the zone the days on screen were grouped and judged in is read before any day is, on every arm the read answers — the empty one included. */}
+      <p className={QUIET_CLASS}>{`Every day on this page is grouped and judged in ${judgedZone}, the display time zone this browser chose in Settings, and the agenda read in that same zone, so no day here is judged in two; a planned meeting still states the zone it is planned in.`}</p>
+      {/* Above this surface's own content, so a row action's receipt is read in the agenda's own context whether or not the row that produced it is still part of the read. */}
+      <TaskActionResult receipt={receipt} headingLevel={2} />
       {content()}
     </div>
   );

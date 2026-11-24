@@ -37,8 +37,8 @@ const MESSAGES = {
   checkInRequired: "This change belongs to one check-in, so open the check-in from its list and send it again.",
   sharedRevisionRequired: "This change belongs to one shared revision, so open the check-in from its list and send it again.",
 } as const;
-function plainTextField(label: string, maxScalars: number): z.ZodType<string> {
-  return z.string({ error: MESSAGES.notText(label) }).superRefine((text, context) => {
+const plainTextField = (label: string, maxScalars: number): z.ZodType<string> =>
+  z.string({ error: MESSAGES.notText(label) }).superRefine((text, context) => {
     if (EDITOR_DOCUMENT_PREFIX.test(text)) {
       context.addIssue({ code: "custom", message: MESSAGES.documentRefused(label) });
       return;
@@ -46,7 +46,6 @@ function plainTextField(label: string, maxScalars: number): z.ZodType<string> {
     const scalars = Array.from(text).length;
     if (scalars > maxScalars) context.addIssue({ code: "custom", message: MESSAGES.scalarsExceeded(label, scalars, maxScalars) });
   });
-}
 const questionTextField = plainTextField("A question", MAX_QUESTION_SCALARS);
 const answerTextField = plainTextField("An answer", MAX_ANSWER_SCALARS);
 const questionListField = z.array(questionTextField, { error: MESSAGES.notText("A question") }).superRefine((questions, context) => {

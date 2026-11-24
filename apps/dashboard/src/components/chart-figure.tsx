@@ -27,8 +27,7 @@ export type ChartFigureProps = {
   readonly asOf: string;
   readonly table: ChartTable;
   readonly locale: string;
-  /** A stated target this figure holds its figures against. Supplied, every plot draws it as a labelled reference line and widens its value axis to cover it; omitted, the value axis is exactly what a plot without a target states. */
-  readonly reference?: ChartReference;
+  /** A stated target this figure holds its figures against. Supplied, every plot draws it as a labelled reference line and widens its value axis to cover it; omitted, the value axis is exactly what a plot without a target states. */ readonly reference?: ChartReference;
   readonly className?: string;
 };
 const SERIES_PAINTS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"] as const;
@@ -60,11 +59,7 @@ type PlottedSeries = { readonly key: string; readonly label: string; readonly da
 type ChartRow = Readonly<Record<string, string | number | null>>;
 type ChartGroup = { readonly currency: string | undefined; readonly series: readonly PlottedSeries[]; readonly rows: readonly ChartRow[]; readonly plottable: number };
 const isNumericState = (state: ValueState): boolean => state === "value" || state === "zero" || state === "incomplete-subtotal";
-function plotValue(point: ChartPoint): number | null {
-  if (point.value === null || !Number.isFinite(point.value)) return null;
-  if (!isNumericState(point.state)) return null;
-  return point.state === "zero" ? 0 : point.value;
-}
+const plotValue = (point: ChartPoint): number | null => (point.value === null || !Number.isFinite(point.value) ? null : !isNumericState(point.state) ? null : point.state === "zero" ? 0 : point.value);
 function amountOf(currency: string, point: ChartPoint): Money {
   const carried = isNumericState(point.state) && point.value !== null ? point.value : 0;
   return { currency, minorUnits: minorUnitsOf(carried === 0 ? 0 : carried) };
@@ -77,8 +72,7 @@ function countText(point: ChartPoint): string {
 }
 // A bucket the source recorded no row for is a gap, which is a different fact from an unknown value: zero, unknown, withheld, unavailable and a gap are five distinct renderings everywhere, tooltips included, so a gap states the table's own words here rather than the formatter's unknown marker.
 const pointText = (currency: string | undefined, point: ChartPoint, locale: string): string => {
-  if (point.gap === true && point.value === null) return "No recorded value";
-  return currency === undefined ? countText(point) : formatMinor(amountOf(currency, point), point.state, locale).text;
+  return point.gap === true && point.value === null ? "No recorded value" : currency === undefined ? countText(point) : formatMinor(amountOf(currency, point), point.state, locale).text;
 };
 function normaliseSeries(series: ChartSeries, index: number, locale: string): PlottedSeries {
   const paint = SERIES_PAINTS[index % SERIES_PAINTS.length] ?? SERIES_PAINTS[0];
@@ -110,8 +104,7 @@ function groupSeries(series: readonly ChartSeries[], locale: string): readonly C
     }
   }
   return order.map((currency) => {
-    const members = byCurrency.get(currency ?? "") ?? [];
-    const plotted = members.map((member, index) => normaliseSeries(member, index, locale));
+    const plotted = (byCurrency.get(currency ?? "") ?? []).map((member, index) => normaliseSeries(member, index, locale));
     const buckets: string[] = [];
     const seen = new Set<string>();
     for (const member of plotted) {
@@ -274,8 +267,7 @@ function plottedExtent(group: ChartGroup): { readonly largest: number; readonly 
   }
   return { largest, smallest };
 }
-/** The smallest whole ceiling a value axis states that covers one figure — one, two or five times a power of ten — so a target of 5 or 20 lands on a tick the axis draws itself rather than between two. */
-function axisCeiling(value: number): number {
+/** The smallest whole ceiling a value axis states that covers one figure — one, two or five times a power of ten — so a target of 5 or 20 lands on a tick the axis draws itself rather than between two. */ function axisCeiling(value: number): number {
   const reached = Math.max(Math.ceil(value), 1);
   const magnitude = 10 ** Math.floor(Math.log10(reached));
   for (const step of [1, 2, 5, 10] as const) {
@@ -286,31 +278,26 @@ function axisCeiling(value: number): number {
 }
 /** The ceiling a plot that draws a target reaches: the target, the largest figure recorded, or four, whichever is greater, so neither the target nor a count above the constant floor of four is left outside the axis. */
 const referenceCeiling = (group: ChartGroup, reference: ChartReference): number => axisCeiling(Math.max(plottedExtent(group).largest, reference.value, REFERENCE_MINIMUM_CEILING));
-/** The whole ticks a plot states between zero and the ceiling it reaches, spaced by the smallest step that keeps them countable, so every whole count up to a small ceiling — the target among them — falls on a tick rather than between two. */
-function wholeTicks(ceiling: number): readonly number[] {
+/** The whole ticks a plot states between zero and the ceiling it reaches, spaced by the smallest step that keeps them countable, so every whole count up to a small ceiling — the target among them — falls on a tick rather than between two. */ function wholeTicks(ceiling: number): readonly number[] {
   const step = axisCeiling(ceiling / AXIS_TICK_INTERVALS);
   const ticks: number[] = [];
   for (let value = 0; value <= ceiling; value += step) ticks.push(value);
   if (ticks[ticks.length - 1] !== ceiling) ticks.push(ceiling);
   return ticks;
 }
-/** The text of the widest tick a group's value axis states, which sets the width that axis reserves before the bands are measured. */
-function valueAxisTickText(group: ChartGroup, reference: ChartReference | undefined, locale: string): string {
+/** The text of the widest tick a group's value axis states, which sets the width that axis reserves before the bands are measured. */ function valueAxisTickText(group: ChartGroup, reference: ChartReference | undefined, locale: string): string {
   const { largest, smallest } = plottedExtent(group);
   const reached = reference === undefined ? [largest, smallest] : [referenceCeiling(group, reference)];
   const textOf = (value: number): string => (group.currency === undefined ? String(value) : formatMinor({ currency: group.currency, minorUnits: minorUnitsOf(value) }, "value", locale).text);
   return reached.map(textOf).reduce((longest, text) => (text.length > longest.length ? text : longest), "");
 }
-/** The width one label occupies at a font size, from the characters it states: the axis' own text is measured before it is drawn, so no plan waits on a render. */
-const labelWidth = (text: string, fontSize: number): number => Math.ceil(text.length * fontSize * TICK_CHARACTER_EM);
+/** The width one label occupies at a font size, from the characters it states: the axis' own text is measured before it is drawn, so no plan waits on a render. */ const labelWidth = (text: string, fontSize: number): number => Math.ceil(text.length * fontSize * TICK_CHARACTER_EM);
 const bucketLabelsOf = (group: ChartGroup): readonly string[] => group.rows.map((row) => String(row[BUCKET_DATA_KEY] ?? ""));
 type CategoryAxisPlan = { readonly angle: number; readonly tickFontSize: number; readonly height: number; readonly extraHeight: number; readonly inset: number };
 function categoryAxisPlan(width: number, labels: readonly string[], widestValueTick: string): CategoryAxisPlan {
-  const valueAxisWidth = Math.max(MIN_VALUE_AXIS_WIDTH, labelWidth(widestValueTick, AXIS_TEXT.fontSize) + VALUE_AXIS_TICK_GAP);
-  const available = width - valueAxisWidth;
-  const bandWidth = available / Math.max(labels.length, 1);
+  const available = width - Math.max(MIN_VALUE_AXIS_WIDTH, labelWidth(widestValueTick, AXIS_TEXT.fontSize) + VALUE_AXIS_TICK_GAP);
   const longestLabel = labels.reduce((longest, label) => (label.length > longest.length ? label : longest), "");
-  if (labelWidth(longestLabel, AXIS_TEXT.fontSize) + HORIZONTAL_LABEL_GAP <= bandWidth) return { angle: 0, tickFontSize: AXIS_TEXT.fontSize, height: DEFAULT_CATEGORY_AXIS_HEIGHT, extraHeight: 0, inset: 0 };
+  if (labelWidth(longestLabel, AXIS_TEXT.fontSize) + HORIZONTAL_LABEL_GAP <= available / Math.max(labels.length, 1)) return { angle: 0, tickFontSize: AXIS_TEXT.fontSize, height: DEFAULT_CATEGORY_AXIS_HEIGHT, extraHeight: 0, inset: 0 };
   // Every bucket keeps its label, so a band too narrow for an upright one turns it instead, and shrinks it only as far as that band requires.
   const fontSizeFor = (span: number): number => Math.max(MIN_TICK_FONT_SIZE, Math.min(AXIS_TEXT.fontSize, Math.floor(span / Math.max(labels.length, 1) / ROTATED_LABEL_BAND_EM)));
   const insetFor = (fontSize: number): number => Math.ceil(fontSize * ROTATED_LABEL_INSET_EM);
@@ -342,45 +329,20 @@ function ChartPlot({ group, kind, locale, animate, axis, reference }: ChartPlotP
   const categoryAxis = <XAxis dataKey={BUCKET_DATA_KEY} tick={{ ...AXIS_TEXT, fontSize: axis.tickFontSize }} tickLine={false} axisLine={{ stroke: GRID_PAINT }} interval={0} angle={axis.angle} textAnchor={axis.angle === 0 ? "middle" : "end"} height={axis.height} padding={{ left: axis.inset, right: axis.inset }} />;
   // A stated target gives the value axis a ceiling it reaches and whole ticks it marks the span with; without one the axis states exactly what the figures it draws require, as it always has.
   const ceiling = reference === undefined ? undefined : referenceCeiling(group, reference);
-  const valueDomain: [number, number] | undefined = ceiling === undefined ? undefined : [0, ceiling];
-  const valueTicks = ceiling === undefined ? undefined : wholeTicks(ceiling);
-  const valueAxis = <YAxis width="auto" tick={AXIS_TEXT} tickLine={false} axisLine={false} allowDecimals={false} tickFormatter={valueTick} domain={valueDomain} ticks={valueTicks} />;
+  const valueAxis = <YAxis width="auto" tick={AXIS_TEXT} tickLine={false} axisLine={false} allowDecimals={false} tickFormatter={valueTick} domain={ceiling === undefined ? undefined : [0, ceiling]} ticks={ceiling === undefined ? undefined : wholeTicks(ceiling)} />;
   const tooltip = <Tooltip content={<ChartTooltip group={group} />} cursor={TOOLTIP_CURSOR} filterNull={false} />;
   const referenceMark = reference === undefined ? null : <ReferenceLine y={reference.value} stroke={REFERENCE_PAINT} strokeDasharray={"4 4"} label={{ value: reference.label, position: "insideTopRight", fill: REFERENCE_PAINT, fontSize: REFERENCE_LABEL_FONT_SIZE }} />;
   const marks = group.series.map((member) => plotMarkOf(kind, member, animate));
-  if (kind === "bar") {
-    return (
-      <BarChart data={group.rows} accessibilityLayer={false}>
-        {grid}
-        {categoryAxis}
-        {valueAxis}
-        {tooltip}
-        {marks}
-        {referenceMark}
-      </BarChart>
-    );
-  }
-  if (kind === "area") {
-    return (
-      <AreaChart data={group.rows} accessibilityLayer={false}>
-        {grid}
-        {categoryAxis}
-        {valueAxis}
-        {tooltip}
-        {marks}
-        {referenceMark}
-      </AreaChart>
-    );
-  }
+  const Plot = kind === "bar" ? BarChart : kind === "area" ? AreaChart : LineChart;
   return (
-    <LineChart data={group.rows} accessibilityLayer={false}>
+    <Plot data={group.rows} accessibilityLayer={false}>
       {grid}
       {categoryAxis}
       {valueAxis}
       {tooltip}
       {marks}
       {referenceMark}
-    </LineChart>
+    </Plot>
   );
 }
 const ChartDataTable = ({ table, id }: { readonly table: ChartTable; readonly id: string }): ReactElement => (

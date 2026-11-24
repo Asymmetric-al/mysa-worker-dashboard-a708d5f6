@@ -66,8 +66,9 @@ function withoutOperation<P extends { readonly operation: string }>(payload: P):
   const { operation: _discriminant, ...forwarded } = payload;
   return forwarded;
 }
-function sectionRoute<P extends { readonly operation: string }>(schema: z.ZodType<MutationInput<P>>, run: (sessionId: string, input: MutationInput<Omit<P, "operation">>) => Promise<MutationOutcome>): SectionRoute {
-  return async (body, { operationId, sessionId }) => {
+const sectionRoute =
+  <P extends { readonly operation: string }>(schema: z.ZodType<MutationInput<P>>, run: (sessionId: string, input: MutationInput<Omit<P, "operation">>) => Promise<MutationOutcome>): SectionRoute =>
+  async (body, { operationId, sessionId }) => {
     const parsed = schema.safeParse(body);
     if (!parsed.success) return toResponse(outcomeFromError(operationId, parsed.error));
     const { payload, ...envelope } = parsed.data;
@@ -77,7 +78,6 @@ function sectionRoute<P extends { readonly operation: string }>(schema: z.ZodTyp
       return toResponse(outcomeFromError(operationId, error));
     }
   };
-}
 const SECTION_ROUTES = {
   addSection: sectionRoute(addSectionRequestSchema, (sessionId, input) => mutations.pages.addSection(sessionId, input)),
   moveSection: sectionRoute(moveSectionRequestSchema, (sessionId, input) => mutations.pages.moveSection(sessionId, input)),
@@ -87,5 +87,4 @@ const SECTION_ROUTES = {
   applyPreset: sectionRoute(applyPresetRequestSchema, (sessionId, input) => mutations.pages.applyPreset(sessionId, input)),
 } satisfies Record<(typeof SECTION_OPERATIONS)[number], SectionRoute>;
 /** Makes exactly one of the six named section changes, chosen by `payload.operation`, and answers with one of `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-const changeSection = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, operationClaimSchema, (claim) => claim.payload.operation, SECTION_ROUTES);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: changeSection });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: (request: NextRequest): Promise<Response> => claimedWriteRoute(request, operationClaimSchema, (claim) => claim.payload.operation, SECTION_ROUTES) });

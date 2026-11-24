@@ -14,6 +14,7 @@ import { sameScope, type Coverage, type CoverageState, type GiftAttribution, typ
 import { printModel } from "@/modules/export/print";
 import { matrixDrilldownQuery, type MatrixCell, type ReportQuery, type ReportResult } from "@/modules/support/report";
 import { COVERAGE_TEMPLATES, REPORT_NOT_FOUND, fillTemplate } from "../copy";
+import { GIFTS_PARAM } from "../gift-params";
 import { reportSnapshotId, useReport, type ReportEnvelope, type ReportReadResult, type ReportRequestQuery } from "../hooks/use-report";
 import { REPORT_CATALOG, isReportId, reportTitle, type ReportId } from "../report-catalog";
 import ExportPrintActions from "./export-print-actions";
@@ -33,7 +34,6 @@ export type ReportFrameProps = {
 };
 const LOADING_BODY = "No figure is shown until the read answers, because a report written before the answer would state a number nobody computed.";
 const COVERAGE_NOTE_TITLES: Readonly<Partial<Record<CoverageState, string>>> = { partial: "Coverage of this period is partial", unknown: "How much of this period the source covers is unknown" };
-const GIFTS_PARAM = { from: "from", to: "to", currency: "currency", recipient: "recipient", partnerId: "partnerId", amountMin: "amountMin", amountMax: "amountMax", designation: "designation", method: "method", search: "search", sortField: "sortField", sortDirection: "sortDirection" } as const;
 const NO_YEARS: readonly number[] = [];
 /** The page window the address states, in the read's own vocabulary: a page index counted from zero, and the rows it holds, which travel together because a row count without a page states no window. */ const PAGE_PARAM = "page";
 function isReportResult(value: unknown): value is ReportResult {

@@ -201,19 +201,17 @@ type ProposalProjection = {
   readonly processedAt: string | null;
 };
 const NAME_FIELDS: readonly ImportFieldId[] = ["display-name", "name-given", "name-family", "name-organization"];
-function proposalRecordOf(projection: ProposalProjection): ImportProposalRecord {
-  return {
-    importOperationId: projection.importOperationId,
-    fileMeta: { name: projection.fileName, bytes: projection.byteLength, rowCount: projection.rowCount, columnCount: projection.columnCount },
-    fingerprint: { ...projection.fingerprint },
-    mapping: mappingRecordsOf(projection.headers, projection.columnCount, projection.mapping),
-    rowDecisions: rowDecisionRecordsOf(projection.decisions),
-    summary: projection.summary,
-    results: projection.results,
-    processedAt: projection.processedAt,
-    revision: projection.revision,
-  };
-}
+const proposalRecordOf = (projection: ProposalProjection): ImportProposalRecord => ({
+  importOperationId: projection.importOperationId,
+  fileMeta: { name: projection.fileName, bytes: projection.byteLength, rowCount: projection.rowCount, columnCount: projection.columnCount },
+  fingerprint: { ...projection.fingerprint },
+  mapping: mappingRecordsOf(projection.headers, projection.columnCount, projection.mapping),
+  rowDecisions: rowDecisionRecordsOf(projection.decisions),
+  summary: projection.summary,
+  results: projection.results,
+  processedAt: projection.processedAt,
+  revision: projection.revision,
+});
 function mappingRecordsOf(headers: readonly string[], columnCount: number, mapping: ImportConfirmedMapping | null): readonly ImportColumnAssignmentRecord[] {
   if (mapping === null) return [];
   const fieldByColumn = new Map<number, ImportFieldId>();
@@ -270,9 +268,8 @@ function sameMappingRecords(left: readonly ImportColumnAssignmentRecord[], right
     return other !== undefined && other.columnIndex === column.columnIndex && other.header === column.header && other.field === column.field;
   });
 }
-function decisionsFor(file: ParsedCsvFile, previous: StoredImport | null, mappingRecords: readonly ImportColumnAssignmentRecord[]): ImportDecisionSet {
-  return previous !== null && previous.review.decisions !== null && sameMappingRecords(previous.proposal.mapping, mappingRecords) ? previous.review.decisions : createDecisionSet(file);
-}
+const decisionsFor = (file: ParsedCsvFile, previous: StoredImport | null, mappingRecords: readonly ImportColumnAssignmentRecord[]): ImportDecisionSet =>
+  previous !== null && previous.review.decisions !== null && sameMappingRecords(previous.proposal.mapping, mappingRecords) ? previous.review.decisions : createDecisionSet(file);
 function valuesByField(row: ImportValidatedRow, decision: RecordedRowDecision | null): ReadonlyMap<ImportFieldId, readonly string[]> {
   const byColumn = new Map<number, { readonly fieldId: ImportFieldId; readonly value: string }>();
   for (const cell of row.mappedCells) byColumn.set(cell.columnNumber, { fieldId: cell.fieldId, value: cell.value.trim() });

@@ -1,5 +1,4 @@
-/** Criterion 5 — daily follow-through: the work a day asks for, followed through, and never claimed as more. */
-import type { APIRequestContext, Locator, Page } from "@playwright/test";
+/** Criterion 5 — daily follow-through: the work a day asks for, followed through, and never claimed as more. */ import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { countOf, expect, listOf, objectOf, SEEDED_PERSONAS, sessionCookie, test, type PersonaName } from "../playwright.config";
 const recordEvidence = (type: string, description: string): void => void test.info().annotations.push({ type, description });
 const PERSONA: PersonaName = "established-worker";
@@ -279,8 +278,7 @@ test("completing a task takes it out of Today, reopening returns it, a category 
 const SCROLL_PLACE_TOLERANCE_PX = 2; // How far a returned place may sit from the place the reader left: a settled layout can move a row by a pixel between the two readings, while anything larger is a different place on the list.
 type ScrollPlace = { readonly offset: number; readonly height: number }; // One reader's place as the page states it: the offset they stand at and the height of the document they stand in, because a place reached only by a document shorter than the one they left is the clamp at its end rather than the place itself.
 const scrollPlaceAt = (page: Page): Promise<ScrollPlace> => page.evaluate(() => ({ offset: window.scrollY, height: document.documentElement.scrollHeight }));
-/** Reads the place a reader leaves a list at, with the row's own link brought into view exactly as the click requires, once the document has stopped growing. */
-async function scrollPlaceOfRow(page: Page, link: Locator, subject: string): Promise<ScrollPlace> {
+/** Reads the place a reader leaves a list at, with the row's own link brought into view exactly as the click requires, once the document has stopped growing. */ async function scrollPlaceOfRow(page: Page, link: Locator, subject: string): Promise<ScrollPlace> {
   await expect(async () => {
     await link.scrollIntoViewIfNeeded();
   }, `${subject} states the row's own link and can bring it into view, which is what makes the place the reader stands at one they can leave from.`).toPass({ timeout: 15_000 });
@@ -293,8 +291,7 @@ async function scrollPlaceOfRow(page: Page, link: Locator, subject: string): Pro
   }
   return place;
 }
-/** Asserts the reader is back at the place they left: inside the list rather than at its top, within the tolerance, on a document at least as tall as the one they left. */
-async function expectRestoredScrollPlace(page: Page, place: ScrollPlace, subject: string): Promise<void> {
+/** Asserts the reader is back at the place they left: inside the list rather than at its top, within the tolerance, on a document at least as tall as the one they left. */ async function expectRestoredScrollPlace(page: Page, place: ScrollPlace, subject: string): Promise<void> {
   const restored = async (): Promise<number | undefined> => {
     const read = await scrollPlaceAt(page);
     return read.height >= place.height && Math.abs(read.offset - place.offset) <= SCROLL_PLACE_TOLERANCE_PX ? read.offset : undefined;

@@ -1,5 +1,4 @@
-/** Success criterion 10: the 24-hour notification usefulness window, and the honesty of what a submission of a notice reports. */
-import { Temporal } from "temporal-polyfill";
+/** Success criterion 10: the 24-hour notification usefulness window, and the honesty of what a submission of a notice reports. */ import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeEach, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type NotificationIntentRecord, type NotificationSendResultRecord, type Scope } from "@/modules/data-service";
@@ -17,20 +16,17 @@ const SOURCE: SessionSource = { sessionId: SESSION_ID };
 const DOCUMENT_ID = "doc-update-autumn";
 const PUBLIC_EDITION = "release-update-fr-1";
 const SUPPORTER_EDITION = "release-update-en-approved-supporter-1";
-/** The one intent the seed already recorded, so every count in this file has a known starting point. */
-const SEEDED_INTENT_ID = "intent-update-autumn-en";
+/** The one intent the seed already recorded, so every count in this file has a known starting point. */ const SEEDED_INTENT_ID = "intent-update-autumn-en";
 const PUBLISHER_ID = "publisher-harbour";
 const PURPOSE = "update-email";
 const FIRST_REVISION = "rev-1";
 const DST_INTENDED_AT = "2026-10-24T12:00:00Z";
 const MILLISECONDS_PER_SECOND = 1_000;
 const MILLISECONDS_PER_HOUR = 60 * 60 * MILLISECONDS_PER_SECOND;
-/** The window the specification fixes, in elapsed milliseconds: deliberately not a calendar day. */
-const USEFULNESS_MILLISECONDS = 24 * MILLISECONDS_PER_HOUR;
+/** The window the specification fixes, in elapsed milliseconds: deliberately not a calendar day. */ const USEFULNESS_MILLISECONDS = 24 * MILLISECONDS_PER_HOUR;
 /** The closed vocabulary a recorded per-recipient outcome may use, restated here as the assertion's own expectation rather than read back off the implementation: a copy is accepted, failed or unknown, and none of the three claims a delivery or a reading. */
 const SEND_RESULT_STATES = ["accepted", "failed", "unknown"] as const;
-/** The words that would state a delivery, a reading or a receipt, none of which this release records. */
-const DELIVERY_WORDS: ReadonlySet<string> = new Set(["deliver", "delivered", "delivery", "read", "reads", "reading", "open", "opened", "receipt"]);
+/** The words that would state a delivery, a reading or a receipt, none of which this release records. */ const DELIVERY_WORDS: ReadonlySet<string> = new Set(["deliver", "delivered", "delivery", "read", "reads", "reading", "open", "opened", "receipt"]);
 const claimsDeliveryOrReading = (member: string): boolean => member.split(/(?=[A-Z])/u).some((word) => DELIVERY_WORDS.has(word.toLowerCase()));
 let scope: Scope;
 async function moveClockToOffset(offsetMilliseconds: number): Promise<void> {
@@ -46,8 +42,7 @@ async function layDownSession(offsetMilliseconds = 0): Promise<void> {
   await layDownSeededSession(SESSION_ID, DEFAULT_SESSION_ID);
   await moveClockToOffset(offsetMilliseconds);
 }
-/** Clears an armed simulated failure, so no case inherits one. */
-async function disarmAnyArmedFailure(): Promise<void> {
+/** Clears an armed simulated failure, so no case inherits one. */ async function disarmAnyArmedFailure(): Promise<void> {
   const documents = await readSession(SESSION_ID);
   const meta: unknown = documents === undefined ? undefined : documents.meta;
   if (typeof meta !== "object" || meta === null) return;
@@ -125,8 +120,7 @@ it("the deadline is the intended instant plus 24 elapsed hours: places the deadl
   const intendedAt = SEED_INSTANT.subtract({ hours: 5 });
   const atIntended = withinUsefulness(notificationDeadline({ intendedAt, now: intendedAt }), "A notice read at the instant it was intended for");
   expect([atIntended.deadlineInstant.epochMilliseconds - intendedAt.epochMilliseconds, atIntended.remainingMilliseconds]).toEqual([USEFULNESS_MILLISECONDS, USEFULNESS_MILLISECONDS]);
-  const justInside = withinUsefulness(notificationDeadline({ intendedAt, now: intendedAt.add({ milliseconds: USEFULNESS_MILLISECONDS - 1 }) }), "A notice read one millisecond inside the window");
-  expect(justInside.remainingMilliseconds).toBe(1);
+  expect(withinUsefulness(notificationDeadline({ intendedAt, now: intendedAt.add({ milliseconds: USEFULNESS_MILLISECONDS - 1 }) }), "A notice read one millisecond inside the window").remainingMilliseconds).toBe(1);
   // The equality case, asserted from the deadline's own side: the same instant either way, so the deadline does not move with the moment it is read at.
   const atDeadline = pastUsefulness(notificationDeadline({ intendedAt, now: intendedAt.add({ milliseconds: USEFULNESS_MILLISECONDS }) }), "A notice read at the deadline itself");
   expect([atDeadline.deadlineInstant.epochMilliseconds, atDeadline.deadlineInstant.epochMilliseconds - intendedAt.epochMilliseconds, "remainingMilliseconds" in atDeadline]).toEqual([atIntended.deadlineInstant.epochMilliseconds, USEFULNESS_MILLISECONDS, false]);

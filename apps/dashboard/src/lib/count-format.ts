@@ -1,6 +1,5 @@
 /** The application's default interface locale, declared once here because the formatter states it and the shell's viewer preferences default to it. */ export const DEFAULT_INTERFACE_LOCALE = "en-GB";
-/** What a locale tag the runtime refuses falls back to: the digits as they stand and ungrouped, so a refused tag leaves the surface readable rather than throwing out of a render. */
-const REFUSED_LOCALE_FORMAT = new Intl.NumberFormat("en", { maximumFractionDigits: 0, useGrouping: false });
+/** What a locale tag the runtime refuses falls back to: the digits as they stand and ungrouped, so a refused tag leaves the surface readable rather than throwing out of a render. */ const REFUSED_LOCALE_FORMAT = new Intl.NumberFormat("en", { maximumFractionDigits: 0, useGrouping: false });
 const COUNT_FORMATS = new Map<string, Intl.NumberFormat>();
 /** The whole-number formatter for the interface locale a composing route states, built once per locale rather than on every formatted count. */ export function countFormatOf(locale: string = DEFAULT_INTERFACE_LOCALE): Intl.NumberFormat {
   const cached = COUNT_FORMATS.get(locale);

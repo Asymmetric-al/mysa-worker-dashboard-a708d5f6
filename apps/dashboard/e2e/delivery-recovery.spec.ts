@@ -1,9 +1,10 @@
-/** Criterion 11 — delivery recovery. */
-import type { Page } from "@playwright/test";
+/** Criterion 11 — delivery recovery. */ import type { Page } from "@playwright/test";
 import { test, expect, arrayAt, sendResultFingerprint, armLostAcknowledgement, authorityOf, clearFailurePlan, fieldAt, jsonOf, messagesAt, newAttemptId, numberAt, outcomeOf, readJson, setClock, stringAt, type DevStateEnvelope } from "../playwright.config";
 const UPDATE_DOCUMENT = "doc-update-autumn";
 const SEEDED_NOTICE = { intentId: "intent-update-autumn-en", releaseId: "release-update-en-1", intendedAt: "2026-11-10T09:05:00Z", deadline: "2026-11-11T09:05:00Z" } as const;
 const LAST_USEFUL_SECOND = "2026-11-11T09:04:59Z"; // One second before the seeded notice's window closes: still inside it, because the boundary is strict at equality.
+const SEEDED_AUDIENCE_COUNTS = { eligible: 5, excluded: 5 } as const; // The seed's own audience figures, read from the publisher's rows on a freshly reset store: five active memberships are eligible, and five are excluded — two addresses awaiting proof, two Off choices and one restriction.
+const SEEDED_MEMBER_STATES = { active: 5, "awaiting-proof": 2, off: 2, restricted: 1 } as const; // The same seeded rows counted by state, so the two statements about one audience sit together and the seed's figures stay the only place either comes from.
 const INBOX_PATH = "/communication/inbox";
 const PREFERENCES_PATH = "/preview/preferences"; // The preferences surface's proof flow, which is where a person opens and confirms their own membership, and the address they give for it — a value on the record and never a key.
 const PROOF_FLOW = '[data-slot="proof-flow"]';
@@ -205,9 +206,9 @@ test("acceptance, definite failure and uncertainty stay three outcomes, and an e
   await expect(page.getByRole("button", { name: RESEND_CONTROL })).toHaveCount(0);
   await expect(page.locator("[data-sonner-toast], [data-toast], [role='log']"), "No ephemeral notification may stand in for a durable result").toHaveCount(0);
   const audience = await readJson(page.request, "/api/audience"); // The audience keeps the four membership states apart from any send outcome: an address awaiting proof, a person who chose Off and a restricted membership are excluded with their own reason, and none of them is a failed message. The counts are the read's own, so the page and the read cannot
-  expect(fieldAt(audience, "data", "counts", "eligible"), "Eligible memberships in the seeded audience").toBe(5);
-  expect(fieldAt(audience, "data", "counts", "excluded"), "Excluded memberships in the seeded audience").toBe(4);
-  expect(fieldAt(audience, "data", "memberStates"), "The four membership states the seed lays down").toEqual({ active: 5, "awaiting-proof": 1, off: 2, restricted: 1 });
+  expect(fieldAt(audience, "data", "counts", "eligible"), "Eligible memberships in the seeded audience").toBe(SEEDED_AUDIENCE_COUNTS.eligible);
+  expect(fieldAt(audience, "data", "counts", "excluded"), "Excluded memberships in the seeded audience: two addresses awaiting proof, two Off choices and one restriction").toBe(SEEDED_AUDIENCE_COUNTS.excluded);
+  expect(fieldAt(audience, "data", "memberStates"), "The four membership states the seed lays down").toEqual(SEEDED_MEMBER_STATES);
   await page.goto("/communication/audience");
   await expect(page.getByRole("heading", { level: 1, name: "Update email audience" })).toBeVisible();
   for (const value of ["Active", "Awaiting proof", "Off", "Restricted"]) await expect(page.getByText(value, { exact: true }).first()).toBeVisible();

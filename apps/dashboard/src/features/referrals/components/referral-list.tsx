@@ -84,8 +84,7 @@ const ViewSwitcher = ({ current, hrefOf }: { readonly current: ReferralView; rea
     </ul>
   </nav>
 );
-/** One referral list in the presentation its address names: the switcher, the heading and explanation, the search and the whole-result count. */
-export function ReferralList({ scope, initialResult, dir, className }: ReferralListProps): ReactElement {
+/** One referral list in the presentation its address names: the switcher, the heading and explanation, the search and the whole-result count. */ export function ReferralList({ scope, initialResult, dir, className }: ReferralListProps): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

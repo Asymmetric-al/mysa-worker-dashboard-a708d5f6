@@ -19,5 +19,4 @@ async function runMemberChange(input: MutationInput<z.infer<typeof membersPayloa
   if (payload.action === "remove") return mutations.outreach.removeMember({ ...input, payload: { initiativeId: payload.initiativeId, memberId: payload.memberId, ...(payload.reason === undefined ? {} : { reason: payload.reason }) } });
   return mutations.outreach.returnMember({ ...input, payload: { initiativeId: payload.initiativeId, memberId: payload.memberId } });
 }
-const changeMembers = (request: Request): Promise<Response> => writeRoute(request, membersRequestSchema, runMemberChange);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: changeMembers });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: (request: Request): Promise<Response> => writeRoute(request, membersRequestSchema, runMemberChange) });

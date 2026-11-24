@@ -180,8 +180,7 @@ const AnswerList = ({ questions, answers, keyPrefix, listClassName = "flex min-w
     })}
   </ol>
 );
-/** The answers a revision holds that belong to no question in its captured set: they hold no position, so this editor reads them here rather than writing them beside a question. */
-const UnassignedAnswers = ({ answers, keyPrefix }: { readonly answers: readonly string[]; readonly keyPrefix: string }): ReactElement => (
+/** The answers a revision holds that belong to no question in its captured set: they hold no position, so this editor reads them here rather than writing them beside a question. */ const UnassignedAnswers = ({ answers, keyPrefix }: { readonly answers: readonly string[]; readonly keyPrefix: string }): ReactElement => (
   <ul className="flex min-w-0 list-disc flex-col gap-1 ps-4 text-sm text-muted-foreground">
     {answers.map((answer, position) => (
       <li key={`${keyPrefix}-unassigned-${String(position)}`} className="wrap-anywhere">
@@ -198,10 +197,7 @@ const WithdrawEffects = (): ReactElement => (
 );
 export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
   const { revisions, checkInId, scope, expectedRevision, locale, unavailable = null, questionBank, className } = props;
-  const headingId = useId();
-  const limitsId = useId();
-  const completionId = useId();
-  const refusalId = useId();
+  const [headingId, limitsId, completionId, refusalId] = [useId(), useId(), useId(), useId()];
   const identity = revisions.draft?.revisionId ?? revisions.shared?.revisionId ?? "no-revision";
   const [text, setText] = useState<EditorText>(() => ({ identity, questions: seededQuestions(props), answers: seededAnswers(props) }));
   const [draftQuestion, setDraftQuestion] = useState("");
@@ -361,8 +357,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
   /** The facts one autosave writes: the draft's own text, the revision the surface presents and the check-in it writes to. Two writes with the same key are the same write, so a draft that has been through the debounce waits for a further edit, a new revision or the explicit button rather than retrying itself. */
   const autosaveKeyOf = (draftSignature: string): string => JSON.stringify([draftSignature, effectiveRevision, effectiveCheckInId]);
   const autosaveDue = readable && canSave && dirty && !save.isPending && !reviewedWritePending ? autosaveKeyOf(signature) : null;
-  /** Writes the private draft exactly as the button does, for the debounce below: never before the person has changed the draft, never while a reviewed write or the save this editor already began is still running. */
-  const writeAutosave = (): void => {
+  /** Writes the private draft exactly as the button does, for the debounce below: never before the person has changed the draft, never while a reviewed write or the save this editor already began is still running. */ const writeAutosave = (): void => {
     if (!draftEdited.current || autosaveWriting.current || autosaveDue === null) return;
     const submitted = signature;
     autosaveWriting.current = true;

@@ -9,8 +9,7 @@ import { cn } from "@/lib/cn";
 import { languageNameOf } from "@/lib/language-name";
 import type { ContentLocale } from "@/modules/content/locale";
 import { VARIANT_AUDIENCES, variantKeyAllowed, type VariantAudience, type VariantFamily } from "@/modules/content/variant";
-/** The word and tone of each audience a variant may serve, declared once in {@link AUDIENCE_STATUS} and named here for the surfaces that already import it. */
-export const AUDIENCE_WORDS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = AUDIENCE_STATUS;
+/** The word and tone of each audience a variant may serve, declared once in {@link AUDIENCE_STATUS} and named here for the surfaces that already import it. */ export const AUDIENCE_WORDS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = AUDIENCE_STATUS;
 export type VariantTab = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: ContentLocale; readonly lifecycle: ContentLifecycleState; readonly staleSince?: string };
 export type VariantSwitcherProps = { readonly family: VariantFamily; readonly variants: readonly VariantTab[]; readonly activeVariantId: string; readonly onSelect: (variantId: string) => void; readonly label: string; readonly className?: string };
 function audienceRank(audience: VariantAudience): number {
@@ -20,16 +19,13 @@ function audienceRank(audience: VariantAudience): number {
 function compareLocaleTags(left: string, right: string): number {
   const a = left.trim().toLowerCase();
   const b = right.trim().toLowerCase();
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
+  return a === b ? 0 : a < b ? -1 : 1;
 }
 function compareEditions(left: VariantTab, right: VariantTab): number {
   const byLocale = compareLocaleTags(left.locale.tag, right.locale.tag);
   if (byLocale !== 0) return byLocale;
   const byAudience = audienceRank(left.audience) - audienceRank(right.audience);
-  if (byAudience !== 0) return byAudience;
-  if (left.variantId === right.variantId) return 0;
-  return left.variantId < right.variantId ? -1 : 1;
+  return byAudience !== 0 ? byAudience : left.variantId === right.variantId ? 0 : left.variantId < right.variantId ? -1 : 1;
 }
 function permittedEditions(family: VariantFamily, variants: readonly VariantTab[]): readonly VariantTab[] {
   const seen = new Set<string>();
@@ -48,8 +44,7 @@ function lifecycleWordOf(state: ContentLifecycleState): string {
 }
 function spokenNameOf(variant: VariantTab): string {
   const audience = AUDIENCE_WORDS[variant.audience].label;
-  const endonym = languageNameOf(variant.locale.tag);
-  return `${audience}, ${endonym}, ${lifecycleWordOf(variant.lifecycle)}`;
+  return `${audience}, ${languageNameOf(variant.locale.tag)}, ${lifecycleWordOf(variant.lifecycle)}`;
 }
 /** The one audience-variant and edition selector. */ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, label, className }: VariantSwitcherProps): ReactNode {
   const labelId = useId();

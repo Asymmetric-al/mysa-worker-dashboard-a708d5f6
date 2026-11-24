@@ -105,8 +105,7 @@ function planMembersOf(values: TaskFormValues): { readonly plannedTime?: string;
 }
 /** The plan members an edit states: a null clears the schedule the record holds, so choosing Task, or leaving a meeting with no time and no zone, removes the stored plan rather than restating it. */
 function editedPlanMembersOf(values: TaskFormValues): { readonly plannedTime: string | null; readonly timeZone: string | null } {
-  if (values.kind !== "meeting") return { plannedTime: null, timeZone: null };
-  return { plannedTime: blankToNull(values.plannedTime), timeZone: blankToNull(values.timeZone) };
+  return values.kind !== "meeting" ? { plannedTime: null, timeZone: null } : { plannedTime: blankToNull(values.plannedTime), timeZone: blankToNull(values.timeZone) };
 }
 /** The link members an edit states: the chosen link, plus a null for the link the control displayed and the worker therefore replaced. A link this read never admitted was never on screen, so it is left untouched rather than cleared unseen. */
 function editedLinkMembersOf(values: TaskFormValues, shownLink: string): { readonly partnerId?: string | null; readonly initiativeId?: string | null } {

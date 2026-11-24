@@ -130,13 +130,9 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
   const unprepared = prepared === null || prepared.success ? [] : prepared.error.issues.map((issue) => issue.message);
   const liveInput: Omit<MutationInput<ResolveMissedPlanPayload>, "operationId"> | null = prepared === null || !prepared.success ? null : { scope, expectedRevision: facts.revision, payload: prepared.data };
   const input = settled !== null && ((outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged")(settled) && submitted !== null && selected !== null && submitted.payload.resolution === selected ? submitted : liveInput;
-  const staleAfterStop = settled !== null && facts.state === "stopped" && (settled.outcome === "conflict" || settled.outcome === "unchanged");
-  const stateReason = facts.state === "active" ? undefined : facts.state === "paused" ? PAUSED_NOTE : STOPPED_NOTE;
   const offered = MISSED_PLAN_RESOLUTION_ORDER.filter((resolution) => inadmissibleReason(facts, resolution) === undefined);
-  const refusals = settled !== null && settled.outcome === "invalid" ? fieldErrorsFromInvalid(settled) : null;
   const nextNominalDate = facts.nextNominalDate ?? null;
   const title = seriesTitle?.trim() ?? "";
-  const reviewLevel = headingLevel === 2 ? 3 : 4;
   const cardTitle = facts.planNeedsReview ? PLAN_NEEDS_REVIEW_HEADING : "This plan's review is settled";
   const headerExtra = (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -167,9 +163,9 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
         ) : (
           <p className={SENTENCE_CLASS}>{"The plan is no longer awaiting a decision, so no resolution is offered here: the result of the one you applied stands below as its record."}</p>
         )}
-        {facts.planNeedsReview && offered.length === 0 ? <p className={SENTENCE_CLASS}>{stateReason}</p> : null}
+        {facts.planNeedsReview && offered.length === 0 ? <p className={SENTENCE_CLASS}>{facts.state === "active" ? undefined : facts.state === "paused" ? PAUSED_NOTE : STOPPED_NOTE}</p> : null}
         {facts.planNeedsReview && offered.length > 0 ? (
-          <FormFieldGroup legend={RESOLUTION_GROUP_LEGEND} name={RESOLUTION_FIELD} description={MISSED_PLAN_RESOLUTION_REQUIRED_MESSAGE} error={refusals?.byField[RESOLUTION_FIELD]} required>
+          <FormFieldGroup legend={RESOLUTION_GROUP_LEGEND} name={RESOLUTION_FIELD} description={MISSED_PLAN_RESOLUTION_REQUIRED_MESSAGE} error={(settled !== null && settled.outcome === "invalid" ? fieldErrorsFromInvalid(settled) : null)?.byField[RESOLUTION_FIELD]} required>
             {(group) => {
               const onResolutionChange = (next: string): void => {
                 if (!((value: unknown): value is MissedPlanResolution => typeof value === "string" && (MISSED_PLAN_RESOLUTION_ORDER as readonly string[]).includes(value))(next) || submitting) return;
@@ -216,7 +212,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
             </AlertDescription>
           </Alert>
         )}
-        {staleAfterStop ? (
+        {settled !== null && facts.state === "stopped" && (settled.outcome === "conflict" || settled.outcome === "unchanged") ? (
           <Alert>
             <AlertTitle>{SERIES_STATE_LABELS.stopped}</AlertTitle>
             <AlertDescription className="flex flex-col gap-2">
@@ -238,7 +234,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
               onSettled={handleSettled}
               checkResult={onCheckResult}
               fieldLabels={FIELD_LABELS}
-              headingLevel={reviewLevel}
+              headingLevel={headingLevel === 2 ? 3 : 4}
             />
           </>
         )}

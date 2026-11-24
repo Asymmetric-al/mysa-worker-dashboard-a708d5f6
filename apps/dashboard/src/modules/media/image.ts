@@ -34,8 +34,7 @@ const JPEG2000_CODESTREAM_SIGNATURE = [0xff, 0x4f, 0xff, 0x51] as const;
 const ICO_SIGNATURE = [0x00, 0x00, 0x01, 0x00] as const;
 const HEIF_BRANDS: readonly string[] = ["avci", "avcs", "avif", "avis", "heic", "heim", "heis", "heix", "hevc", "hevm", "hevs", "mif1", "msf1"];
 export const isAdmittedImageFormat = (format: string): format is AdmittedImageFormat => (ADMITTED_IMAGE_FORMATS as readonly string[]).includes(format);
-/** Validates an uploaded image against the admitted profile and produces the display rendition — the single image pipeline of this application, used for every image and for every poster. */
-export async function prepareDisplayImage(input: PrepareDisplayImageInput): Promise<ImagePreparationResult> {
+/** Validates an uploaded image against the admitted profile and produces the display rendition — the single image pipeline of this application, used for every image and for every poster. */ export async function prepareDisplayImage(input: PrepareDisplayImageInput): Promise<ImagePreparationResult> {
   const { bytes } = input;
   if (bytes.byteLength > IMAGE_MAX_BYTES) return refuseTooLargeBytes();
   const sniffed = sniffImageKind(bytes);
@@ -95,9 +94,8 @@ function containsBytesIgnoringAsciiCase(haystack: Uint8Array, needle: readonly n
 const lowerAscii = (byte: number): number => (byte >= 0x41 && byte <= 0x5a ? byte + 0x20 : byte);
 const bytesAsLatin1 = (bytes: Uint8Array, offset: number, length: number): string => (offset < 0 || length <= 0 || offset + length > bytes.byteLength ? "" : Array.from(bytes.slice(offset, offset + length), (byte) => String.fromCharCode(byte)).join(""));
 const matchesAt = (bytes: Uint8Array, offset: number, pattern: readonly number[]): boolean => offset >= 0 && offset + pattern.length <= bytes.byteLength && pattern.every((expected, index) => bytes[offset + index] === expected);
-function sniffImageKind(bytes: Uint8Array): SniffedImageKind {
-  return bytes.byteLength === 0 ? "not-an-image" : matchesAt(bytes, 0, JPEG_SIGNATURE) ? "jpeg" : matchesAt(bytes, 0, PNG_SIGNATURE) ? "png" : bytesAsLatin1(bytes, 0, 4) === "RIFF" && bytesAsLatin1(bytes, 8, 4) === "WEBP" ? "webp" : looksLikeOtherImage(bytes) ? "other-image" : "not-an-image";
-}
+const sniffImageKind = (bytes: Uint8Array): SniffedImageKind =>
+  bytes.byteLength === 0 ? "not-an-image" : matchesAt(bytes, 0, JPEG_SIGNATURE) ? "jpeg" : matchesAt(bytes, 0, PNG_SIGNATURE) ? "png" : bytesAsLatin1(bytes, 0, 4) === "RIFF" && bytesAsLatin1(bytes, 8, 4) === "WEBP" ? "webp" : looksLikeOtherImage(bytes) ? "other-image" : "not-an-image";
 function looksLikeOtherImage(bytes: Uint8Array): boolean {
   if (bytesAsLatin1(bytes, 0, 3) === "GIF") return true;
   if (bytesAsLatin1(bytes, 0, 4) === "II*\u0000" || bytesAsLatin1(bytes, 0, 4) === "MM\u0000*") return true;

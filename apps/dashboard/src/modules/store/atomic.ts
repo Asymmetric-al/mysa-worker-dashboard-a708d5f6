@@ -59,8 +59,7 @@ function feedCanonicalJson(tokens: string[], value: unknown, ancestors: WeakSet<
     ancestors.delete(container);
   }
 }
-/** Writes bytes through a same-directory temp file and a rename, so a crash leaves the previous file or the new one; always writes, so change detection stays with the caller. */
-export async function writeBytesAtomic(file: string, bytes: string | Uint8Array): Promise<void> {
+/** Writes bytes through a same-directory temp file and a rename, so a crash leaves the previous file or the new one; always writes, so change detection stays with the caller. */ export async function writeBytesAtomic(file: string, bytes: string | Uint8Array): Promise<void> {
   const directory = dirname(file);
   await mkdir(directory, { recursive: true });
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
@@ -79,8 +78,7 @@ export async function writeBytesAtomic(file: string, bytes: string | Uint8Array)
   }
   await syncDirectory(directory);
 }
-/** Writes a document through {@link writeBytesAtomic}, serialising it first so a rejected value leaves no file behind. */
-export const writeJsonAtomic = async (file: string, value: unknown): Promise<void> => writeBytesAtomic(file, serialiseJson(value));
+/** Writes a document through {@link writeBytesAtomic}, serialising it first so a rejected value leaves no file behind. */ export const writeJsonAtomic = async (file: string, value: unknown): Promise<void> => writeBytesAtomic(file, serialiseJson(value));
 /** Reads a document: `undefined` only when the file is absent, and every other fault or corrupt body thrown. */ export async function readJson<T = unknown>(file: string): Promise<T | undefined> {
   let bytes: Buffer;
   try {

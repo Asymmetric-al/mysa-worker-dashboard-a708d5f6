@@ -1,6 +1,7 @@
 "use client";
-import { useCallback, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useCallback, useId, useMemo, useState, type ReactElement } from "react";
 import ActionReview, { type MutationSubmit, type ReviewHeadingLevel } from "@/components/action-review";
+import { factFrame } from "@/components/fact-list";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,8 +18,8 @@ import { useApplyPagePreset } from "../hooks/page-mutations";
 import type { applyPresetPayload } from "../schemas/preset";
 const HEADING_LEVEL: ReviewHeadingLevel = 3;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-/** The one type scale's heading utility per level, so this chooser states the level it lands at with the same measure on every surface. */
-const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The one type scale's heading utility per level, so this chooser states the level it lands at with the same measure on every surface. */ const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The section count this surface states, so the draft's own count and a preset's count read with one measure. */ const partCount = (count: number): string => (count === 1 ? "1 section" : `${String(count)} sections`);
 const SURFACE_COPY = {
   choiceQuestion: "Which preset should this edition start from?",
   proposalHeading: "What this preset proposes",
@@ -26,12 +27,26 @@ const SURFACE_COPY = {
   familyTerm: "Family",
   languageTerm: "Language edition",
   draftTerm: "Draft edition",
-  partCount: (count: number): string => (count === 1 ? "1 section" : `${String(count)} sections`),
+  draftSectionsTerm: "Sections in this draft",
+  partCount,
+  replacementNote: (draftSectionCount: number, presetSectionCount: number): string =>
+    draftSectionCount === 0 ? `This draft holds no section yet, so this preset composes it from its ${partCount(presetSectionCount)}.` : `Applying this preset replaces the ${partCount(draftSectionCount)} this draft holds now with its ${partCount(presetSectionCount)}.`,
   unavailable: { "no-target": "This edition has no draft yet, so there is nothing for a preset to compose into.", "no-context": "The draft's context is not stated on this surface, so no preset can be applied from here.", disabled: "This edition cannot take a preset right now." },
 } as const;
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { presetId: SURFACE_COPY.presetTerm, variantId: SURFACE_COPY.languageTerm, draftRevisionId: SURFACE_COPY.draftTerm };
 export type PresetView = { readonly presetId: string; readonly sections: readonly PageSectionType[]; readonly creates: "reviewable-draft" };
-export type PresetChooserProps = { readonly family: PageFamily; readonly presets: readonly PresetView[]; readonly baseVariantId: string; readonly locale: string; readonly expectedRevision: string; readonly disabled?: boolean; readonly scope?: Scope; readonly documentId?: string; readonly className?: string };
+export type PresetChooserProps = {
+  readonly family: PageFamily;
+  readonly presets: readonly PresetView[];
+  readonly baseVariantId: string;
+  readonly locale: string;
+  readonly expectedRevision: string;
+  readonly sectionCount: number;
+  readonly disabled?: boolean;
+  readonly scope?: Scope;
+  readonly documentId?: string;
+  readonly className?: string;
+};
 type PresetIntent = Omit<MutationInput<applyPresetPayload>, "operationId">;
 type PresetOffer = { readonly preset: PresetView; readonly sections: readonly CatalogueSectionCopy[] };
 const isAdmittedPresetId = (value: string): value is applyPresetPayload["presetId"] => (PAGE_PRESET_IDS as readonly string[]).includes(value);
@@ -44,13 +59,12 @@ function sectionsOf(preset: PresetView): readonly CatalogueSectionCopy[] | null 
   }
   return described.length === 0 ? null : described;
 }
-function offersOf(presets: readonly PresetView[]): readonly PresetOffer[] {
-  return presets.flatMap<PresetOffer>((preset) => {
+const offersOf = (presets: readonly PresetView[]): readonly PresetOffer[] =>
+  presets.flatMap<PresetOffer>((preset) => {
     if (!isAdmittedPresetId(preset.presetId)) return [];
     const sections = sectionsOf(preset);
     return sections === null ? [] : [{ preset, sections }];
   });
-}
 const presetLabel = (offer: PresetOffer): string => offer.sections.map((section) => section.label).join(" · ");
 const ProposalList = ({ offer }: { readonly offer: PresetOffer }): ReactElement => (
   <ul data-slot="preset-proposal" className="flex min-w-0 flex-col gap-2">
@@ -65,14 +79,8 @@ const ProposalList = ({ offer }: { readonly offer: PresetOffer }): ReactElement 
     ))}
   </ul>
 );
-const FactRow = ({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement => (
-  <div className={"flex min-w-0 flex-wrap items-baseline gap-x-2"}>
-    <dt className={"text-muted-foreground"}>{term}</dt>
-    <dd className="min-w-0">{children}</dd>
-  </div>
-);
-/** A withheld or empty offer states its reason, then the apply control it cannot offer, so the reason is never separated from it. */
-const WithheldNotice = ({ id, body, offersButton }: { readonly id: string; readonly body: string; readonly offersButton: boolean }): ReactElement => (
+const FactRow = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-2", termClassName: "text-muted-foreground", valueClassName: "min-w-0" });
+/** A withheld or empty offer states its reason, then the apply control it cannot offer, so the reason is never separated from it. */ const WithheldNotice = ({ id, body, offersButton }: { readonly id: string; readonly body: string; readonly offersButton: boolean }): ReactElement => (
   <div className="flex min-w-0 flex-col gap-3">
     <Alert role={undefined}>
       <AlertDescription id={id}>{body}</AlertDescription>
@@ -80,8 +88,7 @@ const WithheldNotice = ({ id, body, offersButton }: { readonly id: string; reado
     {offersButton ? <Button {...{ type: "button" as const, variant: "outline" as const, disabled: true as const, "aria-describedby": id, className: "min-h-target max-w-full self-start whitespace-normal" }}>{copy.preset.apply}</Button> : null}
   </div>
 );
-/** The preset chooser for the active family, and the one step that applies a preset. */
-export function PresetChooser({ family, presets, baseVariantId, locale, expectedRevision, disabled = false, scope, documentId, className }: PresetChooserProps): ReactElement {
+/** The preset chooser for the active family, and the one step that applies a preset. */ export function PresetChooser({ family, presets, baseVariantId, locale, expectedRevision, sectionCount, disabled = false, scope, documentId, className }: PresetChooserProps): ReactElement {
   const { mutateAsync } = useApplyPagePreset();
   const headingId = useId();
   const questionId = useId();
@@ -100,13 +107,11 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
   const revision = expectedRevision.trim();
   const documentIdValue = documentId?.trim() ?? "";
   const payload = useMemo<applyPresetPayload | null>(() => {
-    if (selectedPresetId === null || !isAdmittedPresetId(selectedPresetId) || variantId === "") return null;
-    return { presetId: selectedPresetId, variantId };
+    return selectedPresetId === null || !isAdmittedPresetId(selectedPresetId) || variantId === "" ? null : { presetId: selectedPresetId, variantId };
   }, [selectedPresetId, variantId]);
   const withheld: keyof typeof SURFACE_COPY.unavailable | null = disabled ? "disabled" : variantId === "" || revision === "" ? "no-target" : scope === undefined || documentIdValue === "" ? "no-context" : null;
-  const carriesReceipt = settled !== null && submitted !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted" || settled.outcome === "unchanged" || settled.outcome === "unknown") && submitted.payload.presetId === payload?.presetId;
   const liveInput = useMemo<PresetIntent | null>(() => (payload === null || scope === undefined ? null : { scope, expectedRevision: revision, payload }), [payload, scope, revision]);
-  const input = carriesReceipt && submitted !== null ? submitted : liveInput;
+  const input = settled !== null && submitted !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted" || settled.outcome === "unchanged" || settled.outcome === "unknown") && submitted.payload.presetId === payload?.presetId && submitted !== null ? submitted : liveInput;
   const showsReview = input !== null && (withheld === null || settled !== null);
   const submit = useCallback<MutationSubmit<applyPresetPayload>>(
     async (attempt: MutationInput<applyPresetPayload>): Promise<MutationOutcome> => {
@@ -119,6 +124,7 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
   const reviewFacts = [
     { term: SURFACE_COPY.familyTerm, value: <bdi>{copy.families[family].label}</bdi> },
     { term: SURFACE_COPY.languageTerm, value: <bdi className="mono-identifier">{locale}</bdi> },
+    { term: SURFACE_COPY.draftSectionsTerm, value: <bdi>{SURFACE_COPY.partCount(sectionCount)}</bdi> },
     ...(chosen === null
       ? []
       : [
@@ -126,7 +132,6 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
           { term: SURFACE_COPY.proposalHeading, value: <bdi>{SURFACE_COPY.partCount(chosen.sections.length)}</bdi> },
         ]),
   ];
-  const applyWithheld = withheld === null ? null : <WithheldNotice id={withheldId} body={SURFACE_COPY.unavailable[withheld]} offersButton={!showsReview} />;
   return (
     <section data-slot="preset-chooser" data-family={family} data-preset-count={String(offers.length)} data-selected-preset={selectedPresetId ?? undefined} data-withheld={withheld ?? undefined} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <Card>
@@ -188,10 +193,11 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
                   <section id={proposalId} aria-labelledby={proposalHeadingId} className="flex min-w-0 flex-col gap-2">
                     <p {...{ id: proposalHeadingId, className: "type-group-title" as const }}>{SURFACE_COPY.proposalHeading}</p>
                     <ProposalList offer={chosen} />
+                    <p className={"text-sm text-pretty text-muted-foreground"}>{SURFACE_COPY.replacementNote(sectionCount, chosen.sections.length)}</p>
                   </section>
                 </>
               )}
-              {applyWithheld}
+              {withheld === null ? null : <WithheldNotice id={withheldId} body={SURFACE_COPY.unavailable[withheld]} offersButton={!showsReview} />}
             </>
           )}
         </CardContent>

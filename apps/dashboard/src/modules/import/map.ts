@@ -124,8 +124,7 @@ export type ImportConfirmedMapping = { readonly columnCount: number; readonly as
 export type ImportMappingRefusalCode = "field-ambiguous" | "field-not-single" | "column-shared" | "column-not-found" | "column-excluded" | "decision-duplicated" | "decision-empty";
 export type ImportMappingRefusal = { readonly code: ImportMappingRefusalCode; readonly fieldId: ImportFieldId | null; readonly columnIndexes: readonly number[]; readonly message: string };
 export type ImportConfirmMappingResult = { readonly ok: true; readonly mapping: ImportConfirmedMapping } | { readonly ok: false; readonly refusals: ImportMappingRefusal[] };
-/** Confirms a suggestion, applying the worker's decisions, and returns either the explicit mapping or every problem that stops it. */
-export function confirmMapping(suggestion: ImportSuggestedMapping, decisions: readonly ImportMappingDecision[] = []): ImportConfirmMappingResult {
+/** Confirms a suggestion, applying the worker's decisions, and returns either the explicit mapping or every problem that stops it. */ export function confirmMapping(suggestion: ImportSuggestedMapping, decisions: readonly ImportMappingDecision[] = []): ImportConfirmMappingResult {
   const refusals: ImportMappingRefusal[] = [];
   const assignmentByField = new Map<ImportFieldId, number[]>();
   const declined: ImportFieldId[] = [];

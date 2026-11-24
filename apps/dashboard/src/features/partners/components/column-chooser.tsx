@@ -37,10 +37,8 @@ const PARTNER_COLUMN_DEFINITIONS: Readonly<Record<PartnerColumnKey, PartnerColum
   recurringStatus: { key: "recurringStatus", displayName: FACET_LABELS["commitment-status"], hint: "A partner's commitment status, shown only where the source attributes it to one.", defaultVisible: false, admittedBy: admitsRecurringStatus },
 };
 export const partnerColumnCatalogue: readonly PartnerColumn[] = PARTNER_COLUMN_KEYS.map((key) => PARTNER_COLUMN_DEFINITIONS[key]);
-/** Whether a column is shown: a column the record does not mention is shown, so an empty set is the whole catalogue. */
-export const partnerColumnIsVisible = (visibility: PartnerColumnVisibility, key: PartnerColumnKey): boolean => visibility[key] !== false;
-/** The columns this read admits, in catalogue order. */
-export const admittedPartnerColumns = (envelope: PartnerColumnEnvelope | null = null): readonly PartnerColumn[] => partnerColumnCatalogue.filter((column) => column.admittedBy(envelope));
+/** Whether a column is shown: a column the record does not mention is shown, so an empty set is the whole catalogue. */ export const partnerColumnIsVisible = (visibility: PartnerColumnVisibility, key: PartnerColumnKey): boolean => visibility[key] !== false;
+/** The columns this read admits, in catalogue order. */ export const admittedPartnerColumns = (envelope: PartnerColumnEnvelope | null = null): readonly PartnerColumn[] => partnerColumnCatalogue.filter((column) => column.admittedBy(envelope));
 const defaultVisibility = (admitted: readonly PartnerColumn[]): Record<string, boolean> => Object.fromEntries(admitted.map((column) => [column.key, column.defaultVisible]));
 function visibilityWithinAdmitted(value: PartnerColumnVisibility, admitted: readonly PartnerColumn[]): Record<string, boolean> | null {
   const allowed = new Set<string>(admitted.map((column) => column.key));
@@ -56,8 +54,7 @@ const COLUMN_CHOOSER_COPY = {
   noOptionalBody: "A giving column appears only when this context states a partner's giving facts for the period, and a commitment column only when the source attributes commitment status to a partner. The list shows the columns it can fill.",
 } as const;
 export type ColumnChooserProps = { readonly value: PartnerColumnVisibility; readonly onValueChange: (next: Record<string, boolean>) => void; readonly envelope?: PartnerColumnEnvelope | null; readonly className?: string };
-/** The Partners roster's configurable columns: a labelled checkbox list of the columns this read admits, with Show all and Reset. */
-export default function ColumnChooser({ value, onValueChange, envelope = null, className }: ColumnChooserProps): ReactElement {
+/** The Partners roster's configurable columns: a labelled checkbox list of the columns this read admits, with Show all and Reset. */ export default function ColumnChooser({ value, onValueChange, envelope = null, className }: ColumnChooserProps): ReactElement {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const layerRef = useRef<HTMLDivElement | null>(null);
@@ -113,12 +110,8 @@ export default function ColumnChooser({ value, onValueChange, envelope = null, c
         {optional.length === 0 ? <StateNotice kind="empty" headingLevel={4} title="No optional column is offered here" description={COLUMN_CHOOSER_COPY.noOptionalBody} className="shrink-0 border-0 p-0 sm:p-0" /> : null}
         <Separator className="shrink-0" />
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" size="sm" disabled={allShown} onClick={showAllColumns}>
-            Show all
-          </Button>
-          <Button type="button" variant="ghost" size="sm" disabled={atDefaults} onClick={restoreDefaults}>
-            Reset
-          </Button>
+          <Button {...{ type: "button", variant: "outline", size: "sm", disabled: allShown, onClick: showAllColumns }}>Show all</Button>
+          <Button {...{ type: "button", variant: "ghost", size: "sm", disabled: atDefaults, onClick: restoreDefaults }}>Reset</Button>
         </div>
       </PopoverContent>
     </Popover>

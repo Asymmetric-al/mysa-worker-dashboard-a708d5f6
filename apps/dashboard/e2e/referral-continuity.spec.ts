@@ -1,5 +1,4 @@
-/** Criterion 15 — referral continuity. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 15 — referral continuity. */ import type { Locator, Page } from "@playwright/test";
 import { arrayAt, expect, fieldAt, isRecord, jsonOf, newAttemptId, numberAt, operateDevControl, outcomeOf, setClock, stringAt, test, type JsonRecord } from "../playwright.config"; // The runner's own entry points: `test` carries the seeded-persona fixture and `expect` the web-first matchers, and `resetSeed` restores the deterministic world through the application's own control.
 const REFERRALS_PATH = "/partners/referrals";
 const REFERRALS_READ_PATH = "/api/referrals";
@@ -252,8 +251,7 @@ test("a New window across a daylight-saving transition ends at the first valid i
   for (const text of [COMPOSED_WINDOW.nominalWording, `The introduction date, ${COMPOSED_INTRODUCTION.date}, is day one.`, `The last date the window includes is ${COMPOSED_INTRODUCTION.lastIncludedOn}.`]) await expect(composedPanel.getByText(text)).toBeVisible();
   for (const text of [COMPOSED_WINDOW.endpoint, COMPOSED_INTRODUCTION.zone]) await expect(composedPanel.getByText(text, { exact: true }).first()).toBeVisible();
   await page.goto(`${REFERRALS_PATH}?list=active&search=${encodeURIComponent(COMPOSED_INTRODUCTION.displayName)}`);
-  const activeList = page.locator('[data-slot="referral-list"]');
-  const composedRow = activeList.locator(`a[href*="${composedId}"]`); // The seeded cycle for this partner is on the same list, so the row is found by the cycle the recording created rather than by the partner's name alone.
+  const composedRow = page.locator('[data-slot="referral-list"]').locator(`a[href*="${composedId}"]`); // The seeded cycle for this partner is on the same list, so the row is found by the cycle the recording created rather than by the partner's name alone.
   await expect(composedRow).toHaveCount(1);
   await expect(composedRow).toHaveText(COMPOSED_INTRODUCTION.displayName);
   await setClock(page.request, "2026-09-01T00:00:00Z"); // The gap case: a date read in a zone whose local midnight does not exist that day, which the composed form cannot state because it fixes the one accepted source zone the referral rules own.

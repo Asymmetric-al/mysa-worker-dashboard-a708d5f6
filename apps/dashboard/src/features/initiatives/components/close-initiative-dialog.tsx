@@ -73,8 +73,7 @@ export function buildClosePayload(initiativeId: string, values: CloseInitiativeF
   const handoff: InitiativeHandoff = !ownsUnfinishedWork ? { kind: "none", reason: NO_OWNED_WORK_REASON } : values.handoffChoice === "eligible-handoff" ? { kind: "eligible-handoff", toPrincipalId: values.recipient.trim(), note: values.handoffNote.trim() } : { kind: "none", reason: values.coveringNote.trim() };
   return { initiativeId: initiativeId.trim(), ...(disposition === "" ? {} : { disposition }), handoff };
 }
-/** Whether the worker may go back to the entries. Never offered for an unconfirmed result, which would invite a second close. */
-export type CloseSettlement = { readonly note: string; readonly initiativeClosed: boolean; readonly offersDone: boolean; readonly offersRevision: boolean };
+/** Whether the worker may go back to the entries. Never offered for an unconfirmed result, which would invite a second close. */ export type CloseSettlement = { readonly note: string; readonly initiativeClosed: boolean; readonly offersDone: boolean; readonly offersRevision: boolean };
 const CLOSE_SETTLEMENTS: Readonly<Record<MutationOutcome["outcome"], CloseSettlement>> = {
   accepted: { note: "This initiative is closed. The disposition is recorded, the surface that read it now states the closure, and every item of work it owns that was still open stays outstanding.", initiativeClosed: true, offersDone: true, offersRevision: false },
   alreadyAccepted: { note: "This attempt was already accepted, so the stored result is shown and nothing was closed a second time.", initiativeClosed: true, offersDone: true, offersRevision: false },
@@ -218,8 +217,6 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
     onClosed?.(outcome);
   };
   const settlement = settled === null ? null : closeSettlement(settled.outcome);
-  const untouched = initialFormValues(preservedDisposition);
-  const hasEntries = phase === "review" || values.disposition !== untouched.disposition || values.handoffChoice !== null || values.coveringNote.trim() !== "" || values.recipient.trim() !== "" || values.handoffNote.trim() !== "";
   const closeDialog = (): void => {
     reportedRef.current = null;
     setValues(initialFormValues(preservedDisposition));
@@ -236,7 +233,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
       return;
     }
     if (submitting) return;
-    if (settlement?.initiativeClosed !== true && hasEntries) return setDiscardArmed(true);
+    if (settlement?.initiativeClosed !== true && (phase === "review" || values.disposition !== initialFormValues(preservedDisposition).disposition || values.handoffChoice !== null || values.coveringNote.trim() !== "" || values.recipient.trim() !== "" || values.handoffNote.trim() !== "")) return setDiscardArmed(true);
     closeDialog();
   };
   const requestClose = (): void => handleOpenChange(false);
@@ -262,7 +259,6 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
   if (view === null) return null;
   const choiceAnnouncement = !ownsUnfinishedWork ? "" : values.handoffChoice === null ? "" : values.handoffChoice === "covering" ? `A field appeared: ${COVERING_NOTE_LABEL}.` : `Fields appeared: ${RECIPIENT_LABEL}, then ${HANDOFF_NOTE_LABEL}.`;
   const dispositionDescription = view.preservedDisposition === null ? CLOSURE_COPY.dispositionRequiredNote : `${CLOSURE_COPY.dispositionRequiredNote} The closure it recorded already states “${dispositionFallback(view.preservedDisposition)}”, and that value is kept here so it is never replaced silently.`;
-  const dispositionRequired = !(ownsUnfinishedWork && values.handoffChoice === "eligible-handoff");
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent data-slot="close-initiative-dialog" data-phase={phase} className={cn("sm:max-w-lg", className)}>
@@ -317,7 +313,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
               }}
             >
               {errors === null ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={3} />}
-              <FormField name="disposition" label={DISPOSITION_LABEL} description={dispositionDescription} error={errors?.byField.disposition} required={dispositionRequired}>
+              <FormField name="disposition" label={DISPOSITION_LABEL} description={dispositionDescription} error={errors?.byField.disposition} required={!(ownsUnfinishedWork && values.handoffChoice === "eligible-handoff")}>
                 {(field) =>
                   view.dispositions.length === 0 ? (
                     <Input id={field.id} name="disposition" type="text" autoComplete="off" maxLength={DISPOSITION_MAX_LENGTH} value={values.disposition} {...controlAria(field)} onChange={(event) => update({ disposition: event.currentTarget.value })} />

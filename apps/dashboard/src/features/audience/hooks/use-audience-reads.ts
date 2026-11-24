@@ -33,9 +33,8 @@ function searchOf(params: QueryParams): string {
   return encoded === "" ? "" : `?${encoded}`;
 }
 const staleTimeOf = (result: ReadResult<unknown> | undefined): number => (result?.kind === "envelope" ? READ_STALE_TIME_MS : 0);
-async function readOnce<TData, TCoverage extends Coverage = Coverage>(endpoint: string, params: QueryParams): Promise<ReadResult<ReadEnvelope<TData, TCoverage>>> {
-  return fetchReadOrOutage<TData, TCoverage>({ url: `${endpoint}${searchOf(params)}`, admits: isRecord, source: handlerSource(endpoint), guidance: TRANSPORT_GUIDANCE });
-} /** What {@link useAudience} needs: the authority to read under, and the read's own paging state. */
+const readOnce = async <TData, TCoverage extends Coverage = Coverage>(endpoint: string, params: QueryParams): Promise<ReadResult<ReadEnvelope<TData, TCoverage>>> =>
+  fetchReadOrOutage<TData, TCoverage>({ url: `${endpoint}${searchOf(params)}`, admits: isRecord, source: handlerSource(endpoint), guidance: TRANSPORT_GUIDANCE }); /** What {@link useAudience} needs: the authority to read under, and the read's own paging state. */
 export type UseAudienceParams = { readonly scope: Scope; readonly query?: AudienceQuery };
 /** Reads the publisher's audience for the one purpose this release keeps memberships for. Answers `envelope`, `denied` or `unavailable`, unchanged. */ export function useAudience({ scope, query = {} }: UseAudienceParams): UseQueryResult<ReadResult<AudienceEnvelope>> {
   const params: QueryParams = { ...(query.publisherId === undefined ? {} : { publisherId: query.publisherId }), ...pageParams(query) };

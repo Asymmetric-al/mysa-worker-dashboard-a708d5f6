@@ -1,5 +1,4 @@
-/** `runReport` — the one financial computation in this application, and the only place a received-support figure is filtered, summed, bucketed, compared or paged. */
-import { Temporal } from "temporal-polyfill";
+/** `runReport` — the one financial computation in this application, and the only place a received-support figure is filtered, summed, bucketed, compared or paged. */ import { Temporal } from "temporal-polyfill";
 import type { SourceReference } from "../../lib/ids";
 import type { Coverage, GiftAttribution, SupportGoalRecord, ValueState } from "../data-service/envelope";
 import { addMinor, compareMinor, minorUnitsOf, negateMinor, type MinorUnits, type Money } from "../money/amount";
@@ -22,8 +21,7 @@ export const SORT_FIELDS = ["originalGiftOn", "amountMinor", "designation"] as c
 export type SortField = (typeof SORT_FIELDS)[number];
 export const SORT_DIRECTIONS = ["asc", "desc"] as const;
 export type SortDirection = (typeof SORT_DIRECTIONS)[number];
-/** The exact authority a report is computed under: the four references that are separately owned and never interchangeable. */
-export type ReportScope = { readonly organizationId: string; readonly ministryId: string; readonly supportSubjectId: string; readonly principalId: string };
+/** The exact authority a report is computed under: the four references that are separately owned and never interchangeable. */ export type ReportScope = { readonly organizationId: string; readonly ministryId: string; readonly supportSubjectId: string; readonly principalId: string };
 export type CurrencySelection = { readonly kind: "all" } | { readonly kind: "one"; readonly currency: string };
 export type ReportPeriod = { readonly kind: "preset"; readonly preset: PeriodPreset } | { readonly kind: "explicit"; readonly from: CivilDate; readonly to: CivilDate } | { readonly kind: "year"; readonly year: number };
 export type ReportPartnerSelection = { readonly kind: "partner"; readonly partnerId: string } | { readonly kind: "anonymous" } | { readonly kind: "unresolved" };
@@ -214,13 +212,10 @@ export interface Snapshot {
   readonly lastSourceUpdate: string;
   readonly source: SourceReference;
 }
-/** The window a paged collection serves: the page the read answered with, the row count served, and how many pages the whole result fills. */
-export type PageWindow = { readonly index: number; readonly size: number; readonly totalPages: number };
+/** The window a paged collection serves: the page the read answered with, the row count served, and how many pages the whole result fills. */ export type PageWindow = { readonly index: number; readonly size: number; readonly totalPages: number };
 /** One designation the whole filtered result carries, with the state the count of its rows is stated in. */ export type DesignationFacetValue = { readonly designation: string } & StatedCount;
-/** One attribution the whole filtered result carries: a partner's own reference, or the kind when no partner is named, with the state the count of its rows is stated in. */
-export type AttributionFacetValue = { readonly attribution: GiftAttribution } & StatedCount;
-/** The values the whole filtered result contains, stated so a filter offers every value that result holds rather than the values one page happens to show. */
-export type ReportFacets = { readonly designations: readonly DesignationFacetValue[]; readonly attributions: readonly AttributionFacetValue[] };
+/** One attribution the whole filtered result carries: a partner's own reference, or the kind when no partner is named, with the state the count of its rows is stated in. */ export type AttributionFacetValue = { readonly attribution: GiftAttribution } & StatedCount;
+/** The values the whole filtered result contains, stated so a filter offers every value that result holds rather than the values one page happens to show. */ export type ReportFacets = { readonly designations: readonly DesignationFacetValue[]; readonly attributions: readonly AttributionFacetValue[] };
 /** The result of a run that requested the facet projection: the same figures every surface reads, with the values the ledger's filters can offer. */ export type FacetsReportResult = ReportResult & { readonly facets: ReportFacets };
 export interface ReportResult {
   readonly snapshot: Snapshot;
@@ -386,9 +381,7 @@ function deduplicateAtGrain(rows: readonly GiftRow[]): readonly GiftRow[] {
   }
   return kept;
 }
-function sortPreparedRows(rows: readonly PreparedRow[], sort: ReportQuery["sort"]): readonly PreparedRow[] {
-  return [...rows].sort((left, right) => compareRows(left, right, sort));
-}
+const sortPreparedRows = (rows: readonly PreparedRow[], sort: ReportQuery["sort"]): readonly PreparedRow[] => [...rows].sort((left, right) => compareRows(left, right, sort));
 function compareRows(left: PreparedRow, right: PreparedRow, sort: ReportQuery["sort"]): number {
   if (sort === undefined) {
     const byDay = right.dayKey - left.dayKey;
@@ -398,18 +391,14 @@ function compareRows(left: PreparedRow, right: PreparedRow, sort: ReportQuery["s
   const primary = sort.field === "originalGiftOn" ? signOf(left.dayKey - right.dayKey, descending) : sort.field === "amountMinor" ? signOf(compareAmounts(left.row.amount, right.row.amount), descending) : compareText(left.row.designation, right.row.designation, descending);
   return primary === 0 ? compareIdentifiers(left.row.giftRowId, right.row.giftRowId) : primary;
 }
-function compareText(left: string | undefined, right: string | undefined, descending: boolean): number {
-  return left === undefined && right === undefined ? 0 : left === undefined ? 1 : right === undefined ? -1 : signOf(compareIdentifiers(left, right), descending);
-}
+const compareText = (left: string | undefined, right: string | undefined, descending: boolean): number => (left === undefined && right === undefined ? 0 : left === undefined ? 1 : right === undefined ? -1 : signOf(compareIdentifiers(left, right), descending));
 function compareAmounts(left: Money, right: Money): number {
   if (left.currency !== right.currency) return compareIdentifiers(left.currency, right.currency);
   if (isKnownCurrency(left.currency)) return compareMinor(left, right);
   return left.minorUnits === right.minorUnits ? 0 : left.minorUnits < right.minorUnits ? -1 : 1;
 }
 const signOf = (order: number, descending: boolean): number => (descending ? -order : order);
-function compareIdentifiers(left: string, right: string): number {
-  return left === right ? 0 : left < right ? -1 : 1;
-}
+const compareIdentifiers = (left: string, right: string): number => (left === right ? 0 : left < right ? -1 : 1);
 type CurrencyAggregate = { total: Money | undefined; readonly giftIds: Set<string>; allocationCount: number; readonly donorIds: Set<string> };
 function currenciesOf(rows: readonly PreparedRow[], selection: CurrencySelection): readonly string[] {
   const codes = new Set<string>();
@@ -485,8 +474,7 @@ function windowRows<T>(items: readonly T[], page: ReportQuery["page"]): Windowed
   return { items: items.slice(start, start + size), page: { index, size, totalPages } };
 }
 type ComparisonInput = { readonly period: PeriodRange; readonly baseline: PeriodRange; readonly coverage: Coverage; readonly current: readonly PreparedRow[]; readonly baselineRows: readonly PreparedRow[] };
-/** How many contributor changes of one currency a comparison states: the whole count and the reconciliation are computed over every change, while only the largest are stated, because an unbounded list made one report page tens of megabytes. */
-export const CONTRIBUTOR_DELTA_LIMIT = 25;
+/** How many contributor changes of one currency a comparison states: the whole count and the reconciliation are computed over every change, while only the largest are stated, because an unbounded list made one report page tens of megabytes. */ export const CONTRIBUTOR_DELTA_LIMIT = 25;
 function buildComparison(input: ComparisonInput): ReportComparison {
   const current = sumKnownByCurrency(input.current);
   const baseline = sumKnownByCurrency(input.baselineRows);
@@ -518,9 +506,8 @@ function sumKnownByCurrency(rows: readonly PreparedRow[]): Map<string, Money> {
   return totals;
 }
 const directionOf = (minorUnits: MinorUnits): "increase" | "decrease" | "unchanged" => (minorUnits > 0 ? "increase" : minorUnits < 0 ? "decrease" : "unchanged");
-function comparisonValueState(current: Money, baseline: Money, coverage: Coverage): ValueState {
-  return coverage.state === "unknown" ? "unknown" : coverage.state === "partial" ? "incomplete-subtotal" : compareMinor(current, zeroMoney(current.currency)) === 0 && compareMinor(baseline, zeroMoney(baseline.currency)) === 0 ? "zero" : "value";
-}
+const comparisonValueState = (current: Money, baseline: Money, coverage: Coverage): ValueState =>
+  coverage.state === "unknown" ? "unknown" : coverage.state === "partial" ? "incomplete-subtotal" : compareMinor(current, zeroMoney(current.currency)) === 0 && compareMinor(baseline, zeroMoney(baseline.currency)) === 0 ? "zero" : "value";
 type ContributorAccumulator = { readonly attribution: GiftAttribution; readonly current: Map<string, Money>; readonly baseline: Map<string, Money> };
 const ATTRIBUTION_ORDER = ["partner", "anonymous", "unresolved"] as const satisfies readonly GiftAttribution["kind"][];
 function buildContributorDeltas(current: readonly PreparedRow[], baselineRows: readonly PreparedRow[]): readonly ContributorDelta[] {
@@ -550,8 +537,7 @@ function accumulateContributor(accumulators: Map<string, ContributorAccumulator>
   totals.set(currency, running === undefined ? row.amount : addMinor(running, row.amount));
 }
 const contributorFor = (accumulators: Map<string, ContributorAccumulator>, attribution: GiftAttribution): ContributorAccumulator => forKey(accumulators, attributionKey(attribution), () => ({ attribution, current: new Map<string, Money>(), baseline: new Map<string, Money>() }));
-/** The value a map holds for one key, built by the caller's own factory the first time it is asked for: a currency, bucket or contributor tally is created once per read. */
-function forKey<Value>(map: Map<string, Value>, key: string, create: () => Value): Value {
+/** The value a map holds for one key, built by the caller's own factory the first time it is asked for: a currency, bucket or contributor tally is created once per read. */ function forKey<Value>(map: Map<string, Value>, key: string, create: () => Value): Value {
   const existing = map.get(key);
   if (existing !== undefined) return existing;
   const created = create();
@@ -564,8 +550,7 @@ function compareContributorDeltas(left: ContributorDelta, right: ContributorDelt
   const byKind = ATTRIBUTION_ORDER.indexOf(left.attribution?.kind ?? "partner") - ATTRIBUTION_ORDER.indexOf(right.attribution?.kind ?? "partner");
   return byKind !== 0 ? byKind : compareIdentifiers(left.partnerId ?? "", right.partnerId ?? "");
 }
-/** The whole number of contributor changes the comparison counted in each currency, whatever the stated list holds, so a surface can state how many changes it is not listing. */
-function contributorDeltaCountsOf(deltas: readonly ContributorDelta[]): Readonly<Record<string, number>> {
+/** The whole number of contributor changes the comparison counted in each currency, whatever the stated list holds, so a surface can state how many changes it is not listing. */ function contributorDeltaCountsOf(deltas: readonly ContributorDelta[]): Readonly<Record<string, number>> {
   const counts: Record<string, number> = {};
   for (const delta of deltas) counts[delta.currency] = (counts[delta.currency] ?? 0) + 1;
   return counts;
@@ -652,8 +637,7 @@ export function matrixDrilldownQuery(query: ReportQuery, attribution: GiftAttrib
 }
 const attributionKey = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? `partner:${attribution.partnerId}` : attribution.kind);
 const labelOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? attribution.partnerId : attribution.kind === "anonymous" ? ANONYMOUS_LABEL : UNRESOLVED_LABEL);
-/** The matrix's one order — partners by their own reference, then the two unnamed attributions — taken over the whole result so a served page is a slice of that one ordering. */
-function compareAttributions(left: GiftAttribution, right: GiftAttribution): number {
+/** The matrix's one order — partners by their own reference, then the two unnamed attributions — taken over the whole result so a served page is a slice of that one ordering. */ function compareAttributions(left: GiftAttribution, right: GiftAttribution): number {
   const byKind = ATTRIBUTION_ORDER.indexOf(left.kind) - ATTRIBUTION_ORDER.indexOf(right.kind);
   return byKind !== 0 ? byKind : compareIdentifiers(left.kind === "partner" ? left.partnerId : "", right.kind === "partner" ? right.partnerId : "");
 }
@@ -696,8 +680,7 @@ function collectValueStates(input: ValueStateInput): Readonly<Record<string, Val
   return states;
 }
 type AttributionCount = { readonly attribution: GiftAttribution; count: number };
-/** The values one filtered result holds, counted over the same rows its summary is computed from: a designation its rows carry and an attribution they name, each with the state its count is stated in. */
-function buildFacets(rows: readonly PreparedRow[], coverage: Coverage): ReportFacets {
+/** The values one filtered result holds, counted over the same rows its summary is computed from: a designation its rows carry and an attribution they name, each with the state its count is stated in. */ function buildFacets(rows: readonly PreparedRow[], coverage: Coverage): ReportFacets {
   const designations = new Map<string, number>();
   const attributions = new Map<string, AttributionCount>();
   for (const { row } of rows) {

@@ -15,5 +15,4 @@ const WRITES = {
   withdrawPage: (raw, { operationId, sessionId }) => dispatch(withdrawPageBodySchema, raw, operationId, "operation", (input) => mutations.pages.withdrawPage(sessionId, input)),
   withdrawLocale: (raw, { operationId, sessionId }) => dispatch(withdrawLocaleBodySchema, raw, operationId, "operation", (input) => mutations.pages.withdrawLocale(sessionId, input)),
 } satisfies Readonly<Record<(typeof WITHDRAW_OPERATIONS)[number], ClaimedWrite>>;
-const withdrawEdition = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: withdrawEdition });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES) });

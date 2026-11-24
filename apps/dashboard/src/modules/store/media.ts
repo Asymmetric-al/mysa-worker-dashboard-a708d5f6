@@ -1,7 +1,8 @@
 import { open, rm, stat, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { writeBytesAtomic } from "./atomic";
-import { DATA_ROOT, isSafeSessionId } from "./paths";
+import { isSafeSessionId } from "@/lib/session-cookie";
+import { DATA_ROOT } from "./paths";
 export const MEDIA_ROOT: string = join(DATA_ROOT, "media");
 const FIXTURES_LANE = "fixtures";
 const UPLOADS_LANE = "uploads";
@@ -44,8 +45,7 @@ export async function statMediaBytes(reference: string): Promise<number | undefi
     return undefined;
   }
 }
-/** One inclusive byte window of one custody file: the exact bytes one response carries. A window whose end precedes its start names no byte at all, which is how a zero-byte rendition is answered. */
-export type MediaByteWindow = { readonly start: number; readonly end: number };
+/** One inclusive byte window of one custody file: the exact bytes one response carries. A window whose end precedes its start names no byte at all, which is how a zero-byte rendition is answered. */ export type MediaByteWindow = { readonly start: number; readonly end: number };
 /** Reads one inclusive byte window of one custody file, so a request for a few hundred kilobytes costs those kilobytes rather than the whole rendition. Answers `undefined` exactly where reading the whole file did — a reference outside the custody tree, an unreadable file, or a file shorter than the window the caller probed — because the caller answers all three with the same unavailable source. */
 export async function readMediaBytes(reference: string, window: MediaByteWindow): Promise<Uint8Array | undefined> {
   const length = window.end - window.start + 1;

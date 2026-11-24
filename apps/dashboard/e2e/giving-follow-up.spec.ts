@@ -1,5 +1,4 @@
-/** Criterion 8 — giving follow-up: a gift leads to one ordinary task, and to nothing else. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 8 — giving follow-up: a gift leads to one ordinary task, and to nothing else. */ import type { Locator, Page } from "@playwright/test";
 import { expect, listTotalOf, test } from "../playwright.config";
 const GIFTS_HREF = "/support/gifts";
 const WORK_HREF = "/work";
@@ -29,8 +28,7 @@ function minorUnitsFrom(displayed: string): number {
   const stripped = displayed.replace(/\(incomplete\)/gu, "").trim();
   const negative = stripped.startsWith("-");
   const [whole = "", fraction = ""] = (negative ? stripped.slice(1) : stripped).split(".");
-  const integer = whole.replace(/,/gu, "");
-  const digits = `${integer}${fraction}`;
+  const digits = `${whole.replace(/,/gu, "")}${fraction}`;
   const units = Number(digits);
   if (!/^\d+$/u.test(digits) || !Number.isSafeInteger(units)) throw new Error(`The amount this surface displayed, ${JSON.stringify(displayed)}, is not one this file can read as an exact number of minor units. A figure that cannot be read exactly is not compared approximately.`);
   return negative ? -units : units;

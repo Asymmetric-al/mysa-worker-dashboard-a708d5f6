@@ -1,5 +1,4 @@
-/** Whole-query agreement among every financial surface: the domain half of success criterion 1. */
-import { beforeEach, describe, expect, it } from "vitest";
+/** Whole-query agreement among every financial surface: the domain half of success criterion 1. */ import { beforeEach, describe, expect, it } from "vitest";
 import { Temporal } from "temporal-polyfill";
 import type { Coverage, GiftRowRecord, SupportGoalRecord } from "@/modules/data-service/envelope";
 import { DEFAULT_SESSION_ID, seed, type SessionStateDocument } from "@/modules/dev-runtime/seed";
@@ -27,8 +26,8 @@ function scopeOf(source: SessionStateDocument): ReportQuery["scope"] {
   return { organizationId: selectedOrganizationId, ministryId: selectedMinistryId, supportSubjectId: selectedSupportSubjectId, principalId: context.principalId };
 }
 const day = (value: string): Temporal.PlainDate => Temporal.PlainDate.from(value);
-function giftRowsOf(records: readonly GiftRowRecord[]): readonly GiftRow[] {
-  return records.map((record) => ({
+const giftRowsOf = (records: readonly GiftRowRecord[]): readonly GiftRow[] =>
+  records.map((record) => ({
     giftRowId: record.giftRowId,
     giftId: record.giftId,
     ...(record.allocationId === null ? {} : { allocationId: record.allocationId }),
@@ -41,7 +40,6 @@ function giftRowsOf(records: readonly GiftRowRecord[]): readonly GiftRow[] {
     provenance: record.provenance,
     entryOn: Temporal.PlainDate.from(record.entryOn),
   }));
-}
 type ProjectionShape = { readonly coverage?: Coverage; readonly gifts?: readonly GiftRow[]; readonly goal?: SupportGoalRecord | null; readonly asOf?: string };
 function projectionOf(source: SessionStateDocument, shape: ProjectionShape = {}): SupportProjection {
   const record = source.supportProjection;
@@ -93,8 +91,7 @@ function printedColumnIndex(model: PrintModel, header: string): number {
 const printedCell = (row: PrintRow, index: number, header: string): PrintCell => required(row[index], `the "${header}" cell of a printed row`);
 const printedSummaryLineOf = (model: PrintModel, currency: string) => model.summary.find((candidate) => candidate.label.endsWith(`(${currency})`)) ?? throwing(`the print model's ${currency} summary line`);
 const printedFact = (model: PrintModel, field: string): string => (model.facts.find((candidate) => candidate.field === field) ?? throwing(`the print model's "${field}" snapshot fact`)).value;
-/** Every value of one kind a result carries at any depth, so a whole answer is checked without naming each path. */
-function collectFrom(value: unknown, pick: (held: Readonly<Record<string, unknown>>) => string | number | undefined, found: (string | number)[] = []): readonly (string | number)[] {
+/** Every value of one kind a result carries at any depth, so a whole answer is checked without naming each path. */ function collectFrom(value: unknown, pick: (held: Readonly<Record<string, unknown>>) => string | number | undefined, found: (string | number)[] = []): readonly (string | number)[] {
   if (Array.isArray(value)) {
     for (const item of value) collectFrom(item, pick, found);
     return found;
@@ -110,8 +107,7 @@ const collectMinorUnits = (value: unknown): readonly number[] => collectFrom(val
 const collectCurrencies = (value: unknown): readonly string[] => collectFrom(value, (held) => (typeof held["currency"] === "string" && typeof held["minorUnits"] === "number" ? held["currency"] : undefined)) as readonly string[]; // The same walk as `collectMinorUnits`: one traversal, told what to pick from each object.
 const BULK_ROW_COUNT = 120;
 const BULK_FIRST_DAY = "2026-01-01";
-/** One row per day from a fixed first day, each naming its own partner: the shape the bulk and matrix worlds are built from. */
-function syntheticGiftRows(prefix: string, count: number, minorUnits: number, partnerOf: (index: number) => string): readonly GiftRow[] {
+/** One row per day from a fixed first day, each naming its own partner: the shape the bulk and matrix worlds are built from. */ function syntheticGiftRows(prefix: string, count: number, minorUnits: number, partnerOf: (index: number) => string): readonly GiftRow[] {
   const origin = day(BULK_FIRST_DAY);
   return Array.from({ length: BULK_ROW_COUNT }, (_unused, index) => {
     const giftId = `gift-bulk-${String(index).padStart(4, "0")}`;
@@ -131,24 +127,18 @@ const matrixGiftRows = (count: number): readonly GiftRow[] => syntheticGiftRows(
 const matrixProjectionOf = (source: SessionStateDocument): SupportProjection => projectionOf(source, { coverage: { from: PERIOD_FROM, to: PERIOD_TO, state: "complete" }, gifts: matrixGiftRows(MATRIX_PARTNER_COUNT) });
 type MatrixModel = NonNullable<ReportResult["matrix"]>;
 type MatrixRowModel = MatrixModel["rows"][number];
-/** The matrix report once per case: the query, the result and the model it states. */
-function matrixOf(): { result: ReportResult; matrix: MatrixModel; projection: SupportProjection } {
+/** The matrix report once per case: the query, the result and the model it states. */ function matrixOf(): { result: ReportResult; matrix: MatrixModel; projection: SupportProjection } {
   const projection = projectionOf(document);
   const result = run(queryOf(document, { reportId: "partner-month-matrix" }), projection);
   return { result, matrix: required(result.matrix, "the partner-by-month matrix"), projection };
 }
-/** One row of the matrix, by the partner it states. */
-const matrixRowOf = (matrix: MatrixModel, partnerId: string, what: string): MatrixRowModel => firstWhere(matrix.rows, "partnerId", partnerId, what);
-/** One cell of a matrix row, by the currency and the month it starts. */
-const cellOf = (row: MatrixRowModel, currency: string, bucketStart: string, what: string) => row.cells.find((cell) => cell.currency === currency && cell.bucketStart.toString() === bucketStart) ?? throwing(what);
+/** One row of the matrix, by the partner it states. */ const matrixRowOf = (matrix: MatrixModel, partnerId: string, what: string): MatrixRowModel => firstWhere(matrix.rows, "partnerId", partnerId, what);
+/** One cell of a matrix row, by the currency and the month it starts. */ const cellOf = (row: MatrixRowModel, currency: string, bucketStart: string, what: string) => row.cells.find((cell) => cell.currency === currency && cell.bucketStart.toString() === bucketStart) ?? throwing(what);
 /** The query one matrix cell stands for, derived exactly the way the matrix's own link derives it. */
 const drilldownOf = (result: ReportResult, row: MatrixRowModel, cell: MatrixRowModel["cells"][number]): ReportQuery => matrixDrilldownQuery(result.snapshot.query, row.attribution, cell.currency, cell.bucketStart, cell.bucketEnd);
-/** The owner a matrix cell belongs to: a partner's own reference, or the kind when no partner is named. */
-const matrixOwnerOf = (attribution: GiftRow["attribution"]): string => (attribution.kind === "partner" ? `partner:${attribution.partnerId}` : attribution.kind);
-/** The key one attribution and month share, so a cell and the result rows behind it are compared by identity rather than by a second sum. */
-const matrixCellKey = (attribution: GiftRow["attribution"], bucketStart: Temporal.PlainDate): string => `${matrixOwnerOf(attribution)}:${bucketStart.toString()}`;
-/** The key of the cell a result row belongs to, resolved from that row's own original gift date. */
-function matrixCellKeyOfRow(matrix: MatrixModel, row: GiftRow): string {
+/** The owner a matrix cell belongs to: a partner's own reference, or the kind when no partner is named. */ const matrixOwnerOf = (attribution: GiftRow["attribution"]): string => (attribution.kind === "partner" ? `partner:${attribution.partnerId}` : attribution.kind);
+/** The key one attribution and month share, so a cell and the result rows behind it are compared by identity rather than by a second sum. */ const matrixCellKey = (attribution: GiftRow["attribution"], bucketStart: Temporal.PlainDate): string => `${matrixOwnerOf(attribution)}:${bucketStart.toString()}`;
+/** The key of the cell a result row belongs to, resolved from that row's own original gift date. */ function matrixCellKeyOfRow(matrix: MatrixModel, row: GiftRow): string {
   const giftedOn = required(row.originalGiftOn, "a result row's original gift date");
   const month = matrix.months.find((candidate) => Temporal.PlainDate.compare(giftedOn, candidate.start) >= 0 && Temporal.PlainDate.compare(giftedOn, candidate.end) <= 0) ?? throwing("A result row falls in no month the matrix lists, so the cell it belongs to cannot be named.");
   return matrixCellKey(row.attribution, month.start);

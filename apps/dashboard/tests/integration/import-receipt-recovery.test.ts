@@ -1,5 +1,4 @@
-/** Contact import's durable recovery (success criterion 4; AAP 0.11.1's `import-receipt-recovery` row, 0.12.1's import criterion and 0.12.5's lost-acknowledgement arming on `acceptImportRows`). */
-import { Buffer } from "node:buffer";
+/** Contact import's durable recovery (success criterion 4; AAP 0.11.1's `import-receipt-recovery` row, 0.12.1's import criterion and 0.12.5's lost-acknowledgement arming on `acceptImportRows`). */ import { Buffer } from "node:buffer";
 import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isRecord } from "@/lib/guards";
@@ -12,8 +11,7 @@ import { IMPORT_ROW_RESULT_STATES, readStoredReceipt, type ImportReceipt } from 
 import type { SessionDocuments } from "@/modules/store/paths";
 import { readSession, resetSession } from "@/modules/store/repository";
 import { expectEnvelope, expectOutcome, firstSaying, requiredSaying } from "../helpers/answers";
-/** A single path segment, so the store accepts it, and unique to this file, so a sibling suite never shares it. */
-const SESSION_ID = "it-import-receipt";
+/** A single path segment, so the store accepts it, and unique to this file, so a sibling suite never shares it. */ const SESSION_ID = "it-import-receipt";
 const SESSION = { sessionId: SESSION_ID };
 const FIXTURE_NAME = "contacts-example.csv";
 const FIXTURE_BYTES = new Uint8Array(readFileSync(new URL("../../public/fixtures/contacts-example.csv", import.meta.url)));
@@ -22,17 +20,14 @@ const FIXTURE_BASE64 = Buffer.from(FIXTURE_BYTES).toString("base64");
 const CHANGED_ROW = "Imogen,Adeler,,,imogen.adeler@example.org,,,en,,,,";
 const NO_REVISION_TO_COMPARE = "no-import-in-flight";
 const CREATED_ROW = 1;
-/** The row that shares an email address with a contact the worker already holds, so it can reuse that identity. */
-const REUSED_ROW = 9;
+/** The row that shares an email address with a contact the worker already holds, so it can reuse that identity. */ const REUSED_ROW = 9;
 const REUSED_CONTACT_NAME = "Ruth Okafor";
 const CORRECTED_ROW = 12;
 const CORRECTED_COLUMN = 5;
 const CORRECTED_EMAIL = "nadia.rahman@example.org";
 const SKIPPED_ROW = 13;
-/** The worker's reason for leaving that row out, stated once so the recorded decision and the review agree. */
-const SKIP_REASON = "The row supplies no name for the contact, so nothing would be created for it.";
-/** A row the worker leaves undecided, which must be reported as still needing review rather than applied. */
-const UNDECIDED_ROW = 16;
+/** The worker's reason for leaving that row out, stated once so the recorded decision and the review agree. */ const SKIP_REASON = "The row supplies no name for the contact, so nothing would be created for it.";
+/** A row the worker leaves undecided, which must be reported as still needing review rather than applied. */ const UNDECIDED_ROW = 16;
 const FIXTURE_DATA_ROWS = 25;
 const FIXTURE_COLUMNS = 12;
 type ProposePayload = Parameters<typeof mutations.import.proposeImport>[0]["payload"];
@@ -61,20 +56,13 @@ const CONFIRMED_MAPPING: NonNullable<ProposePayload["confirmedMapping"]> = {
 };
 let documents: SessionDocuments | undefined;
 const seededDocuments = (): SessionDocuments => requiredSaying(documents, "the seeded documents are built in beforeAll, before any test establishes the session");
-/** The selected context of the seeded session, resolved by the service's own resolver rather than assembled here. */
-async function sessionScope(): Promise<Scope> {
+/** The selected context of the seeded session, resolved by the service's own resolver rather than assembled here. */ async function sessionScope(): Promise<Scope> {
   const resolved = await sessionOf(SESSION);
   if (resolved.selected === null) throw new Error(`the session ${JSON.stringify(SESSION_ID)} has selected no context, so no import could be reviewed in it`);
   return resolved.selected;
 }
 const storedDocuments = async (): Promise<SessionDocuments> => requiredSaying(await readSession(SESSION_ID), `the store holds no session ${JSON.stringify(SESSION_ID)}`);
-interface LostAcceptance {
-  readonly input: Parameters<typeof mutations.import.acceptImportRows>[0];
-  readonly first: MutationOutcome;
-  readonly replay: Extract<MutationOutcome, { outcome: "alreadyAccepted" }>;
-  readonly retried: Extract<MutationOutcome, { outcome: "alreadyAccepted" }>;
-  readonly receipt: ImportReceipt;
-}
+type LostAcceptance = { readonly input: Parameters<typeof mutations.import.acceptImportRows>[0]; readonly first: MutationOutcome; readonly replay: Extract<MutationOutcome, { outcome: "alreadyAccepted" }>; readonly retried: Extract<MutationOutcome, { outcome: "alreadyAccepted" }>; readonly receipt: ImportReceipt };
 async function partnerTotal(): Promise<number> {
   const page = expectEnvelope(await reads.partners.findPartners({ page: { index: 0, size: 200 } }, SESSION), "the partner roster").data;
   return page.total;
@@ -86,21 +74,18 @@ async function membershipRecords(): Promise<readonly unknown[]> {
   if (!Array.isArray(memberships)) throw new Error("the session's state document holds no membership collection, so an invented consent could not be detected");
   return memberships;
 }
-/** The existing contact the reused row shares an email address with, resolved through the roster rather than assumed. */
-async function reusedIdentity(): Promise<{ system: string; reference: string }> {
+/** The existing contact the reused row shares an email address with, resolved through the roster rather than assumed. */ async function reusedIdentity(): Promise<{ system: string; reference: string }> {
   const page = expectEnvelope(await reads.partners.findPartners({ search: "Ruth Okafor", page: { index: 0, size: 50 } }, SESSION), "the partner roster").data;
   const [row] = page.rows;
   if (row === undefined || page.total !== 1) throw new Error(`expected exactly one contact named ${JSON.stringify(REUSED_CONTACT_NAME)}, and the roster reported ${String(page.total)}`);
   return { system: LOCAL_STORE_SYSTEM, reference: row.partner.partnerId };
 }
-async function reviewedDecisions(): Promise<AcceptPayload["decisions"]> {
-  return [
-    { kind: "create", rowNumber: CREATED_ROW },
-    { kind: "reuse", rowNumber: REUSED_ROW, candidate: await reusedIdentity() },
-    { kind: "create", rowNumber: CORRECTED_ROW, corrections: [{ columnNumber: CORRECTED_COLUMN, value: CORRECTED_EMAIL }] },
-    { kind: "skip", rowNumber: SKIPPED_ROW, reason: SKIP_REASON },
-  ];
-}
+const reviewedDecisions = async (): Promise<AcceptPayload["decisions"]> => [
+  { kind: "create", rowNumber: CREATED_ROW },
+  { kind: "reuse", rowNumber: REUSED_ROW, candidate: await reusedIdentity() },
+  { kind: "create", rowNumber: CORRECTED_ROW, corrections: [{ columnNumber: CORRECTED_COLUMN, value: CORRECTED_EMAIL }] },
+  { kind: "skip", rowNumber: SKIPPED_ROW, reason: SKIP_REASON },
+];
 type ReviewedImport = { readonly scope: Scope; readonly importOperationId: string; readonly revision: string; readonly fileFingerprint: string; readonly recordedDecisions: AcceptPayload["decisions"] };
 async function reviewTheFixtureFile(): Promise<ReviewedImport> {
   const scope = await sessionScope();
@@ -120,8 +105,7 @@ async function armLostAcknowledgement(): Promise<void> {
   const armed = await mutations.dev.setFailurePlan({ operationId: newOperationId(), scope: state.scope, expectedRevision: state.revision, payload: { mode: "unknown", target: { kind: "mutation", name: "acceptImportRows" } } }, SESSION);
   expectOutcome(armed, "accepted");
 }
-/** Disarms whatever is armed, so one test's simulated failure never reaches the next one. */
-async function clearFailurePlan(): Promise<void> {
+/** Disarms whatever is armed, so one test's simulated failure never reaches the next one. */ async function clearFailurePlan(): Promise<void> {
   const state = await reads.dev.readDevState(SESSION);
   if (state.kind !== "envelope") return;
   const armed = state.envelope.data.failurePlan.armed;
@@ -305,8 +289,7 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
   it("publishes the file fingerprint, the recorded decisions and a reconciled summary an acceptance takes", async () => {
     const { scope } = await reviewTheFixtureFile();
     const inFlight = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal in flight").data; // A second decision, so what the read publishes is more than the one skip the review already holds.
-    const decided = await mutations.import.setRowDecision({ operationId: newOperationId(), scope, expectedRevision: inFlight.revision, payload: { kind: "create", rowNumber: CREATED_ROW } }, SESSION);
-    expectOutcome(decided, "accepted");
+    expectOutcome(await mutations.import.setRowDecision({ operationId: newOperationId(), scope, expectedRevision: inFlight.revision, payload: { kind: "create", rowNumber: CREATED_ROW } }, SESSION), "accepted");
     const published = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal after two decisions").data;
     expect(published.fileFingerprint).toMatch(/^csv-1-[0-9a-f]{16}$/);
     expect(published.recordedDecisions).toEqual([

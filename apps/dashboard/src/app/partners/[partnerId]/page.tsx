@@ -31,8 +31,7 @@ const noticeCopyOf = (partnerId: string): ReadNoticeCopy => ({
   unavailable: { title: DETAIL_COPY.unavailable.title, body: DETAIL_COPY.unavailable.body, action: { label: PARTNER_ACTION_LABELS.retry, href: partnerHref(partnerId, "") } },
   refused: { title: DETAIL_COPY.refused.title, body: DETAIL_COPY.refused.body, action: { label: PARTNER_ACTION_LABELS.backToRoster, href: ROSTER_HREF } },
 });
-/** One partner's record: identity, permitted contact methods, restrictions, relationship context, real activity, private notes, open work and authorised support history. */
-export default async function PartnerDetailPage({ params }: { readonly params: Promise<{ partnerId: string }> }): Promise<ReactElement> {
+/** One partner's record: identity, permitted contact methods, restrictions, relationship context, real activity, private notes, open work and authorised support history. */ export default async function PartnerDetailPage({ params }: { readonly params: Promise<{ partnerId: string }> }): Promise<ReactElement> {
   const { partnerId } = await params;
   const result = await reads.partners.readPartner(partnerId);
   if (result.kind !== "envelope") return pageRefusalOf(result, noticeCopyOf(partnerId), 4);

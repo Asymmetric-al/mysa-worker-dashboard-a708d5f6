@@ -26,13 +26,11 @@ export type ContinuePolicyFacts = ReferralDetailView["continuationPolicy"];
 export type ContinueReferralActionProps = {
   readonly scope: Scope;
   readonly referral: ContinueReferralCycle;
-  /** The revision the read that answered this cycle published, taken from its envelope rather than from the row; the command presents it, so a cycle that moved settles as a conflict rather than as an overwrite. */
-  readonly expectedRevision: string;
+  /** The revision the read that answered this cycle published, taken from its envelope rather than from the row; the command presents it, so a cycle that moved settles as a conflict rather than as an overwrite. */ readonly expectedRevision: string;
   readonly continuationPolicy: ContinuePolicyFacts;
   readonly actions: readonly ReadAction[];
   readonly onCheckResult?: () => void;
-  /** What the action reports once its attempt stands: the surface that hosts it keeps the receipt after a later read stops offering a continuation this attempt has already taken. */
-  readonly onSettled?: (outcome: MutationOutcome) => void;
+  /** What the action reports once its attempt stands: the surface that hosts it keeps the receipt after a later read stops offering a continuation this attempt has already taken. */ readonly onSettled?: (outcome: MutationOutcome) => void;
   readonly headingLevel?: ReviewHeadingLevel;
   readonly dir?: "ltr" | "rtl";
   readonly className?: string;
@@ -53,8 +51,7 @@ function reportedContinuationOf(outcome: MutationOutcome | null): { readonly suc
   const identified = (stored === null ? null : stringMember(stored, "successorId")) ?? created;
   return identified === null ? null : { successorId: identified, endsAt: stored === null ? null : stringMember(stored, "windowEnd"), elapsedSeconds: stored === null ? null : numberMember(stored, "elapsedSeconds") };
 }
-/** The whole seconds between the two instants a record states, or null when either is absent or unreadable: a continuation is measured in elapsed seconds, so its figure is the distance between those instants. */
-function elapsedBetween(start: string | null, end: string | null): number | null {
+/** The whole seconds between the two instants a record states, or null when either is absent or unreadable: a continuation is measured in elapsed seconds, so its figure is the distance between those instants. */ function elapsedBetween(start: string | null, end: string | null): number | null {
   if (start === null || end === null) return null;
   const seconds = Math.round((Date.parse(end) - Date.parse(start)) / 1_000);
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
@@ -131,8 +128,7 @@ function ContinuedWindow({ labelId, successorId, endsAt, elapsedSeconds }: { rea
 }
 export function ContinueReferralAction({ scope, referral, expectedRevision, continuationPolicy, actions, onCheckResult, onSettled, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: ContinueReferralActionProps): ReactElement {
   const { mutateAsync } = useContinueReferral();
-  const headingId = useId();
-  const successorLabelId = useId();
+  const [headingId, successorLabelId] = [useId(), useId()];
   const [submitted, setSubmitted] = useState<ContinueInput | null>(null);
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
   const offered = actions.some((action) => action.name === "continueReferral" && action.available);

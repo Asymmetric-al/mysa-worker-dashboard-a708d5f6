@@ -49,13 +49,12 @@ function isCalendarDay(value: string): boolean {
 function refineCalendarDay(value: string, ctx: z.RefinementCtx): void {
   if (!isCalendarDay(value)) ctx.addIssue({ code: "custom", message: MESSAGES.dateInvalid });
 }
-const civilDaySchema = z.string({ error: MESSAGES.dateRequired }).trim().superRefine(refineCalendarDay);
 const isReportedCurrency = (value: string): boolean => value !== UNKNOWN_CURRENCY && isKnownCurrency(value);
 const goalSaveFormSchema = z.strictObject({
   currency: z.string({ error: MESSAGES.currencyRequired }).refine(isReportedCurrency, { error: MESSAGES.currencyRequired }),
   amount: z.string({ error: MESSAGES.amountRequired }),
   measure: z.literal(GOAL_MEASURE, { error: MESSAGES.measureInvalid }).default(GOAL_MEASURE),
-  effectiveFrom: civilDaySchema,
+  effectiveFrom: z.string({ error: MESSAGES.dateRequired }).trim().superRefine(refineCalendarDay),
 });
 export const goalSavePayloadSchema = goalSaveFormSchema.transform((form, ctx) => {
   const parsed = parseMajorToMinor(form.amount, form.currency);
@@ -84,7 +83,6 @@ const categorySchema = z
   })
   .optional()
   .transform((value) => (value === undefined || value.length === 0 ? undefined : value));
-const partnerIdSchema = z.string({ error: MESSAGES.partnerInvalid }).trim().min(1, MESSAGES.partnerInvalid);
 type FollowUpTaskKind = "default" | "meeting";
 const FOLLOW_UP_TASK_KINDS = ["default", "meeting"] as const satisfies readonly FollowUpTaskKind[];
 export const followUpTaskPayloadSchema = z.strictObject({
@@ -92,7 +90,7 @@ export const followUpTaskPayloadSchema = z.strictObject({
   title: titleSchema,
   category: categorySchema,
   dueOn: z.preprocess((value) => (typeof value === "string" && value.trim().length === 0 ? undefined : value), z.string({ error: MESSAGES.dateInvalid }).trim().superRefine(refineCalendarDay).optional()),
-  partnerId: partnerIdSchema.optional(),
+  partnerId: z.string({ error: MESSAGES.partnerInvalid }).trim().min(1, MESSAGES.partnerInvalid).optional(),
   kind: z.enum(FOLLOW_UP_TASK_KINDS, { error: MESSAGES.kindInvalid }).default("default"),
 });
 export type FollowUpTaskPayload = z.infer<typeof followUpTaskPayloadSchema>;

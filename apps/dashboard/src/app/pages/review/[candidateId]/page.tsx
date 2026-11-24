@@ -30,17 +30,15 @@ type ReviewedCandidate = {
   /** Whether the principal reading this page wrote the frozen revision, as the candidate read states it. */ readonly reviewedByAuthor: boolean;
   readonly headRelease: ReviewableCandidate["headRelease"];
 };
-function variantRecordOf(documentId: string, edition: EditionView): Parameters<typeof lifecycleOf>[0] {
-  return {
-    variantId: edition.variantId,
-    documentId,
-    audience: edition.audience,
-    locale: edition.locale,
-    ...(edition.draftRevisionId === null ? {} : { draftRevisionId: edition.draftRevisionId }),
-    ...(edition.candidateId === null ? {} : { candidateId: edition.candidateId }),
-    ...(edition.releaseHeadId === null ? {} : { releaseHeadId: edition.releaseHeadId }),
-  };
-}
+const variantRecordOf = (documentId: string, edition: EditionView): Parameters<typeof lifecycleOf>[0] => ({
+  variantId: edition.variantId,
+  documentId,
+  audience: edition.audience,
+  locale: edition.locale,
+  ...(edition.draftRevisionId === null ? {} : { draftRevisionId: edition.draftRevisionId }),
+  ...(edition.candidateId === null ? {} : { candidateId: edition.candidateId }),
+  ...(edition.releaseHeadId === null ? {} : { releaseHeadId: edition.releaseHeadId }),
+});
 function lifecycleOfEdition(documentId: string, edition: EditionView): ReviewEditionView["lifecycle"] {
   const derived = lifecycleOf(variantRecordOf(documentId, edition), edition.headRelease ?? undefined, { reviewDecision: edition.candidate?.decision ?? null });
   return edition.translation.status === "stale" && (derived === "draft" || derived === "not-started") ? "stale-translation" : derived;
@@ -48,21 +46,18 @@ function lifecycleOfEdition(documentId: string, edition: EditionView): ReviewEdi
 const pageFamilyOf = (family: PageLocalesEnvelope["data"]["document"]["family"]): ReviewDocumentView["family"] | undefined => (family === "worker-page" || family === "project-page" ? family : undefined);
 /** Whether the document the candidate was read from is a Page at all: the candidate envelope states its family, so the route settles that before it asks any Page read for an edition. */
 const isPageFamily = (family: CandidateData["document"]["family"]): family is ReviewDocumentView["family"] => pageFamilyOf(family) !== undefined;
-/** The review address of the same candidate on the family that owns it: the one action that completes a candidate this route cannot review. */
-const updateReviewHrefOf = (candidateId: string): string => `${UPDATE_REVIEW_HREF_PREFIX}${encodeURIComponent(candidateId)}`;
-function reviewedOf(data: ReviewableCandidate): ReviewedCandidate {
-  return {
-    variantId: data.variant.variantId,
-    candidateId: data.candidate.candidateId,
-    revisionId: data.candidate.revisionId,
-    contentChecksum: data.candidate.contentChecksum,
-    renderedHtml: data.renderedHtml,
-    mediaRenditions: data.placements.flatMap((placement) => placement.renditions.map((rendition) => ({ purpose: rendition.purpose, url: rendition.path }))),
-    decisionRecord: data.review.recorded,
-    reviewedByAuthor: data.review.reviewedByAuthor,
-    headRelease: data.headRelease,
-  };
-}
+/** The review address of the same candidate on the family that owns it: the one action that completes a candidate this route cannot review. */ const updateReviewHrefOf = (candidateId: string): string => `${UPDATE_REVIEW_HREF_PREFIX}${encodeURIComponent(candidateId)}`;
+const reviewedOf = (data: ReviewableCandidate): ReviewedCandidate => ({
+  variantId: data.variant.variantId,
+  candidateId: data.candidate.candidateId,
+  revisionId: data.candidate.revisionId,
+  contentChecksum: data.candidate.contentChecksum,
+  renderedHtml: data.renderedHtml,
+  mediaRenditions: data.placements.flatMap((placement) => placement.renditions.map((rendition) => ({ purpose: rendition.purpose, url: rendition.path }))),
+  decisionRecord: data.review.recorded,
+  reviewedByAuthor: data.review.reviewedByAuthor,
+  headRelease: data.headRelease,
+});
 function editionViewOf(edition: EditionView, documentId: string, reviewed: ReviewedCandidate | undefined): ReviewEditionView {
   const stated = { variantId: edition.variantId, locale: edition.locale, lifecycle: lifecycleOfEdition(documentId, edition), ...(edition.translation.status === "stale" ? { staleTranslation: true } : {}) };
   if (reviewed !== undefined && reviewed.variantId === edition.variantId)

@@ -4,10 +4,8 @@ import type { PresentationChoice } from "@/modules/content/document";
 import type { Reach } from "@/modules/content/reach";
 import type { VariantFamily } from "@/modules/content/variant";
 import { PAGE_SECTION_TYPES_BY_FAMILY, type PageSectionType } from "@/modules/data-service/envelope";
-/** A page is a `worker-page` or a `project-page`; `update` belongs to the Ministry Updates family. */
-export type PageFamily = Exclude<VariantFamily, "update">;
-/** The two families, in the order the Pages surface lists them. */
-export const PAGE_FAMILIES: readonly PageFamily[] = ["worker-page", "project-page"];
+/** A page is a `worker-page` or a `project-page`; `update` belongs to the Ministry Updates family. */ export type PageFamily = Exclude<VariantFamily, "update">;
+/** The two families, in the order the Pages surface lists them. */ export const PAGE_FAMILIES: readonly PageFamily[] = ["worker-page", "project-page"];
 export type FamilyCopy = { readonly label: string; readonly description: string; readonly catalogueLabel: string };
 const FAMILIES: Record<PageFamily, FamilyCopy> = {
   "worker-page": { label: "Worker Page", description: "A public page about you and the ministry you serve, for people who want to know you.", catalogueLabel: "Sections for your Worker Page" },
@@ -24,8 +22,7 @@ const CATALOGUE: Record<PageSectionType, CatalogueSectionCopy> = {
   giving: { label: "Giving", description: "The giving designation approved for this page, supplied by your organization.", managed: true },
   progress: { label: "Support progress", description: "How support is going, shown only when the source can supply an amount and its coverage.", managed: true },
 };
-/** The section types each family admits, read from the one per-family declaration the service states, so the catalogue a builder offers is exactly the set that family's changes are admitted against. */
-const CATALOGUE_BY_FAMILY: Record<PageFamily, readonly PageSectionType[]> = PAGE_SECTION_TYPES_BY_FAMILY;
+/** The section types each family admits, read from the one per-family declaration the service states, so the catalogue a builder offers is exactly the set that family's changes are admitted against. */ const CATALOGUE_BY_FAMILY: Record<PageFamily, readonly PageSectionType[]> = PAGE_SECTION_TYPES_BY_FAMILY;
 const CATALOGUE_COPY = {
   addPrompt: "Add a section to this draft edition. Each type has its own fields and its own presentation choices.",
   addSectionLabel: "Add a section",
@@ -68,8 +65,7 @@ const BUILDER_COPY = {
   remove: "Remove",
   removeHeading: "Remove this section?",
 } as const;
-/** The fields and sections a page shows but cannot change, because a source owns them. */
-export const MANAGED_FIELD_KEYS = ["page-subject", "legal-identity", "giving-binding", "support-progress", "source-supplied-section"] as const;
+/** The fields and sections a page shows but cannot change, because a source owns them. */ export const MANAGED_FIELD_KEYS = ["page-subject", "legal-identity", "giving-binding", "support-progress", "source-supplied-section"] as const;
 export type ManagedFieldKey = (typeof MANAGED_FIELD_KEYS)[number];
 const LOCK_REASONS: Record<ManagedFieldKey, string> = {
   "page-subject": "Managed by the source record this page belongs to — the subject the page is about, and that record's identity, stay with the record and are edited there.",
@@ -79,8 +75,7 @@ const LOCK_REASONS: Record<ManagedFieldKey, string> = {
   "source-supplied-section": "Managed by the source that supplies this section — its fields are supplied content and are not editable on this page.",
 };
 const LOCK_COPY = { reasons: LOCK_REASONS, genericLockedReason: "This field is managed by its source, so it is shown read-only here.", lockedReadOnlyLabel: "Read-only" } as const;
-/** The four structural changes a section can be given, each reported on its own. */
-export const PAGE_SECTION_ACTIONS = ["added", "moved", "duplicated", "removed"] as const;
+/** The four structural changes a section can be given, each reported on its own. */ export const PAGE_SECTION_ACTIONS = ["added", "moved", "duplicated", "removed"] as const;
 export type PageSectionAction = (typeof PAGE_SECTION_ACTIONS)[number];
 const SECTION_ACTION_RESULTS: Record<PageSectionAction, string> = {
   added: "Section added to this draft edition. Adding a section releases nothing.",
@@ -96,7 +91,12 @@ const SECTION_ACTION_COPY = {
   confirmRemove: "Remove the section",
   results: SECTION_ACTION_RESULTS,
 } as const;
-const PRESET_COPY = { heading: "Start from a preset", apply: "Apply this preset", applyNote: "A preset creates a reviewable draft of this edition. Nothing is released and no released edition changes.", emptyReason: "No preset fits what this edition needs, so add sections one at a time." } as const;
+const PRESET_COPY = {
+  heading: "Start from a preset",
+  apply: "Apply this preset",
+  applyNote: "A preset composes this draft edition from its own sections, replacing the sections the draft holds now. Nothing is released and no released edition changes.",
+  emptyReason: "No preset fits what this edition needs, so add sections one at a time.",
+} as const;
 const EDITIONS_COPY = {
   heading: "Language editions",
   localeLabel: "Language",
@@ -197,8 +197,7 @@ const PREVIEW_COPY = {
   unreadyMediaFallback: "The revision still names this placement, and the source could not serve it, so it is stated as unavailable rather than omitted or replaced.",
   unreadyMediaNote: "That placement's alternative text and caption stand in its place, and no other image or video is substituted for it.",
 } as const;
-/** Every word this family shows, in one place. */
-export const copy = {
+/** Every word this family shows, in one place. */ export const copy = {
   families: FAMILIES,
   catalogue: { byFamily: CATALOGUE_BY_FAMILY, sections: CATALOGUE, ...CATALOGUE_COPY },
   presentation: PRESENTATION_COPY,

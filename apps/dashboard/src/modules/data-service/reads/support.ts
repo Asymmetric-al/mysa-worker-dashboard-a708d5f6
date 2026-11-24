@@ -58,10 +58,7 @@ export type SupportQuery = { readonly period?: SupportPeriodInput; readonly curr
   /** The record this address names: one gift row or one gift, by the identifier the source states for it. The gifts ledger then covers the days that record's own evidence sits on rather than the period the ledger defaults to, so a record opened from a direct route is read in the period it was given in even where that is not the period the ledger would assume. */
   readonly record?: string;
 };
-export interface SupportPageInput {
-  readonly page?: { readonly index?: number; readonly size?: number };
-  readonly commitmentId?: string;
-}
+export type SupportPageInput = { readonly page?: { readonly index?: number; readonly size?: number }; readonly commitmentId?: string };
 export type SupportAmount = { readonly currency: string; readonly exponent: number | null; readonly minorUnits: number | null; readonly valueState: ValueState };
 export type SupportPeriod = { readonly from: string; readonly to: string; readonly state: PeriodState };
 export type RecurringBucketFigure = { readonly bucket: RecurringBucket; readonly label: string; readonly inPartition: boolean; readonly count: number; readonly valueState: ValueState };
@@ -90,8 +87,7 @@ function sourceUnavailable(job: string, source: SourceReference, guidance: strin
   logger.sourceUnavailable({ job, source });
   return unavailable({ operationId: READ_ATTEMPT_ID, source, guidance });
 }
-/** The currencies the subject's source states, each at the precision this application writes an amount in it: a currency this application holds no precision for is left out rather than given an assumed exponent. */
-function goalCurrenciesOf(projection: SupportProjection): readonly GoalCurrency[] {
+/** The currencies the subject's source states, each at the precision this application writes an amount in it: a currency this application holds no precision for is left out rather than given an assumed exponent. */ function goalCurrenciesOf(projection: SupportProjection): readonly GoalCurrency[] {
   const currencies: GoalCurrency[] = [];
   for (const currency of Object.keys(projection.currencyExponents)) {
     const exponent = exponentOf(currency);
@@ -115,9 +111,8 @@ function projectionFor(input: Parameters<typeof projectionOf>[0]): SupportProjec
   storedProjections.set(anchor, { key, projection: built });
   return built;
 }
-function projectionOf(input: { readonly record: SupportProjectionRecord; readonly gifts: readonly GiftRowRecord[]; readonly workloadGifts: readonly GiftRowRecord[]; readonly workload: WorkloadDocument | undefined; readonly commitments: readonly CommitmentRowRecord[]; readonly asOf: string }): SupportProjection {
-  return statedProjection({ record: input.record, gifts: input.gifts, workloadGifts: input.workloadGifts, commitments: input.commitments, header: input.workload?.header, asOf: input.asOf, withGoal: true });
-}
+const projectionOf = (input: { readonly record: SupportProjectionRecord; readonly gifts: readonly GiftRowRecord[]; readonly workloadGifts: readonly GiftRowRecord[]; readonly workload: WorkloadDocument | undefined; readonly commitments: readonly CommitmentRowRecord[]; readonly asOf: string }): SupportProjection =>
+  statedProjection({ record: input.record, gifts: input.gifts, workloadGifts: input.workloadGifts, commitments: input.commitments, header: input.workload?.header, asOf: input.asOf, withGoal: true });
 // One token per projection object, taken the first time a read computes from it: `projectionFor` keeps one projection for the state it belongs to and hands that same object to every read of that state, so a token names one snapshot of everything a report is computed from, and a result computed for it is never offered to a read of a later one.
 const snapshotTokens = new WeakMap<SupportProjection, number>();
 let snapshotsNamed = 0;
@@ -133,10 +128,7 @@ function snapshotTokenOf(projection: SupportProjection): number {
 // What is held is a settled result and never a computation in flight, because `runReport` is synchronous: the first read to reach it has finished before a second one can begin, so a registry of promises would never have a second waiter.
 const MEMO_ENTRY_WEIGHT_LIMIT = 20_000;
 const MEMO_TOTAL_WEIGHT_LIMIT = 60_000;
-interface HeldReport {
-  readonly weight: number;
-  readonly result: ReportResult;
-}
+type HeldReport = { readonly weight: number; readonly result: ReportResult };
 const heldReports = new Map<string, HeldReport>();
 let heldReportsWeight = 0;
 /** Every row, series point, currency summary, contributor delta and matrix cell a result retains. */ function weightOfReport(result: ReportResult): number {
@@ -144,8 +136,7 @@ let heldReportsWeight = 0;
   const deltas = result.comparison === undefined ? 0 : result.comparison.contributorDeltas.length;
   return result.rows.length + result.series.length + result.summary.length + deltas + cells;
 }
-/** Holds one settled result under the identity of the computation: nothing at all for a result heavier than one entry may be, and otherwise the least recently read entries are dropped until the total this memo may hold is respected. */
-function holdReport(key: string, result: ReportResult): void {
+/** Holds one settled result under the identity of the computation: nothing at all for a result heavier than one entry may be, and otherwise the least recently read entries are dropped until the total this memo may hold is respected. */ function holdReport(key: string, result: ReportResult): void {
   const weight = weightOfReport(result);
   if (weight > MEMO_ENTRY_WEIGHT_LIMIT) return;
   for (const [held, entry] of heldReports) {
@@ -187,11 +178,7 @@ async function readContext(job: string, source?: SessionSource, permit?: (sessio
   const financialSourceDown = isScenarioId(opened.session.scenarioId) && scenarioFlagsFor(opened.session.scenarioId).financialSource === "unavailable";
   return financialSourceDown ? { ok: false, result: sourceUnavailableRead({ job, source: projection.source, guidance: SUPPORT_SOURCE_GUIDANCE }) } : { ok: true, context: { session: opened.session, scope: opened.scope, revision: record.revision, asOf, projection } };
 }
-interface SupportQueryDefaults {
-  readonly reportId: ReportId;
-  readonly period: ReportPeriod;
-  readonly paged: boolean;
-}
+type SupportQueryDefaults = { readonly reportId: ReportId; readonly period: ReportPeriod; readonly paged: boolean };
 /** A support query the report engine accepts, or the per-field refusal that states why the caller's own query is not one: no read computes an answer for a query it was not asked. */
 type BuiltSupportQuery = { readonly ok: true; readonly query: ReportQuery } | { readonly ok: false; readonly refusal: ReadResult<never> };
 const EVERY_CURRENCY: CurrencySelection = Object.freeze({ kind: "all" });
@@ -296,14 +283,12 @@ function sortOf(input: SupportQuery["sort"], refused: ReportQueryProblem[]): Rep
   }
   return { field, direction };
 }
-/** The page window the caller states, carried as stated: the report engine judges whether the index is a whole page number and states the one wording of that rule, so this read adds no second copy of it. */
-function pageOf(input: SupportQuery["page"]): ReportQuery["page"] {
+/** The page window the caller states, carried as stated: the report engine judges whether the index is a whole page number and states the one wording of that rule, so this read adds no second copy of it. */ function pageOf(input: SupportQuery["page"]): ReportQuery["page"] {
   if (input === undefined) return { index: 0 };
   const index = input.index ?? 0;
   return input.size === undefined ? { index } : { index, size: input.size };
 }
-/** One entry per field the query problems name, in the engine's own field paths, so the caller is told every value it has to correct rather than the first of them. */
-function refusalFieldsOf(problems: readonly ReportQueryProblem[]): Readonly<Record<string, readonly string[]>> {
+/** One entry per field the query problems name, in the engine's own field paths, so the caller is told every value it has to correct rather than the first of them. */ function refusalFieldsOf(problems: readonly ReportQueryProblem[]): Readonly<Record<string, readonly string[]>> {
   const fields = new Map<string, string[]>();
   for (const problem of problems) {
     const stated = fields.get(problem.field);
@@ -368,8 +353,7 @@ function recordedStatesOf(result: ReportResult): Record<string, RecordedValueSta
   for (const [path, state] of Object.entries(result.valueStates)) recorded[path] = recordedStateOf(state);
   return recorded;
 }
-/** The path one attribution's count is recorded at: the partner's own opaque reference, or the kind when no partner is named. */
-const attributionPathOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? `partner:${attribution.partnerId}` : attribution.kind);
+/** The path one attribution's count is recorded at: the partner's own opaque reference, or the kind when no partner is named. */ const attributionPathOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? `partner:${attribution.partnerId}` : attribution.kind);
 const statedAmountStateOf = (money: Money): ValueState => (exponentOf(money.currency) === undefined ? "unknown" : money.minorUnits === 0 ? "zero" : "value");
 const amountFigureOf = (money: Money, state: ValueState): SupportAmount => ({ currency: money.currency, exponent: exponentOf(money.currency) ?? null, minorUnits: state === "value" || state === "zero" || state === "incomplete-subtotal" ? money.minorUnits : null, valueState: state });
 function bucketFiguresOf(rows: readonly CommitmentRow[]): readonly RecurringBucketFigure[] {
@@ -382,12 +366,11 @@ function bucketFiguresOf(rows: readonly CommitmentRow[]): readonly RecurringBuck
     return { bucket, label: BUCKET_LABELS[bucket], inPartition: isInPartition(bucket), count, valueState: countState(count) };
   });
 }
-function kindFiguresOf(rows: readonly CommitmentRow[]): readonly CommitmentKindFigure[] {
-  return COMMITMENT_KINDS.map((kind) => {
+const kindFiguresOf = (rows: readonly CommitmentRow[]): readonly CommitmentKindFigure[] =>
+  COMMITMENT_KINDS.map((kind) => {
     const count = rows.filter((row) => row.kind === kind).length;
     return { kind, count, valueState: countState(count) };
   });
-}
 function monthlyEquivalentsOf(rows: readonly CommitmentRow[]): readonly MonthlyEquivalentFigure[] {
   const figures: MonthlyEquivalentFigure[] = [];
   for (const row of rows) {
@@ -398,9 +381,8 @@ function monthlyEquivalentsOf(rows: readonly CommitmentRow[]): readonly MonthlyE
   return figures;
 }
 const financialCoverageOf = (projection: SupportProjection, query: ReportQuery): FinancialCoverage => ({ ...projection.coverage, currency: query.currency.kind === "one" ? query.currency.currency : CSV_ALL_CURRENCIES, dateBasis: DATE_BASIS });
-function envelopeOf<T, C extends Coverage>(input: { readonly data: T; readonly context: SupportReadContext; readonly coverage: C; readonly revision: string; readonly valueStates: Readonly<Record<string, RecordedValueState>>; readonly actions: readonly ReadAction[] }): ReadResult<ReadEnvelope<T, C>> {
-  return answerOf(input.context.scope, input.context.asOf, { data: input.data, source: input.context.projection.source, revision: input.revision, coverage: input.coverage, valueStates: input.valueStates, actions: input.actions });
-}
+const envelopeOf = <T, C extends Coverage>(input: { readonly data: T; readonly context: SupportReadContext; readonly coverage: C; readonly revision: string; readonly valueStates: Readonly<Record<string, RecordedValueState>>; readonly actions: readonly ReadAction[] }): ReadResult<ReadEnvelope<T, C>> =>
+  answerOf(input.context.scope, input.context.asOf, { data: input.data, source: input.context.projection.source, revision: input.revision, coverage: input.coverage, valueStates: input.valueStates, actions: input.actions });
 const exportAction = (decision: AccessDecision): ReadAction => (decision.allowed ? { name: "exportQuery", available: true } : { name: "exportQuery", available: false, reason: EXPORT_UNAVAILABLE_REASON });
 /** The actions the ledger states over the query it read: each filter the query can carry is available, and the two the support projection cannot apply are stated with the reason they are absent. A filter the engine refuses never reaches this list, because the read answers that refusal rather than an envelope. */
 function ledgerActions(query: ReportQuery, decision: AccessDecision): readonly ReadAction[] {

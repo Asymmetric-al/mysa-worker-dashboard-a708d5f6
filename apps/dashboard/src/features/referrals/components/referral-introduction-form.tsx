@@ -29,8 +29,7 @@ export type ReferralIntroductionFormProps = {
 };
 type IntroductionFormValues = { originalIntroductionOn: string; datePrecision: DatePrecisionValue };
 const INITIAL_VALUES: IntroductionFormValues = { originalIntroductionOn: "", datePrecision: "date" };
-/** The tag and the type scale this section's own heading renders at the level it sits in, so one form states the same step below the record's name in the record's route and in the side panel. */
-const SECTION_HEADING_TAGS = { 2: "h2", 3: "h3" } as const;
+/** The tag and the type scale this section's own heading renders at the level it sits in, so one form states the same step below the record's name in the record's route and in the side panel. */ const SECTION_HEADING_TAGS = { 2: "h2", 3: "h3" } as const;
 const SECTION_HEADING_SCALES: Readonly<Record<2 | 3, string>> = { 2: "type-section-title", 3: "type-subsection-title" };
 const DATE_FIELD = "originalIntroductionOn";
 const PRECISION_FIELD = "datePrecision";

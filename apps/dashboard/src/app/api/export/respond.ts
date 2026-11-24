@@ -12,8 +12,7 @@ const escapedSlice = (text: string): string => JSON.stringify(text).slice(1, -1)
 // Where a slice starting at `start` ends: the next boundary, moved back one place where it would fall inside a surrogate pair, because escaping each half on its own would no longer be the JSON the envelope itself serialises to.
 function sliceEnd(text: string, start: number): number {
   const boundary = Math.min(start + SLICE_LENGTH, text.length);
-  const insidePair = boundary < text.length && boundary - 1 > start && (text.charCodeAt(boundary - 1) & SURROGATE_MASK) === HIGH_SURROGATES && (text.charCodeAt(boundary) & SURROGATE_MASK) === LOW_SURROGATES;
-  return insidePair ? boundary - 1 : boundary;
+  return boundary < text.length && boundary - 1 > start && (text.charCodeAt(boundary - 1) & SURROGATE_MASK) === HIGH_SURROGATES && (text.charCodeAt(boundary) & SURROGATE_MASK) === LOW_SURROGATES ? boundary - 1 : boundary;
 }
 // The body's pieces in the order the response writes them: the opening of the envelope, the CSV as escaped slices, and everything behind the value's closing quote.
 function* bodyPieces(csv: string, tail: string): Generator<string> {

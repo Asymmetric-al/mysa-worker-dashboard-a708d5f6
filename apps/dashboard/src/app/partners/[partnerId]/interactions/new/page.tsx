@@ -22,8 +22,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
 };
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Log an interaction" };
-/** Everything that actually happened between the worker and one record: the entry itself, with the optional next task saved as a second change. */
-export default async function NewInteractionPage({ params }: { readonly params: Promise<{ partnerId: string }> }): Promise<ReactElement> {
+/** Everything that actually happened between the worker and one record: the entry itself, with the optional next task saved as a second change. */ export default async function NewInteractionPage({ params }: { readonly params: Promise<{ partnerId: string }> }): Promise<ReactElement> {
   const { partnerId } = await params;
   const result = await reads.partners.readPartner(partnerId);
   if (result.kind !== "envelope") return <ReadNotices failure={result} copy={{ ...NOTICE_COPY, unavailable: { ...NOTICE_COPY.unavailable, action: { label: PARTNER_ACTION_LABELS.retry, href: formHref(partnerId) } } }} className={NOTICE_CLASS} />;

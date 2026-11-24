@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fieldErrorsFromInvalid, refusalSummary, type FieldErrorLookup } from "@/components/form-field";
 import type { NoticeHeadingLevel, StateNoticeProps } from "@/components/state-notice";
 import { newOperationId, type SourceReference } from "@/lib/ids";
+import type { StoppableRequest } from "@/lib/read-transport";
 import type { MutationInput } from "@/modules/data-service/envelope";
 import { isOutcome, outcomeFromError, type MutationOutcome, type PerItemResult } from "@/modules/data-service/outcome";
 /** The identity one attempt carries: the `operationId` it submits under, and the intent that identity was minted for. */ export type ReviewedAttempt = { readonly operationId: string; readonly intent: string | null };
@@ -16,23 +17,16 @@ function canonicalIntent(value: unknown): string {
       .map((key) => `${JSON.stringify(key)}:${canonicalIntent(record[key])}`)
       .join(",")}}`;
   }
-  if (typeof value === "string") return JSON.stringify(value);
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : JSON.stringify(String(value));
-  if (typeof value === "boolean") return value ? "true" : "false";
-  return JSON.stringify(String(value));
+  return typeof value === "string" ? JSON.stringify(value) : typeof value === "number" ? (Number.isFinite(value) ? String(value) : JSON.stringify(String(value))) : typeof value === "boolean" ? (value ? "true" : "false") : JSON.stringify(String(value));
 }
 /** The stable fingerprint of one intent: the context, the revision the caller saw, and the payload. */ export const intentKeyOf = (input: Omit<MutationInput<unknown>, "operationId">): string => canonicalIntent(input);
-/** The identity an attempt must carry, given the identity already held and the intent submitted now. */
-export function attemptForIntent(current: ReviewedAttempt | null, intent: string, mint: () => string = newOperationId): ReviewedAttempt {
-  if (current !== null && current.intent === intent) return current;
-  return { operationId: mint(), intent };
+/** The identity an attempt must carry, given the identity already held and the intent submitted now. */ export function attemptForIntent(current: ReviewedAttempt | null, intent: string, mint: () => string = newOperationId): ReviewedAttempt {
+  return current !== null && current.intent === intent ? current : { operationId: mint(), intent };
 }
 /** Whether an outcome leaves the same operation worth replaying. */ export const mayReplay = (outcome: MutationOutcome | null): boolean => outcome !== null && (outcome.outcome === "unavailable" || outcome.outcome === "unknown");
-/** The revision a conflict's preserved input may be re-applied against, or `null` when there is no conflict to re-apply. */
-export const reappliableRevision = (outcome: MutationOutcome | null): string | null => (outcome !== null && outcome.outcome === "conflict" ? outcome.currentRevision : null);
-/** Whether an outcome reports a result that stands: applied once, already applied, or nothing to change. */
-export const hasSettled = (outcome: MutationOutcome | null): boolean => outcome !== null && (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged");
-/** The transport an attempt submits through: the caller's own mutation call, which the attempt supplies the identity to. */ export type MutationSubmit<P> = (input: MutationInput<P>) => Promise<MutationOutcome>;
+/** The revision a conflict's preserved input may be re-applied against, or `null` when there is no conflict to re-apply. */ export const reappliableRevision = (outcome: MutationOutcome | null): string | null => (outcome !== null && outcome.outcome === "conflict" ? outcome.currentRevision : null);
+/** Whether an outcome reports a result that stands: applied once, already applied, or nothing to change. */ export const hasSettled = (outcome: MutationOutcome | null): boolean => outcome !== null && (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged");
+/** The transport an attempt submits through: the caller's own mutation call, which the attempt supplies the identity to. A stopped attempt carries its stop signal beside the four fields, never inside them. */ export type MutationSubmit<P> = (input: MutationInput<P> & StoppableRequest) => Promise<MutationOutcome>;
 /** Everything one attempt offers the surface that renders it, so the surface states no part of the cycle itself. */ export type UseAttemptedMutationResult<P> = {
   readonly operationId: string | null;
   readonly pending: boolean;
@@ -41,15 +35,14 @@ export const hasSettled = (outcome: MutationOutcome | null): boolean => outcome 
   readonly fieldErrors: FieldErrorLookup | null;
   readonly canReplay: boolean;
   readonly conflictRevision: string | null;
-  submit(input: Omit<MutationInput<P>, "operationId">): Promise<MutationOutcome>;
+  submit(input: Omit<MutationInput<P>, "operationId"> & StoppableRequest): Promise<MutationOutcome>;
   retry(): Promise<MutationOutcome | null>;
   reapplyOnConflict(): Promise<MutationOutcome | null>;
   reset(): void;
 };
 /** Everything a reviewed mutation offers a surface that reviews one intent before it submits it: the cycle's own fields, with the conflict recovery named for what it does. */
 export type UseReviewedMutationResult<P> = Pick<UseAttemptedMutationResult<P>, "operationId" | "pending" | "outcome" | "reviewedIntent" | "submit" | "retry" | "reset"> & { reapply(): Promise<MutationOutcome | null> };
-/** The one owner of a reviewed attempt's identity: submits once per intent and answers the outcome it received. */
-export function useAttemptedMutation<P = unknown>(submit: MutationSubmit<P>, onSettled?: (outcome: MutationOutcome) => void): UseAttemptedMutationResult<P> {
+/** The one owner of a reviewed attempt's identity: submits once per intent and answers the outcome it received. */ export function useAttemptedMutation<P = unknown>(submit: MutationSubmit<P>, onSettled?: (outcome: MutationOutcome) => void): UseAttemptedMutationResult<P> {
   const submitRef = useRef(submit);
   useEffect(() => {
     submitRef.current = submit;
@@ -73,17 +66,20 @@ export function useAttemptedMutation<P = unknown>(submit: MutationSubmit<P>, onS
     return next;
   }, []);
   const submitInput = useCallback(
-    (input: Omit<MutationInput<P>, "operationId">, reviewsInput = true): Promise<MutationOutcome> => {
+    (input: Omit<MutationInput<P>, "operationId"> & StoppableRequest, reviewsInput = true): Promise<MutationOutcome> => {
       const running = inFlightRef.current;
       if (running !== null) return running;
-      const intent = intentKeyOf(input);
+      // The four fields are held apart from the stop signal: the identity is minted for what the attempt asks for, and a retry after the wait was stopped presents the same request rather than the signal that once ended it.
+      const retained: Omit<MutationInput<P>, "operationId"> = { scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload };
+      const signal = input.signal;
+      const intent = intentKeyOf(retained);
       if (reviewsInput) setReviewedIntent(intent);
       const identity = attemptForIntent(attemptRef.current, intent);
       adopt(identity);
-      inputRef.current = input;
+      inputRef.current = retained;
       pendingRef.current = true;
       setPending(true);
-      const request: MutationInput<P> = { operationId: identity.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload };
+      const request: MutationInput<P> = { operationId: identity.operationId, scope: retained.scope, expectedRevision: retained.expectedRevision, payload: retained.payload };
       const finish = (result: MutationOutcome): MutationOutcome => {
         pendingRef.current = false;
         outcomeRef.current = result;
@@ -94,7 +90,7 @@ export function useAttemptedMutation<P = unknown>(submit: MutationSubmit<P>, onS
       };
       const run = (async (): Promise<MutationOutcome> => {
         try {
-          const answered: unknown = await submitRef.current(request);
+          const answered: unknown = await submitRef.current(signal === undefined ? request : { ...request, signal });
           return finish(isOutcome(answered) ? answered : outcomeFromError(identity.operationId, answered));
         } catch (error) {
           return finish(outcomeFromError(identity.operationId, error));
@@ -115,8 +111,7 @@ export function useAttemptedMutation<P = unknown>(submit: MutationSubmit<P>, onS
   const reapplyOnConflict = useCallback(async (): Promise<MutationOutcome | null> => {
     const input = inputRef.current;
     const revision = reappliableRevision(outcomeRef.current);
-    if (input === null || revision === null || pendingRef.current) return null;
-    return submitInput({ ...input, expectedRevision: revision }, false);
+    return input === null || revision === null || pendingRef.current ? null : submitInput({ ...input, expectedRevision: revision }, false);
   }, [submitInput]);
   const reset = useCallback((): void => {
     if (pendingRef.current) return;
@@ -164,8 +159,7 @@ export type OutcomeRowCopy = { readonly alreadyApplied: string; readonly conflic
 };
 /** What a surface offers beside that notice: the heading level it nests at, and the two recoveries it holds. */
 export type OutcomeNoticeOptions = { readonly onRetrySameWork?: (() => void) | undefined; readonly onCheckResult?: (() => void) | undefined; readonly headingLevel?: NoticeHeadingLevel; readonly className?: string };
-/** The notice a recoverable outcome renders, and `null` for the outcomes a receipt reports in full. */
-export function outcomeNotice(outcome: MutationOutcome, copy: OutcomeNoticeCopy, options: OutcomeNoticeOptions = {}): StateNoticeProps | null {
+/** The notice a recoverable outcome renders, and `null` for the outcomes a receipt reports in full. */ export function outcomeNotice(outcome: MutationOutcome, copy: OutcomeNoticeCopy, options: OutcomeNoticeOptions = {}): StateNoticeProps | null {
   const { onRetrySameWork, onCheckResult, headingLevel, className } = options;
   const retry = onRetrySameWork === undefined ? undefined : { label: copy.retryLabel, onClick: onRetrySameWork };
   const check = onCheckResult === undefined ? undefined : { label: copy.checkResultLabel, onClick: onCheckResult };

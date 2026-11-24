@@ -52,23 +52,21 @@ function releaseOf(edition: EditionView): RosterRelease | null {
   const head = edition.headRelease;
   return head === null ? null : { releaseId: head.releaseId, revisionId: head.revisionId, publishedAt: String(head.publishedAt), reach: head.reach, withdrawnAt: head.withdrawnAt === undefined ? null : String(head.withdrawnAt) };
 }
-function editionRosterOf(documentId: string, edition: EditionView, awaitingRelease: boolean): RosterEdition {
-  return {
-    variantId: edition.variantId,
-    audience: edition.audience,
-    localeTag: edition.locale.tag,
-    direction: edition.locale.direction,
-    draftRevisionId: edition.draftRevisionId,
-    candidateId: edition.candidateId,
-    releaseHeadId: edition.releaseHeadId,
-    awaitingRelease,
-    lifecycle: lifecycleFor(documentId, edition),
-    staleSince: edition.translation.status === "stale" ? edition.translation.sourceUpdatedAt : null,
-    translationStatus: edition.translation.status,
-    release: releaseOf(edition),
-    lastReleaseAt: edition.lastReleaseAt === null ? null : String(edition.lastReleaseAt),
-  };
-}
+const editionRosterOf = (documentId: string, edition: EditionView, awaitingRelease: boolean): RosterEdition => ({
+  variantId: edition.variantId,
+  audience: edition.audience,
+  localeTag: edition.locale.tag,
+  direction: edition.locale.direction,
+  draftRevisionId: edition.draftRevisionId,
+  candidateId: edition.candidateId,
+  releaseHeadId: edition.releaseHeadId,
+  awaitingRelease,
+  lifecycle: lifecycleFor(documentId, edition),
+  staleSince: edition.translation.status === "stale" ? edition.translation.sourceUpdatedAt : null,
+  translationStatus: edition.translation.status,
+  release: releaseOf(edition),
+  lastReleaseAt: edition.lastReleaseAt === null ? null : String(edition.lastReleaseAt),
+});
 function documentRosterOf(entry: IndexEntry): RosterDocument {
   const { documentId, kind, siteId, recordRevision, sourceSubject } = entry.document;
   return { documentId, kind, siteId, recordRevision, sourceSubject, title: entry.title.status === "stated" ? entry.title.title : null, editions: entry.editions.map((edition) => editionRosterOf(documentId, edition, entry.awaitingRelease.includes(edition.variantId))) };

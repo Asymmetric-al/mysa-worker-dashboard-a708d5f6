@@ -18,8 +18,7 @@ import { useAddMembers, type NamedChange } from "../hooks/use-initiative-mutatio
 import { addMembersPayloadSchema, type AddMembersPayload } from "../schemas/member";
 export type MemberCandidate = { readonly partnerId: string; readonly displayName: string; readonly membership?: { readonly memberId: string; readonly state: MembershipState } | null };
 export type MemberCandidates = { readonly state: "available"; readonly partners: readonly MemberCandidate[] } | { readonly state: "unavailable"; readonly source: ReadEnvelope<unknown>["source"] };
-/** Props of {@link MemberPicker}. */
-export interface MemberPickerProps {
+/** Props of {@link MemberPicker}. */ export interface MemberPickerProps {
   readonly initiativeId: string;
   readonly candidates: readonly MemberCandidate[] | MemberCandidates;
   readonly scope: Scope;
@@ -113,8 +112,7 @@ function PartnerSelection({ selection, results, onRemove }: PartnerSelectionProp
 }
 // `jsx-a11y/prefer-tag-over-role` is suppressed for the option list and only for it: a native `select` carries no search field and no single tab stop, and a `datalist` states no selection, so the tags the rule prefers would leave a worker with no way to say which partners are chosen.
 /* oxlint-disable jsx-a11y/prefer-tag-over-role */
-/** The one member picker: the eligible candidates, the selection under review, and each partner's own result. */
-export default function MemberPicker({ initiativeId, candidates, scope, expectedRevision, onAdded, headingLevel = 3, className }: MemberPickerProps): ReactElement {
+/** The one member picker: the eligible candidates, the selection under review, and each partner's own result. */ export default function MemberPicker({ initiativeId, candidates, scope, expectedRevision, onAdded, headingLevel = 3, className }: MemberPickerProps): ReactElement {
   const read = candidateReadOf(candidates);
   const headingId = useId();
   const listId = useId();
@@ -132,8 +130,7 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
     return stated.state === "available" ? stated.partners.filter(isOfferable) : [];
   }, [candidates]);
   const visible = useMemo<readonly MemberCandidate[]>(() => {
-    const trimmed = query.trim().toLowerCase();
-    return eligible.filter((candidate) => matchesSearch(candidate, trimmed));
+    return eligible.filter((candidate) => matchesSearch(candidate, query.trim().toLowerCase()));
   }, [eligible, query]);
   const partnerIds = useMemo<readonly string[]>(() => selection.map((entry) => entry.partnerId), [selection]);
   const namesByPartner = useMemo<ReadonlyMap<string, string>>(() => new Map(selection.map((entry) => [entry.partnerId, entry.displayName] as const)), [selection]);

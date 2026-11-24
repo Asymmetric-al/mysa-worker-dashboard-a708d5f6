@@ -9,18 +9,14 @@ import { resetSession } from "@/modules/store/repository";
 import { expectEnvelope, firstSaying } from "../helpers/answers";
 const SESSION_ID = "it-gift-record";
 const SESSION: SessionSource = { sessionId: SESSION_ID };
-/** The correction the seed records on 2026-09-01, which the ledger's this-month default never covers, named by its gift and by its own row. */
-const RECORD_GIFT_ID = "gift-harbour-0010";
+/** The correction the seed records on 2026-09-01, which the ledger's this-month default never covers, named by its gift and by its own row. */ const RECORD_GIFT_ID = "gift-harbour-0010";
 const RECORD_ROW_ID = "gift-row-harbour-0010";
 const RECORD_DAY = "2026-09-01";
-/** The row that correction is recorded against, on 2026-07-05: naming it has to keep the correction in the same result. */
-const CORRECTED_GIFT_ID = "gift-harbour-0009";
+/** The row that correction is recorded against, on 2026-07-05: naming it has to keep the correction in the same result. */ const CORRECTED_GIFT_ID = "gift-harbour-0009";
 const CORRECTED_ROW_ID = "gift-row-harbour-0009";
 const CORRECTED_DAY = "2026-07-05";
-/** An identifier the projection holds no row or gift for: a genuinely absent record, not a filter that excludes one. */
-const UNSOURCED_RECORD = "gift-harbour-9999";
-/** A currency the named record is not stated in. */
-const OTHER_CURRENCY = "EUR";
+/** An identifier the projection holds no row or gift for: a genuinely absent record, not a filter that excludes one. */ const UNSOURCED_RECORD = "gift-harbour-9999";
+/** A currency the named record is not stated in. */ const OTHER_CURRENCY = "EUR";
 type GiftQuery = NonNullable<Parameters<typeof reads.support.readGifts>[0]>;
 type GiftsResult = Awaited<ReturnType<typeof reads.support.readGifts>>;
 type GiftsEnvelope = Extract<GiftsResult, { readonly kind: "envelope" }>["envelope"];

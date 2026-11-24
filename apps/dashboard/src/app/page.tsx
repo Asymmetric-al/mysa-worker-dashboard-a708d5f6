@@ -6,8 +6,7 @@ import { PRODUCT_TITLE_SUFFIX } from "@/lib/application-name";
 import { reads } from "@/modules/data-service";
 import { PageColumn, PageHeading, pageRefusalOf, type ReadNoticeCopy } from "./page-frame";
 export const dynamic = "force-dynamic";
-/** The home title states the product suffix itself: this route sits in the root layout's own segment, where `title.template` is not applied to the segment's own `title`. */
-export const metadata: Metadata = { title: { absolute: `${HOME_COPY.title}${PRODUCT_TITLE_SUFFIX}` } };
+/** The home title states the product suffix itself: this route sits in the root layout's own segment, where `title.template` is not applied to the segment's own `title`. */ export const metadata: Metadata = { title: { absolute: `${HOME_COPY.title}${PRODUCT_TITLE_SUFFIX}` } };
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 1,
   denied: { title: HOME_COPY.title, body: "Home could not be read for this session, so no item, count or reason is stated here — a refusal is not a quiet day. " + "If this session admits another context, the shell is where that context is chosen." },

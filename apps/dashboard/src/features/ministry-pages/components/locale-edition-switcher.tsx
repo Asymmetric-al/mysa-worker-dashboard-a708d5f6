@@ -20,10 +20,7 @@ export type LocaleEditionSwitcherProps = { readonly editions: readonly EditionVi
 const normaliseTag = (tag: string): string => tag.trim().toLowerCase();
 const findEdition = (editions: readonly EditionView[], tag: string): EditionView | undefined => (normaliseTag(tag) === "" ? undefined : editions.find((edition) => normaliseTag(edition.locale) === normaliseTag(tag)));
 const localeEditionsOf = (editions: readonly EditionView[]): readonly LocaleEdition[] => editions.map((edition) => ({ tag: edition.locale, direction: edition.direction, releaseId: edition.release?.releaseId }));
-function variantOf(edition: EditionView): ContentVariant {
-  if (edition.candidateId === undefined || edition.variant.candidateId !== undefined) return edition.variant;
-  return { ...edition.variant, candidateId: edition.candidateId };
-}
+const variantOf = (edition: EditionView): ContentVariant => (edition.candidateId === undefined || edition.variant.candidateId !== undefined ? edition.variant : { ...edition.variant, candidateId: edition.candidateId });
 const evidenceOf = (edition: EditionView): LifecycleEvidence | undefined =>
   edition.translationSource === undefined && edition.candidateDecision === undefined ? undefined : { ...(edition.translationSource === undefined ? {} : { translationSource: edition.translationSource }), ...(edition.candidateDecision === undefined ? {} : { reviewDecision: edition.candidateDecision }) };
 /** The Page's language editions: the one control that changes which edition is being worked on, and the lifecycle state each admitted edition holds on its own. */

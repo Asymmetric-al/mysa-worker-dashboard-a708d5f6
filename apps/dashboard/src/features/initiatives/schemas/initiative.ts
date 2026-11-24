@@ -6,9 +6,8 @@ export const civilDateSchema = z
   .superRefine((value, ctx) => {
     if (parseCivilDate(value).status === "refused") ctx.addIssue({ code: "custom", message: "Enter a real calendar date as YYYY-MM-DD." });
   });
-/** Builds a trimmed text field whose length is bounded in Unicode code points. */
-export function boundedTextSchema(maxCodePoints: number, messages: { readonly required: string; readonly tooLong: string }): z.ZodString {
-  return z
+/** Builds a trimmed text field whose length is bounded in Unicode code points. */ export const boundedTextSchema = (maxCodePoints: number, messages: { readonly required: string; readonly tooLong: string }): z.ZodString =>
+  z
     .string()
     .trim()
     .superRefine((value, ctx) => {
@@ -19,7 +18,6 @@ export function boundedTextSchema(maxCodePoints: number, messages: { readonly re
         ctx.addIssue({ code: "custom", message: messages.tooLong });
       }
     });
-}
 export const createInitiativePayloadSchema = z
   .object({
     name: boundedTextSchema(200, { required: "Give the initiative a name.", tooLong: "Keep the name to 200 characters or fewer." }),

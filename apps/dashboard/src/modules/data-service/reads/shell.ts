@@ -98,7 +98,7 @@ function statedSupportFigure(input: { readonly projectionRecord: SupportProjecti
 const unavailableSupportFigure = (record: SupportProjectionRecord, asOf: string): HomeSupportFigure => ({ state: "unavailable", source: record.source, asOf, period: null, coverage: record.coverage, amounts: [] });
 const recordedStateOf = (amount: HomeSupportAmount): RecordedValueState => (amount.valueState === "incomplete-subtotal" ? (amount.minorUnits === 0 ? "zero" : "value") : amount.valueState);
 type HomeBuildContext = { readonly session: ResolvedSession; readonly scope: Scope; readonly today: CivilDate | undefined };
-function homeItem(input: {
+const homeItem = (input: {
   readonly itemId: string;
   readonly section: HomeSection;
   readonly reason: HomeReasonKey;
@@ -108,9 +108,7 @@ function homeItem(input: {
   readonly onDate?: string | null;
   readonly locale?: string | null;
   readonly figure?: HomeSupportFigure;
-}): HomeItem {
-  return { itemId: input.itemId, section: input.section, reason: input.reason, destination: input.destination, label: input.label, status: input.status, onDate: input.onDate ?? null, locale: input.locale ?? null, ...(input.figure === undefined ? {} : { figure: input.figure }) };
-}
+}): HomeItem => ({ itemId: input.itemId, section: input.section, reason: input.reason, destination: input.destination, label: input.label, status: input.status, onDate: input.onDate ?? null, locale: input.locale ?? null, ...(input.figure === undefined ? {} : { figure: input.figure }) });
 function compareByDayThenId(left: HomeItem, right: HomeItem): number {
   const leftDay = left.onDate ?? "";
   const rightDay = right.onDate ?? "";
@@ -243,12 +241,11 @@ function importItems(proposals: readonly ImportProposalRecord[], context: HomeBu
     .sort((left, right) => compareCodeUnits(left.importOperationId, right.importOperationId))
     .map((proposal) => homeItem({ itemId: `import:${proposal.importOperationId}`, section: "unfinished-work", reason: "import-awaiting-decisions", destination: "/partners/import", label: null, status: "awaiting-review" }));
 }
-function targetItems(targets: readonly CoachingTargetRecord[], context: HomeBuildContext): readonly HomeItem[] {
-  return targets
+const targetItems = (targets: readonly CoachingTargetRecord[], context: HomeBuildContext): readonly HomeItem[] =>
+  targets
     .filter((target) => target.workerPrincipalId === context.session.principalId && target.homePlacement === "placed" && target.state !== "ended")
     .sort((left, right) => compareCodeUnits(left.targetId, right.targetId))
     .map((target) => homeItem({ itemId: `target:${target.targetId}`, section: "information", reason: "target-placed-on-home", destination: "/coaching/targets", label: target.privateLabel, status: target.state === "paused" ? "paused" : "placed" }));
-}
 const supportItem = (figure: HomeSupportFigure): HomeItem => homeItem({ itemId: SUPPORT_ITEM_ID, section: "information", reason: "support-received-this-period", destination: "/support", label: null, status: "received", figure });
 function civilDayOf(value: string): string | null {
   const instant = instantOf(value);

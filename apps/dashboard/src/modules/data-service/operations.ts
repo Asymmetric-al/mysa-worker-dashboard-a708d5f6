@@ -64,8 +64,7 @@ function collectEntry(records: Record<string, OperationRecord>, entry: Operation
   return { version, records };
 }
 export type BeginResult = { readonly state: "fresh" } | { readonly state: "replay"; readonly record: OperationRecord } | { readonly state: "changed-intent"; readonly record: OperationRecord };
-/** Reads an attempt's identity against the ledger: absent → `fresh`, same intent → `replay`, different intent → `changed-intent`, and nothing else. */
-export function begin(ledger: OperationLedger, operationId: string, intentHash: string): BeginResult {
+/** Reads an attempt's identity against the ledger: absent → `fresh`, same intent → `replay`, different intent → `changed-intent`, and nothing else. */ export function begin(ledger: OperationLedger, operationId: string, intentHash: string): BeginResult {
   const stored = lookup(ledger, operationId);
   return stored === undefined ? { state: "fresh" } : stored.intentHash === intentHash ? { state: "replay", record: stored } : { state: "changed-intent", record: stored };
 }
@@ -99,11 +98,10 @@ function canonicalJson(value: unknown): string {
   }
 }
 /** The intent of one attempt, as a SHA-256 hex digest: what the attempt asks for, by which named mutation, in the context it claims. The name is part of the intent because a transport strips its wire discriminant before dispatch, so two mutations of one path can present the same residual payload. */
-export function intentHash(name: MutationName, scope: Scope, payload: unknown): string {
-  return createHash("sha256").update(canonicalJson({ name, scope, payload }), "utf8").digest("hex");
-}
+export const intentHash = (name: MutationName, scope: Scope, payload: unknown): string => createHash("sha256").update(canonicalJson({ name, scope, payload }), "utf8").digest("hex");
 export type MutationName = string;
-export type CurrentTarget = { readonly kind: "record"; readonly revision: string; readonly value: unknown } | { readonly kind: "absent" };
+/** The record one attempt found, where `alsoStated` names the other revisions a read of that record's state may state — the revision of the document holding the record — so an `expectedRevision` presenting either is presenting what the caller saw. */
+export type CurrentTarget = { readonly kind: "record"; readonly revision: string; readonly value: unknown; readonly alsoStated?: readonly string[] } | { readonly kind: "absent" };
 const ABSENT_TARGET_REVISION = "no-target";
 const advancedRevision = (revision: string): string => `${revision}#advanced`;
 export type MutationContext = { readonly docs: SessionDocuments; readonly session: ResolvedSession; readonly currentRevision: string; readonly operationId: string };
@@ -137,8 +135,7 @@ class MutationRefused extends Error {
   const candidate: unknown = Reflect.get(input, "operationId");
   return typeof candidate === "string" && candidate.length > 0 ? candidate : UNIDENTIFIED_ATTEMPT;
 }
-/** The payload a mutation's own schema admits, read where an apply body needs the parsed value rather than the request's raw one. */
-export const payloadOf = <S extends z.ZodType>(schema: S, input: { readonly payload: unknown }): z.output<S> => schema.parse(input.payload);
+/** The payload a mutation's own schema admits, read where an apply body needs the parsed value rather than the request's raw one. */ export const payloadOf = <S extends z.ZodType>(schema: S, input: { readonly payload: unknown }): z.output<S> => schema.parse(input.payload);
 export type MutationOpening = { readonly ok: true; readonly sessionId: string; readonly session: ResolvedSession } | { readonly ok: false; readonly outcome: MutationOutcome };
 /** The opening every mutation shares: the session an attempt acts for is established before it validates, and a request scope that cannot yield one is refused rather than given an identity, with a store fault that refused it named to the diagnostic stream under the mutation's own name. */
 export async function openMutation(job: MutationName, input: unknown, source?: SessionSource): Promise<MutationOpening> {
@@ -158,8 +155,7 @@ export async function openMutation(job: MutationName, input: unknown, source?: S
 /** Refuses a change to a record the caller does not hold or may not change, disclosing nothing about what exists. */ export const refuseDenied = (operationId: string): never => refuse(denied({ operationId, reasonCode: "no-permission" }));
 /** Refuses a stale attempt, carrying both the current value and the caller's preserved input so a surface can show them side by side. */
 export const refuseConflict = (input: { readonly operationId: string; readonly currentRevision: string; readonly current: unknown; readonly preservedInput: unknown }): never => refuse(conflict({ ...input, reason: "stale-revision" }));
-/** Refuses a payload the domain re-ran and did not admit, with per-field messages keyed by field path. */
-export const refuseInvalid = (operationId: string, fields: FieldMessages | z.ZodError): never => refuse(invalid({ operationId, fields }));
+/** Refuses a payload the domain re-ran and did not admit, with per-field messages keyed by field path. */ export const refuseInvalid = (operationId: string, fields: FieldMessages | z.ZodError): never => refuse(invalid({ operationId, fields }));
 /** Refuses the attempt because the store behind the work could not answer: the source is named and the retry guidance is the caller's. */
 export const refuseUnavailable = (input: { readonly operationId: string; readonly reference: string; readonly guidance: string }): never => refuse(unavailable({ operationId: input.operationId, source: { system: LOCAL_STORE_SYSTEM, reference: input.reference }, guidance: input.guidance }));
 /** The diagnostic scope one attempt is reported under: the selected context of the session that authorised it, never the scope the request claimed, so the line states the authority the attempt actually ran under. A session that has established no selection states that, rather than a context the attempt never held. */
@@ -241,7 +237,9 @@ const MUTATION_WRITE_SET = ["meta", "operations", "state"] as const satisfies re
       }
       if (begun.state === "changed-intent") return conflict({ operationId, currentRevision: reportedRevision, current: targetValue, preservedInput: input.payload, reason: "changed-intent" });
       const comparedRevision = armed === "conflict" ? advancedRevision(targetRevision) : targetRevision;
-      if ((target.kind === "record" || armed === "conflict") && input.expectedRevision !== comparedRevision) return conflict({ operationId, currentRevision: comparedRevision, current: targetValue, preservedInput: input.payload, reason: "stale-revision" });
+      // A read of the record's state may state the revision of the document holding it, so presenting either is presenting what the caller saw; the armed changed-revision failure still refuses every attempt.
+      const presentedAlsoStated = target.kind === "record" && armed !== "conflict" && (target.alsoStated ?? []).includes(input.expectedRevision);
+      if ((target.kind === "record" || armed === "conflict") && input.expectedRevision !== comparedRevision && !presentedAlsoStated) return conflict({ operationId, currentRevision: comparedRevision, current: targetValue, preservedInput: input.payload, reason: "stale-revision" });
       const applied = await plan.apply({ docs, session, currentRevision: targetRevision, operationId });
       if (!applied.changed) {
         // Nothing needed doing: no revision advance, no history or activity entry. The answer states the revision the change's own record holds when the mutation reported one, so a caller that presented a token of its own is told the revision the record is actually at.

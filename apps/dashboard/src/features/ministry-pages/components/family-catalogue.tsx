@@ -35,8 +35,7 @@ const FIELD_LABELS: Readonly<Record<string, string>> = { documentId: "Page", loc
 const insertionPositions = (sectionCount: number): readonly number[] => (Number.isInteger(sectionCount) && sectionCount > 0 ? Array.from({ length: sectionCount }, (_unused, index) => index + 2) : [1]);
 const afterSectionIdOf = (seat: number): string | null => (seat <= 1 ? null : String(seat - 2));
 const seatOf = (stored: number | undefined, available: readonly number[]): number => (stored !== undefined && available.includes(stored) ? stored : (available[available.length - 1] ?? 1));
-/** The one address a Page is composed at, so the catalogue and the index that opens it cannot state two paths. */
-export const builderPathOf = (documentId: string): string => `${"/pages/"}${encodeURIComponent(documentId)}`;
+/** The one address a Page is composed at, so the catalogue and the index that opens it cannot state two paths. */ export const builderPathOf = (documentId: string): string => `${"/pages/"}${encodeURIComponent(documentId)}`;
 const lockReasonOf = (lockReasonKey: string | null): string => (lockReasonKey === null ? undefined : Object.entries(copy.lockReasons.reasons).find(([key]) => key === lockReasonKey)?.[1]) ?? copy.lockReasons.genericLockedReason;
 const addPayloadOf = (choice: SectionChoice): AddSectionPayload => (choice.afterSectionId === null ? { variantId: choice.variantId, sectionType: choice.sectionType } : { variantId: choice.variantId, sectionType: choice.sectionType, afterSectionId: choice.afterSectionId });
 type SectionAddReviewProps = { readonly scope: CatalogueScope; readonly documentId: string; readonly choice: SectionChoice; readonly onCancel: () => void };

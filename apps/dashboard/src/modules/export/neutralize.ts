@@ -16,8 +16,7 @@ const startsDangerousCell = (value: string, index: number): boolean => opensCell
   return false;
 }
 export const quoteField = (value: string): string => `"${value.replace(/"/g, '""')}"`;
-/** Renders `value` as one inert, fully quoted CSV field: the neutraliser sits at every cell start whose first character a spreadsheet would read as a formula, and the value's own characters. */
-export function neutralizeCell(value: string): string {
+/** Renders `value` as one inert, fully quoted CSV field: the neutraliser sits at every cell start whose first character a spreadsheet would read as a formula, and the value's own characters. */ export function neutralizeCell(value: string): string {
   let neutralised = "";
   let copied = 0;
   for (let index = 0; index < value.length; index += 1) {

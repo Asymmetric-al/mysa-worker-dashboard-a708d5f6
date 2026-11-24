@@ -51,8 +51,7 @@ export interface SessionMetaDocument {
   admittedMemberships: AdmittedMembership[];
   selectedContext: SelectedContext | null;
   capabilities: string[];
-  /** The session whose documents hold this seat's coaching records, or null when they are its own: a coach seat is admitted to a worker's shared coaching records without becoming that worker, so the record it reads and writes is the worker's own and never a copy of it. */
-  coachingRecordsSessionId: string | null;
+  /** The session whose documents hold this seat's coaching records, or null when they are its own: a coach seat is admitted to a worker's shared coaching records without becoming that worker, so the record it reads and writes is the worker's own and never a copy of it. */ coachingRecordsSessionId: string | null;
   personas: PersistedPersonaRecord[];
 }
 export const DEV_SOURCE = Object.freeze({ system: "dev-runtime", reference: "session-meta" });

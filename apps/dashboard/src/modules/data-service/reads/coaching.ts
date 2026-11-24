@@ -93,8 +93,7 @@ type CoachingModuleAdmissionView = { readonly module: ModuleKey; readonly until:
 type CoachingReadContext = { readonly session: ResolvedSession; readonly state: CoachingState; readonly at: Temporal.Instant };
 type CoachingLoad = { readonly ok: true; readonly context: CoachingReadContext } | { readonly ok: false; readonly result: ReadResult<never> };
 type ScopeLoad = { readonly ok: true; readonly scope: Scope } | { readonly ok: false; readonly result: ReadResult<never> };
-/** The document set one coaching seat addresses for its records: its own, or the world it was seated in, which is the worker's own record and never a copy of it. */
-async function coachingRecordsOf(session: ResolvedSession, seat: SessionDocuments): Promise<SessionDocuments | undefined> {
+/** The document set one coaching seat addresses for its records: its own, or the world it was seated in, which is the worker's own record and never a copy of it. */ async function coachingRecordsOf(session: ResolvedSession, seat: SessionDocuments): Promise<SessionDocuments | undefined> {
   const recordsSessionId = coachingRecordsSessionIdOf(session);
   if (recordsSessionId === session.sessionId) return seat;
   try {
@@ -227,18 +226,16 @@ function toWorkingGrant(record: CoachingGrantRecord): Result<CoachingGrant, stri
   });
 }
 const accessContextOf = (actor: "worker" | "coach", principalId: string, organizationId: string, ministryId: string, subjectAvailability: "available" | "unavailable"): CoachingAccessContext => ({ actor: { role: actor, principalId }, organizationId, ministryId, subjectAvailability, permissionHold: "none" });
-function durationViewOf(episode: { readonly duration: GrantDuration; readonly cutoffInstant: Temporal.Instant | null; readonly boundInstant: Temporal.Instant | null; readonly remainingMilliseconds: number | null }): CoachingDurationView {
-  return {
-    kind: episode.duration.kind,
-    shareThroughDate: episode.duration.shareThroughDate === null ? null : serialiseCivilDate(episode.duration.shareThroughDate),
-    frozenZone: episode.duration.frozenZone,
-    cutoffInstant: episode.cutoffInstant?.toString() ?? null,
-    boundedBy: episode.duration.limitedBy,
-    boundInstant: episode.boundInstant?.toString() ?? null,
-    openAtRead: episode.boundInstant === null || episode.remainingMilliseconds !== null,
-    remainingMilliseconds: episode.remainingMilliseconds,
-  };
-}
+const durationViewOf = (episode: { readonly duration: GrantDuration; readonly cutoffInstant: Temporal.Instant | null; readonly boundInstant: Temporal.Instant | null; readonly remainingMilliseconds: number | null }): CoachingDurationView => ({
+  kind: episode.duration.kind,
+  shareThroughDate: episode.duration.shareThroughDate === null ? null : serialiseCivilDate(episode.duration.shareThroughDate),
+  frozenZone: episode.duration.frozenZone,
+  cutoffInstant: episode.cutoffInstant?.toString() ?? null,
+  boundedBy: episode.duration.limitedBy,
+  boundInstant: episode.boundInstant?.toString() ?? null,
+  openAtRead: episode.boundInstant === null || episode.remainingMilliseconds !== null,
+  remainingMilliseconds: episode.remainingMilliseconds,
+});
 function workingPeriodOf(record: CoachingTargetRecord): Result<TargetPeriod, string> {
   const period = record.period;
   if (period.kind !== "custom") return ok({ kind: period.kind });
@@ -280,10 +277,20 @@ function measuredPeriodOf(target: TargetRecord, activities: readonly ActivityEve
   const count = measureFor({ measure: version.value.measure, period, activities, alreadyCredited: new Set<string>() }).count;
   return { period, version: version.value, versionProblem: null, count };
 }
+/** The one period a one-off custom target names, read from the range it stores. A custom target is measured over that range whether or not the planning day falls inside it, so a range that has closed still carries the count its own version recorded instead of reading as an unreadable source; `null` for every other period, and for a range whose last day precedes its first, which names no period at all. */
+function oneOffPeriodOf(target: TargetRecord): ResolvedPeriod | null {
+  const period = target.period;
+  if (period.kind !== "custom" || Temporal.PlainDate.compare(period.end, period.start) < 0) return null;
+  return { period, start: period.start, endInclusive: period.end, exclusiveEnd: period.end.add({ days: 1 }), startResolution: "aligned", exclusiveEndResolution: "aligned" };
+}
 function measuredPeriodsOf(target: TargetRecord, activities: readonly ActivityEvent[], at: Temporal.Instant): readonly MeasuredPeriod[] {
   const anchor = anchorOf(target);
   const current = resolveCurrentPeriod(anchor, COACHING_PLANNING_ZONE, at);
-  if (!current.ok) return [];
+  if (!current.ok) {
+    // A one-off period is the only period its target has, so a day outside it closes nothing on the calendar and leaves no previous period to look for: the range itself is measured, exactly once.
+    const oneOff = current.error === "no-period" ? oneOffPeriodOf(target) : null;
+    return oneOff === null ? [] : [measuredPeriodOf(target, activities, oneOff)];
+  }
   const periods: MeasuredPeriod[] = [measuredPeriodOf(target, activities, current.value)];
   const previous = resolvePeriodContaining(anchor, current.value.start.subtract({ days: 1 }));
   if (previous.ok) periods.push(measuredPeriodOf(target, activities, previous.value));
@@ -425,8 +432,7 @@ function invitableCoachesOf(coachPrincipalIds: readonly string[], actingPrincipa
   }
   return Array.from(coaches.values()).toSorted((one, two) => compareCodeUnits(one.principalId, two.principalId));
 }
-/** The worker's own preparation and sharing situation. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
-export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<CoachingOverviewView>>> {
+/** The worker's own preparation and sharing situation. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */ export async function readCoachingOverview(): Promise<ReadResult<ReadEnvelope<CoachingOverviewView>>> {
   const opened = await openWorkerRead("readCoachingOverview");
   if (!opened.ok) return opened.result;
   const { session, state, at, scope } = opened;
@@ -553,8 +559,7 @@ function workerTargetViewOf(record: CoachingTargetRecord, target: TargetRecord, 
   const { targetId, privateLabel, measure, quantity, calendarStart, homePlacement, revision } = record;
   return { targetId, privateLabel, measure, quantity, period: { kind: storedPeriod.kind, from: storedPeriod.from, to: storedPeriod.to }, calendarStart, homePlacement, state: current?.state ?? "unavailable", versions: target.versions.map(versionViewOf), periods, revision };
 }
-/** The worker's own targets, over the four canonical measures only. */
-export async function readTargets(input: { readonly page?: number; readonly pageSize?: number } = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<TargetsView>>> {
+/** The worker's own targets, over the four canonical measures only. */ export async function readTargets(input: { readonly page?: number; readonly pageSize?: number } = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<TargetsView>>> {
   const opened = await openWorkerRead("readTargets", source);
   if (!opened.ok) return opened.result;
   const { session, state, at, scope } = opened;
@@ -616,9 +621,8 @@ function measurementsOf(payload: CheckInPayload): CheckInMeasurementsView {
 }
 const questionViewsOf = (questions: readonly CheckInQuestion[]): readonly CheckInQuestionView[] => questions.map((question) => ({ wording: question.wording, order: question.order, scalars: scalarCountOf(question.wording) }));
 const answerViewsOf = (answers: readonly CheckInAnswer[]): readonly CheckInAnswerView[] => answers.map((answer) => ({ questionOrder: answer.questionOrder, text: answer.text, scalars: scalarCountOf(answer.text) }));
-function draftDiffersFromShared(draft: PrivateDraftView | null, shared: SharedRevisionView | null): boolean {
-  return draft === null || shared === null ? false : draft.revisionId === shared.revisionId ? false : draft.answers.map((answer) => `${answer.questionOrder}:${answer.text}`).join("\u0000") !== shared.answers.map((answer) => `${answer.questionOrder}:${answer.text}`).join("\u0000");
-}
+const draftDiffersFromShared = (draft: PrivateDraftView | null, shared: SharedRevisionView | null): boolean =>
+  draft === null || shared === null ? false : draft.revisionId === shared.revisionId ? false : draft.answers.map((answer) => `${answer.questionOrder}:${answer.text}`).join("\u0000") !== shared.answers.map((answer) => `${answer.questionOrder}:${answer.text}`).join("\u0000");
 /** The worker's private check-ins, their captured question sets and the revisions they shared. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readCheckIns(input: { readonly page?: number; readonly pageSize?: number } = {}): Promise<ReadResult<ReadEnvelope<CheckInsView>>> {
   const opened = await openWorkerRead("readCheckIns");
@@ -733,13 +737,11 @@ type WorkerTaskShareView = { readonly shareId: string; readonly taskId: string; 
 // One task the worker may share a summary of, as the envelope states it: the task's identity, the label it is chosen by, the civil day it is due, the status it holds now, the fingerprint of the meaning a description is reviewed against, and the task's own revision.
 type TaskSummaryCandidateView = { readonly taskId: string; readonly safeLabel: string; readonly dueDate: TaskDueDateView; readonly status: TaskStatus; readonly isRecurringSuccessor: boolean; readonly reviewedFingerprint: string; readonly revision: string };
 type TaskSharesView = { readonly candidates: readonly TaskSummaryCandidateView[]; readonly shares: readonly WorkerTaskShareView[]; readonly page: CoachingPageView; readonly maxCodePoints: number; readonly sharesNothing: boolean };
-/** The worker's own tasks as shareable candidates, in one deterministic order so two reads of the same records offer the same list. A repeating task is not offered. */
-function taskSummaryCandidatesOf(tasks: readonly TaskRecord[]): readonly TaskSummaryCandidateView[] {
-  return tasks
+/** The worker's own tasks as shareable candidates, in one deterministic order so two reads of the same records offer the same list. A repeating task is not offered. */ const taskSummaryCandidatesOf = (tasks: readonly TaskRecord[]): readonly TaskSummaryCandidateView[] =>
+  tasks
     .filter((task) => task.seriesId === null)
     .map((task) => ({ taskId: task.taskId, safeLabel: task.title, dueDate: dueDateViewOf(dueDateOf(task)), status: task.status, isRecurringSuccessor: false, reviewedFingerprint: taskReviewedFingerprint(task), revision: task.revision }))
     .sort((one, two) => compareCodeUnits(one.taskId, two.taskId));
-}
 /** The tasks a summary may be shared from and the summaries the worker selected for sharing, each with how it stands now. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readTaskShares(input: { readonly page?: number; readonly pageSize?: number } = {}): Promise<ReadResult<ReadEnvelope<TaskSharesView>>> {
   const opened = await openWorkerRead("readTaskShares");

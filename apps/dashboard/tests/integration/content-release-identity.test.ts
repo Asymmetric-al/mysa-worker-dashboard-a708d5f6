@@ -1,4 +1,4 @@
-/** Proves that a release pins the revision it published (criterion 9's freeze), that a submitted candidate stays frozen when a later save names its revision, and that a first Update release reaches a reader (criterion 12's reach rule on the receiving list). */
+/** Proves that a release pins the revision it published (criterion 9's freeze), that a submitted candidate stays frozen when a later save names its revision, that a first Update release reaches a reader (criterion 12's reach rule on the receiving list), and that the revision a Page read states is one a change from that read presents. */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type MutationOutcome, type Scope } from "@/modules/data-service";
@@ -6,11 +6,9 @@ import { resolveSession } from "@/modules/data-service/authorize";
 import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments } from "@/modules/dev-runtime/seed";
 import { resetSession } from "@/modules/store/repository";
 import { expectEnvelope, firstSaying, requiredSaying, throwing } from "../helpers/answers";
-/** This file's own session: a private id, so no other suite's seeded world is shared, disturbed or stranded. */
-const SESSION_ID = "it-content-release-identity";
+/** This file's own session: a private id, so no other suite's seeded world is shared, disturbed or stranded. */ const SESSION_ID = "it-content-release-identity";
 const SESSION = { sessionId: SESSION_ID };
-/** The published world a reader persona crosses into, and the persona that crosses: a reader admitted to no membership reads the Updates the publisher's own session released. */
-const PUBLISHER_SESSION = { sessionId: DEFAULT_SESSION_ID };
+/** The published world a reader persona crosses into, and the persona that crosses: a reader admitted to no membership reads the Updates the publisher's own session released. */ const PUBLISHER_SESSION = { sessionId: DEFAULT_SESSION_ID };
 const PUBLIC_READER = { sessionId: "reader-public" };
 const KITCHEN_PAGE = "doc-page-harbour-kitchen";
 const KITCHEN_EDITION = "variant-page-harbour-kitchen-en-public";
@@ -18,6 +16,7 @@ const SEEDED_KITCHEN_DRAFT = "rev-page-harbour-kitchen-en-draft-1";
 const SEEDED_KITCHEN_HEADING = "The new cooker arrived";
 const LATER_HEADING = "UNREVIEWED-DRAFT-PROBE";
 const LATER_BODY = "Text written after the release, and never submitted for review.";
+const SECOND_BODY = "Text written by the save that superseded the revision the earlier save presented.";
 const AUTUMN_UPDATE = "doc-update-autumn";
 const ARABIC_EDITION = "variant-update-autumn-ar-public";
 const SEEDED_ARABIC_CANDIDATE = "rev-update-ar-candidate-1";
@@ -31,8 +30,7 @@ async function scopeOf(source: { readonly sessionId: string }): Promise<Scope> {
 }
 const pageView = async (pageId: string, source: { readonly sessionId: string } = SESSION) => expectEnvelope(await reads.pages.readPage({ pageId, session: source }), `the Page ${pageId}`);
 async function pageEdition(variantId: string, source: { readonly sessionId: string } = SESSION) {
-  const page = await pageView(KITCHEN_PAGE, source);
-  return firstSaying(page.data.editions, "variantId", variantId, `The Page ${KITCHEN_PAGE} holds no edition ${JSON.stringify(variantId)}.`);
+  return firstSaying((await pageView(KITCHEN_PAGE, source)).data.editions, "variantId", variantId, `The Page ${KITCHEN_PAGE} holds no edition ${JSON.stringify(variantId)}.`);
 }
 async function updateEdition(variantId: string, source: { readonly sessionId: string }) {
   const matrix = expectEnvelope(await reads.updates.readVariantOverview({ documentId: AUTUMN_UPDATE, session: source }), `the variant matrix of ${AUTUMN_UPDATE}`);
@@ -165,5 +163,32 @@ describe("a submitted candidate stays frozen", () => {
     );
     expect([saved.changed, (await pageEdition(KITCHEN_EDITION)).draftRevisionId], "An unreleased, unsubmitted draft keeps the identity it already holds, so one save makes no second revision").toEqual([[SEEDED_KITCHEN_DRAFT], SEEDED_KITCHEN_DRAFT]);
     expect((await pageView(KITCHEN_PAGE)).data.sections[0]?.fields.heading).toBe(LATER_HEADING);
+  });
+});
+
+describe("the Page read states the revision its own changes present", () => {
+  it("accepts the envelope revision a Page read states, refuses it once a save has superseded it even where the edition's own revision has reached its ordinal, and accepts the revision the next read states", async () => {
+    const scope = await scopeOf(SESSION);
+    const seeded = await pageView(KITCHEN_PAGE);
+    // Two document-level changes leave the Page's own revision two steps ahead of the edition being composed, so the read below states a token of the document whose ordinal the edition reaches only after two saves.
+    const extended = acceptedOutcome(await mutations.pages.createVariant(SESSION_ID, { operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { documentId: KITCHEN_PAGE, locale: "fr" } }));
+    acceptedOutcome(await mutations.pages.createVariant(SESSION_ID, { operationId: newOperationId(), scope, expectedRevision: extended.revision, payload: { documentId: KITCHEN_PAGE, locale: "de" } }));
+    const read = await pageView(KITCHEN_PAGE);
+    const draft = requiredSaying(read.data.draft, `The Page ${KITCHEN_PAGE} states no draft, so this case has no draft to compose into.`);
+    // The envelope states the document's revision and the draft states the edition's own, and the two are different tokens: a revision of the document is never a revision of the edition, however alike the two look.
+    expect(draft.recordRevision, "The Page read states the document's revision, while the edition it composes carries one of its own").not.toBe(read.revision);
+    const payload = { variantId: draft.variantId, draftRevisionId: draft.revisionId, sectionId: "section-0", fields: { heading: LATER_HEADING, body: LATER_BODY } };
+    // The revision the read published is the revision a change originating from that read presents, and the section save accepts it although the section lands on the edition the Page composes.
+    acceptedOutcome(await mutations.pages.saveSectionFields(SESSION_ID, { operationId: newOperationId(), scope, expectedRevision: read.revision, payload }));
+    // The next read states the revision that save left behind, and the save presenting it is accepted in its turn.
+    const reread = await pageView(KITCHEN_PAGE);
+    expect(reread.revision, "The revision the Page read publishes moves with the change it reflects").not.toBe(read.revision);
+    acceptedOutcome(await mutations.pages.saveSectionFields(SESSION_ID, { operationId: newOperationId(), scope, expectedRevision: reread.revision, payload: { ...payload, fields: { heading: LATER_HEADING, body: SECOND_BODY } } }));
+    // The revision the first save superseded is presented again, by now the same ordinal the edition's own revision has reached: it stays a revision of the document, so the attempt is refused as stale with the caller's own input handed back rather than applied as the edition's own revision.
+    const composing = requiredSaying((await pageView(KITCHEN_PAGE)).data.draft, `The Page ${KITCHEN_PAGE} states no draft after the saves, so the refusal below cannot be compared with the edition's revision.`);
+    const stale = await mutations.pages.saveSectionFields(SESSION_ID, { operationId: newOperationId(), scope, expectedRevision: read.revision, payload });
+    if (stale.outcome !== "conflict") throw new Error(`A revision the first save has already superseded must be refused as a conflict, and the service answered ${describeOutcome(stale)}.`);
+    expect([stale.reason, stale.preservedInput]).toEqual(["stale-revision", payload]);
+    expect(stale.currentRevision, "The refusal names the edition's own revision, which the superseded token of the document never was").toBe(composing.recordRevision);
   });
 });

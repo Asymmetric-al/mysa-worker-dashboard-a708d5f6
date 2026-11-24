@@ -17,8 +17,7 @@ function canonicalJson(value: unknown): string {
   if (typeof value === "number") return String(value);
   if (typeof value === "boolean") return value ? "true" : "false";
   if (Array.isArray(value)) {
-    const items: readonly unknown[] = value;
-    return `[${items.map(canonicalJson).join(",")}]`;
+    return `[${value.map(canonicalJson).join(",")}]`;
   }
   if (!isRecord(value)) throw new TypeError("A report query must be plain JSON, so it can be identified by its content.");
   const members: string[] = [];

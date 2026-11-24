@@ -45,20 +45,16 @@ function payloadOf(values: InitiativeFormValues): CreateInitiativePayload {
   const endOn = values.endOn.trim();
   return startOn === "" && endOn === "" ? base : { ...base, period: { startOn, endOn } };
 }
-function settledEffectOf(outcome: MutationOutcome): SettledEffect {
-  if (outcome.outcome === "invalid") return { kind: "invalid" };
-  if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted") return { kind: "created", initiativeId: outcome.created?.[0] ?? null };
-  return { kind: "receipt" };
-}
+const settledEffectOf = (outcome: MutationOutcome): SettledEffect => (outcome.outcome === "invalid" ? { kind: "invalid" } : outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" ? { kind: "created", initiativeId: outcome.created?.[0] ?? null } : { kind: "receipt" });
 function ReviewSummary({ payload, ministryId, organizationId }: { readonly payload: CreateInitiativePayload; readonly ministryId: string; readonly organizationId: string }): ReactElement {
   const period = payload.period;
   return (
     <dl className="flex min-w-0 flex-col gap-3 text-sm">
-      <ReviewFact label={INITIATIVE_COPY.nameLabel} value={<span className="wrap-anywhere">{payload.name}</span>} />
-      <ReviewFact label={INITIATIVE_COPY.purposeLabel} value={<span className="block whitespace-pre-wrap wrap-anywhere text-pretty">{payload.purpose}</span>} />
-      <ReviewFact label={INITIATIVE_COPY.responsibleLabel} value={<bdi className="mono-identifier wrap-anywhere">{payload.responsiblePrincipalId}</bdi>} />
+      <ReviewFact term={INITIATIVE_COPY.nameLabel} value={<span className="wrap-anywhere">{payload.name}</span>} />
+      <ReviewFact term={INITIATIVE_COPY.purposeLabel} value={<span className="block whitespace-pre-wrap wrap-anywhere text-pretty">{payload.purpose}</span>} />
+      <ReviewFact term={INITIATIVE_COPY.responsibleLabel} value={<bdi className="mono-identifier wrap-anywhere">{payload.responsiblePrincipalId}</bdi>} />
       <ReviewFact
-        label={INITIATIVE_COPY.periodLabel}
+        term={INITIATIVE_COPY.periodLabel}
         value={
           period === undefined ? (
             <span>{"No period: this initiative has no start date and no end date."}</span>
@@ -71,7 +67,7 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
         }
       />
       <ReviewFact
-        label={SCOPE_LABEL}
+        term={SCOPE_LABEL}
         value={
           <span className="flex min-w-0 flex-col gap-1">
             {" "}
@@ -86,8 +82,7 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
     </dl>
   );
 }
-/** The create step: the form, the review that names what it will create, and the receipt for one attempt. */
-export default function InitiativeComposer({ open, onOpenChange, envelope, onCreated }: InitiativeComposerProps): ReactElement {
+/** The create step: the form, the review that names what it will create, and the receipt for one attempt. */ export default function InitiativeComposer({ open, onOpenChange, envelope, onCreated }: InitiativeComposerProps): ReactElement {
   const scope = envelope.scope;
   const actingPrincipalId = scope.principalId;
   const ministryId = scope.ministryId;

@@ -1,24 +1,8 @@
+import { GIFTS_PARAM } from "@/features/support/gift-params";
 import type { reads } from "@/modules/data-service";
 import { paramOf, wholeNumberOf, type SearchParams } from "../../page-frame";
 /** The bounded filter set the ledger read accepts, taken from its own signature rather than restated. */ export type GiftsQueryInput = NonNullable<Parameters<typeof reads.support.readGifts>[0]>;
 /** The page window the ledger read accepts, taken from the same signature. */ export type GiftsPageInput = NonNullable<GiftsQueryInput["page"]>;
-/** Every parameter this family's address states, named once so the ledger, the detail route and the way back read the same names. */ export const GIFTS_PARAM = {
-  period: "period",
-  from: "from",
-  to: "to",
-  currency: "currency",
-  amountMin: "amountMin",
-  amountMax: "amountMax",
-  recipient: "recipient",
-  partnerId: "partnerId",
-  designation: "designation",
-  method: "method",
-  search: "search",
-  sortField: "sortField",
-  sortDirection: "sortDirection",
-  page: "page",
-  pageSize: "pageSize",
-} as const;
 const SIGNED_INTEGER = /^-?\d{1,16}$/u;
 function minorUnitsOf(value: string | undefined): number | undefined {
   if (value === undefined || !SIGNED_INTEGER.test(value)) return undefined;

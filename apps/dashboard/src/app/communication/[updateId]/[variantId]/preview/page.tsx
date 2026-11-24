@@ -46,8 +46,7 @@ async function previewOf(editions: Editions, variantId: string): Promise<ReactEl
       return refusedNotice(REFUSED_REQUEST_DESCRIPTION);
   }
 }
-/** The exact, currently authorised, inert preview of one Update edition. */
-export default async function CommunicationVariantPreviewPage({ params }: { readonly params: Promise<{ updateId: string; variantId: string }> }): Promise<ReactElement> {
+/** The exact, currently authorised, inert preview of one Update edition. */ export default async function CommunicationVariantPreviewPage({ params }: { readonly params: Promise<{ updateId: string; variantId: string }> }): Promise<ReactElement> {
   const { updateId, variantId } = await params;
   const overview = await reads.updates.readVariantOverview({ documentId: updateId });
   switch (overview.kind) {

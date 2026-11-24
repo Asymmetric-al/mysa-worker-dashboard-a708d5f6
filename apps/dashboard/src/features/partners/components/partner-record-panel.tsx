@@ -10,8 +10,7 @@ import type { InteractionRecord } from "@/modules/data-service/envelope";
 import { PARTNER_KEY, type PartnerKeySegment } from "../hooks/use-partner-mutations";
 import type { PartnerDetailData, PartnerPrivateData, PartnerReadResult } from "./partner-detail-sections";
 import PartnerRecordBody, { type PartnerRecordFacts } from "./partner-record-body";
-/** The record body's payload, the worker's own preparation and the activity, taken from the service's reads rather than restated. */
-type RecordPayload = Extract<Awaited<ReturnType<typeof reads.partners.readPartner>>, { readonly kind: "envelope" }>["envelope"]["data"];
+/** The record body's payload, the worker's own preparation and the activity, taken from the service's reads rather than restated. */ type RecordPayload = Extract<Awaited<ReturnType<typeof reads.partners.readPartner>>, { readonly kind: "envelope" }>["envelope"]["data"];
 type PreparationPayload = Extract<Awaited<ReturnType<typeof reads.partners.readPrivatePreparation>>, { readonly kind: "envelope" }>["envelope"]["data"];
 type InteractionPayload = Extract<Awaited<ReturnType<typeof reads.interactions.readInteractions>>, { readonly kind: "envelope" }>["envelope"]["data"];
 const ROSTER_CRUMB = [{ label: "Partners", href: "/partners" }] as const;

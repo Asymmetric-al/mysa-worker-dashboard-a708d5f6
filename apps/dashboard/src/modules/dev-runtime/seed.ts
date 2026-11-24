@@ -11,6 +11,7 @@ import type {
   CoachingTargetPeriodRecord,
   CoachingTargetRecord,
   CoachingTargetVersionRecord,
+  CoachingTaskShareRecord,
   CommitmentRowRecord,
   ContentAudience,
   ContentDocumentRecord,
@@ -49,6 +50,7 @@ import type {
   TaskRecord,
   TaskSeriesRecord,
 } from "@/modules/data-service/envelope";
+import { taskReviewedFingerprint } from "@/modules/data-service/envelope";
 import type { PublishMode, ReviewDecision } from "@/modules/data-service/mutations/content";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { UNKNOWN_CURRENCY } from "@/modules/money/currency";
@@ -63,6 +65,8 @@ import { buildSessionMeta, DEFAULT_SCENARIO_ID, type PersistedPersonaKind, type 
 export const SESSION_STATE_VERSION = 1;
 export const OPERATION_LEDGER_VERSION = 1;
 const INITIAL_REVISION = "rev-1";
+// A content document's revision states the state of the document and of every edition it holds, so it is stated in a token space of its own and can never be mistaken for an edition's `rev-N`.
+const DOCUMENT_INITIAL_REVISION = "doc-rev-1";
 const REFERRAL_NEW_WINDOW_DAYS = 14;
 const REFERRAL_CONTINUATION_DAYS = 30;
 const identifier = <Brand extends string>(value: string): Brand => value as Brand;
@@ -93,7 +97,7 @@ const HARBOUR_YOUTH: AdmittedMembership = { organizationId: ORGANIZATION_HARBOUR
 const HARBOUR_STUDENTS: AdmittedMembership = { organizationId: ORGANIZATION_HARBOUR, ministryId: MINISTRY_STUDENTS, supportSubjectId: SUPPORT_SUBJECT_STUDENTS, organizationLabel: "Harbour Community Church", ministryLabel: "Students Ministry" };
 const HARBOUR_BOTH: readonly AdmittedMembership[] = [HARBOUR_YOUTH, HARBOUR_STUDENTS];
 const RIVERBEND_OUTREACH: AdmittedMembership = { organizationId: ORGANIZATION_RIVERBEND, ministryId: MINISTRY_OUTREACH, supportSubjectId: SUPPORT_SUBJECT_OUTREACH, organizationLabel: "Riverbend Chapel", ministryLabel: "Outreach" };
-export type SeededWorkspace = "new-worker" | "established-worker" | "established-worker-partial-release" | "students-ministry" | "second-worker" | "subscriber" | "reader-approved-supporter" | "empty";
+export type SeededWorkspace = "new-worker" | "established-worker" | "established-worker-partial-release" | "students-ministry" | "second-worker" | "empty";
 export type SeededContext = { readonly organizationId: OrganizationId; readonly ministryId: MinistryId; readonly supportSubjectId: SupportSubjectId };
 export type PersonaId = "new-worker" | "established-worker" | "second-worker" | "fundraiser" | "coach" | "reviewer" | "reader-public" | "reader-approved-supporter" | "reader-unauthorized" | "subscriber";
 const PERSONA_ROSTER_ORDER: readonly PersonaId[] = Object.freeze(["new-worker", "established-worker", "second-worker", "fundraiser", "reviewer", "coach", "reader-public", "reader-approved-supporter", "reader-unauthorized", "subscriber"]);
@@ -142,11 +146,11 @@ export const SEEDED_SESSIONS: readonly SeededSession[] = deepFreeze([
   buildSession("deputized-fundraiser", "fundraiser", "Deputized fundraiser", "Acting inside one admitted ministry, among the shared records and their own private work.", PRINCIPAL_DEPUTIZED, [HARBOUR_YOUTH], { selectedContext: HARBOUR_YOUTH, workspace: "established-worker" }),
   buildSession("coach", "coach", "Coach", "Read-only access to exactly the modules and periods the worker has shared.", PRINCIPAL_COACH, [], { workspace: "empty", coachingRecordsSessionId: "established-worker" }),
   buildSession("content-reviewer", "reviewer", "Content reviewer", "Approves frozen content candidates, and only candidates.", PRINCIPAL_REVIEWER, [HARBOUR_YOUTH], { selectedContext: HARBOUR_YOUTH, workspace: "established-worker" }),
-  // A reader is admitted by the persona it previews, not by a ministry membership, so its session carries no admitted membership and has chosen no context; the one exception is the record the reader itself owns — the approved-supporter reader's membership, which its own preference controls write and which the publisher's world also holds as the copy a receiving read reaches across.
+  // A reader is admitted by the persona it previews, not by a ministry membership, so its session carries no admitted membership and has chosen no context; the membership row a reader owns lives in the publisher's world that reader's own page reads across to, so each reader session is laid down with no records of its own and the row it changes has one owner.
   buildSession("reader-public", "reader-public", "Public reader", "A public reader in the receiving preview, admitted to the public edition only.", PRINCIPAL_READER_PUBLIC, [], {}),
-  buildSession("reader-approved-supporter", "reader-approved-supporter", "Approved-supporter reader", "A reader admitted to the approved-supporter edition, and refused the public one's siblings.", PRINCIPAL_READER_SUPPORTER, [], { workspace: "reader-approved-supporter" }),
+  buildSession("reader-approved-supporter", "reader-approved-supporter", "Approved-supporter reader", "A reader admitted to the approved-supporter edition, and refused the public one's siblings; its membership row lives in the publisher's own audience.", PRINCIPAL_READER_SUPPORTER, [], {}),
   buildSession("reader-unauthorized", "reader-unauthorized", "Unauthorized reader", "Refused protected content honestly, with nothing about it disclosed.", PRINCIPAL_READER_UNAUTHORIZED, [], {}),
-  buildSession("subscriber", "subscriber", "Subscriber", "A reader whose own membership is waiting for proof: confirmable inside its 168-hour window, with Off or Immediate available for it.", PRINCIPAL_SUBSCRIBER, [], { workspace: "subscriber" }),
+  buildSession("subscriber", "subscriber", "Subscriber", "A reader whose membership in the publisher's own audience is waiting for proof: confirmable inside its 168-hour window, with Off or Immediate available for it.", PRINCIPAL_SUBSCRIBER, [], {}),
   buildSession("no-access", "established-worker", "No access", "No usable account: the only honest outcome is account-recovery guidance.", PRINCIPAL_NO_ACCESS, [], { sessionState: "no-access" }),
   buildSession("session-unavailable", "established-worker", "Session state — unavailable", "Admission could not be resolved because a source is down: retry guidance, never an empty workspace.", PRINCIPAL_UNAVAILABLE, [HARBOUR_YOUTH], { sessionState: "unavailable", scenarioId: "financial-source-unavailable" }),
   buildSession("session-denied", "established-worker", "Session state — denied", "Denied with nothing disclosed: no count, title, size or existence hint.", PRINCIPAL_DENIED, [], { sessionState: "denied" }),
@@ -249,9 +253,12 @@ export const SEEDED_MEDIA_BYTES: readonly SeededMediaBytes[] = Object.freeze([
   { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-playback", file: "sample-h264.mp4", fixture: "sample-h264.mp4", producedBy: "copy" },
   { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-poster", file: "poster.jpg", fixture: "poster.jpg", producedBy: "copy" },
   { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-captions", file: "sample.vtt", fixture: "sample.vtt", producedBy: "copy" },
-  { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-transcript", file: "transcript.vtt", fixture: "sample.vtt", producedBy: "copy" },
+  { assetId: "asset-video-welcome", renditionId: "rendition-video-welcome-transcript", file: "transcript.txt", fixture: "transcript.txt", producedBy: "copy" },
   { assetId: "asset-image-portrait", renditionId: "rendition-image-portrait-display", file: "display.jpg", fixture: "IMG_20260814-harbour-youth-group.jpg", producedBy: "image-display" },
   { assetId: "asset-video-unavailable", renditionId: "rendition-video-unavailable-poster", file: "poster.jpg", fixture: "poster.jpg", producedBy: "copy" },
+  { assetId: "asset-video-supporters-briefing", renditionId: "rendition-video-supporters-briefing-playback", file: "sample-h264.mp4", fixture: "sample-h264.mp4", producedBy: "copy" },
+  { assetId: "asset-video-supporters-briefing", renditionId: "rendition-video-supporters-briefing-poster", file: "poster.jpg", fixture: "poster.jpg", producedBy: "copy" },
+  { assetId: "asset-video-supporters-briefing", renditionId: "rendition-video-supporters-briefing-captions", file: "sample.vtt", fixture: "sample.vtt", producedBy: "copy" },
 ]);
 function seededBytesRefOf(renditionId: string): string {
   const entry = SEEDED_MEDIA_BYTES.find((candidate) => candidate.renditionId === renditionId);
@@ -316,6 +323,7 @@ export interface SessionStateDocument {
   readonly coachingGrants: readonly CoachingGrantRecord[];
   readonly coachingTargets: readonly CoachingTargetRecord[];
   readonly coachingCheckIns: readonly CoachingCheckInRecord[];
+  readonly coachingTaskShares: readonly CoachingTaskShareRecord[];
   readonly importProposals: readonly ImportProposalRecord[];
 }
 export type OperationLedgerDocument = { readonly version: number; readonly entries: readonly OperationRecord[] };
@@ -351,13 +359,14 @@ const emptyFamilies = (): SessionFamilies => ({
   coachingGrants: [],
   coachingTargets: [],
   coachingCheckIns: [],
+  coachingTaskShares: [],
   importProposals: [],
 });
 const stateDocument = (session: SeededSession, families: WorkspaceFamilies): SessionStateDocument => ({ version: SESSION_STATE_VERSION, context: buildContext(session), ...emptyFamilies(), ...families });
 function newWorkerWorkspace(session: SeededSession): SessionStateDocument {
   const partners: readonly PartnerRecord[] = [buildPartner("partner-nw-ada-quinn", "private-preparation", "Ada Quinn (met on Sunday)", { audience: "private", contactMethods: [contactMethod("email", "ada.quinn@example.org")], tags: ["first-contact"] })];
   const tasks: readonly TaskRecord[] = [buildTask("task-nw-first-follow-up", "Send Ada a first note", session.principalId, { category: "Care", dueOn: "2026-11-24", partnerId: "partner-nw-ada-quinn", note: "Ask how she heard about the ministry before adding her to anything." })];
-  const contentDocuments: readonly ContentDocumentRecord[] = [{ documentId: "doc-update-first-note", family: "update", kind: "update", sourceSubject: source("content", "update-first-note"), siteId: "site-harbour", givingBinding: null, managedFields: ["title"], revision: INITIAL_REVISION }];
+  const contentDocuments: readonly ContentDocumentRecord[] = [{ documentId: "doc-update-first-note", family: "update", kind: "update", sourceSubject: source("content", "update-first-note"), siteId: "site-harbour", givingBinding: null, managedFields: ["title"], revision: DOCUMENT_INITIAL_REVISION }];
   const contentVariants: readonly ContentVariantRecord[] = [buildContentVariant("variant-update-first-note-public-en", "doc-update-first-note", "public", "en", "ltr")];
   return stateDocument(session, { partners, tasks, contentDocuments, contentVariants });
 }
@@ -426,7 +435,7 @@ const harbourTasks = (session: SeededSession): readonly TaskRecord[] => [
 ];
 function buildSeries(seriesId: string, session: SeededSession, title: string, currentRule: TaskSeriesRecord["currentRule"], state: TaskSeriesRecord["state"], options: { readonly currentOccurrenceId?: string; readonly planNeedsReview?: boolean } = {}): TaskSeriesRecord {
   const { currentOccurrenceId = null, planNeedsReview = false } = options;
-  return { seriesId, ownerPrincipalId: session.principalId, title, currentRule, effectiveRevisions: [{ revisionId: `${seriesId}-rev-1`, effectiveFrom: currentRule.firstDueOn, rule: currentRule }], currentOccurrenceId, state, planNeedsReview, revision: INITIAL_REVISION };
+  return { seriesId, ownerPrincipalId: session.principalId, title, currentRule, effectiveRevisions: [{ revisionId: `${seriesId}-rev-1`, effectiveFrom: currentRule.firstDueOn, rule: currentRule }], currentOccurrenceId, state, planNeedsReview, planReviewAnsweredOn: null, revision: INITIAL_REVISION };
 }
 const harbourSeries = (session: SeededSession): readonly TaskSeriesRecord[] => [
   buildSeries("series-month-end-support-review", session, "Month-end support review", SERIES_MONTH_END_RULE, "active", { currentOccurrenceId: "task-series-month-end" }),
@@ -484,8 +493,7 @@ const harbourReferrals = (): readonly ReferralCycleRecord[] => [
 ];
 const harbourSupportProjection = (): SupportProjectionRecord =>
   supportProjectionOf({ supportSubjectId: SUPPORT_SUBJECT_YOUTH, currencyExponents: { USD: 2, EUR: 2, KWD: 3, JPY: 0 }, coverage: { from: "2023-01-01", to: "2026-11-20", state: "partial" }, lastSourceUpdate: "2026-11-18T09:30:00Z", sourceReference: "ledger-harbour-2026", goal: harbourGoal() });
-/** The seeded goal: its revision is the base revision an edit presents, and the report reads it as a whole number, so it is the one seeded revision that is not an opaque token rather than "rev-1". */
-function harbourGoal(): SupportProjectionRecord["goal"] {
+/** The seeded goal: its revision is the base revision an edit presents, and the report reads it as a whole number, so it is the one seeded revision that is not an opaque token rather than "rev-1". */ function harbourGoal(): SupportProjectionRecord["goal"] {
   return { amount: money("USD", 2500000), measure: GOAL_MEASURE, effectiveFrom: "2026-01-01", revision: "1" };
 }
 function harbourGifts(): readonly GiftRowRecord[] {
@@ -515,22 +523,35 @@ const harbourCommitments = (): readonly CommitmentRowRecord[] => [
 type HarbourContent = Pick<SessionStateDocument, "contentDocuments" | "contentVariants" | "contentRevisions" | "contentReviews" | "releases" | "mediaAssets">;
 function harbourContentDocuments(): readonly ContentDocumentRecord[] {
   return [
-    { documentId: "doc-update-autumn", family: "update", kind: "update", sourceSubject: source("content", "update-autumn-2026"), siteId: "site-harbour", givingBinding: null, managedFields: ["title"], revision: INITIAL_REVISION },
-    { documentId: "doc-page-harbour-youth", family: "worker-page", kind: "story", sourceSubject: source("content", "worker-page-harbour-youth"), siteId: "site-harbour", givingBinding: null, managedFields: ["title", "givingBinding"], revision: INITIAL_REVISION },
-    // The second family's Page: the same site and the same contributor authority, composed from the Project Page catalogue's own sections, so both families the Pages index names hold a Page a worker can actually compose.
-    { documentId: "doc-page-harbour-kitchen", family: "project-page", kind: "milestone", sourceSubject: source("content", "project-page-harbour-kitchen"), siteId: "site-harbour", givingBinding: null, managedFields: ["title", "givingBinding"], revision: INITIAL_REVISION },
+    { documentId: "doc-update-autumn", family: "update", kind: "update", sourceSubject: source("content", "update-autumn-2026"), siteId: "site-harbour", givingBinding: null, managedFields: ["title"], revision: DOCUMENT_INITIAL_REVISION },
+    // The one Page an approved Designation is recorded for, so its Give placement shows the destination the organization approved rather than the unavailable state: the label is the designation's own name and the reference is the opaque source handle, never an account or a fund a page could choose.
+    {
+      documentId: "doc-page-harbour-youth",
+      family: "worker-page",
+      kind: "story",
+      sourceSubject: source("content", "worker-page-harbour-youth"),
+      siteId: "site-harbour",
+      givingBinding: { designation: source("giving", "designation-harbour-youth-general"), label: "Harbour Youth general fund" },
+      managedFields: ["title", "givingBinding"],
+      revision: DOCUMENT_INITIAL_REVISION,
+    },
+    // The second family's Page: the same site and the same contributor authority, composed from the Project Page catalogue's own sections, so both families the Pages index names hold a Page a worker can actually compose. It carries no approved Designation, so the Give placement on this Page states *Giving unavailable* with no fallback fund.
+    { documentId: "doc-page-harbour-kitchen", family: "project-page", kind: "milestone", sourceSubject: source("content", "project-page-harbour-kitchen"), siteId: "site-harbour", givingBinding: null, managedFields: ["title", "givingBinding"], revision: DOCUMENT_INITIAL_REVISION },
   ];
 }
 function harbourMediaAssets(session: SeededSession): readonly MediaAssetRecord[] {
   const scope = assetScope(session, HARBOUR_YOUTH);
-  const welcomeRenditions = [rendition("rendition-video-welcome-playback", "playback", "video/mp4"), rendition("rendition-video-welcome-poster", "poster", "image/jpeg"), rendition("rendition-video-welcome-captions", "captions", "text/vtt"), rendition("rendition-video-welcome-transcript", "transcript", "text/vtt")];
-  // The committed fixtures are the bytes served here: `scripts/make-media-fixtures.mjs --check` verified the poster carries no EXIF, ICC profile or comment segment, the caption track is plain WebVTT, and the clip's container reports a creation timestamp and no descriptive tag. The transcript is served from the committed WebVTT text under a custody name of its own.
+  const welcomeRenditions = [rendition("rendition-video-welcome-playback", "playback", "video/mp4"), rendition("rendition-video-welcome-poster", "poster", "image/jpeg"), rendition("rendition-video-welcome-captions", "captions", "text/vtt"), rendition("rendition-video-welcome-transcript", "transcript", "text/plain")];
+  // The committed fixtures are the bytes served here: `scripts/make-media-fixtures.mjs --check` verified the poster carries no EXIF, ICC profile or comment segment, the caption track is plain WebVTT, the transcript is prose with no WebVTT header and no cue timings, and the clip's container reports a creation timestamp and no descriptive tag. The transcript is served from its own committed fixture under a custody name of its own, because it is the clip's text alternative rather than a second copy of the caption track.
   const welcome = buildMediaAsset("asset-video-welcome", "video", { container: "mp4", codec: "avc1.64001f", durationSeconds: 2, width: 960, height: 540 }, "media-originals/welcome-sunday-raw.mp4", welcomeRenditions, scope);
   // A revealing original filename, kept private: it is never echoed into output or served, and `prepareDisplayImage` re-reads the delivered bytes and refuses one still carrying metadata or a copy of the original's name.
   const portrait = buildMediaAsset("asset-image-portrait", "image", { container: "jpeg", codec: "jpeg", durationSeconds: null, width: 1125, height: 2000 }, "media-originals/IMG_20260814-harbour-youth-group.jpg", [rendition("rendition-image-portrait-display", "display", "image/jpeg")], scope);
   // No playback bytes exist for this asset, so the only rendition it serves is the committed poster, which the fixture script's own check verified carries no metadata segment.
   const unavailable = buildMediaAsset("asset-video-unavailable", "video", { container: "mp4", codec: "avc1.4d401f", durationSeconds: 95.4, width: 1280, height: 720 }, "media-originals/evening-talk-raw.mp4", [rendition("rendition-video-unavailable-poster", "poster", "image/jpeg")], scope);
-  return [welcome, portrait, unavailable];
+  // A second playable video, placed only on the approved-supporter edition: its playback, poster and caption renditions are served from the same committed fixtures, and because no public edition places it, every request for one of them is answered by the caller's grant rather than by the edition being open to everyone.
+  const briefingRenditions = [rendition("rendition-video-supporters-briefing-playback", "playback", "video/mp4"), rendition("rendition-video-supporters-briefing-poster", "poster", "image/jpeg"), rendition("rendition-video-supporters-briefing-captions", "captions", "text/vtt")];
+  const briefing = buildMediaAsset("asset-video-supporters-briefing", "video", { container: "mp4", codec: "avc1.64001f", durationSeconds: 2, width: 960, height: 540 }, "media-originals/supporters-briefing-raw.mp4", briefingRenditions, scope);
+  return [welcome, portrait, unavailable, briefing];
 }
 function harbourContentRevisions(): readonly ContentRevisionRecord[] {
   const author = PRINCIPAL_ESTABLISHED;
@@ -544,7 +565,11 @@ function harbourContentRevisions(): readonly ContentRevisionRecord[] {
   const portraitShare = { sharePresentation: { title: "Autumn at Harbour Youth", description: "A term of Friday evenings, shared meals and six new faces.", imageAssetId: "asset-image-portrait", imageAltText: "The youth group gathered in the church hall." } };
   return [
     buildContentRevision("rev-update-en-1", "variant-update-autumn-en-public", autumnEnglish, author, "2026-11-09T15:00:00Z", "Autumn at Harbour Youth", portraitShare),
-    buildContentRevision("rev-update-en-supporter-1", "variant-update-autumn-en-approved-supporter", autumnForSupporters, author, "2026-11-09T15:20:00Z", "Autumn at Harbour Youth — for supporters"),
+    buildContentRevision("rev-update-en-supporter-1", "variant-update-autumn-en-approved-supporter", autumnForSupporters, author, "2026-11-09T15:20:00Z", "Autumn at Harbour Youth — for supporters", {
+      // The one video a protected edition places: an Update has no sections, so the placement sits in the revision, and the caption track it carries is the rendition the player offers for it.
+      mediaPlacements: [{ placementId: "placement-update-supporter-briefing", assetId: "asset-video-supporters-briefing", sectionElement: null, position: 0, altText: "A short briefing for supporters on this term's costs.", caption: "A term's costs, in two minutes.", credit: "Harbour Youth" }],
+      captions: [{ assetId: "asset-video-supporters-briefing", renditionId: "rendition-video-supporters-briefing-captions", language: "en", label: "English", isDefault: true }],
+    }),
     buildContentRevision("rev-update-fr-1", "variant-update-autumn-fr-public", contentBody("ltr", ["L'automne à Harbour Youth", "Ce trimestre, nous nous sommes retrouvés chaque vendredi autour d'un repas, et six nouveaux visages sont venus."]), author, "2026-11-11T11:00:00Z", "L'automne à Harbour Youth"),
     buildContentRevision("rev-update-ar-draft-1", "variant-update-autumn-ar-public", autumnArabic, author, "2026-11-13T10:00:00Z", "الخريف في هاربر يوث"),
     buildContentRevision("rev-update-ar-candidate-1", "variant-update-autumn-ar-public", contentBody("rtl", ["الخريف في هاربر يوث", "التقينا كل يوم جمعة هذا الفصل، وتشاركنا وجبة، ورحّبنا بستة وجوه جديدة.", "شكراً لصلاتكم ودعمكم الذي يجعل هذا العمل ممكناً."]), author, "2026-11-14T09:30:00Z", "الخريف في هاربر يوث"),
@@ -613,7 +638,7 @@ const partialReleaseReleases = (): readonly ReleaseRecord[] => [
   buildRelease("release-update-ar-1", "variant-update-autumn-ar-public", "rev-update-ar-1", "public", "ar", "2026-10-24T09:00:00Z", "link-public"),
   buildRelease("release-update-en-2", "variant-update-autumn-en-public", "rev-update-en-2", "public", "en", "2026-11-18T09:00:00Z", "link-public"),
 ];
-/** The receiving reader's own membership: its approval is the protected-reading grant, the row is the membership a notification copy is addressed at, and it is the record that reader's own preference, confirmation and unsubscribe controls write. */
+/** The receiving reader's membership, whose one home is this publisher's world: its approval is the protected-reading grant, the row is the membership a notification copy is addressed at, and it is the record that reader's own preference, confirmation and unsubscribe controls change, because the reader's page reads these rows across rather than keeping a copy of its own. */
 const approvedSupporterMembership = (): MembershipRecord => buildMembership(PRINCIPAL_READER_SUPPORTER, "supporter@example.org", "active", { displayName: "Approved supporter", acceptedAt: "2026-07-22T10:30:00Z", languagePreference: "en" });
 function harbourMemberships(): readonly MembershipRecord[] {
   return [
@@ -621,9 +646,11 @@ function harbourMemberships(): readonly MembershipRecord[] {
     buildMembership("membership-priya-active", "priya.raman@example.org", "active", { displayName: "Priya Raman", acceptedAt: "2026-04-11T19:30:00Z", languagePreference: "en" }),
     buildMembership("membership-jonas-active", "jonas.oyelaran@example.org", "active", { displayName: "Jonas Oyelaran", acceptedAt: "2026-05-19T12:00:00Z", languagePreference: "en" }),
     buildMembership("membership-tobias-active", "tobias.kern@example.org", "active", { displayName: "Tobias Kern", acceptedAt: "2026-06-30T06:45:00Z", languagePreference: "de" }),
-    approvedSupporterMembership(), // The receiving reader is a member of this publisher's Update-email audience, so this one row is two facts on the publisher's side: the approval a receiving read decides the grant from, and the membership the notice's copy is addressed at.
+    approvedSupporterMembership(), // The receiving reader is a member of this publisher's Update-email audience, and this row is the only copy of that membership: the reader's own page reads it here, so its preferences, confirmation and unsubscribe change what this audience reports.
     // Awaiting proof: not membership, and its 168-hour confirmation window is stored as the instant it closes.
     buildMembership("membership-awaiting-proof", "iwan.pritchard@example.org", "awaiting-proof", { displayName: "Iwan Pritchard", acceptedAt: "2026-11-16T12:00:00Z", confirmationDeadline: membershipConfirmationDeadline(Temporal.Instant.from("2026-11-16T12:00:00Z")), languagePreference: "cy" }),
+    // The subscriber reader's membership, waiting for proof inside its own 168-hour window and held here for the same reason: one owner for the row the reader's page and this audience both read.
+    buildMembership(PRINCIPAL_SUBSCRIBER, "subscriber@example.org", "awaiting-proof", { displayName: "Subscriber", acceptedAt: "2026-11-16T12:00:00Z", confirmationDeadline: membershipConfirmationDeadline(Temporal.Instant.from("2026-11-16T12:00:00Z")), languagePreference: "en" }),
     buildMembership("membership-unsubscribed", "hilary.baptiste@example.org", "off", { displayName: "Hilary Baptiste", acceptedAt: "2026-02-08T09:15:00Z", languagePreference: "en" }),
     buildMembership("membership-restricted", "nadia.haq@example.org", "restricted", { displayName: "Nadia Haq", acceptedAt: "2026-07-14T15:00:00Z" }),
     buildMembership("membership-subscribed-column", "jo.mbeki@example.org", "off", { displayName: "Jo Mbeki" }),
@@ -645,9 +672,28 @@ function harbourNotificationResults(): readonly NotificationSendResultRecord[] {
   // The seeded intent serves all five eligible recipients of its ceiling — accepted, failed and unknown outcomes are all a recorded copy — so no recipient of this intent went unserved.
   return [{ sendResultId: "send-result-update-autumn-en", intentId: "intent-update-autumn-en", recipients, unserved: [], recordedAt: "2026-11-10T09:07:00Z", revision: INITIAL_REVISION }];
 }
-type CoachingShare = { readonly coachingGrants: readonly CoachingGrantRecord[]; readonly coachingTargets: readonly CoachingTargetRecord[]; readonly coachingCheckIns: readonly CoachingCheckInRecord[] };
+type CoachingShare = { readonly coachingGrants: readonly CoachingGrantRecord[]; readonly coachingTargets: readonly CoachingTargetRecord[]; readonly coachingCheckIns: readonly CoachingCheckInRecord[]; readonly coachingTaskShares: readonly CoachingTaskShareRecord[] };
+/** The one task summary the seed shares: a reviewed description of one of the worker's own tasks, measured in the same code points the review counts and reviewed against the task record's own fingerprint, so the share states the description as current rather than as held until it is reviewed again. The description is a safe summary of the work and names no title, partner, amount, attachment, link or private history. */
+function coachingTaskSharesOf(tasks: readonly TaskRecord[]): readonly CoachingTaskShareRecord[] {
+  const task = tasks.find((candidate) => candidate.taskId === "task-overdue-thank-you");
+  if (task === undefined) throw new RangeError(`The seeded task summary describes task-overdue-thank-you, and this world states no such task (${tasks.map((candidate) => candidate.taskId).join(", ")}), so the share would name a task its own records do not hold.`);
+  const description = "Thanking a partner for their recent support, with one follow-up call agreed.";
+  return [
+    {
+      shareId: "coaching-task-share-overdue-thank-you",
+      taskId: task.taskId,
+      // A task that does not repeat is shared as its own occurrence, so the occurrence the share names is the task.
+      occurrenceId: task.taskId,
+      reviewedSummary: { description, codePoints: Array.from(description).length, reviewedAt: "2026-11-17T09:20:00Z" },
+      reviewedFingerprint: taskReviewedFingerprint(task),
+      state: "shared",
+      revision: 1,
+      withdrawnAt: null,
+    },
+  ];
+}
 const targetVersions = (targetId: string, measure: CoachingTargetVersionRecord["measure"], quantity: number, calendarStart: string): readonly CoachingTargetVersionRecord[] => [{ revisionId: `${targetId}-1`, effectiveFrom: calendarStart, effectiveTo: null, quantity, measure, calendarStart }];
-function coachingShare(): CoachingShare {
+function coachingShare(tasks: readonly TaskRecord[]): CoachingShare {
   const modules: CoachingModuleSelection = { "support-goal": false, "support-results": false, targets: true, "check-ins": true, "task-summaries": false };
   const duration: CoachingDurationRecord = { kind: "through-date", cutoffInstant: "2026-12-31T00:00:00Z", frozenZone: REFERRAL_SOURCE_ZONE };
   const invitation: CoachingInvitationRecord = { issuedAt: "2026-10-30T09:00:00Z", expiresAt: "2026-11-06T09:00:00Z", supersededBy: null };
@@ -703,6 +749,7 @@ function coachingShare(): CoachingShare {
         revision: INITIAL_REVISION,
       },
     ],
+    coachingTaskShares: coachingTaskSharesOf(tasks),
   };
 }
 function establishedWorkerWorkspace(session: SeededSession): SessionStateDocument {
@@ -723,7 +770,7 @@ function establishedWorkerWorkspace(session: SeededSession): SessionStateDocumen
     notificationIntents: harbourNotificationIntents(),
     notificationResults: harbourNotificationResults(),
   };
-  return stateDocument(session, { ...harbour, ...harbourContent(session), ...coachingShare() });
+  return stateDocument(session, { ...harbour, ...harbourContent(session), ...coachingShare(harbour.tasks) });
 }
 const partialReleaseWorkspace = (session: SeededSession): SessionStateDocument => ({ ...establishedWorkerWorkspace(session), contentVariants: partialReleaseContentVariants(), contentRevisions: partialReleaseContentRevisions(), releases: partialReleaseReleases() });
 function studentsMinistryWorkspace(session: SeededSession): SessionStateDocument {
@@ -739,22 +786,12 @@ function studentsMinistryWorkspace(session: SeededSession): SessionStateDocument
   const tasks: readonly TaskRecord[] = [buildTask("task-students-term-plan", "Plan the students' term programme", session.principalId, { category: "Planning", dueOn: "2026-11-27", partnerId: "partner-students-holy-trinity" })];
   return stateDocument(session, { partners, gifts, supportProjection, tasks });
 }
-function subscriberWorkspace(session: SeededSession): SessionStateDocument {
-  const memberships: readonly MembershipRecord[] = [
-    buildMembership(session.principalId, "subscriber@example.org", "awaiting-proof", { displayName: "Subscriber", acceptedAt: "2026-11-16T12:00:00Z", confirmationDeadline: membershipConfirmationDeadline(Temporal.Instant.from("2026-11-16T12:00:00Z")), languagePreference: "en" }),
-  ];
-  return stateDocument(session, { memberships });
-}
-/** The approved-supporter reader's own world: the record its own Off/Immediate choice, reading language, confirmation and unsubscribe write. A session sees only its own files, so the membership a reader changes is this copy, while the publisher's world carries the copy a receiving read reaches across for the grant and the notice addressed at it, both built by `approvedSupporterMembership` so they start identical. */
-const approvedSupporterWorkspace = (session: SeededSession): SessionStateDocument => stateDocument(session, { memberships: [approvedSupporterMembership()] });
 const WORKSPACE_BUILDERS: Readonly<Record<SeededWorkspace, (session: SeededSession) => SessionStateDocument>> = {
   "new-worker": newWorkerWorkspace,
   "established-worker": establishedWorkerWorkspace,
   "established-worker-partial-release": partialReleaseWorkspace,
   "students-ministry": studentsMinistryWorkspace,
   "second-worker": secondWorkerWorkspace,
-  subscriber: subscriberWorkspace,
-  "reader-approved-supporter": approvedSupporterWorkspace,
   empty: (session) => stateDocument(session, {}),
 };
 /** Builds the state document a seeded session starts with, from the workspace its row names. */ export const seedWorkspace = (session: SeededSession): SessionStateDocument => WORKSPACE_BUILDERS[session.workspace](session);
@@ -780,5 +817,4 @@ function buildSessionDocuments(session: SeededSession): SeededSessionDocuments {
   if (session === undefined) throw new RangeError(`No seeded session ${JSON.stringify(sessionId)}: the seed lays down ${SEEDED_SESSION_IDS.join(", ")}.`);
   return buildSessionDocuments(session);
 }
-/** Builds every seeded session's three documents and returns the rows with them attached. */
-export const seed = async (): Promise<SeededSessionWithDocuments[]> => SEEDED_SESSIONS.map((session) => ({ ...session, documents: buildSessionDocuments(session) }));
+/** Builds every seeded session's three documents and returns the rows with them attached. */ export const seed = async (): Promise<SeededSessionWithDocuments[]> => SEEDED_SESSIONS.map((session) => ({ ...session, documents: buildSessionDocuments(session) }));

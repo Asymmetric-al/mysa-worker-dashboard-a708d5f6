@@ -2,6 +2,7 @@
 import { useForm } from "@tanstack/react-form";
 import { useId, useState, type FormEvent, type ReactElement, type ReactNode } from "react";
 import ActionReview, { type MutationSubmit } from "@/components/action-review";
+import { hasSettled } from "@/components/attempt";
 import FormField, { fieldControlId, fieldErrorsFromInvalid, FormErrorSummary, type FieldErrorLookup } from "@/components/form-field";
 import { Fact } from "@/components/fact";
 import { Badge } from "@/components/ui/badge";
@@ -12,26 +13,20 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cn";
 import { DEFAULT_TARGET_PERIOD, TARGET_MEASURES, type TargetMeasure, type TargetState } from "@/modules/coaching/target";
-import type { Scope } from "@/modules/data-service/envelope";
+import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import { invalid, UNIDENTIFIED_ATTEMPT, type MutationOutcome } from "@/modules/data-service/outcome";
 import { parseCivilDate, serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { COACHING_COPY, MEASURE_COPY, PERIOD_COPY, TARGET_STATE_COPY, TARGET_VERSION_GUARANTEE, type PeriodKind } from "../copy";
 import { useEditTarget, useEndTarget, usePauseTarget, useSaveTarget } from "../hooks/use-coaching";
 import { targetEditPayloadSchema, targetSavePayloadSchema, type TargetEditPayload, type TargetSavePayload } from "../schemas";
 import { Panel } from "./panel";
-export interface TargetView {
-  readonly targetId: string;
-  readonly measure: TargetMeasure;
-  readonly quantity: number;
-  readonly period: PeriodKind;
-  readonly calendarStart: CivilDate;
-  readonly periodEnd: CivilDate | null;
-  readonly privateLabel: string | null;
-  readonly homePlacement: boolean;
-  readonly state: TargetState;
-}
+export type TargetView = { readonly targetId: string; readonly measure: TargetMeasure; readonly quantity: number; readonly period: PeriodKind; readonly calendarStart: CivilDate; readonly periodEnd: CivilDate | null; readonly privateLabel: string | null; readonly homePlacement: boolean; readonly state: TargetState };
 export type TargetFormProps = { readonly target: TargetView | null; readonly scope: Scope; readonly expectedRevision: string; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly onSettled?: (outcome: MutationOutcome) => void; readonly onCheckResult?: () => void; readonly className?: string };
 type TargetFormValues = { measure: TargetMeasure; quantity: string; period: PeriodKind; calendarStart: string; periodEnd: string; privateLabel: string; homePlacement: boolean };
+/** The input one review step was given when it was submitted, kept per payload shape so the create, the edit and each lifecycle review stay type-safe. */ type SubmittedPlanInput =
+  | { readonly kind: "create"; readonly input: Omit<MutationInput<TargetSavePayload>, "operationId"> }
+  | { readonly kind: "edit"; readonly input: Omit<MutationInput<TargetEditPayload>, "operationId"> }
+  | { readonly kind: "pause" | "end"; readonly input: Omit<MutationInput<{ readonly targetId: string }>, "operationId"> };
 const MEASURE_FIELD = "measure";
 const QUANTITY_FIELD = "quantity";
 const PERIOD_FIELD = "period";
@@ -122,17 +117,15 @@ function planSentence(plan: TargetSavePayload): string {
     }
   }
 }
-function heldPlanOf(target: TargetView): TargetSavePayload {
-  return {
-    measure: target.measure,
-    quantity: target.quantity,
-    period: target.period,
-    calendarStart: target.period === "custom" ? serialiseCivilDate(target.calendarStart) : undefined,
-    periodEnd: target.periodEnd === null ? undefined : serialiseCivilDate(target.periodEnd),
-    privateLabel: target.privateLabel ?? "",
-    homePlacement: target.homePlacement,
-  };
-}
+const heldPlanOf = (target: TargetView): TargetSavePayload => ({
+  measure: target.measure,
+  quantity: target.quantity,
+  period: target.period,
+  calendarStart: target.period === "custom" ? serialiseCivilDate(target.calendarStart) : undefined,
+  periodEnd: target.periodEnd === null ? undefined : serialiseCivilDate(target.periodEnd),
+  privateLabel: target.privateLabel ?? "",
+  homePlacement: target.homePlacement,
+});
 function privateLabelText(label: string | null): string {
   const stated = label?.trim() ?? "";
   return stated === "" ? "No name chosen yet" : stated;
@@ -143,8 +136,7 @@ const PAUSED_PAUSE_REASON = "This target is already paused, so there is nothing 
 const ENDED_PAUSE_REASON = "This target has ended, so it cannot be paused. Ending closed it for good, and its history is kept either way.";
 const END_ALREADY_ENDED_REASON = "This target has ended already. Its history and the versions its closed periods were measured against stay exactly as they are.";
 type LifecycleAction = { readonly key: "pause" | "end"; readonly title: string; readonly description: string; readonly consequence: string; readonly confirmLabel: string };
-/** The two lifecycle changes this form offers, each with the words it states and the payload it sends, so the review and the held control beside it are written once. */
-const LIFECYCLE_ACTIONS: readonly LifecycleAction[] = [
+/** The two lifecycle changes this form offers, each with the words it states and the payload it sends, so the review and the held control beside it are written once. */ const LIFECYCLE_ACTIONS: readonly LifecycleAction[] = [
   { key: "pause", title: "Pause this target", description: TARGET_STATE_COPY.paused.description, consequence: "Pausing changes only whether this target admits recorded progress. It sends no notice, creates no task and no commitment, and it deletes nothing.", confirmLabel: "Pause target" },
   { key: "end", title: "End this target", description: TARGET_STATE_COPY.ended.description, consequence: "Ending closes the target for good: a later change to its plan is refused rather than applied. It deletes no activity record, sends no notice, and leaves every other target untouched.", confirmLabel: "End target" },
 ];
@@ -278,16 +270,13 @@ const HeldAction = ({ label, reason, descriptionId }: { readonly label: string; 
   </div>
 );
 export default function TargetForm({ target, scope, expectedRevision, locale, dir, onSettled, onCheckResult, className }: TargetFormProps): ReactElement {
-  const headingId = useId();
-  const planHeadingId = useId();
-  const lifecycleHeadingId = useId();
-  const reviewNoteId = useId();
-  const pauseReasonId = useId();
-  const endReasonId = useId();
+  const [headingId, planHeadingId, lifecycleHeadingId, reviewNoteId, pauseReasonId, endReasonId] = [useId(), useId(), useId(), useId(), useId(), useId()];
   const [startingValues] = useState<TargetFormValues>(() => initialValuesOf(target));
   const form = useForm({ defaultValues: startingValues });
   const [refusal, setRefusal] = useState<FieldErrorLookup | null>(null);
   const [planOutcome, setPlanOutcome] = useState<MutationOutcome | null>(null);
+  const [submittedPlan, setSubmittedPlan] = useState<SubmittedPlanInput | null>(null);
+  const [lifecycleSettlement, setLifecycleSettlement] = useState<{ readonly key: LifecycleAction["key"]; readonly outcome: MutationOutcome } | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const saveTarget = useSaveTarget();
   const editTarget = useEditTarget();
@@ -295,6 +284,28 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
   const endTarget = useEndTarget();
   const busy = saveTarget.isPending || editTarget.isPending || pauseTarget.isPending || endTarget.isPending;
   const lifecycleSubmits: Readonly<Record<LifecycleAction["key"], MutationSubmit<{ readonly targetId: string }>>> = { pause: pauseTarget.mutateAsync, end: endTarget.mutateAsync };
+  // A pause or an end re-reads the target into the state its own success produced, so the review that reported it is held on the input it submitted until that result stops standing: the receipt it announces and the focus stop it carries are not unmounted by the re-read.
+  const lifecycleSubmit =
+    (key: LifecycleAction["key"]): MutationSubmit<{ readonly targetId: string }> =>
+    async (attempt: MutationInput<{ readonly targetId: string }>): Promise<MutationOutcome> => {
+      setSubmittedPlan({ kind: key, input: { scope: attempt.scope, expectedRevision: attempt.expectedRevision, payload: attempt.payload } });
+      return lifecycleSubmits[key](attempt);
+    };
+  const settleLifecycle =
+    (key: LifecycleAction["key"]) =>
+    (outcome: MutationOutcome): void => {
+      setLifecycleSettlement(hasSettled(outcome) ? { key, outcome } : null);
+      onSettled?.(outcome);
+    };
+  // An accepted save advances the revision the surface re-reads, so the plan review is held on the input it actually submitted while that result stands: the receipt it announces is not unmounted by its own success.
+  const savePlan = async (attempt: MutationInput<TargetSavePayload>): Promise<MutationOutcome> => {
+    setSubmittedPlan({ kind: "create", input: { scope: attempt.scope, expectedRevision: attempt.expectedRevision, payload: attempt.payload } });
+    return saveTarget.mutateAsync(attempt);
+  };
+  const editPlan = async (attempt: MutationInput<TargetEditPayload>): Promise<MutationOutcome> => {
+    setSubmittedPlan({ kind: "edit", input: { scope: attempt.scope, expectedRevision: attempt.expectedRevision, payload: attempt.payload } });
+    return editTarget.mutateAsync(attempt);
+  };
   const settlePlan = (outcome: MutationOutcome): void => {
     setPlanOutcome(outcome);
     onSettled?.(outcome);
@@ -326,6 +337,14 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
   const creating = target === null;
   const ended = target !== null && target.state === "ended";
   const serverErrors = planOutcome !== null && planOutcome.outcome === "invalid" ? fieldErrorsFromInvalid(planOutcome) : null;
+  // A settled outcome holds its review step on the submitted input; a field edit clears the outcome, which releases the pin so the next change presents the revision it was read at.
+  const settledPlanInput = hasSettled(planOutcome) ? submittedPlan : null;
+  // A lifecycle settlement stands only for the action it belongs to and only while it holds: that is the one case where the held statement waits, so the review that reported the change keeps its receipt on screen.
+  const settledLifecycleInput = (key: LifecycleAction["key"]): Omit<MutationInput<{ readonly targetId: string }>, "operationId"> | null => {
+    if (lifecycleSettlement === null || lifecycleSettlement.key !== key || !hasSettled(lifecycleSettlement.outcome)) return null;
+    const submitted = submittedPlan;
+    return submitted !== null && submitted.kind !== "create" && submitted.kind !== "edit" && submitted.kind === key ? submitted.input : null;
+  };
   const errors = refusal ?? serverErrors;
   const textField = (spec: PlanTextField): ReactElement => (
     <form.Field name={spec.name}>{(field) => <InputField name={spec.name} label={labelOf(spec.name)} description={spec.description} error={errors?.byField[spec.name]} type={spec.type} className={spec.className} value={field.state.value} onChange={fieldEdit(field)} onBlur={field.handleBlur} />}</form.Field>
@@ -415,8 +434,8 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
                     description={<PlanSummary plan={plan} />}
                     consequence={<p className="type-supporting">{"Saving records the first version of this plan. The target counts only the activity you record, it creates no commitment and sends no reminder, and no coach can read it unless you switch the Targets module on."}</p>}
                     confirmLabel="Save target"
-                    input={{ scope, expectedRevision, payload: plan }}
-                    submit={saveTarget.mutateAsync}
+                    input={settledPlanInput?.kind === "create" ? settledPlanInput.input : { scope, expectedRevision, payload: plan }}
+                    submit={savePlan}
                     onSettled={settlePlan}
                     checkResult={onCheckResult}
                     fieldLabels={FIELD_LABELS}
@@ -429,8 +448,8 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
                     description={<PlanComparison plan={plan} target={target} />}
                     consequence={<p className="type-supporting">{TARGET_VERSION_GUARANTEE}</p>}
                     confirmLabel="Save changes"
-                    input={{ scope, expectedRevision, payload: editPayloadOf(target.targetId, plan) }}
-                    submit={editTarget.mutateAsync}
+                    input={settledPlanInput?.kind === "edit" ? settledPlanInput.input : { scope, expectedRevision, payload: editPayloadOf(target.targetId, plan) }}
+                    submit={editPlan}
                     onSettled={settlePlan}
                     checkResult={onCheckResult}
                     fieldLabels={FIELD_LABELS}
@@ -448,7 +467,8 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
           <p className="type-supporting text-pretty">{"Pausing and ending are separate changes with different effects. Pausing stops the target admitting recorded progress; ending closes it for good. Neither deletes an activity record, sends a notice or creates a task."}</p>
           {LIFECYCLE_ACTIONS.map((action) => {
             const held = heldReasonOf(action.key, target.state);
-            return held === null ? (
+            const submitted = settledLifecycleInput(action.key);
+            return held === null || submitted !== null ? (
               <ActionReview<{ readonly targetId: string }>
                 key={action.key}
                 title={action.title}
@@ -456,9 +476,9 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
                 consequence={<p className="type-supporting">{action.consequence}</p>}
                 confirmLabel={action.confirmLabel}
                 consequential
-                input={{ scope, expectedRevision, payload: { targetId: target.targetId } }}
-                submit={lifecycleSubmits[action.key]}
-                onSettled={onSettled}
+                input={submitted ?? { scope, expectedRevision, payload: { targetId: target.targetId } }}
+                submit={lifecycleSubmit(action.key)}
+                onSettled={settleLifecycle(action.key)}
                 checkResult={onCheckResult}
                 headingLevel={4}
               />

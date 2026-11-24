@@ -9,7 +9,6 @@
 /** The single narrowing predicate for a `Result`; callers negate it instead of using a second helper. */ export function isOk<T, E>(result: Result<T, E>): result is { readonly ok: true; readonly value: T } {
   return result.ok;
 }
-/** Proves a closed union was handled exhaustively: a `switch` that misses a member fails to compile at this call, and a value that reaches it any other way is reported rather than ignored. */
-export function assertNever(value: never, message?: string): never {
+/** Proves a closed union was handled exhaustively: a `switch` that misses a member fails to compile at this call, and a value that reaches it any other way is reported rather than ignored. */ export function assertNever(value: never, message?: string): never {
   throw new Error(`${message ?? "Unexpected variant"}: ${String(value)}`);
 }

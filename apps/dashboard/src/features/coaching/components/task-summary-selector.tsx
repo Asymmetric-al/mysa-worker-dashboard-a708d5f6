@@ -29,8 +29,7 @@ const OCCURRENCE_MISSING_BODY = "This task repeats, and the list states no occur
 const FINGERPRINT_MISSING_BODY = "The list did not carry the fingerprint of this task's reviewed meaning, so a description could not be tied to what was reviewed. Reload the list and choose the task again.";
 const FIELD_LABELS: Readonly<Record<string, string>> = { taskId: SELECT_LABEL, safeDescription: "Reviewed description", occurrenceId: "Occurrence", reviewedFingerprint: "Reviewed meaning" };
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-/** The one type scale's heading utility per level, so the selector's card states its heading at the level it sits at with the same measure as every other heading there. */
-const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The one type scale's heading utility per level, so the selector's card states its heading at the level it sits at with the same measure as every other heading there. */ const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const SENTENCE_CLASS = "type-supporting text-pretty";
 const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const FACT_TERM_CLASS = "text-muted-foreground";
@@ -51,8 +50,7 @@ export type TaskSummaryCandidate = {
   readonly duePrecision: DatePrecision;
   readonly status: TaskStatus;
   readonly isRecurringSuccessor: boolean;
-  /** The task's own revision as the read stated it: a share presents it, because the service compares the revision of the task the summary is written against, so a task that moved settles as a conflict instead of sharing a description of something else. */
-  readonly revision: string;
+  /** The task's own revision as the read stated it: a share presents it, because the service compares the revision of the task the summary is written against, so a task that moved settles as a conflict instead of sharing a description of something else. */ readonly revision: string;
   readonly occurrenceId?: string;
   readonly reviewedFingerprint?: string;
   readonly predecessorShare?: TaskShare;
@@ -200,9 +198,7 @@ function SuccessorSelection({ candidate, selectedOccurrenceId, onSelectOccurrenc
 type AttemptInput = Omit<MutationInput<TaskSharePayload>, "operationId">;
 export function TaskSummarySelector({ candidates, existing, scope, locale, initialTaskId, asOf, onCheckResult, onReload, headingLevel = 2, dir, className }: TaskSummarySelectorProps): ReactElement {
   const { mutateAsync } = useShareTaskSummary();
-  const headingId = useId();
-  const counterId = useId();
-  const previewLabelId = useId();
+  const [headingId, counterId, previewLabelId] = [useId(), useId(), useId()];
   const [selectedTaskId, setSelectedTaskId] = useState(initialTaskId ?? "");
   const [description, setDescription] = useState("");
   const [selectedOccurrence, setSelectedOccurrence] = useState<{ readonly taskId: string; readonly occurrenceId: string } | null>(null);

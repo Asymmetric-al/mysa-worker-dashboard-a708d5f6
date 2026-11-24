@@ -342,11 +342,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
               <DropdownMenuLabel className="text-sm text-foreground">{SAVED_VIEW_BAR_COPY.trigger}</DropdownMenuLabel>
               <p className="px-3 pb-2 type-supporting">{SAVED_VIEW_COPY.leavesRecordsAlone.body}</p>
               {entries.length > 0 ? null : <p className="px-3 pb-2 type-supporting">No view is stored for this roster yet. Save the choices on screen to keep them.</p>}
-              {entries.length > 0 && !driftKnown ? (
-                <p id={driftNoteId} className="px-3 pb-2 type-supporting">
-                  The filters this context offers have not been read, so a stored view cannot be checked against them and is not applied until they are.
-                </p>
-              ) : null}
+              {entries.length > 0 && !driftKnown ? <p {...{ id: driftNoteId, className: "px-3 pb-2 type-supporting" }}>The filters this context offers have not been read, so a stored view cannot be checked against them and is not applied until they are.</p> : null}
               {entries.length === 0 ? null : <DropdownMenuSeparator />}
               {entries.map((entry) => (
                 <ViewMenuSection
@@ -365,9 +361,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
                 />
               ))}
               {canWrite ? (
-                <DropdownMenuItem className={ITEM_CLASS} disabled={busy} onClick={openSave}>
-                  Save current view
-                </DropdownMenuItem>
+                <DropdownMenuItem {...{ className: ITEM_CLASS, disabled: busy, onClick: openSave }}>Save current view</DropdownMenuItem>
               ) : (
                 <p className="px-3 py-2 type-supporting">{withheldReason === "" ? "This context admits reading a stored view and not changing one, so no view is saved, renamed or deleted here." : withheldReason}</p>
               )}

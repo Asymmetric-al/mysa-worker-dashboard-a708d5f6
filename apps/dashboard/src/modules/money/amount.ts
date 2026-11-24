@@ -65,8 +65,7 @@ export function minorUnitsOf(value: number): MinorUnits {
   const totals = [...running.values()].sort((left, right) => (left.currency === right.currency ? 0 : left.currency < right.currency ? -1 : 1));
   return { totals, unsurmmed };
 }
-/** Splits an amount across integer weights so the parts sum exactly to the total — no unit created, none lost, none rounded away and no fractional monetary value formed at any point. */
-export function allocateMinor(total: Money, weights: readonly number[]): readonly Money[] {
+/** Splits an amount across integer weights so the parts sum exactly to the total — no unit created, none lost, none rounded away and no fractional monetary value formed at any point. */ export function allocateMinor(total: Money, weights: readonly number[]): readonly Money[] {
   const totalUnits = assertMinorUnits(total.minorUnits, "allocateMinor");
   assertKnownCurrency(total.currency, "allocateMinor");
   if (weights.length === 0) return refuse("allocation-mismatch", "allocateMinor: at least one weight is needed to split an amount, so an empty weight list is refused rather than yielding no parts.");

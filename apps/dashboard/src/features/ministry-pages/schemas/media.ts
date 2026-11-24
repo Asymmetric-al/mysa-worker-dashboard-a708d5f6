@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { mutationInputSchema } from "@/modules/data-service/envelope";
+import { altTextRequired } from "@/modules/media/profile";
 import type { PlacementTargetPayload as ServicePlacementTargetPayload, RegisterMediaAssetPayload as ServiceRegisterMediaAssetPayload } from "@/modules/data-service/mutations/content";
 const ORIGIN_PREFIXES = ["data:", "blob:", "http:", "https:"] as const;
 const RECORD_REFERENCE_MESSAGE = "Use the record's own identity, not a file path or a link.";
 const carriesAddress = (value: string): boolean => ORIGIN_PREFIXES.some((prefix) => value.toLowerCase().startsWith(prefix)) || value.includes("/") || value.includes("\\") || value.includes("..");
-function opaqueReference(message: string) {
-  return z
+const opaqueReference = (message: string) =>
+  z
     .string({ error: message })
     .trim()
     .min(1, message)
@@ -13,7 +14,6 @@ function opaqueReference(message: string) {
       if (!carriesAddress(value)) return;
       ctx.addIssue({ code: "custom", message });
     });
-}
 const KINDS = ["image", "video"] as const;
 const PLACEMENT_TEXT_MAX_CHARS = 4_000;
 const UPLOAD_NAME_MAX_CHARS = 255;
@@ -26,6 +26,8 @@ const localeTagSchema = z
   .regex(/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/u, "Use a content-locale tag such as en, fr or ar-EG: a language subtag, then any hyphen-separated subtags.");
 const optionalPlacementTextSchema = z.string({ error: "State this as text, or leave it out." }).trim().max(PLACEMENT_TEXT_MAX_CHARS, `A placement field holds at most ${PLACEMENT_TEXT_MAX_CHARS} characters, so shorten it.`).optional();
 const optionalAltTextSchema = z.string({ error: "Describe what this image or video shows." }).trim().min(1, "Describe what this image or video shows.").max(PLACEMENT_TEXT_MAX_CHARS, "Shorten the alternative text for this placement.").optional();
+// Alternative text is required of a placed image and a placed video alike, and a stated null states none: the rule is judged where the kind is known, so the refusal names the medium it is about.
+const requiredAltTextSchema = z.string({ error: "State the alternative text as text, so it can be read in place of the media." }).trim().max(PLACEMENT_TEXT_MAX_CHARS, "Shorten the alternative text for this placement.").nullable().optional();
 export const placementSchema = z.strictObject({ altText: optionalAltTextSchema, caption: optionalPlacementTextSchema, credit: optionalPlacementTextSchema });
 const uploadBytesSchema = z.strictObject({
   bytesBase64: z.string({ error: "Choose a file to upload." }).min(1, "Choose a file to upload."),
@@ -48,11 +50,11 @@ export const registerMediaAssetPayloadSchema: z.ZodType<ServiceRegisterMediaAsse
   .strictObject({
     kind: z.enum(KINDS, { error: "Choose whether this file is an image or a video." }),
     source: uploadBytesSchema,
-    altText: optionalAltTextSchema,
+    altText: requiredAltTextSchema,
     caption: optionalPlacementTextSchema,
     credit: optionalPlacementTextSchema,
     language: localeTagSchema.optional(),
-    placement: placementSchema.extend({ language: localeTagSchema.optional() }).optional(),
+    placement: placementSchema.extend({ altText: requiredAltTextSchema, language: localeTagSchema.optional() }).optional(),
     poster: z
       .strictObject({
         bytesBase64: z.string({ error: "Choose a poster image for this video." }).min(1, "Choose a poster image for this video."),
@@ -71,7 +73,8 @@ export const registerMediaAssetPayloadSchema: z.ZodType<ServiceRegisterMediaAsse
     sectionPlacement: sectionPlacementSchema,
   })
   .superRefine((payload, ctx) => {
-    if (payload.kind === "image" && (payload.altText ?? payload.placement?.altText) === undefined) ctx.addIssue({ code: "custom", path: ["altText"], message: "An image needs alternative text describing what it shows before it can be placed, so describe it and choose the file again." });
+    const altText = payload.altText ?? payload.placement?.altText ?? ""; // A stated null states none, so it is judged as absent rather than as a value of its own.
+    if (altText === "") ctx.addIssue({ code: "custom", path: ["altText"], message: altTextRequired(payload.kind) });
     if (payload.kind === "image" && payload.captions !== undefined) ctx.addIssue({ code: "custom", path: ["captions"], message: "A caption track belongs to a video, so an image carries none." });
     if (payload.poster !== undefined && payload.kind !== "video") ctx.addIssue({ code: "custom", path: ["poster"], message: "A poster belongs to a video, so an image carries none." });
   });

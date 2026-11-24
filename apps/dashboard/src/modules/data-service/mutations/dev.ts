@@ -71,11 +71,11 @@ async function probeDevelopmentDocument<P extends MutationResult>(request: Probe
   });
   return outcome.outcome !== "unchanged" ? { kind: "answer", outcome } : observed === undefined ? { kind: "unreadable", operationId: request.input.operationId } : { kind: "document", meta: observed, revision: devStateRevision(observed, request.principalId) };
 }
-async function recordDevelopmentChange<P extends MutationResult, R extends MutationResult>(
+const recordDevelopmentChange = async <P extends MutationResult, R extends MutationResult>(
   request: { readonly sessionId: string; readonly input: MutationInput<P>; readonly schema: z.ZodType<P>; readonly name: string },
   change: { readonly revision: string; readonly result: R; readonly created?: readonly string[] },
-): Promise<MutationOutcome> {
-  return runMutation<P, R>({
+): Promise<MutationOutcome> =>
+  runMutation<P, R>({
     sessionId: request.sessionId,
     input: request.input,
     schema: request.schema,
@@ -84,9 +84,8 @@ async function recordDevelopmentChange<P extends MutationResult, R extends Mutat
     scopeAuthority: "owner",
     apply: () => ({ changed: true, revision: change.revision, result: change.result, ...(change.created === undefined ? {} : { created: change.created }) }),
   });
-}
-function writeFailurePlan(acting: ActingSession, input: MutationInput<SetFailurePlanPayload>, plan: SessionMetaDocument["failurePlan"], revision: string, result: SetFailurePlanResult | null): Promise<MutationOutcome> {
-  return runMutation<SetFailurePlanPayload, SetFailurePlanResult | null>({
+const writeFailurePlan = (acting: ActingSession, input: MutationInput<SetFailurePlanPayload>, plan: SessionMetaDocument["failurePlan"], revision: string, result: SetFailurePlanResult | null): Promise<MutationOutcome> =>
+  runMutation<SetFailurePlanPayload, SetFailurePlanResult | null>({
     sessionId: acting.sessionId,
     input,
     schema: setFailurePlanPayloadSchema,
@@ -100,7 +99,6 @@ function writeFailurePlan(acting: ActingSession, input: MutationInput<SetFailure
       return { changed: true, revision, result };
     },
   });
-}
 export const UNSAVED_WORK_RESOLUTIONS = ["save", "discard", "stay"] as const;
 export type UnsavedWorkResolution = (typeof UNSAVED_WORK_RESOLUTIONS)[number];
 export type SelectContextPayload = { readonly organizationId: OrganizationId; readonly ministryId: MinistryId; readonly supportSubjectId: SupportSubjectId; readonly resolveUnsavedWork?: UnsavedWorkResolution };
@@ -167,9 +165,8 @@ const storedSelection = (record: SessionContextRecord): StoredSelection | undefi
     },
   });
 }
-function controlRefusal(operationId: string, refusal: SessionControlRefusal, field: string): MutationOutcome {
-  return refusal.code === "meta-unreadable" ? developmentDocumentUnavailable(operationId) : refusal.code === "unknown-session" ? denied({ operationId, reasonCode: "session-unavailable" }) : invalid({ operationId, fields: { [field]: [refusal.message] } });
-}
+const controlRefusal = (operationId: string, refusal: SessionControlRefusal, field: string): MutationOutcome =>
+  refusal.code === "meta-unreadable" ? developmentDocumentUnavailable(operationId) : refusal.code === "unknown-session" ? denied({ operationId, reasonCode: "session-unavailable" }) : invalid({ operationId, fields: { [field]: [refusal.message] } });
 const failurePlanRefusal = (operationId: string, refusal: FailurePlanRefusal): MutationOutcome => invalid({ operationId, fields: { [refusal.code === "unknown-target" ? "target.name" : refusal.code === "mode-not-demonstrable-on-target" ? "mode" : ROOT_FIELD_KEY]: [refusal.message] } });
 const MILLISECOND_NANOSECONDS = 1_000_000n;
 function clockOffsetMilliseconds(instantText: string): number | undefined {
@@ -250,8 +247,7 @@ const setFailurePlanPayloadSchema: z.ZodType<SetFailurePlanPayload> = z.custom<S
   const parsed = isRecord(payload) && Object.hasOwn(payload, DISARM_PLAN_MEMBER) ? disarmFailurePlanPayloadSchema.safeParse(payload) : armFailurePlanPayloadSchema.safeParse(payload);
   if (!parsed.success) for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
 });
-/** Arms one simulated failure on one named read or mutation, or disarms the armed one, for this session only, and answers one of the eight outcomes. */
-export async function setFailurePlan(input: MutationInput<SetFailurePlanPayload>, source?: SessionSource): Promise<MutationOutcome> {
+/** Arms one simulated failure on one named read or mutation, or disarms the armed one, for this session only, and answers one of the eight outcomes. */ export async function setFailurePlan(input: MutationInput<SetFailurePlanPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
   const probe = await probeDevelopmentDocument({ sessionId: acting.sessionId, principalId: acting.principalId, input, schema: setFailurePlanPayloadSchema, name: "setFailurePlan", developmentControl: "setFailurePlan" });
   if (probe.kind !== "document") return probe.kind === "answer" ? probe.outcome : developmentDocumentUnavailable(probe.operationId);
@@ -281,8 +277,7 @@ async function seededDevStateRevision(sessionId: string, principalId: string): P
   const parsed = parseSessionMeta(documents.meta);
   return parsed.ok ? devStateRevision(parsed.value, principalId) : undefined;
 }
-/** Discards every stored session, lays every seeded session down again deterministically, returns the scenario clock to the seed instant, and answers one of the eight outcomes. */
-export async function resetSeed(input: MutationInput<ResetSeedPayload>, source?: SessionSource): Promise<MutationOutcome> {
+/** Discards every stored session, lays every seeded session down again deterministically, returns the scenario clock to the seed instant, and answers one of the eight outcomes. */ export async function resetSeed(input: MutationInput<ResetSeedPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
   const request = { sessionId: acting.sessionId, principalId: acting.principalId, input, schema: resetSeedPayloadSchema, name: "resetSeed", developmentControl: "resetSeed" };
   const probe = await probeDevelopmentDocument(request);

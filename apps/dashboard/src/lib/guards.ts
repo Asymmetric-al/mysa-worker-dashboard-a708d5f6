@@ -10,8 +10,7 @@
 }
 const ADMITTED_ENVIRONMENTS: readonly string[] = ["development", "test", "production"];
 const ENVIRONMENT_KEY: string = ["NODE", "ENV"].join("_"); // Composed at run time so the name is never a static property the bundler can substitute for.
-/** The environment this bundle was compiled with: the only value a Client Component bundle can observe, because the member expression below is the one form the bundler replaces at build time. */
-const compiledEnvironment = (): string | undefined => process.env.NODE_ENV;
+/** The environment this bundle was compiled with: the only value a Client Component bundle can observe, because the member expression below is the one form the bundler replaces at build time. */ const compiledEnvironment = (): string | undefined => process.env.NODE_ENV;
 function readEnvironment(): string {
   // The environment record is taken once and indexed with a computed key. A static `process.env.NODE_ENV` member expression is replaced at build time with the build mode, which would make the validation below unreachable and silently accept a mistyped operator value.
   const environment: Record<string, string | undefined> | undefined = typeof process === "undefined" ? undefined : process.env;

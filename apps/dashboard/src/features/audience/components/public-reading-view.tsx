@@ -40,8 +40,8 @@ const LanguageUnavailableReading = ({ requestedLocale }: { readonly requestedLoc
     <StateNotice kind="language-unavailable" title={RECEIVING_POST_COPY.languageUnavailable.title} description={RECEIVING_POST_COPY.languageUnavailable.description} headingLevel={2} />
   </div>
 );
-function GivePlacement({ giving }: { readonly giving: NonNullable<ReadingData["giving"]> }): ReactElement {
-  return giving.state === "available" ? (
+const GivePlacement = ({ giving }: { readonly giving: NonNullable<ReadingData["giving"]> }): ReactElement =>
+  giving.state === "available" ? (
     <Card size="sm" data-slot="give-placement" data-giving-state={giving.state} className="min-w-0">
       <CardHeader>
         <CardTitle>Giving</CardTitle>
@@ -64,7 +64,6 @@ function GivePlacement({ giving }: { readonly giving: NonNullable<ReadingData["g
       </AlertDescription>
     </Alert>
   );
-}
 function EditionMedia({ renditions, html, title, direction, languageTag, onRetry }: { readonly renditions: readonly PageRendition[]; readonly html: string; readonly title: string; readonly direction: ContentLocale["direction"]; readonly languageTag: string; readonly onRetry: () => void }): ReactElement | null {
   const unplaced = unplacedPlayback(renditions, html);
   if (unplaced.length === 0) return null;

@@ -30,8 +30,7 @@ export type ReviewEditionView = {
   readonly mediaRenditions?: readonly CandidateMediaRendition[];
   readonly staleTranslation?: boolean;
   readonly decisionRecord?: RecordedCandidateDecision | null;
-  /** Whether the principal reading this page wrote the frozen revision, as the read states it. Present with the revision and checksum it describes. */
-  readonly reviewedByAuthor?: boolean;
+  /** Whether the principal reading this page wrote the frozen revision, as the read states it. Present with the revision and checksum it describes. */ readonly reviewedByAuthor?: boolean;
 };
 export type ReviewDocumentView = { readonly documentId: string; readonly family: PageFamily; readonly recordRevision: string; readonly editions: readonly ReviewEditionView[] };
 export type PageReviewSurfaceProps = { readonly document: ReviewDocumentView; readonly candidateId: string; readonly expectedRevision: string; readonly scope: ApproveCandidateInput["scope"]; readonly givingBinding?: GivingBindingView; readonly reach?: PageReach; readonly className?: string };
@@ -58,8 +57,7 @@ function candidateViewOf(edition: ReviewEditionView): CandidateView | undefined 
 const refusalOf = (operationId: string, message: string): Extract<ReviewOutcome, { readonly outcome: "invalid" }> => ({ outcome: "invalid", operationId, fields: { ["_root"]: [message] } });
 /** Whether an outcome leaves this candidate answered, so the page re-reads the route it just answered: `accepted`, `alreadyAccepted` and `unchanged` each state a decision the reviewer must read in place of the control that made it, which is the one condition the Updates review surface re-reads on. */
 const statesDecision = (outcome: ReviewOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
-/** The review of one frozen Page candidate: the Page's visibility and giving context, and the one decision the shared panel takes. */
-export function PageReviewSurface({ document, candidateId, expectedRevision, scope, givingBinding, reach, className }: PageReviewSurfaceProps): ReactElement {
+/** The review of one frozen Page candidate: the Page's visibility and giving context, and the one decision the shared panel takes. */ export function PageReviewSurface({ document, candidateId, expectedRevision, scope, givingBinding, reach, className }: PageReviewSurfaceProps): ReactElement {
   const editionsTitleId = useId();
   const reachTitleId = useId();
   const givingTitleId = useId();

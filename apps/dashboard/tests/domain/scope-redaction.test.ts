@@ -1,5 +1,4 @@
-/** Proves the authorisation boundary of success criteria 3 and 19 at the service: a refused read discloses no count, title, existence flag or size; a search, a sort or a page cannot be turned into a disclosure oracle. */
-import { randomUUID } from "node:crypto";
+/** Proves the authorisation boundary of success criteria 3 and 19 at the service: a refused read discloses no count, title, existence flag or size; a search, a sort or a page cannot be turned into a disclosure oracle. */ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,10 +16,8 @@ import { resetSession } from "@/modules/store/repository";
 import { expectDenial, expectEnvelope, expectGranted, expectMembersAbsent, expectOutcome, expectOutage, expectRefused, first, firstWhere, required, throwing } from "../helpers/answers";
 // This file's own sessions: a private id per seeded identity, so no other suite's world is shared
 interface Fixture {
-  /** The session id this file owns; every seeded document below is laid down under it. */
-  readonly sessionId: string;
-  /** The seeded identity whose world it holds. */
-  readonly seedId: string;
+  /** The session id this file owns; every seeded document below is laid down under it. */ readonly sessionId: string;
+  /** The seeded identity whose world it holds. */ readonly seedId: string;
 }
 const WORKER = "domain-scope-redaction-worker";
 const WORKER_STUDENTS = "domain-scope-redaction-worker-students";
@@ -28,18 +25,12 @@ const SECOND_WORKER = "domain-scope-redaction-second-worker";
 const FUNDRAISER = "domain-scope-redaction-fundraiser";
 const COACH = "domain-scope-redaction-coach";
 const READER = "domain-scope-redaction-reader";
-/** The reader the published world's protected edition names in its grant, driven as a distinct seeded session. */
-const SUPPORTER_READER = "domain-scope-redaction-reader-supporter";
-/** A session the store holds no documents for at all: the resolver must refuse it, never invent one. */
-const ABSENT_SESSION = "domain-scope-redaction-absent";
-/** A session whose state document exists and whose operation ledger and meta documents do not: the store's own fault. */
-const OUTAGE_SESSION = "domain-scope-redaction-outage";
-/** The colleague's identity over the worker's record set: one ministry's store read by a second principal. */
-const COLLEAGUE_WORLD = "domain-scope-redaction-colleague-in-worker-world";
-/** A reader whose own world holds another person's membership row: the shared reader world the preferences read answers from. */
-const SHARED_WORLD_READER = "domain-scope-redaction-reader-in-shared-world";
-/** The four seeded session states that are not signed in, each laid down under an id of this file's own so every audience read is asked of each of them. */
-const DENIED_SESSION = "domain-scope-redaction-session-denied";
+/** The reader the published world's protected edition names in its grant, driven as a distinct seeded session. */ const SUPPORTER_READER = "domain-scope-redaction-reader-supporter";
+/** A session the store holds no documents for at all: the resolver must refuse it, never invent one. */ const ABSENT_SESSION = "domain-scope-redaction-absent";
+/** A session whose state document exists and whose operation ledger and meta documents do not: the store's own fault. */ const OUTAGE_SESSION = "domain-scope-redaction-outage";
+/** The colleague's identity over the worker's record set: one ministry's store read by a second principal. */ const COLLEAGUE_WORLD = "domain-scope-redaction-colleague-in-worker-world";
+/** A reader whose own world holds another person's membership row: the shared reader world the preferences read answers from. */ const SHARED_WORLD_READER = "domain-scope-redaction-reader-in-shared-world";
+/** The four seeded session states that are not signed in, each laid down under an id of this file's own so every audience read is asked of each of them. */ const DENIED_SESSION = "domain-scope-redaction-session-denied";
 const NO_ACCESS_SESSION = "domain-scope-redaction-no-access";
 const EXPIRED_SESSION = "domain-scope-redaction-session-expired";
 const UNAVAILABLE_SESSION = "domain-scope-redaction-session-unavailable";
@@ -56,10 +47,8 @@ const FIXTURES: readonly Fixture[] = [
   { sessionId: EXPIRED_SESSION, seedId: "session-expired" }, // The seeded `expired` state: the session has ended and needs signing in again.
   { sessionId: UNAVAILABLE_SESSION, seedId: "session-unavailable" }, // The seeded `unavailable` state: admission could not be resolved at all.
 ];
-/** The seeded worlds, keyed by the session id this file laid them down under. */
-const seededWorlds = new Map<string, SeededSessionDocuments>();
-/** The public sessions this file resolves once, so every case acts as the identity it names. */
-const sessions = new Map<string, ResolvedSession>();
+/** The seeded worlds, keyed by the session id this file laid them down under. */ const seededWorlds = new Map<string, SeededSessionDocuments>();
+/** The public sessions this file resolves once, so every case acts as the identity it names. */ const sessions = new Map<string, ResolvedSession>();
 const worldOf = (sessionId: string): SeededSessionDocuments => required(seededWorlds.get(sessionId), `seeded world for "${sessionId}"`);
 const stateOf = (sessionId: string): SessionStateDocument => worldOf(sessionId).state;
 const sessionOf = (sessionId: string): ResolvedSession => required(sessions.get(sessionId), `resolved session "${sessionId}"`);
@@ -94,28 +83,19 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const sessionId of [...FIXTURES.map((fixture) => fixture.sessionId), OUTAGE_SESSION, ABSENT_SESSION, COLLEAGUE_WORLD, SHARED_WORLD_READER]) await resetSession(sessionId); // Only this file's own sessions are removed: the directory holds other suites' worlds.
 });
-/** The observable shape of one value as a surface would receive it: the whole thing, serialised. */
-const textOf = (value: unknown): string => JSON.stringify(value);
-/** Asserts a refusal carries none of the evidence a disclosure would need. */
-const expectNoDisclosure = (denial: DeniedOutcome, what: string): void => {
+/** The observable shape of one value as a surface would receive it: the whole thing, serialised. */ const textOf = (value: unknown): string => JSON.stringify(value);
+/** Asserts a refusal carries none of the evidence a disclosure would need. */ const expectNoDisclosure = (denial: DeniedOutcome, what: string): void => {
   expectMembersAbsent(denial, ["data", "envelope", "total", "totalCount", "count", "size", "bytes", "length", "title", "name", "displayName", "label", "partnerId", "id", "ids", "rows", "records", "items", "exists", "found", "revision", "scope", "source", "asOf", "coverage", "valueStates", "actions"], what);
 };
-/** Asserts a text carries none of the needles, naming the one that would have leaked. */
-const expectNoText = (haystack: string, needles: readonly string[], what: string): void => {
+/** Asserts a text carries none of the needles, naming the one that would have leaked. */ const expectNoText = (haystack: string, needles: readonly string[], what: string): void => {
   for (const needle of needles) expect(haystack.includes(needle), `${what} must not carry ${JSON.stringify(needle)}`).toBe(false);
 };
-/** The states whose figure carries no digits: only a value, a genuine zero and the derived subtotal do. */
-const STATES_CARRYING_AN_AMOUNT: readonly ValueState[] = ["value", "zero", "incomplete-subtotal"];
-/** The first record of the first scope a case names by predicate, failing by the name it is known by. */
-const partnerWhere = (match: (record: PartnerRecord) => boolean, what: string): PartnerRecord => first(stateOf(WORKER).partners.filter(match), what);
-/** A partner in the first scope by kind, taken from the seed rather than named here. */
-const partnerOfKind = (kind: PartnerRecord["kind"]): PartnerRecord => partnerWhere((record) => record.kind === kind, `"${kind}" record in the first scope`);
-/** A partner in the first scope, taken from the seed rather than named here. */
-const firstScopePartner = (): PartnerRecord => partnerOfKind("person");
-/** Whether a record is the person the seed records as the church's warden: the representative a church's own record must not carry. */
-const isChurchWarden = (record: PartnerRecord): boolean => record.kind === "person" && record.stage !== null && record.stage.toLowerCase().includes("warden");
-/** The seeded private note about a shared person: the record a shared projection must never carry. */
-function noteAboutSharedPerson(): { readonly partnerId: string; readonly body: string } {
+/** The states whose figure carries no digits: only a value, a genuine zero and the derived subtotal do. */ const STATES_CARRYING_AN_AMOUNT: readonly ValueState[] = ["value", "zero", "incomplete-subtotal"];
+/** The first record of the first scope a case names by predicate, failing by the name it is known by. */ const partnerWhere = (match: (record: PartnerRecord) => boolean, what: string): PartnerRecord => first(stateOf(WORKER).partners.filter(match), what);
+/** A partner in the first scope by kind, taken from the seed rather than named here. */ const partnerOfKind = (kind: PartnerRecord["kind"]): PartnerRecord => partnerWhere((record) => record.kind === kind, `"${kind}" record in the first scope`);
+/** A partner in the first scope, taken from the seed rather than named here. */ const firstScopePartner = (): PartnerRecord => partnerOfKind("person");
+/** Whether a record is the person the seed records as the church's warden: the representative a church's own record must not carry. */ const isChurchWarden = (record: PartnerRecord): boolean => record.kind === "person" && record.stage !== null && record.stage.toLowerCase().includes("warden");
+/** The seeded private note about a shared person: the record a shared projection must never carry. */ function noteAboutSharedPerson(): { readonly partnerId: string; readonly body: string } {
   const partners = stateOf(WORKER).partners;
   return stateOf(WORKER).privateNotes.find((candidate) => partners.some((record) => record.partnerId === candidate.partnerId && record.kind === "person")) ?? throwing("private note about a shared person");
 }
@@ -207,10 +187,8 @@ it("a search, a sort and a page cannot become a disclosure oracle: keeps denied,
   expect(outage).not.toEqual(empty);
   expect(denied.reasonCode).not.toBe(outage.outcome);
 });
-/** The scope the resolver selected for one of this file's sessions: the authority, never a hand-built literal. */
-const selectedScopeOf = (sessionId: string): Scope => required(sessionOf(sessionId).selected, `the selected context of "${sessionId}"`);
-/** Creates one private preparation record through the service and answers with the identifier it created. */
-async function createPreparation(displayName: string, email: string, postal: string): Promise<string> {
+/** The scope the resolver selected for one of this file's sessions: the authority, never a hand-built literal. */ const selectedScopeOf = (sessionId: string): Scope => required(sessionOf(sessionId).selected, `the selected context of "${sessionId}"`);
+/** Creates one private preparation record through the service and answers with the identifier it created. */ async function createPreparation(displayName: string, email: string, postal: string): Promise<string> {
   const roster = expectEnvelope(await reads.partners.findPartners({}, sourceOf(WORKER)), "the worker's roster before a creation");
   // A creation compares no revision, because there is no stored value a stale expectation could overwrite; the caller still states the collection revision it read.
   const contactMethods = [
@@ -303,8 +281,7 @@ it("a private record stays private: carries no private note and no private prepa
   const exported = expectEnvelope(await reads.export.readExport({}, sourceOf(WORKER)), "the worker's export");
   expect(exported.data.csv.length).toBeGreaterThan(0);
   expectGranted(canExport(sessionOf(WORKER), selectedScopeOf(WORKER)), "the worker's export"); // Export permission belongs to a context of membership, so it is asked of the resolver's scope and refused for a principal that holds no membership at all.
-  const coachExport = expectRefused(canExport(sessionOf(COACH), selectedScopeOf(WORKER)), "a principal holding no membership exporting the worker's scope");
-  expect(coachExport.reasonCode).toBe("no-export-permission");
+  expect(expectRefused(canExport(sessionOf(COACH), selectedScopeOf(WORKER)), "a principal holding no membership exporting the worker's scope").reasonCode).toBe("no-export-permission");
   expectNoText(exported.data.csv, [...bodies, ...heads, preparation.displayName], "the exported CSV");
   expectNoText(textOf(exported.data), [...bodies, ...heads, preparation.displayName], "the export model");
   // An export is a permission of a context: a principal that selected no context holds none.
@@ -397,8 +374,10 @@ it("equal-looking identifiers never join: keeps the ministry and the support sub
   expect([after.data.partner.displayName, after.revision]).toEqual([before.data.partner.displayName, before.revision]);
 });
 it("linking work never copies private text into shared history: keeps a private interaction note with its author, and copies no private text onto a linked task", async () => {
-  const privateInteractionSought = stateOf(WORKER).interactions.find((interaction) => interaction.note !== null && interaction.note.audience === "private");
-  const privateInteraction = required(privateInteractionSought, "interaction carrying a private note");
+  const privateInteraction = required(
+    stateOf(WORKER).interactions.find((interaction) => interaction.note !== null && interaction.note.audience === "private"),
+    "interaction carrying a private note",
+  );
   const interactionNote = required(privateInteraction.note, "private note body of that interaction");
   const noteAuthor = required(interactionNote.authorPrincipalId, "author recorded on that private note");
   const privateNote = firstWhere(stateOf(WORKER).privateNotes, "partnerId", privateInteraction.partnerId, "private note about the same record");
@@ -439,8 +418,10 @@ it("the value-state map keeps each non-value its own fact: derives the incomplet
   expect(complete.valueStates[`summary.${completeCurrency}.received`]).toBe("value");
 });
 it("the value-state map keeps each non-value its own fact: states a genuine zero as zero, apart from unknown, withheld and unavailable on the same field", async () => {
-  const partnerSought = stateOf(WORKER).partners.find((record) => record.kind === "person" && !stateOf(WORKER).privateNotes.some((note) => note.partnerId === record.partnerId));
-  const partner = required(partnerSought, "person with no private note");
+  const partner = required(
+    stateOf(WORKER).partners.find((record) => record.kind === "person" && !stateOf(WORKER).privateNotes.some((note) => note.partnerId === record.partnerId)),
+    "person with no private note",
+  );
   const read = expectEnvelope(await reads.partners.readPrivatePreparation({ partnerId: partner.partnerId }, sourceOf(WORKER)), "a record with no private note");
   expect(read.data.notes).toEqual([]);
   const state = read.valueStates.notes;
@@ -503,36 +484,26 @@ it("the resolver is the only entry to a scope: refuses a write that names a reco
   expect([after.data.partner.displayName, after.revision]).toEqual([before.data.partner.displayName, before.revision]);
 });
 // Protected media. Criterion 19 names protected media among the things a second worker must not retrieve, and criterion 18 names protected video, poster, captions and transcript. Both are decided per request by `reads.media.readMediaAsset` — the one read the rendition route calls — so every purpose below is asked of that read, with a `SessionSource`, exactly as the rest of this file asks its reads.
-/** The literal session id whose world the receiving reads answer a reader from: the published world. */
-const PUBLISHED_WORLD = DEFAULT_SESSION_ID;
-/** An address no record carries: every refusal below is asserted identical to the refusal of this one. */
-const NEVER_RECORDED_ASSET = "asset-that-was-never-recorded";
-/** The video asset the protected edition places, in a custody lane of its own. */
-const PROTECTED_ASSET = "asset-video-supporter-only";
-/** The seed's own page edition, which places the seed's welcome video: the edition whose reach the case below changes. */
-const NOT_PUBLIC_RELEASE = "release-page-en-1";
-/** Every purpose a receiving read advertises for a video, the one this asset records no bytes for included. */
-const VIDEO_PURPOSES = ["playback", "poster", "captions", "transcript"] as const;
-/** The three purposes the protected asset serves, and so the three a reader can be admitted to. */
-const PROTECTED_SERVED_PURPOSES = ["playback", "poster", "captions"] as const;
-/** The committed fixture each protected rendition carries: the documents the seed serves for its own video. */
-const PROTECTED_RENDITIONS = [
+/** The literal session id whose world the receiving reads answer a reader from: the published world. */ const PUBLISHED_WORLD = DEFAULT_SESSION_ID;
+/** An address no record carries: every refusal below is asserted identical to the refusal of this one. */ const NEVER_RECORDED_ASSET = "asset-that-was-never-recorded";
+/** The video asset the protected edition places, in a custody lane of its own. */ const PROTECTED_ASSET = "asset-video-supporter-only";
+/** The seed's own page edition, which places the seed's welcome video: the edition whose reach the case below changes. */ const NOT_PUBLIC_RELEASE = "release-page-en-1";
+/** Every purpose a receiving read advertises for a video, the one this asset records no bytes for included. */ const VIDEO_PURPOSES = ["playback", "poster", "captions", "transcript"] as const;
+/** The three purposes the protected asset serves, and so the three a reader can be admitted to. */ const PROTECTED_SERVED_PURPOSES = ["playback", "poster", "captions"] as const;
+/** The committed fixture each protected rendition carries: the documents the seed serves for its own video. */ const PROTECTED_RENDITIONS = [
   { renditionId: "rendition-video-supporter-only-playback", purpose: "playback", file: "sample-h264.mp4", fixture: "sample-h264.mp4", mimeType: "video/mp4" },
   { renditionId: "rendition-video-supporter-only-poster", purpose: "poster", file: "poster.jpg", fixture: "poster.jpg", mimeType: "image/jpeg" },
   { renditionId: "rendition-video-supporter-only-captions", purpose: "captions", file: "sample.vtt", fixture: "sample.vtt", mimeType: "text/vtt" },
 ] as const;
-/** The directory the committed media fixtures live in, which is the one a reset materialises its bytes from. */
-const MEDIA_FIXTURE_DIRECTORY = fileURLToPath(new URL("../../public/fixtures/media/", import.meta.url));
-/** Copies one committed fixture to the custody reference a rendition records. */
-async function materialiseCopiedBytes(assetId: string, file: string, fixture: string): Promise<void> {
+/** The directory the committed media fixtures live in, which is the one a reset materialises its bytes from. */ const MEDIA_FIXTURE_DIRECTORY = fileURLToPath(new URL("../../public/fixtures/media/", import.meta.url));
+/** Copies one committed fixture to the custody reference a rendition records. */ async function materialiseCopiedBytes(assetId: string, file: string, fixture: string): Promise<void> {
   const bytes = new Uint8Array(await readFile(join(MEDIA_FIXTURE_DIRECTORY, fixture)));
   if (bytes.byteLength === 0) throw new Error(`The committed fixture ${JSON.stringify(fixture)} is empty, so this file cannot serve bytes for "${assetId}".`);
   await writeMediaBytes(seededMediaReference(assetId, file), bytes);
 }
 /** The video asset the first scope owns and has playback bytes for: the asset the second worker asks after. */
 const firstScopeVideo = (): SessionStateDocument["mediaAssets"][number] => stateOf(WORKER).mediaAssets.find((record) => record.renditions.some((rendition) => rendition.purpose === "playback")) ?? throwing("video asset with playback bytes in the first scope");
-/** The published world: the seed's own established-worker documents, plus one protected edition placing one asset. */
-function protectedWorld(): SeededSessionDocuments {
+/** The published world: the seed's own established-worker documents, plus one protected edition placing one asset. */ function protectedWorld(): SeededSessionDocuments {
   const seeded = worldOf(WORKER);
   const scope = first(seeded.state.mediaAssets, "seeded media asset").scope;
   const publisherId = first(seeded.state.memberships, "seeded membership").publisherId;
@@ -593,8 +564,7 @@ async function expectNeutralRefusal(source: SessionSource, assetId: string, rend
   expect(textOf(refusedRecorded)).toBe(textOf(refusedNeverRecorded));
   return denial;
 }
-/** Asks one scope for each whole rendition of an asset and holds every answer to the same shape, answering the delivery lengths its purposes recorded. */
-async function expectServedRenditions(assetId: string, source: SessionSource, purposes: readonly string[], what: string): Promise<Map<string, number>> {
+/** Asks one scope for each whole rendition of an asset and holds every answer to the same shape, answering the delivery lengths its purposes recorded. */ async function expectServedRenditions(assetId: string, source: SessionSource, purposes: readonly string[], what: string): Promise<Map<string, number>> {
   const lengths = new Map<string, number>();
   for (const purpose of purposes) {
     const whole = expectEnvelope(await reads.media.readMediaAsset({ assetId, rendition: purpose }, source), `the ${what} ${purpose} rendition`);
@@ -606,8 +576,7 @@ async function expectServedRenditions(assetId: string, source: SessionSource, pu
   }
   return lengths;
 }
-/** Serves every whole rendition, then the first sixteen bytes of playback as a range of the length that rendition recorded, and answers the lengths it delivered. */
-async function expectServedWithByteRange(assetId: string, source: SessionSource, what: string): Promise<Map<string, number>> {
+/** Serves every whole rendition, then the first sixteen bytes of playback as a range of the length that rendition recorded, and answers the lengths it delivered. */ async function expectServedWithByteRange(assetId: string, source: SessionSource, what: string): Promise<Map<string, number>> {
   const lengths = await expectServedRenditions(assetId, source, PROTECTED_SERVED_PURPOSES, what);
   const ranged = expectEnvelope(await reads.media.readMediaAsset({ assetId, rendition: "playback", rangeHeader: "bytes=0-15" }, source), `a byte range of the ${what} playback rendition`).data;
   expect([ranged.status, ranged.bytes.byteLength, ranged.headers["content-range"]]).toEqual([206, 16, `bytes 0-15/${String(required(lengths.get("playback"), `length of the ${what} playback rendition`))}`]);
@@ -687,8 +656,7 @@ describe("every rendition re-authorises the request that asks for it", () => {
 });
 
 // The session's own state, and the rows that are the reader's own. The four seeded session states that are not signed in, and the reader the public edition admits: the one opener every audience and receiving read goes through decides the state before it looks at a scope, and the media read decides it before it looks at an asset. So neither a read nor a refusal answers for a session its own state has ended, and a refusal never states whether the asset it asked for exists. The same rule decides which membership rows a reader's preferences state: the reader's own, whatever the session holds.
-/** The seeded Update, Page and notification intent the reads below are asked about: taken from the seed rather than typed in. */
-const seededUpdateId = (): string =>
+/** The seeded Update, Page and notification intent the reads below are asked about: taken from the seed rather than typed in. */ const seededUpdateId = (): string =>
   first(
     stateOf(WORKER).contentDocuments.filter((document) => document.family === "update"),
     "seeded Update document",
@@ -699,8 +667,7 @@ const seededPageId = (): string =>
     "seeded Page document",
   ).documentId;
 const seededIntentId = (): string => first(stateOf(WORKER).notificationIntents, "seeded notification intent").intentId;
-/** Every audience and receiving read, each asked with the argument it needs: the eight the session gate covers. */
-const AUDIENCE_READS: readonly { readonly name: string; readonly read: (source: SessionSource) => Promise<ReadResult<unknown>> }[] = [
+/** Every audience and receiving read, each asked with the argument it needs: the eight the session gate covers. */ const AUDIENCE_READS: readonly { readonly name: string; readonly read: (source: SessionSource) => Promise<ReadResult<unknown>> }[] = [
   { name: "readAudience", read: (source) => reads.audience.readAudience({}, source) },
   { name: "readPreferences", read: (source) => reads.audience.readPreferences(source) },
   { name: "readInbox", read: (source) => reads.audience.readInbox({}, source) },
@@ -710,15 +677,13 @@ const AUDIENCE_READS: readonly { readonly name: string; readonly read: (source: 
   { name: "readReceivingPage", read: (source) => reads.audience.readReceivingPage({ pageId: seededPageId() }, source) },
   { name: "readSendResult", read: (source) => reads.audience.readSendResult({ intentId: seededIntentId() }, source) },
 ];
-/** Every state the session gate refuses, with the reason that state's own refusal carries. */
-const NON_SIGNED_IN_STATES: readonly { readonly sessionId: string; readonly reasonCode: DenialReason }[] = [
+/** Every state the session gate refuses, with the reason that state's own refusal carries. */ const NON_SIGNED_IN_STATES: readonly { readonly sessionId: string; readonly reasonCode: DenialReason }[] = [
   { sessionId: DENIED_SESSION, reasonCode: "not-admitted" },
   { sessionId: NO_ACCESS_SESSION, reasonCode: "not-admitted" },
   { sessionId: EXPIRED_SESSION, reasonCode: "session-expired" },
   { sessionId: UNAVAILABLE_SESSION, reasonCode: "session-unavailable" },
 ];
-/** The video asset a live public edition of the published world places: the rendition a signed-in reader is served across the reading crossing. */
-function publicEditionVideo(): SessionStateDocument["mediaAssets"][number] {
+/** The video asset a live public edition of the published world places: the rendition a signed-in reader is served across the reading crossing. */ function publicEditionVideo(): SessionStateDocument["mediaAssets"][number] {
   const state = stateOf(WORKER);
   const publicRevisionIds = new Set(state.releases.filter((release) => release.audience === "public" && release.withdrawnAt === null && release.supersededBy === null).map((release) => release.revisionId));
   const placedAssetIds = new Set(state.contentRevisions.filter((revision) => publicRevisionIds.has(revision.revisionId)).flatMap((revision) => revision.mediaPlacements.map((placement) => placement.assetId)));
@@ -769,9 +734,9 @@ describe("the receiving surfaces decide the session's own state and the reader's
     const shared = expectEnvelope(await reads.audience.readPreferences(sourceOf(SHARED_WORLD_READER)), "the preferences of a reader whose world holds another person's row");
     expect([shared.data.email, shared.data.membershipId, shared.data.state]).toEqual([null, null, "none"]);
     expectNoText(textOf(shared.data), [foreignRow.email], "the preferences of a reader whose world holds another person's row");
-    // The reader whose own row its world does hold still reads that row: the filter is the reader's principal, never an empty answer for every reader.
+    // The reader whose own row the world it reads across holds still reads that row: the published id carries the seed's own documents, and the filter is the reader's principal, never an empty answer for every reader.
     const ownRow = first(
-      stateOf(SUPPORTER_READER).memberships.filter((row) => row.membershipId === String(sessionOf(SUPPORTER_READER).principalId)),
+      stateOf(WORKER).memberships.filter((row) => row.membershipId === String(sessionOf(SUPPORTER_READER).principalId)),
       "the approved-supporter reader's own membership",
     );
     const own = expectEnvelope(await reads.audience.readPreferences(sourceOf(SUPPORTER_READER)), "the approved-supporter reader's own preferences");

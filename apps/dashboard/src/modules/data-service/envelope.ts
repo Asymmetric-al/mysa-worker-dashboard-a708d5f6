@@ -17,8 +17,7 @@ import { REPEAT_PROFILES, SERIES_STATES, type RepeatProfile } from "@/modules/ti
 const nullableText = text.nullable();
 const optionalText = text.optional();
 const textList = z.array(text);
-/** A stored record's shape as every reader sees it. */
-export type StoredRecord<T> = T extends string | number | boolean | bigint | symbol | null | undefined ? T : unknown extends T ? T : T extends (infer Item)[] ? readonly StoredRecord<Item>[] : { readonly [K in keyof T]: StoredRecord<T[K]> };
+/** A stored record's shape as every reader sees it. */ export type StoredRecord<T> = T extends string | number | boolean | bigint | symbol | null | undefined ? T : unknown extends T ? T : T extends (infer Item)[] ? readonly StoredRecord<Item>[] : { readonly [K in keyof T]: StoredRecord<T[K]> };
 export const VALUE_STATES = ["value", "zero", "unknown", "withheld", "unavailable", "incomplete-subtotal"] as const;
 export type ValueState = (typeof VALUE_STATES)[number];
 export type RecordedValueState = Exclude<ValueState, "incomplete-subtotal">;
@@ -28,12 +27,11 @@ export type OrganizationId = BrandedIdentifier<"OrganizationId">;
 export type MinistryId = BrandedIdentifier<"MinistryId">;
 export type SupportSubjectId = BrandedIdentifier<"SupportSubjectId">;
 export type PrincipalId = BrandedIdentifier<"PrincipalId">;
-function identifierSchema<Name extends string>(): z.ZodType<BrandedIdentifier<Name>> {
-  return z
+const identifierSchema = <Name extends string>(): z.ZodType<BrandedIdentifier<Name>> =>
+  z
     .string()
     .min(1)
     .transform((value) => value as BrandedIdentifier<Name>);
-}
 export const organizationIdSchema: z.ZodType<OrganizationId> = identifierSchema<"OrganizationId">();
 export const ministryIdSchema: z.ZodType<MinistryId> = identifierSchema<"MinistryId">();
 export const supportSubjectIdSchema: z.ZodType<SupportSubjectId> = identifierSchema<"SupportSubjectId">();
@@ -187,15 +185,26 @@ export const taskRecordSchema = z
   })
   .refine((task) => task.plannedTime === null || (task.kind === "meeting" && task.timeZone !== null), { path: ["plannedTime"], message: "A planned time belongs to a meeting task and always discloses the zone it is stated in, so a wall-clock time is never read as an instant in an assumed zone." });
 export type TaskRecord = StoredRecord<z.infer<typeof taskRecordSchema>>;
-/** The fingerprint of the task meaning a shared summary's description was reviewed against. */
-export const taskReviewedFingerprint = (task: TaskRecord): string => [task.taskId, task.title, task.category ?? "", task.note ?? ""].join("\u0000");
+/** The fingerprint of the task meaning a shared summary's description was reviewed against. */ export const taskReviewedFingerprint = (task: TaskRecord): string => [task.taskId, task.title, task.category ?? "", task.note ?? ""].join("\u0000");
 export type SeriesEndRecord = { readonly kind: "on-date"; readonly on: string } | { readonly kind: "after-count"; readonly count: number } | { readonly kind: "ongoing-personal-policy" };
 export const seriesEndRecordSchema: z.ZodType<SeriesEndRecord> = z.discriminatedUnion("kind", [z.object({ kind: z.literal("on-date"), on: storedCivilDateSchema }), z.object({ kind: z.literal("after-count"), count: z.int().min(1) }), z.object({ kind: z.literal("ongoing-personal-policy") })]);
 export type SeriesRuleRecord = { readonly profile: RepeatProfile; readonly interval: number; readonly dayOfMonth: number | null; readonly firstDueOn: string; readonly planningTimeZone: string; readonly end: SeriesEndRecord };
 export const seriesRuleRecordSchema: z.ZodType<SeriesRuleRecord> = z.object({ profile: z.enum(REPEAT_PROFILES), interval: z.int().min(1), dayOfMonth: z.int().min(1).max(31).nullable(), firstDueOn: storedCivilDateSchema, planningTimeZone: text, end: seriesEndRecordSchema });
 export type SeriesRuleRevisionRecord = { readonly revisionId: string; readonly effectiveFrom: string; readonly rule: SeriesRuleRecord };
 export const seriesRuleRevisionRecordSchema: z.ZodType<SeriesRuleRevisionRecord> = z.object({ revisionId: text, effectiveFrom: storedCivilDateSchema, rule: seriesRuleRecordSchema });
-export const taskSeriesRecordSchema = z.object({ seriesId: text, ownerPrincipalId: pid, title: text, currentRule: seriesRuleRecordSchema, effectiveRevisions: z.array(seriesRuleRevisionRecordSchema), currentOccurrenceId: opt, state: z.enum(SERIES_STATES), planNeedsReview: z.boolean(), revision: rev });
+// planReviewAnsweredOn is the last planning-zone civil date whose missed occurrences a recorded missed-plan resolution has answered, so the live review and the recorded decision share one stored fact; a document written before the field existed answers nothing yet.
+export const taskSeriesRecordSchema = z.object({
+  seriesId: text,
+  ownerPrincipalId: pid,
+  title: text,
+  currentRule: seriesRuleRecordSchema,
+  effectiveRevisions: z.array(seriesRuleRevisionRecordSchema),
+  currentOccurrenceId: opt,
+  state: z.enum(SERIES_STATES),
+  planNeedsReview: z.boolean(),
+  planReviewAnsweredOn: z.union([storedCivilDateSchema, z.null()]).default(null),
+  revision: rev,
+});
 export type TaskSeriesRecord = StoredRecord<z.infer<typeof taskSeriesRecordSchema>>;
 export const INITIATIVE_STATES = ["open", "closed"] as const;
 export type InitiativeState = (typeof INITIATIVE_STATES)[number];
@@ -316,17 +325,14 @@ export const storedContentRevisionRecordSchema = z.object({
   revision: recordRevisionSchema,
 });
 export type StoredContentRevisionRecord = StoredRecord<z.infer<typeof storedContentRevisionRecordSchema>>;
-/** Every section type a Page can be composed from: the union of the two family catalogues, and the set a schema or a stored section is checked against. */
-export const PAGE_SECTION_TYPES = ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] as const;
+/** Every section type a Page can be composed from: the union of the two family catalogues, and the set a schema or a stored section is checked against. */ export const PAGE_SECTION_TYPES = ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] as const;
 export type PageSectionType = (typeof PAGE_SECTION_TYPES)[number];
-/** The shape of the two catalogues: one admitted tuple per page family, keyed by the family a section change addresses. */
-type PageFamilyCatalogues = Readonly<Record<Exclude<ContentFamily, "update">, readonly PageSectionType[]>>;
+/** The shape of the two catalogues: one admitted tuple per page family, keyed by the family a section change addresses. */ type PageFamilyCatalogues = Readonly<Record<Exclude<ContentFamily, "update">, readonly PageSectionType[]>>;
 /** The section types each page family admits, stated once per family so a section is admitted or refused by the family the change addresses rather than by one list both families share. The two families hold the same eight types today and each still states its own tuple: the day one family's set differs, the other family's admission does not move with it. */
 export const PAGE_SECTION_TYPES_BY_FAMILY: PageFamilyCatalogues = { "worker-page": ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"], "project-page": ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] };
 type FamilyAdmittedSectionType = (typeof PAGE_SECTION_TYPES_BY_FAMILY)[keyof typeof PAGE_SECTION_TYPES_BY_FAMILY][number];
 type SectionTypeOutsideEveryFamily = Exclude<PageSectionType, FamilyAdmittedSectionType>;
-/** Every type the union states is admitted by a page family, so no schema accepts a type no Page can be composed with. */
-export const PAGE_SECTION_TYPES_ARE_ALL_ADMITTED: SectionTypeOutsideEveryFamily extends never ? true : false = true;
+/** Every type the union states is admitted by a page family, so no schema accepts a type no Page can be composed with. */ export const PAGE_SECTION_TYPES_ARE_ALL_ADMITTED: SectionTypeOutsideEveryFamily extends never ? true : false = true;
 export const PAGE_PRESET_IDS = ["preset-opening-and-story", "preset-story-and-prayer"] as const;
 export type PagePresetId = (typeof PAGE_PRESET_IDS)[number];
 export const MEDIA_ASSET_KINDS = ["image", "video"] as const;
@@ -343,6 +349,9 @@ export const mediaAssetProfileRecordSchema: z.ZodType<MediaAssetProfileRecord> =
 export const mediaAssetRenditionRecordSchema: z.ZodType<MediaAssetRenditionRecord> = z.object({ renditionId: text, purpose: z.enum(MEDIA_ASSET_RENDITION_PURPOSES), bytesRef: text, mimeType: text });
 export const mediaTagVerificationRecordSchema: z.ZodType<MediaTagVerificationRecord> = z.object({ checked: z.boolean(), residualTags: textList });
 export const mediaAssetRecordSchema = z.object({ assetId: text, kind: z.enum(MEDIA_ASSET_KINDS), profileCheck: mediaAssetProfileRecordSchema, sourceOriginalRef: text, renditions: z.array(mediaAssetRenditionRecordSchema), scope: scopeSchema, tagVerification: mediaTagVerificationRecordSchema, revision: rev });
+// What a registration states about the media it uploaded beyond the bytes: the alternative text, caption, credit and language a placement reads back from it, and the label its caption track carries. The language is the media's own, so it is held here whether or not the asset carries a caption track to state it on.
+export type MediaAssetDescriptorRecord = StoredRecord<z.infer<typeof mediaAssetDescriptorRecordSchema>>;
+export const mediaAssetDescriptorRecordSchema = z.object({ assetId: text, altText: nullableText, caption: nullableText, credit: nullableText, language: nullableText, captionLabel: text.max(120).nullable().optional(), revision: rev });
 export type ReleaseReach = (typeof RELEASE_REACH_VALUES)[number];
 export const releaseReachSchema: z.ZodType<ReleaseReach> = z.enum(RELEASE_REACH_VALUES);
 export type ReleaseRecord = StoredRecord<z.infer<typeof releaseRecordSchema>>;

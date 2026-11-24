@@ -12,8 +12,7 @@ type LocaleEdition = LocaleEditionsData["editions"][number];
 type GivingBinding = Extract<Awaited<ReturnType<typeof reads.pages.readGivingBinding>>, { kind: "envelope" }>["envelope"]["data"]["binding"];
 const normalisedTag = (tag: string): string => tag.trim().toLowerCase();
 const primarySubtag = (tag: string): string => normalisedTag(tag).split("-")[0] ?? "";
-/** This edition's own preview address, which answers the same exact revision again: the retry a route surface offers without holding a read of its own. */
-const previewAddressOf = (pageId: string, locale: string): string => `/pages/${encodeURIComponent(pageId)}/${encodeURIComponent(locale)}/preview`;
+/** This edition's own preview address, which answers the same exact revision again: the retry a route surface offers without holding a read of its own. */ const previewAddressOf = (pageId: string, locale: string): string => `/pages/${encodeURIComponent(pageId)}/${encodeURIComponent(locale)}/preview`;
 function editionOfLocale(editions: readonly LocaleEdition[], locale: string): LocaleEdition | undefined {
   const requested = normalisedTag(locale);
   if (requested.length === 0) return undefined;

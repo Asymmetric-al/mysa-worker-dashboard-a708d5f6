@@ -26,8 +26,7 @@ const SECTION_DESCRIPTIONS: Readonly<Partial<Record<RecordDetailSection, string>
   activity: "Only something that happened appears here, with the precision its date is known to. A gift, a scheduled task or an opened mail or dialer app is not an activity.",
   privateNotes: "These lines are yours alone. They never appear in a shared projection, in an export, or in another record's audience.",
 };
-/** The audience a private note is shown with, stated once so no two surfaces word it differently and a reader never has to infer from a section heading whether the text beside it is shared. */
-export const PRIVATE_NOTE_AUDIENCE_LABEL = "Private note — only you";
+/** The audience a private note is shown with, stated once so no two surfaces word it differently and a reader never has to infer from a section heading whether the text beside it is shared. */ export const PRIVATE_NOTE_AUDIENCE_LABEL = "Private note — only you";
 const UNAVAILABLE_DESCRIPTION = "The sections that depend on that source are unavailable rather than empty. Everything else on this record still works, and nothing was changed.";
 const LOADING_SECTION_BLOCKS = 3;
 const LOADING_LINE_WIDTHS = ["w-full", "w-5/6", "w-2/3"] as const;
@@ -80,10 +79,9 @@ const toDomId = (generated: string, suffix: string): string => `record-detail-${
   const presentSections = RECORD_DETAIL_SECTIONS.filter((section) => hasContent(sections[section]));
   const retry = unavailable !== undefined && unavailable.onRetry !== undefined ? { label: "Try again", onClick: unavailable.onRetry } : undefined;
   const initials = initialsOf(identity.displayName);
-  const showsSkipLink = !isLoading && presentSections.length > 0;
   return (
     <article aria-busy={isLoading ? true : undefined} aria-labelledby={identityHeadingId} className={cn(chrome.surface, className)}>
-      {showsSkipLink ? (
+      {!isLoading && presentSections.length > 0 ? (
         <a href={`#${sectionsRegionId}`} className="sr-only rounded-md px-2 py-1 text-sm focus-visible:not-sr-only focus-visible:inline-flex focus-visible:min-h-6 focus-visible:items-center focus-visible:bg-background">
           {"Skip to the record's sections"}
         </a>

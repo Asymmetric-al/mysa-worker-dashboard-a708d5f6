@@ -104,7 +104,6 @@ export function ExportPrintActions({ scope, query, snapshotId, snapshot, locale,
     ) : answer.kind === "refused" ? (
       <StateNotice kind="refused" title="No file was produced" description={refusalSummary(answer.refused)} headingLevel={3} />
     ) : null;
-  const transport = error === null ? null : <StateNotice kind="unavailable" title="No file was produced" description={TRANSPORT_DESCRIPTION} retry={retry} headingLevel={3} />;
   return (
     <section aria-labelledby={titleId} aria-busy={isPending ? true : undefined} data-slot="export-print-actions" dir={dir} className={cn("flex min-w-0 flex-col gap-4 print:hidden", className)}>
       <SectionCard title="Export and print" headingId={titleId} description={LEAD} cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-4">
@@ -147,7 +146,7 @@ export function ExportPrintActions({ scope, query, snapshotId, snapshot, locale,
       {produced === null ? null : <FileReceipt kind="produced" envelope={produced} locale={locale} />}
       {elsewhere ? <FileReceipt kind="elsewhere" onReexport={() => void runExport()} /> : null}
       {outcome}
-      {transport}
+      {error === null ? null : <StateNotice kind="unavailable" title="No file was produced" description={TRANSPORT_DESCRIPTION} retry={retry} headingLevel={3} />}
     </section>
   );
 }

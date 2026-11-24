@@ -25,8 +25,7 @@ const CLOSED_EPISODE_STATES: ReadonlySet<SharingRelationship["state"]> = new Set
 /** Live relationships first, then the closed ones, and inside each band by grant reference in code-unit order: the order the read states is the identity order it shares with the API and the coach surfaces, so this page orders its own sections rather than redefining that contract, and the code-unit tie-break keeps the order identical on every render. */
 function liveFirst(one: SharingRelationship, two: SharingRelationship): number {
   const oneClosed = CLOSED_EPISODE_STATES.has(one.state);
-  const twoClosed = CLOSED_EPISODE_STATES.has(two.state);
-  if (oneClosed !== twoClosed) return oneClosed ? 1 : -1;
+  if (oneClosed !== CLOSED_EPISODE_STATES.has(two.state)) return oneClosed ? 1 : -1;
   return compareCodeUnits(one.grantId, two.grantId);
 }
 export const metadata: Metadata = { title: COACHING_COPY.sharing.heading };
@@ -73,13 +72,7 @@ async function readInvitationCandidates(invitableCoaches: SharingOverview["invit
     ministries: groups.flatMap((group) => group.ministries.map((ministry) => ({ ministryId: ministry.ministryId, displayName: ministry.ministryLabel === "" ? ministry.ministryId : ministry.ministryLabel }))),
   };
 }
-interface RelationshipSectionProps {
-  readonly relationship: SharingRelationship;
-  readonly index: number;
-  readonly scope: SharingEnvelope["scope"];
-  readonly asOf: string;
-  readonly grantLevelEffects: readonly StopEffect[];
-}
+type RelationshipSectionProps = { readonly relationship: SharingRelationship; readonly index: number; readonly scope: SharingEnvelope["scope"]; readonly asOf: string; readonly grantLevelEffects: readonly StopEffect[] };
 /** One relationship, disclosed in full and stoppable on its own: the grant and coach references it is known by, the state and duration it currently stands in, the reviewed financial range its own record states, the five modules with the state a coach meets in each, and the grant-level stop-type effects that act on this grant and no other. A relationship the read refused — a revoked, ended, expired or out-of-scope episode — states that refusal in the read's own words and offers neither a module switch nor a stop effect, because offering either would present a control the service refuses. */
 function RelationshipSection({ relationship, index, scope, asOf, grantLevelEffects }: RelationshipSectionProps): ReactElement {
   const headingId = `coaching-relationship-${String(index)}`; // The heading's identity is this section's own, so several relationships on one page keep distinct sections for a screen reader's outline rather than sharing one label.
@@ -105,8 +98,7 @@ function RelationshipSection({ relationship, index, scope, asOf, grantLevelEffec
     </section>
   );
 }
-/** The worker's invitation and grant surface: every relationship the read returns, each disclosed and stoppable on its own, and the one form that records a new invitation. */
-export default async function CoachingSharingPage(): Promise<ReactElement> {
+/** The worker's invitation and grant surface: every relationship the read returns, each disclosed and stoppable on its own, and the one form that records a new invitation. */ export default async function CoachingSharingPage(): Promise<ReactElement> {
   const result = await reads.coaching.readCoachingOverview();
   if (result.kind !== "envelope") return pageRefusalOf(result, NOTICE_COPY);
   const envelope = result.envelope;

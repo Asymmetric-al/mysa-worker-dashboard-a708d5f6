@@ -1,5 +1,4 @@
-/** Success criterion 7, at the service boundary: the one support goal, the single financial write this application permits (`saveGoal`), and the percentage rules every goal surface presents. */
-import { Temporal } from "temporal-polyfill";
+/** Success criterion 7, at the service boundary: the one support goal, the single financial write this application permits (`saveGoal`), and the percentage rules every goal surface presents. */ import { Temporal } from "temporal-polyfill";
 import { beforeAll, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type Scope } from "@/modules/data-service";
@@ -27,10 +26,7 @@ function figureOf(envelope: GoalEnvelope): GoalFigure {
   return goal;
 }
 const currentGoalOf = async (source: SessionSource): Promise<GoalFigure> => figureOf(await goalEnvelopeOf(source));
-/** The fundraiser's own scope and the goal it currently states: the arrange every save case starts from. */
-async function fundraiserArrangement(): Promise<{ readonly scope: Scope; readonly goal: GoalFigure }> {
-  return { scope: await scopeOf(FUNDRAISER), goal: await currentGoalOf(FUNDRAISER) };
-}
+/** The fundraiser's own scope and the goal it currently states: the arrange every save case starts from. */ const fundraiserArrangement = async (): Promise<{ readonly scope: Scope; readonly goal: GoalFigure }> => ({ scope: await scopeOf(FUNDRAISER), goal: await currentGoalOf(FUNDRAISER) });
 const reportEnvelopeOf = async (source: SessionSource): Promise<Extract<Awaited<ReturnType<typeof reads.support.readReport>>, { readonly kind: "envelope" }>["envelope"]> => expectEnvelope(await reads.support.readReport("received-period-and-year-to-date", {}, source), `the report read for ${source.sessionId}`);
 const commitmentsEnvelopeOf = async (source: SessionSource): Promise<Extract<Awaited<ReturnType<typeof reads.support.readCommitments>>, { readonly kind: "envelope" }>["envelope"]> => expectEnvelope(await reads.support.readCommitments({}, source), `the commitments read for ${source.sessionId}`);
 const saveGoalFor = async (source: SessionSource, scope: Scope, expectedRevision: string, payload: GoalSavePayload, operationId: string = newOperationId()): Promise<MutationOutcome> => mutations.support.saveGoal({ operationId, scope, expectedRevision, payload }, source);
@@ -118,8 +114,7 @@ it.each([
 });
 it("the one permitted financial write: answers a save that states the amount already set with unchanged, and advances no revision", async () => {
   const { scope, goal } = await fundraiserArrangement();
-  const outcome = await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits));
-  expect(outcomeNamed(outcome, "unchanged").revision).toBe(goal.revision);
+  expect(outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits)), "unchanged").revision).toBe(goal.revision);
   expect(await currentGoalOf(FUNDRAISER)).toEqual(goal);
 });
 it("the one permitted financial write: advances the revision by exactly one and names the one record it changed", async () => {
@@ -249,8 +244,7 @@ it("the write reaches nothing but the goal: grants no other authority, before or
   const exportBefore = denialOf(canExport(secondWorker, scope));
   const reviewerEditBefore = denialOf(canEdit(reviewer, { kind: "support-subject", scope: reviewerScope, capabilities: reviewer.capabilities }));
   expect(canEdit(session, { kind: "support-subject", scope, capabilities: session.capabilities }).allowed).toBe(true);
-  const accepted = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits * 2)), "accepted");
-  expect(accepted.changed).toEqual([scope.supportSubjectId]);
+  expect(outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits * 2)), "accepted").changed).toEqual([scope.supportSubjectId]);
   const protectedReadAfter = denialOf(canReadProtected(session, { audience: "approved-supporter", reader: null }));
   const exportAfter = denialOf(canExport(secondWorker, scope));
   const reviewerEditAfter = denialOf(canEdit(reviewer, { kind: "support-subject", scope: reviewerScope, capabilities: reviewer.capabilities }));
@@ -262,9 +256,7 @@ it("the goal is a measure of its own: is never one of the received amounts and n
   const commitments = await commitmentsEnvelopeOf(FUNDRAISER);
   const goal = figureOf(envelope);
   expect(envelope.data.measure).toBe(GOAL_MEASURE);
-  const received = envelope.data.report.summary.map((entry) => `${entry.currency}:${String(entry.received.minorUnits)}`);
-  expect(received).not.toContain(`${goal.amount.currency}:${goal.amount.minorUnits}`);
-  const occurrences = commitments.data.commitments.map((commitment) => `${commitment.perOccurrence.currency}:${commitment.perOccurrence.minorUnits}`);
-  expect(occurrences).not.toContain(`${goal.amount.currency}:${goal.amount.minorUnits}`);
+  expect(envelope.data.report.summary.map((entry) => `${entry.currency}:${String(entry.received.minorUnits)}`)).not.toContain(`${goal.amount.currency}:${goal.amount.minorUnits}`);
+  expect(commitments.data.commitments.map((commitment) => `${commitment.perOccurrence.currency}:${commitment.perOccurrence.minorUnits}`)).not.toContain(`${goal.amount.currency}:${goal.amount.minorUnits}`);
   expect(Object.keys(commitments.data)).not.toContain("goal");
 });

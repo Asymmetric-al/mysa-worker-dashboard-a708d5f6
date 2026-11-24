@@ -103,6 +103,8 @@ const MEDIA_COPY = {
   heading: "Media in this section",
   addImage: "Add an image",
   addVideo: "Add a video",
+  manageImage: "Manage this image",
+  manageVideo: "Manage this video",
   placedLabel: "Placed in this section",
   unavailable: "The media placed in this section cannot be shown right now, and no address is served in its place.",
   nonePlaced: "No media is placed in this section yet.",
@@ -124,16 +126,17 @@ const fieldsOf = (section: PageBuilderSection, values: SectionFormValues): Reado
 const presentationOf = (values: SectionFormValues): PresentationChoice => ({ treatment: values.treatment, layout: values.layout, alignment: values.alignment, imageFit: values.imageFit });
 const mediaKindOf = (section: PageBuilderSection): MediaPickerKind => (section.sectionType === "video" ? "video" : "image");
 const admitsMedia = (keys: readonly SectionFieldKey[]): boolean => keys.includes("altText");
-function placementOf(section: PageBuilderSection, kind: MediaPickerKind): MediaPlacement | undefined {
-  const found = (section.placements ?? []).find((candidate) => candidate.kind === kind);
-  return found === undefined ? undefined : { placementId: found.placementId, altText: found.altText, ...(found.caption === undefined || found.caption === null ? {} : { caption: found.caption }), ...(found.credit === undefined || found.credit === null ? {} : { credit: found.credit }) };
-}
+/** One placement as the picker describes it: the identity it is managed by, and the description the picker states beside the file. */ const placementDescriptorOf = (placed: SectionPlacement): MediaPlacement => ({
+  placementId: placed.placementId,
+  altText: placed.altText,
+  ...(placed.caption === undefined || placed.caption === null ? {} : { caption: placed.caption }),
+  ...(placed.credit === undefined || placed.credit === null ? {} : { credit: placed.credit }),
+});
 const MANAGED_REASON_BY_TYPE: Partial<Readonly<Record<PageSectionType, ManagedFieldKey>>> = { giving: "giving-binding", progress: "support-progress" };
 const managedReasonKeyOf = (section: PageBuilderSection): ManagedFieldKey => section.managedReasonKey ?? MANAGED_REASON_BY_TYPE[section.sectionType] ?? "source-supplied-section";
 function controlNameOf(path: string): string {
   const trimmed = path.startsWith("payload.") ? path.slice("payload.".length) : path;
-  if (trimmed.startsWith("fields.")) return trimmed.slice("fields.".length);
-  return trimmed.startsWith("presentation.") ? trimmed.slice("presentation.".length) : "";
+  return trimmed.startsWith("fields.") ? trimmed.slice("fields.".length) : trimmed.startsWith("presentation.") ? trimmed.slice("presentation.".length) : "";
 }
 function refusalsByControl(fields: Readonly<Record<string, readonly string[]>>): Readonly<Record<string, readonly string[]>> {
   const byControl = new Map<string, string[]>();
@@ -202,9 +205,8 @@ const intentDigestOf = (body: SaveSectionPayloadBody): string =>
 const fileIdentityOf = (file: File | undefined): string => (file === undefined ? "" : `${file.name}:${String(file.size)}:${String(file.lastModified)}`);
 /** The intent a removal carries: the edition it detaches from, and the placement it detaches. The revision is deliberately absent, so a retry after the Page is read again submits the same attempt instead of a new one. */
 const removalIntentOf = (variantId: string, placementId: string): string => JSON.stringify([variantId, placementId]);
-/** One chosen file as its bytes' base64 half, or as its own text for a caption track, which is carried to the service as WebVTT text rather than as bytes. */
-function readChosenFile(file: File, asText: boolean): Promise<string> {
-  return new Promise((resolve, reject) => {
+/** One chosen file as its bytes' base64 half, or as its own text for a caption track, which is carried to the service as WebVTT text rather than as bytes. */ const readChosenFile = (file: File, asText: boolean): Promise<string> =>
+  new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("The browser could not read the chosen file, so nothing was sent."));
     reader.onload = () => {
@@ -217,7 +219,6 @@ function readChosenFile(file: File, asText: boolean): Promise<string> {
     if (asText) reader.readAsText(file);
     else reader.readAsDataURL(file);
   });
-}
 type SettlementNotice = { readonly title: string; readonly destructive: boolean; readonly body: ReactNode; readonly detail: readonly [string, string]; readonly again: string | null };
 function noticeOf(settlement: SaveSettlement, expectedRevision: string): SettlementNotice | null {
   switch (settlement.kind) {
@@ -254,7 +255,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
   const settlement = saveState?.settlement ?? null;
   const reapplyRevision = saveState?.reapplyRevision ?? null;
   const attempt = saveState?.attempt ?? null;
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [managing, setManaging] = useState<{ readonly placementId?: string } | null>(null);
   const mediaAttempt = useRef<ReviewedAttempt | null>(null);
   const removalAttempt = useRef<ReviewedAttempt | null>(null);
   const saving = saveSection.isPending;
@@ -280,10 +281,12 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
   const errors = settlement !== null && settlement.kind === "invalid" ? settlement.errors : null;
   const fieldKeys = admittedFieldKeysOf(section);
   const admittedLabels: Readonly<Record<string, string | undefined>> = Object.fromEntries([...fieldKeys.map((key) => [key, FIELD_WORDING[key].label]), ["treatment", "Treatment"], ["layout", "Layout"], ["alignment", "Alignment"], ["imageFit", "Image fit"]]);
-  const summaryOrder: readonly string[] = ["treatment", "layout", "alignment", "imageFit", ...fieldKeys];
   const mediaKind = mediaKindOf(section);
-  const placement = placementOf(section, mediaKind);
   const withMedia = admitsMedia(fieldKeys);
+  // The picker is open for exactly one thing at a time: a placement being managed, or a new placement being added.
+  const pickerOpenChange = (open: boolean): void => {
+    if (!open) setManaging(null);
+  };
   const saveReason = authority === undefined ? FIELDS_COPY.noAuthority : disabled ? FIELDS_COPY.disabledReason : null;
   const registerMediaAsset = useCallback(
     async (input: MediaRegisterInput): Promise<MediaPickerOutcome> => {
@@ -314,6 +317,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
           ...(transcript === undefined ? {} : { transcript: { text: transcript } }),
           sectionPlacement: { variantId, sectionElement: section.sectionType },
         },
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
       });
     },
     [authority, expectedRevision, registerMedia, section.sectionType, variantId],
@@ -410,10 +414,11 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
       ))}
     </NativeSelect>
   );
-  const selectChoices = [{ name: "alignment" as const, label: "Alignment", options: ALIGNMENT_OPTIONS, admits: isAlignment }, ...(withMedia ? [{ name: "imageFit" as const, label: "Image fit", options: IMAGE_FIT_OPTIONS, admits: isImageFit }] : [])];
   const notice = saving || settlement === null ? null : noticeOf(settlement, expectedRevision);
   function renderMedia(): ReactElement | null {
     if (!withMedia) return null;
+    const placements = section.placements ?? [];
+    const managed = managing?.placementId === undefined ? undefined : placements.find((candidate) => candidate.placementId === managing.placementId);
     return (
       <Card data-slot="section-fields-media">
         <CardHeader>
@@ -421,29 +426,59 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
         </CardHeader>
         <CardContent className="flex flex-col gap-3 text-sm">
           <p className="type-supporting text-pretty">{mediaKind === "image" ? copy.constraints.imageProfile : copy.constraints.videoProfile}</p>
-          {placement === undefined ? (
+          {placements.length === 0 ? (
             <p className="type-supporting">{MEDIA_COPY.nonePlaced}</p>
           ) : (
-            <div className="flex flex-col gap-1">
-              <p className="font-medium">{MEDIA_COPY.placedLabel}</p>
-              <p className="type-body text-pretty wrap-anywhere">
-                <bdi>{placement.altText}</bdi>
-              </p>
-              {placement.caption === undefined ? null : (
-                <p className="type-body text-pretty wrap-anywhere">
-                  <bdi>{placement.caption}</bdi>
-                </p>
-              )}
-              {section.placements?.some((candidate) => candidate.kind === mediaKind && candidate.state === "unavailable") === true ? <p className="type-supporting">{MEDIA_COPY.unavailable}</p> : null}
-            </div>
+            <ul className="flex min-w-0 list-none flex-col gap-4 p-0">
+              {placements.map((placed) => (
+                <li key={placed.placementId} data-slot="section-placement" data-kind={placed.kind} data-state={placed.state ?? "ready"} className="flex min-w-0 flex-col gap-1">
+                  <p className="font-medium">{MEDIA_COPY.placedLabel}</p>
+                  <p className="type-body text-pretty wrap-anywhere">
+                    <bdi>{placed.altText}</bdi>
+                  </p>
+                  {placed.caption === undefined || placed.caption === null ? null : (
+                    <p className="type-body text-pretty wrap-anywhere">
+                      <bdi>{placed.caption}</bdi>
+                    </p>
+                  )}
+                  {placed.credit === undefined || placed.credit === null ? null : (
+                    <p className="type-body text-pretty wrap-anywhere">
+                      <bdi>{placed.credit}</bdi>
+                    </p>
+                  )}
+                  {placed.state === "unavailable" ? <p className="type-supporting">{MEDIA_COPY.unavailable}</p> : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={disabled || authority === undefined}
+                      aria-describedby={authority === undefined ? saveReasonId : undefined}
+                      aria-label={`${placed.kind === "image" ? MEDIA_COPY.manageImage : MEDIA_COPY.manageVideo}: ${placed.altText}`}
+                      onClick={() => setManaging({ placementId: placed.placementId })}
+                    >
+                      {placed.kind === "image" ? MEDIA_COPY.manageImage : MEDIA_COPY.manageVideo}
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" disabled={disabled || authority === undefined} aria-describedby={authority === undefined ? saveReasonId : undefined} onClick={() => setPickerOpen(true)}>
+            <Button type="button" variant="outline" size="sm" disabled={disabled || authority === undefined} aria-describedby={authority === undefined ? saveReasonId : undefined} onClick={() => setManaging({})}>
               {mediaKind === "image" ? MEDIA_COPY.addImage : MEDIA_COPY.addVideo}
             </Button>
           </div>
           <p className="type-supporting">{MEDIA_COPY.mediaLanguageNote}</p>
-          <MediaPicker kind={mediaKind} open={pickerOpen} onOpenChange={setPickerOpen} direction={direction} {...(placement === undefined ? {} : { placement: placement })} onRegister={registerMediaAsset} {...(placement === undefined ? {} : { onRemove: removePlacedMedia })} />
+          <MediaPicker
+            kind={managed === undefined ? mediaKind : managed.kind}
+            open={managing !== null}
+            onOpenChange={pickerOpenChange}
+            direction={direction}
+            {...(managed === undefined ? {} : { placement: placementDescriptorOf(managed) })}
+            onRegister={registerMediaAsset}
+            {...(managed === undefined ? {} : { onRemove: removePlacedMedia })}
+          />
         </CardContent>
       </Card>
     );
@@ -458,7 +493,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
         <p className="type-supporting text-pretty">{FIELDS_COPY.enterNote}</p>
         {saveReason === null ? null : <p {...{ id: saveReasonId, className: "type-supporting text-pretty" as const }}>{saveReason}</p>}
       </div>
-      <FormErrorSummary errors={errors} labels={admittedLabels} order={summaryOrder} headingLevel={4} />
+      <FormErrorSummary errors={errors} labels={admittedLabels} order={["treatment", "layout", "alignment", "imageFit", ...fieldKeys]} headingLevel={4} />
       <form
         className="flex min-w-0 flex-col gap-6"
         aria-busy={saving ? true : undefined}
@@ -474,7 +509,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
           <FormFieldGroup {...{ legend: "Layout" as const, name: "layout" as const, error: errors?.byField["layout"] }}>{(group) => renderChoice(LAYOUT_OPTIONS, "layout", group, isLayout)}</FormFieldGroup>
           <p className="type-supporting text-pretty">{copy.presentation.boundedNote}</p>
           <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start">
-            {selectChoices.map((choice) => (
+            {[{ name: "alignment" as const, label: "Alignment", options: ALIGNMENT_OPTIONS, admits: isAlignment }, ...(withMedia ? [{ name: "imageFit" as const, label: "Image fit", options: IMAGE_FIT_OPTIONS, admits: isImageFit }] : [])].map((choice) => (
               <FormField key={choice.name} label={choice.label} name={choice.name} error={errors?.byField[choice.name]}>
                 {(control) => (
                   <form.Field name={choice.name}>
@@ -529,8 +564,7 @@ function ManagedSectionSummary({ section }: { readonly section: PageBuilderSecti
     </dl>
   );
 }
-/** The field form for one composed section: a section a source owns states its lock and its supplied content in place of any form. */
-export function SectionFields(props: SectionFieldsProps): ReactElement {
+/** The field form for one composed section: a section a source owns states its lock and its supplied content in place of any form. */ export function SectionFields(props: SectionFieldsProps): ReactElement {
   if (props.section.managed) {
     return (
       <ManagedSectionLock sectionTypeLabel={copy.catalogue.sections[props.section.sectionType].label} reasonKey={managedReasonKeyOf(props.section)} className={props.className}>

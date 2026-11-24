@@ -1,5 +1,4 @@
-/** Criterion 10 — consent and notification. */
-import type { Page } from "@playwright/test";
+/** Criterion 10 — consent and notification. */ import type { Page } from "@playwright/test";
 import { arrayAt, devStateOf, expect, sendResultFingerprint, fieldAt, jsonOf, messagesAt, newAttemptId, numberAt, outcomeOf, setClock, stringAt, test, type DevStateEnvelope } from "../playwright.config";
 const SEED_INSTANT = "2026-11-20T00:00:00Z";
 const UPDATE_DOCUMENT = "doc-update-autumn";
@@ -9,8 +8,8 @@ const SEEDED_WINDOW = { acceptedAt: "2026-11-16T12:00:00Z", deadline: "2026-11-2
 const SIGNUP_WINDOW = { acceptedAt: SEED_INSTANT, deadline: "2026-11-27T00:00:00Z", lastConfirmableSecond: "2026-11-26T23:59:59Z" } as const;
 const SEEDED_NOTICE = { intentId: "intent-update-autumn-en", releaseId: "release-update-en-1", intendedAt: "2026-11-10T09:05:00Z", deadline: "2026-11-11T09:05:00Z", lastUsefulSecond: "2026-11-11T09:04:59Z" } as const; // The seeded notice: the edition it was submitted for, the instant it was meant for and the instant it stops being useful.
 const SEEDED_MEMBERSHIPS = { awaitingProof: "membership-awaiting-proof", off: "membership-unsubscribed", restricted: "membership-restricted" } as const; // The seeded membership states this file counts, so an excluded membership can be shown as excluded rather than missing.
-const SEEDED_AUDIENCE_COUNTS = { eligible: 5, excluded: 4 } as const;
-const SEEDED_MEMBER_STATES = { active: 5, "awaiting-proof": 1, off: 2, restricted: 1 } as const;
+const SEEDED_AUDIENCE_COUNTS = { eligible: 5, excluded: 5 } as const;
+const SEEDED_MEMBER_STATES = { active: 5, "awaiting-proof": 2, off: 2, restricted: 1 } as const;
 const EDITION = { publicFrench: { variantId: "variant-update-autumn-fr-public", audience: "Public", locale: "Français" }, approvedSupporter: { variantId: "variant-update-autumn-en-approved-supporter", audience: "Approved supporters", locale: "English" } } as const; // The editions a fresh notice is driven through, each with the words its own release control carries: the composed path releases the edition again, so the release a notice names is the one that release produced rather than the seeded head.
 const UNRELEASED_VARIANT = "variant-update-autumn-ar-public";
 const OWN_MEMBERSHIP = "principal-established-worker";
@@ -164,6 +163,17 @@ test.describe("a reader's own proof flow", () => {
     expect(landed.search, "The confirmation message carries no token a page load could use; The message a reader follows carries no token, and neither does the address it lands on: the confirmation is identified by the membership and the person's own act alone").toBe("");
     expect(landed.pathname, "The message lands on the preferences surface itself").toBe(PREFERENCES_PATH);
     await expect(proof.getByText("Address on this membership", { exact: true })).toBeVisible();
+    // The message the pending result points at is rendered here, in every fact a message carries: who it is from, which address it is for, what it is called and what it says. The envelope states the same message, so the wording a reader confirms from is the record's own rather than text this surface composed.
+    const table = proof.locator('[data-slot="confirmation-message"]');
+    await expect(table, "The confirmation message is rendered on the page the recipient is told to confirm from").toBeVisible();
+    for (const label of ["From", "To", "Subject"] as const) await expect(table.getByText(label, { exact: true })).toBeVisible();
+    expect(stringAt(pending, ["data", "confirmationMessage", "sender", "address"], "The sender the message is rendered from"), "The one sender this application states for its notices").toMatch(/@example\.invalid$/u);
+    expect(stringAt(pending, ["data", "confirmationMessage", "to"], "The address the message is for"), "The address the membership records").toBe("subscriber@example.org");
+    expect(stringAt(pending, ["data", "confirmationMessage", "subject"], "The subject the message carries"), "The subject names the membership's own publisher and purpose").toMatch(/Update notices$/u);
+    await expect(table.getByText(/This is the confirmation message for your Update-email membership/u), "The message's own wording is rendered, not a sentence about one").toBeVisible();
+    await expect(table.getByText(/Confirm this address control/u), "The message names the confirm target: the control on this page, and no link").toBeVisible();
+    await expect(table.getByText(/never extends that window/u), "The message carries the 168-hour window's own rule").toBeVisible();
+    expect(table.locator("a"), "The message carries nothing to follow: there is no token link a page load or a scanner could confirm from").toHaveCount(0);
     await expect(proof.locator('input[type="password"], input[autocomplete="off"], textarea[onpaste], input[onpaste]'), "No field in the proof flow blocks a paste or asks for a secret").toHaveCount(0);
     expect((await page.request.get(CONFIRM_API)).status(), "A GET to the confirmation transport is not admitted; A GET cannot confirm or unsubscribe: both transports export POST only, which is what makes a link preview, a scanner and a page load harmless").toBe(405);
     expect((await page.request.get(CONFIRM_API)).status(), "A GET to the confirmation transport is not admitted").toBe(405);
@@ -173,6 +183,13 @@ test.describe("a reader's own proof flow", () => {
     const afterReload = await readPreferences(page);
     expect(fieldAt(afterReload, "data", "state"), "Reloading the page converts nothing").toBe("awaiting-proof");
     expect(stringAt(afterReload, ["data", "confirmation", "deadline"], "The window after a reload"), "A page load neither extends nor consumes the window").toBe(SEEDED_WINDOW.deadline);
+    // An address already waiting for proof can ask for its message again. The answer is `unchanged`: the request the acceptance was made for is the same one, so nothing is created and the window the acceptance fixed cannot move — which is what makes "asking again never extends it" a fact rather than a promise.
+    const askAgain = proof.getByRole("button", { name: "Send the message again", exact: true });
+    await expect(askAgain, "A membership already awaiting proof is offered the message it is waiting to confirm").toBeEnabled();
+    await askAgain.click();
+    await expect(proof.locator('[data-slot="operation-result"]').first(), "The answer stays on the surface the request was made from").toHaveAttribute("data-outcome", "unchanged");
+    const afterAskingAgain = await readPreferences(page);
+    expect([fieldAt(afterAskingAgain, "data", "state"), stringAt(afterAskingAgain, ["data", "confirmation", "deadline"], "The window after asking for the message again")], "Asking again creates no second membership and never extends the acceptance's window").toEqual(["awaiting-proof", SEEDED_WINDOW.deadline]);
     const confirmControl = proof.getByRole("button", { name: /Confirm this address/u });
     await expect(confirmControl, "The control is offered inside the open window; The person's own act, and the only one: the Confirm control").toBeEnabled();
     await confirmControl.click();
@@ -263,7 +280,7 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     await confirmThroughProof(page);
     const audience = await readAudience(page);
     expect(fieldAt(audience, "data", "counts", "eligible"), "The seeded actives plus the membership just confirmed").toBe(SEEDED_AUDIENCE_COUNTS.eligible + 1);
-    expect(fieldAt(audience, "data", "counts", "excluded"), "An address awaiting proof, two Off choices and one restriction").toBe(SEEDED_AUDIENCE_COUNTS.excluded);
+    expect(fieldAt(audience, "data", "counts", "excluded"), "Two addresses awaiting proof, two Off choices and one restriction").toBe(SEEDED_AUDIENCE_COUNTS.excluded);
     expect(fieldAt(audience, "data", "memberStates"), "The four states stay four").toEqual({ ...SEEDED_MEMBER_STATES, active: SEEDED_MEMBER_STATES.active + 1 });
     const intentId = (await releaseAndNotify(page, EDITION.publicFrench)).intentId;
     const result = await readSendResult(page, intentId);

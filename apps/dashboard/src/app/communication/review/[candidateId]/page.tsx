@@ -19,22 +19,19 @@ const NOTICE_COPY: ReadNoticeCopy = {
   refused: { title: "This review's request was refused" },
 };
 const NO_CANDIDATES: readonly CandidateView[] = [];
-/** The release mode that asks for notices, in the vocabulary the review record stores rather than the family's client spelling: this route states only what it read. */
-const NOTIFY_NOW_RELEASE_MODE = "publish-and-notify" satisfies ReviewableCandidate["review"]["notifyMode"];
-function candidateViewOf(data: ReviewableCandidate): CandidateView {
-  return {
-    variantId: data.variant.variantId,
-    audience: data.audience,
-    locale: data.locale,
-    revisionId: data.candidate.revisionId,
-    contentChecksum: data.candidate.contentChecksum,
-    renderedHtml: data.renderedHtml,
-    mediaRenditions: data.placements.flatMap((placement) => placement.renditions.map((rendition) => ({ purpose: rendition.purpose, url: rendition.path }))),
-    lifecycle: lifecycleOf(data.variant, data.headRelease ?? undefined, { reviewDecision: data.review.decision }),
-    decisionRecord: data.review.recorded,
-    reviewedByAuthor: data.review.reviewedByAuthor,
-  };
-}
+/** The release mode that asks for notices, in the vocabulary the review record stores rather than the family's client spelling: this route states only what it read. */ const NOTIFY_NOW_RELEASE_MODE = "publish-and-notify" satisfies ReviewableCandidate["review"]["notifyMode"];
+const candidateViewOf = (data: ReviewableCandidate): CandidateView => ({
+  variantId: data.variant.variantId,
+  audience: data.audience,
+  locale: data.locale,
+  revisionId: data.candidate.revisionId,
+  contentChecksum: data.candidate.contentChecksum,
+  renderedHtml: data.renderedHtml,
+  mediaRenditions: data.placements.flatMap((placement) => placement.renditions.map((rendition) => ({ purpose: rendition.purpose, url: rendition.path }))),
+  lifecycle: lifecycleOf(data.variant, data.headRelease ?? undefined, { reviewDecision: data.review.decision }),
+  decisionRecord: data.review.recorded,
+  reviewedByAuthor: data.review.reviewedByAuthor,
+});
 function unhandledAnswer(answer: never): never {
   throw new Error(`Unhandled read result: ${JSON.stringify(answer)}`);
 }

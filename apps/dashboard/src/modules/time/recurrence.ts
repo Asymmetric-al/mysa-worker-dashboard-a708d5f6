@@ -45,9 +45,8 @@ function endFieldMessage(rule: SeriesRule): string | undefined {
   if (end.kind === "on-date") return !isCivilDate(end.on) ? "Choose the end date." : isCivilDate(rule.firstDueOn) && Temporal.PlainDate.compare(end.on, rule.firstDueOn) < 0 ? "Choose an end date on or after the first due date." : undefined;
   return end.kind === "after-count" ? (Number.isInteger(end.count) && end.count >= 1 ? undefined : "Choose how many occurrences, as a whole number of at least 1.") : end.kind === "ongoing-personal-policy" ? undefined : END_REQUIRED_MESSAGE;
 }
-function intervalFieldMessage(profile: RepeatProfile | undefined, interval: number): string | undefined {
-  return profile === undefined || !takesInterval(profile) ? undefined : Number.isInteger(interval) && interval >= 1 ? undefined : profile === "everyNWeeks" ? "Choose how many weeks between occurrences, as a whole number of at least 1." : "Choose how many months between occurrences, as a whole number of at least 1.";
-}
+const intervalFieldMessage = (profile: RepeatProfile | undefined, interval: number): string | undefined =>
+  profile === undefined || !takesInterval(profile) ? undefined : Number.isInteger(interval) && interval >= 1 ? undefined : profile === "everyNWeeks" ? "Choose how many weeks between occurrences, as a whole number of at least 1." : "Choose how many months between occurrences, as a whole number of at least 1.";
 function dayOfMonthFieldMessage(profile: RepeatProfile | undefined, dayOfMonth: number | undefined): string | undefined {
   if (profile === undefined) return undefined;
   if (!takesDayOfMonth(profile)) return dayOfMonth === undefined ? undefined : "A day of the month applies only to the monthly repeat profiles.";
@@ -111,6 +110,24 @@ export type OccurrencePreview = { status: "preview"; dates: CivilDate[]; monthDa
   if (walk.occurrences.length === 0) return { status: "refused", reason: "end-reached" };
   return { status: "preview", dates: walk.occurrences.map((occurrence) => occurrence.dueOn), monthDayResolutions: walk.occurrences.flatMap((occurrence) => (occurrence.resolution === undefined ? [] : [occurrence.resolution])) };
 }
+/** The resolution the rule itself discloses for one date, read from the step that produces it rather than restated here: an empty list when the step landing on that date discloses none. */ function resolutionOf(rule: SeriesRule, date: CivilDate): DisclosedMonthDayResolution[] {
+  const produced = nextOccurrences(rule, date.subtract({ days: 1 }), 1);
+  if (produced.status !== "preview") return [];
+  const [first] = produced.dates;
+  return first !== undefined && Temporal.PlainDate.compare(first, date) === 0 ? produced.monthDayResolutions : [];
+}
+export type PlanPreviewQuestion = { readonly rule: SeriesRule; readonly today: CivilDate; readonly awaitingAnswer: CivilDate | null; readonly count?: number };
+/** The dates a plan has ahead of it, at most `count` of them: the date the plan is waiting for an answer on — when that date is still ahead of today — followed by the dates the rule produces after it, so a preview never precedes the date the plan is asking about. That date keeps the month-day resolution the rule
+ * discloses for it, and a rule that produces no further date leaves the list holding it alone rather than reporting the plan as ended. */
+export function planPreview(question: PlanPreviewQuestion): OccurrencePreview {
+  const count = previewCountOf(question.count ?? DEFAULT_PREVIEW_COUNT);
+  const awaiting = question.awaitingAnswer;
+  if (awaiting === null || Temporal.PlainDate.compare(awaiting, question.today) <= 0) return nextOccurrences(question.rule, question.today, count);
+  const ahead = nextOccurrences(question.rule, awaiting, Math.max(count - 1, 1));
+  if (ahead.status === "refused") return ahead.reason === "end-reached" ? { status: "preview", dates: [awaiting], monthDayResolutions: resolutionOf(question.rule, awaiting) } : ahead;
+  const walked = ahead.dates.slice(0, count - 1);
+  return { status: "preview", dates: [awaiting, ...walked], monthDayResolutions: [...resolutionOf(question.rule, awaiting), ...(walked.length === ahead.dates.length ? ahead.monthDayResolutions : [])] };
+}
 export type SuccessorRequest = { rule: SeriesRule; occurrence: CivilDate; existingSuccessorDueOn?: CivilDate; state?: SeriesState };
 export type SuccessorAdmission = { status: "admitted"; nextDueOn: CivilDate } | { status: "refused"; reason: "successor-already-admitted" | "series-ended" | "series-stopped" | "series-paused" };
 /** Admits one successor for a completed or skipped occurrence, and never more than one. */ export function admitSuccessor(request: SuccessorRequest): SuccessorAdmission {
@@ -130,16 +147,20 @@ export type SeriesOccurrenceState = "open" | "completed" | "reopened" | "skipped
 export type SeriesOccurrence = { dueOn: CivilDate; status: SeriesOccurrenceState };
 export type PlanResolutions = readonly ["keep-this-occurrence", "move-next-date-forward", "stop-series"];
 export type PlanReview = { state: "on-track" } | { state: "planNeedsReview"; missedDates: CivilDate[]; resolutions: PlanResolutions };
-export type MissedPlanQuestion = { rule: SeriesRule; occurrences: readonly SeriesOccurrence[]; now: Temporal.Instant };
+export type MissedPlanQuestion = { rule: SeriesRule; occurrences: readonly SeriesOccurrence[]; now: Temporal.Instant; acknowledgedThrough?: CivilDate };
 const PLAN_RESOLUTIONS: PlanResolutions = ["keep-this-occurrence", "move-next-date-forward", "stop-series"];
 const isAwaitingAction = (status: SeriesOccurrenceState): boolean => status === "open" || status === "reopened";
-/** Reviews a series' plan against "today" in the series' own planning zone. */ export function missedPlan(question: MissedPlanQuestion): PlanReview {
+/** Reviews a series' plan against "today" in the series' own planning zone. A resolution answers the plan as it stood on the civil day it was recorded, so `acknowledgedThrough` drops the dates up to and including that day and only dates strictly after it still count as missed: a date missed later reopens the review
+ * on its own, while a plan never answered counts every missed date. */
+export function missedPlan(question: MissedPlanQuestion): PlanReview {
   const today = todayInZone(question.rule.planningTimeZone, question.now);
   if (today.status === "refused") return { state: "on-track" };
+  const acknowledgedThrough = question.acknowledgedThrough;
   const missedDates = question.occurrences
     .filter((occurrence) => isAwaitingAction(occurrence.status))
     .map((occurrence) => occurrence.dueOn)
     .filter((dueOn) => Temporal.PlainDate.compare(dueOn, today.date) < 0)
+    .filter((dueOn) => acknowledgedThrough === undefined || Temporal.PlainDate.compare(dueOn, acknowledgedThrough) > 0)
     .toSorted(Temporal.PlainDate.compare);
   return missedDates.length < MISSED_DATES_REVIEW_THRESHOLD ? { state: "on-track" } : { state: "planNeedsReview", missedDates, resolutions: PLAN_RESOLUTIONS };
 }
@@ -149,7 +170,9 @@ export type ThisAndFutureEdit = { revisions: readonly RuleRevision[]; from: Civi
 export type RuleRevisionResult = { status: "revisioned"; revision: RuleRevision } | { status: "refused"; reason: "not-prospective" | "stale" };
 function applyPatch(base: SeriesRule, patch: SeriesRulePatch): SeriesRule {
   const profile = patch.profile ?? base.profile;
-  const rule: SeriesRule = { profile, interval: patch.interval ?? base.interval, firstDueOn: base.firstDueOn, planningTimeZone: patch.planningTimeZone ?? base.planningTimeZone, end: patch.end ?? base.end };
+  // A profile that reads no interval stores the neutral 1, as the day of the month below is dropped when the profile reads none: carrying the previous profile's interval forward would store a field the chosen profile never reads.
+  const interval = takesInterval(profile) ? (patch.interval ?? base.interval) : 1;
+  const rule: SeriesRule = { profile, interval, firstDueOn: base.firstDueOn, planningTimeZone: patch.planningTimeZone ?? base.planningTimeZone, end: patch.end ?? base.end };
   const dayOfMonth = takesDayOfMonth(profile) ? (patch.dayOfMonth ?? base.dayOfMonth) : undefined;
   if (dayOfMonth !== undefined) rule.dayOfMonth = dayOfMonth;
   return rule;

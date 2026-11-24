@@ -1,5 +1,4 @@
-/** Success criterion 15: the two referral windows keep two different semantics on purpose. */
-import { Temporal } from "temporal-polyfill";
+/** Success criterion 15: the two referral windows keep two different semantics on purpose. */ import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeEach, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type Scope } from "@/modules/data-service";

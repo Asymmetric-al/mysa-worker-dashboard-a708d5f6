@@ -4,7 +4,7 @@ import { unsubscribe as recordOffChoice } from "@/modules/audience/consent";
 import { MEMBER_CHOICES, UPDATE_EMAIL_PURPOSE, confirmAt, newPendingMembership, withChoice, withLanguagePreference, type MembershipRecord as DomainMembership, type AudiencePurpose, type ConfirmationRefusalReason, type MemberChoice, type MembershipScope, type MembershipState } from "@/modules/audience/membership";
 import { instantAt } from "@/modules/time/clock";
 import { confirmationDeadline } from "@/modules/time/window";
-import { canEdit, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
+import { audienceRecordsSessionIdOf, canEdit, type ResolvedSession, type ScopeDecision, type SessionSource } from "../authorize";
 import { membershipRecordSchema, type MembershipRecord as StoredMembership, type MutationInput } from "../envelope";
 import { denied, type MutationOutcome, type MutationResult } from "../outcome";
 import { openMutation, runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
@@ -66,9 +66,8 @@ function domainMembershipOf(record: StoredMembership, scope: MembershipScope): D
     revision: revisionOrdinal(record.revision),
   };
 }
-function storedAcceptanceOf(previous: StoredMembership, next: DomainMembership): string | null {
-  return next.state === "awaiting-proof" ? (next.acceptedAt === undefined ? null : next.acceptedAt.toString()) : next.confirmedAt !== undefined ? next.confirmedAt.toString() : next.state === "active" ? (next.acceptedAt?.toString() ?? previous.acceptedAt) : null;
-}
+const storedAcceptanceOf = (previous: StoredMembership, next: DomainMembership): string | null =>
+  next.state === "awaiting-proof" ? (next.acceptedAt === undefined ? null : next.acceptedAt.toString()) : next.confirmedAt !== undefined ? next.confirmedAt.toString() : next.state === "active" ? (next.acceptedAt?.toString() ?? previous.acceptedAt) : null;
 function storedMembershipFrom(previous: StoredMembership, next: DomainMembership): StoredMembership {
   const acceptedAt = storedAcceptanceOf(previous, next);
   const confirmationDeadline = acceptedAt === null ? null : next.confirmationDeadline === undefined ? previous.confirmationDeadline : next.confirmationDeadline.toString();
@@ -164,8 +163,7 @@ function applySignup(context: MutationContext, payload: SignupPayload, scope: Me
   return { changed: true, revision: stored.revision, created: [stored.membershipId], result };
 }
 type WritableMembership = { readonly memberships: readonly StoredMembership[]; readonly record: StoredMembership; readonly domain: DomainMembership; readonly at: Temporal.Instant };
-/** The one membership a request names, read into its domain shape, when the caller may edit it; `undefined` is answered as "nothing to change". */
-function writableMembership(context: MutationContext, scope: MembershipScope, membershipId: string): WritableMembership | undefined {
+/** The one membership a request names, read into its domain shape, when the caller may edit it; `undefined` is answered as "nothing to change". */ function writableMembership(context: MutationContext, scope: MembershipScope, membershipId: string): WritableMembership | undefined {
   const memberships = membershipsOf(context.docs);
   const record = memberships.find((row) => row.membershipId === membershipId);
   const domain = record === undefined ? undefined : domainMembershipOf(record, scope);
@@ -213,6 +211,8 @@ async function runAudienceMutation<P, R extends MutationResult>(input: MutationI
   const { session } = opening;
   return runMutation<P, R>({
     sessionId: session.sessionId,
+    // The reader names the change and acts as its own identity; the membership row it changes lives in the publisher's world, so the transaction addresses that world rather than a copy only the reader's own page would see.
+    recordsSessionId: audienceRecordsSessionIdOf(session),
     input,
     schema,
     name,
@@ -225,25 +225,22 @@ async function runAudienceMutation<P, R extends MutationResult>(input: MutationI
 /** Opens one purpose-specific membership for the caller and leaves it waiting for proof. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const signupForPurpose = async (input: MutationInput<SignupPayload>, source?: SessionSource): Promise<MutationOutcome> => runAudienceMutation(input, source, signupPayloadSchema, "signupForPurpose", { apply: (context) => applySignup(context, input.payload, membershipScopeOf(input.scope)) });
 /** Confirms one membership's address, on the person's explicit action and inside its window only. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function confirmMembership(input: MutationInput<ConfirmPayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runAudienceMutation(input, source, confirmPayloadSchema, "confirmMembership", {
+export const confirmMembership = async (input: MutationInput<ConfirmPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runAudienceMutation(input, source, confirmPayloadSchema, "confirmMembership", {
     authorize: (resolved) => addressedByCaller(resolved, claimedMembershipId(input)),
     readCurrent: (documents) => membershipTargetOf(documents, claimedMembershipId(input)),
     apply: (context) => applyConfirmation(context, input.payload, membershipScopeOf(input.scope)),
   });
-}
 /** Records the person's Off or Immediate decision, and a reading language if the request states one. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function setPreference(input: MutationInput<PreferencePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runAudienceMutation(input, source, preferencePayloadSchema, "setPreference", {
+export const setPreference = async (input: MutationInput<PreferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runAudienceMutation(input, source, preferencePayloadSchema, "setPreference", {
     authorize: (resolved) => addressedByCaller(resolved, claimedMembershipId(input)),
     readCurrent: (documents) => membershipTargetOf(documents, claimedMembershipId(input)),
     apply: (context) => applyPreference(context, input.payload, membershipScopeOf(input.scope)),
   });
-}
 /** Turns the caller's membership for one publisher and one purpose off, and leaves every other membership untouched. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function unsubscribe(input: MutationInput<UnsubscribePayload>, source?: SessionSource): Promise<MutationOutcome> {
-  return runAudienceMutation(input, source, unsubscribePayloadSchema, "unsubscribe", {
+export const unsubscribe = async (input: MutationInput<UnsubscribePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+  runAudienceMutation(input, source, unsubscribePayloadSchema, "unsubscribe", {
     readCurrent: (documents, session) => currentTargetOf(documents, (memberships) => memberships.find((row) => row.publisherId === input.payload.publisherId && row.purpose === input.payload.purpose && row.membershipId === session.principalId)),
     apply: (context) => applyUnsubscribe(context, input.payload, membershipScopeOf(input.scope)),
   });
-}

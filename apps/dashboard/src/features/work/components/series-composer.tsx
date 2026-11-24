@@ -38,8 +38,7 @@ export interface SeriesComposerProps {
       </div>
       {open ? (
         // The ongoing-personal-series policy is admitted on the basis the plan's own this-and-future form uses: no read
-        // publishes a separate capability for the shape, so withholding it would refuse a choice the worker's own plan
-        // grants, while an end date or a count stays required for every worker who has no such plan to compare with.
+        // publishes a separate capability for the shape, so withholding it would refuse a choice the worker's own plan grants, while an end date or a count stays required for every worker who has no such plan to compare with.
         <SeriesEditor mode="create" scope={scope} expectedRevision={expectedRevision} planningTimeZoneChoices={planningTimeZoneChoices} ongoingPolicyAdmitted headingLevel={3} onSaved={openPlan} onCancel={closeEditor} />
       ) : (
         <div className="flex min-w-0 flex-wrap items-center gap-3">

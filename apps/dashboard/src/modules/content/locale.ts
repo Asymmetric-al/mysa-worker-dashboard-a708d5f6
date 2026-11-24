@@ -32,15 +32,15 @@ function parseLocaleTag(tag: string): ParsedLocaleTag | undefined {
   return { tag: normalised.join("-"), language: language.toLowerCase(), script };
 }
 const directionOfParsedTag = (parsed: ParsedLocaleTag): ContentDirection => (parsed.script !== undefined ? (RTL_SCRIPTS.has(parsed.script) ? "rtl" : "ltr") : RTL_LANGUAGES.has(parsed.language) ? "rtl" : "ltr");
-/** The direction a BCP-47 tag is authored and read in: `rtl` for a language or script written right to left, and `ltr` for everything else, including a tag that cannot be read at all. */
-export function directionOfTag(tag: string): ContentDirection {
+/** The direction a BCP-47 tag is authored and read in: `rtl` for a language or script written right to left, and `ltr` for everything else, including a tag that cannot be read at all. */ export function directionOfTag(tag: string): ContentDirection {
   const parsed = parseLocaleTag(tag);
   return parsed === undefined ? "ltr" : directionOfParsedTag(parsed);
 }
 export type DocumentEdition = Release & { readonly documentId?: string; readonly siteId?: string };
 type AdmittedEdition = { readonly release: DocumentEdition; readonly locale: ContentLocale; readonly parsed: ParsedLocaleTag };
 export type AdmittedLocaleQuery = { readonly document: ContentDocument; readonly siteDefaultLocale: string; readonly audience: VariantAudience; readonly releases: readonly DocumentEdition[] };
-export type LocaleInput = AdmittedLocaleQuery & { readonly requestedLocale: string };
+/** One resolution of a requested language over one document, Site and audience. The default policy is exact — the requested tag, then the requested language, and nothing else — which is what a preview reads, so a copied URL or a switched locale never falls through to another release. `substituteLanguage` admits the reader's policy on top of it: another admitted language of the same document, Site and audience may stand in, the answer names the language actually served, and a language whose own release was withdrawn or superseded is answered from that state rather than replaced. */
+export type LocaleInput = AdmittedLocaleQuery & { readonly requestedLocale: string; readonly substituteLanguage?: boolean };
 export type LocaleResolution = { readonly status: "resolved"; readonly requestedLocale: string; readonly servedLocale: ContentLocale; readonly fallbackOccurred: boolean; readonly release: Release } | { readonly status: "language-unavailable"; readonly requestedLocale: string };
 type StatedLocale = { readonly parsed: ParsedLocaleTag; readonly direction?: ContentDirection };
 function statedLocaleOf(edition: DocumentEdition): StatedLocale | undefined {
@@ -53,27 +53,43 @@ function statedLocaleOf(edition: DocumentEdition): StatedLocale | undefined {
   return direction === undefined ? { parsed } : { parsed, direction };
 }
 const contentLocaleOf = (stated: StatedLocale): ContentLocale => ({ tag: stated.parsed.tag, direction: stated.direction ?? directionOfParsedTag(stated.parsed) });
-function admittedEditions(query: AdmittedLocaleQuery): AdmittedEdition[] {
-  return query.releases.flatMap((edition) => {
+const admittedEditions = (query: AdmittedLocaleQuery): AdmittedEdition[] =>
+  query.releases.flatMap((edition) => {
     const stated = statedLocaleOf(edition);
     const admitted = edition.audience === query.audience && !isWithdrawn(edition) && !isSuperseded(edition) && (edition.documentId === undefined || edition.documentId === query.document.documentId) && (edition.siteId === undefined || edition.siteId === query.document.siteId) && stated !== undefined;
     return admitted && stated !== undefined ? [{ release: edition, locale: contentLocaleOf(stated), parsed: stated.parsed }] : [];
   });
-}
 const compareNewestFirst = (left: AdmittedEdition, right: AdmittedEdition): number => Temporal.Instant.compare(right.release.publishedAt, left.release.publishedAt) || (left.release.releaseId === right.release.releaseId ? 0 : left.release.releaseId < right.release.releaseId ? -1 : 1);
 const mostRecent = (candidates: readonly AdmittedEdition[]): AdmittedEdition | undefined => candidates.reduce<AdmittedEdition | undefined>((newest, candidate) => (newest === undefined || compareNewestFirst(candidate, newest) < 0 ? candidate : newest), undefined);
-function chooseEdition(editions: readonly AdmittedEdition[], requested: ParsedLocaleTag | undefined, siteDefault: ParsedLocaleTag | undefined): AdmittedEdition | undefined {
+/** Whether this document, Site and audience hold a release in this language that was withdrawn or superseded: the state that language's own answer stands on, and one no other language stands in for. */ const languageIsWithdrawn = (query: AdmittedLocaleQuery, language: string): boolean =>
+  query.releases.some((edition) => {
+    const stated = statedLocaleOf(edition);
+    return (
+      stated !== undefined &&
+      stated.parsed.language === language &&
+      edition.audience === query.audience &&
+      (edition.documentId === undefined || edition.documentId === query.document.documentId) &&
+      (edition.siteId === undefined || edition.siteId === query.document.siteId) &&
+      (isWithdrawn(edition) || isSuperseded(edition))
+    );
+  });
+function chooseEdition(query: AdmittedLocaleQuery, requested: ParsedLocaleTag | undefined, siteDefault: ParsedLocaleTag | undefined, substitute: boolean): AdmittedEdition | undefined {
+  const editions = admittedEditions(query);
   if (requested !== undefined) {
     const exact = mostRecent(editions.filter((edition) => edition.parsed.tag === requested.tag));
     if (exact !== undefined) return exact;
     const sameLanguage = mostRecent(editions.filter((edition) => edition.parsed.language === requested.language));
     if (sameLanguage !== undefined) return sameLanguage;
   }
-  return siteDefault === undefined ? undefined : mostRecent(editions.filter((edition) => edition.parsed.tag === siteDefault.tag));
+  const declared = siteDefault === undefined ? undefined : mostRecent(editions.filter((edition) => edition.parsed.tag === siteDefault.tag));
+  if (declared !== undefined || !substitute || requested === undefined) return declared;
+  // A withdrawn language is answered from its own state, and a request that names no language leaves nothing to stand in for it.
+  if (languageIsWithdrawn(query, requested.language)) return undefined;
+  return mostRecent(editions);
 }
 export function resolveLocale(input: LocaleInput): LocaleResolution {
   const requested = parseLocaleTag(input.requestedLocale);
-  const served = chooseEdition(admittedEditions(input), requested, parseLocaleTag(input.siteDefaultLocale));
+  const served = chooseEdition(input, requested, parseLocaleTag(input.siteDefaultLocale), input.substituteLanguage === true);
   if (served === undefined) return { status: "language-unavailable", requestedLocale: input.requestedLocale };
   return { status: "resolved", requestedLocale: input.requestedLocale, servedLocale: served.locale, fallbackOccurred: requested === undefined || requested.tag !== served.parsed.tag, release: served.release };
 }

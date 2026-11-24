@@ -2,12 +2,10 @@ import type { ReactNode } from "react";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { cn } from "@/lib/cn";
 import { translationStaleness, type ContentVariant, type Release, type ReleaseOutcome, type ReviewDecision, type TranslationSourceContext, type VariantAudience, type VariantLocale } from "@/modules/content/variant";
-/** Every state an edition can be in, listed once so the closed set has a runtime form as well as a type. */
-export const CONTENT_LIFECYCLE_STATES = ["not-started", "draft", "candidate", "approved", "released", "partially-released", "withdrawn", "superseded-head", "stale-translation"] as const;
+/** Every state an edition can be in, listed once so the closed set has a runtime form as well as a type. */ export const CONTENT_LIFECYCLE_STATES = ["not-started", "draft", "candidate", "approved", "released", "partially-released", "withdrawn", "superseded-head", "stale-translation"] as const;
 export type ContentLifecycleState = (typeof CONTENT_LIFECYCLE_STATES)[number];
 export type LifecycleSpec = { readonly label: string; readonly tone: StatusTone; readonly explanation: string };
-/** The whole lifecycle vocabulary: one exhaustive record over the closed union, so a state added without its word, tone and sentence is a compile error rather than an unlabelled chip. */
-export const LIFECYCLE_STATUS: Readonly<Record<ContentLifecycleState, LifecycleSpec>> = {
+/** The whole lifecycle vocabulary: one exhaustive record over the closed union, so a state added without its word, tone and sentence is a compile error rather than an unlabelled chip. */ export const LIFECYCLE_STATUS: Readonly<Record<ContentLifecycleState, LifecycleSpec>> = {
   "not-started": { label: "Not started", tone: "muted", explanation: "Nothing has been written for this audience and language yet, so there is nothing to review and nothing to read." },
   draft: { label: "Draft", tone: "neutral", explanation: "Saved and unpublished. A saved draft is not a release, so no audience can read it." },
   candidate: { label: "Submitted for review", tone: "info", explanation: "Frozen for its one review step. A reviewer can approve it or ask for changes, and only a release lets an audience read it." },
@@ -42,9 +40,7 @@ export function variantRecordOf(documentId: string, edition: LifecycleEditionFol
     if (current.supersededBy !== undefined || (variant.releaseHeadId !== undefined && variant.releaseHeadId !== current.releaseId)) return "superseded-head";
   }
   if (variant.candidateId !== undefined) return evidence?.reviewDecision === "approved" ? "approved" : "candidate";
-  if (current !== undefined) return siblingFailed(variant, evidence) ? "partially-released" : "released";
-  if (translationIsStale(variant, evidence)) return "stale-translation";
-  return variant.draftRevisionId !== undefined ? "draft" : "not-started";
+  return current !== undefined ? (siblingFailed(variant, evidence) ? "partially-released" : "released") : translationIsStale(variant, evidence) ? "stale-translation" : variant.draftRevisionId !== undefined ? "draft" : "not-started";
 }
 function siblingFailed(variant: ContentVariant, evidence: LifecycleEvidence | undefined): boolean {
   const synthesis = evidence?.synthesis;

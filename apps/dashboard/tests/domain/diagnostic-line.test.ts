@@ -1,19 +1,16 @@
 /** Proves the mutation diagnostic's own contract at the only place that writes it: one closed line per attempt, a field outside its bound stated as a fixed marker rather than the attempt disappearing from the stream, the marker an attempt that established no authority is reported under, and nothing written outside a development build. */
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UNSTATED_SCOPE, logger, type LogScope, type MutationLogEntry } from "@/lib/logger";
-/** The four identifiers the seeded established worker's selected context carries, as a diagnostic states them. */
-const SCOPE: LogScope = { organizationId: "org-harbour", ministryId: "min-harbour-youth", supportSubjectId: "sup-harbour-youth", principalId: "principal-established-worker" };
+/** The four identifiers the seeded established worker's selected context carries, as a diagnostic states them. */ const SCOPE: LogScope = { organizationId: "org-harbour", ministryId: "min-harbour-youth", supportSubjectId: "sup-harbour-youth", principalId: "principal-established-worker" };
 const OPERATION_ID = "4d1f9a6e-2f6b-4a1e-9a3e-5c7b8d9e0f12";
 const DURATION_MS = 12.5;
-/** Each field the line bounds, with a value one character past its own maximum: 64 for an operationId, 128 for a scope member, 40 for an outcome name. */
-const OVER_LONG = [
+/** Each field the line bounds, with a value one character past its own maximum: 64 for an operationId, 128 for a scope member, 40 for an outcome name. */ const OVER_LONG = [
   { field: "an operationId", member: "operationId", value: "a".repeat(65) },
   { field: "a scope member", member: "ministryId", value: "a".repeat(129) },
   { field: "an outcome name", member: "outcome", value: "o".repeat(41) },
 ] as const;
 let written: string[] = [];
-/** Every line one write put on the process stream, decoded as the JSON object each line is. */
-function linesWhile(write: () => void): Record<string, unknown>[] {
+/** Every line one write put on the process stream, decoded as the JSON object each line is. */ function linesWhile(write: () => void): Record<string, unknown>[] {
   written = [];
   write();
   return written

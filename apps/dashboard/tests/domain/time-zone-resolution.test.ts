@@ -1,5 +1,4 @@
-/** Proves the one question a request's time-zone parameter is judged by: whether this runtime resolves the identifier it names. */
-import { Temporal } from "temporal-polyfill";
+/** Proves the one question a request's time-zone parameter is judged by: whether this runtime resolves the identifier it names. */ import { Temporal } from "temporal-polyfill";
 import { describe, expect, it } from "vitest";
 import { isResolvableTimeZone, todayInZone } from "@/modules/time/civil";
 const SEED_INSTANT = Temporal.Instant.from("2026-11-20T00:00:00Z");

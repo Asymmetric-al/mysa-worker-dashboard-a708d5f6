@@ -81,9 +81,7 @@ function CreatedPrivateRecord({ partnerRef }: { readonly partnerRef: string }): 
         <bdi className="mono-identifier wrap-anywhere">{route}</bdi>
       </p>
       <p className="min-w-0">
-        <Link href={route} data-slot="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal")}>
-          Open the private contact
-        </Link>
+        <Link {...{ href: route, "data-slot": "button", className: cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal") }}>Open the private contact</Link>
       </p>
     </div>
   );
@@ -100,11 +98,8 @@ function OutcomeRegion({ outcome, fieldLabels, createdReference, onReapply, onRe
     </div>
   );
 }
-/** The form that creates one private preparation record from a name alone, and reports what the attempt produced. */
-export default function PrivatePreparationForm({ scope, expectedRevision, initialValues, onCreated, dir, className }: PrivatePreparationFormProps): ReactElement {
-  const headingId = useId();
-  const methodsHeadingId = useId();
-  const actionNoteId = useId();
+/** The form that creates one private preparation record from a name alone, and reports what the attempt produced. */ export default function PrivatePreparationForm({ scope, expectedRevision, initialValues, onCreated, dir, className }: PrivatePreparationFormProps): ReactElement {
+  const [headingId, methodsHeadingId, actionNoteId] = [useId(), useId(), useId()];
   const [startingValues] = useState<PreparationFormValues>(() => valuesOf(initialValues));
   const rowSequence = useRef(startingValues.contactMethods.length);
   const form = useForm({ defaultValues: startingValues });

@@ -67,8 +67,7 @@ function isGiftsEnvelope(value: ReadEnvelope<unknown>): value is GiftsEnvelope {
   if (!isRecord(report)) return false;
   if (!Array.isArray(report.rows) || typeof report.total !== "number" || !Array.isArray(report.summary) || !isRecord(report.snapshot)) return false;
   const facets: unknown = data.facets; // The facet values this ledger's filters offer are part of the read, so an envelope that states none is not one this ledger can render.
-  if (!isRecord(facets) || !Array.isArray(facets.designations) || !Array.isArray(facets.attributions)) return false;
-  return isRecord(value.scope) && isRecord(value.coverage) && isRecord(value.valueStates) && typeof value.asOf === "string" && typeof value.revision === "string" && Array.isArray(value.actions);
+  return !isRecord(facets) || !Array.isArray(facets.designations) || !Array.isArray(facets.attributions) ? false : isRecord(value.scope) && isRecord(value.coverage) && isRecord(value.valueStates) && typeof value.asOf === "string" && typeof value.revision === "string" && Array.isArray(value.actions);
 }
 const civilDateText = (date: CivilDate): string => date.toString();
 function minorScale(exponent: number): number | undefined {
@@ -112,8 +111,8 @@ function normalisedQuery(query: GiftsQuery): GiftsQuery {
 }
 const stated = <T extends object>(value: T): T => Object.fromEntries(Object.entries(value).filter(([, member]) => member !== undefined)) as T;
 const kept = <T,>(next: T | null | undefined, current: T | undefined): T | undefined => (next === undefined ? current : (next ?? undefined));
-function patchGiftsQuery(query: GiftsQuery, patch: GiftsQueryPatch): GiftsQuery {
-  return stated({
+const patchGiftsQuery = (query: GiftsQuery, patch: GiftsQueryPatch): GiftsQuery =>
+  stated({
     period: patch.period ?? query.period,
     currency: patch.currency ?? query.currency,
     recipient: patch.recipient ?? query.recipient,
@@ -124,7 +123,6 @@ function patchGiftsQuery(query: GiftsQuery, patch: GiftsQueryPatch): GiftsQuery 
     page: patch.page ?? query.page,
     pageSize: patch.pageSize ?? query.pageSize,
   });
-}
 const periodValueOf = (period: GiftPeriodQuery): string => (period.kind === "custom" ? `${CUSTOM_PERIOD_PREFIX}${SEPARATOR}${period.from}${SEPARATOR}${period.to}` : period.preset);
 function periodFromValue(value: string | undefined): GiftPeriodQuery {
   if (value === undefined || value === "") return { kind: "preset", preset: GIFTS_DEFAULT_PERIOD_PRESET };
@@ -173,8 +171,7 @@ function appliedOf(query: GiftsQuery): Readonly<Record<string, readonly string[]
     ...(query.method === undefined ? {} : { [FACETS.method]: [query.method] }),
   };
 }
-/** How many filters the query states: the period is in force on every query — the read applies it when the address states none — so it is counted rather than presented as no filter at all. */
-const PERIOD_FILTER_COUNT = 1;
+/** How many filters the query states: the period is in force on every query — the read applies it when the address states none — so it is counted rather than presented as no filter at all. */ const PERIOD_FILTER_COUNT = 1;
 const activeFilterCount = (query: GiftsQuery): number =>
   [query.currency.kind === "one", completeRange(query.currency) !== undefined, query.recipient.kind !== "any", query.designation !== undefined, query.method !== undefined, query.search !== undefined && query.search !== ""].filter(Boolean).length + PERIOD_FILTER_COUNT;
 function unavailableReasonOf(envelope: GiftsEnvelope | undefined, actionName: string): string | undefined {
@@ -221,8 +218,7 @@ function recipientValuesOf(query: GiftsQuery, facets: ReportFacets | undefined):
   for (const attribution of [...UNNAMED_ATTRIBUTIONS, ...applied]) if (!offered.some((listed) => attributionValueOf(listed) === attributionValueOf(attribution))) offered.push(attribution);
   return offered.map((attribution) => faceted(attributionValueOf(attribution), attributionLabelOf(attribution), counted.get(attributionValueOf(attribution))));
 }
-/** The designations the whole filtered result carries — read from the envelope, never from the rows on this page — with the value the address already applies kept even when no row matches it. */
-function designationValuesOf(query: GiftsQuery, facets: ReportFacets | undefined): readonly FacetValueSpec[] {
+/** The designations the whole filtered result carries — read from the envelope, never from the rows on this page — with the value the address already applies kept even when no row matches it. */ function designationValuesOf(query: GiftsQuery, facets: ReportFacets | undefined): readonly FacetValueSpec[] {
   const offered = (facets?.designations ?? []).map((value) => faceted(value.designation, value.designation, value));
   const applied = query.designation;
   return applied === undefined || offered.some((value) => value.id === applied) ? offered : [faceted(applied, applied, undefined), ...offered];
@@ -341,8 +337,7 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
   const report = envelope?.data.report;
   const facets = useMemo<readonly FacetSpec[]>(() => facetsOf(query, envelope, locale), [envelope, locale, query]);
   const applied = useMemo<Readonly<Record<string, readonly string[]>>>(() => appliedOf(query), [query]);
-  // The report this ledger's query is exported from: the same filter set in the same names, with the page window and the
-  // ledger-only method facet left behind, because an export is the whole query rather than the rows on this page.
+  // The report this ledger's query is exported from: the same filter set in the same names, with the page window and the ledger-only method facet left behind, because an export is the whole query rather than the rows on this page.
   const exportHref = useMemo<string>(() => {
     const params = toGiftsParams(query);
     for (const name of PAGE_PARAMS) params.delete(name);
@@ -423,8 +418,7 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
   return (
     <div data-slot="gifts-ledger" dir={dir} className={cn("flex flex-col gap-4", className)}>
       <QueryToolbar label="Gift filters" search={searchFacet} facets={facets} applied={applied} onAppliedChange={handleAppliedChange} amountRange={{ facetId: FACETS.amountRange, currencyFacetId: FACETS.currency }} pending={gifts.isFetching} locale={locale} />
-      {/* Where the whole query leaves the application: the report states this same filter set with its CSV download and
-          its printed page, so the query a worker investigated here is the query those artifacts carry. */}
+      {/* Where the whole query leaves the application: the report states this same filter set with its CSV download and its printed page, so the query a worker investigated here is the query those artifacts carry. */}
       <p data-slot="gifts-export-href" className={cn("type-supporting max-w-prose text-balance md:text-pretty")}>
         {"The received-support report states this same filter set with the CSV download and the printed page, so opening it carries the query you investigated rather than the page on screen. "}
         <Link {...{ href: exportHref, className: "inline-link rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" }}>{"Open the received-support report for this query"}</Link>

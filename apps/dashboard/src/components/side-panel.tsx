@@ -29,6 +29,13 @@ function hasOpenPopup(own: HTMLElement | null): boolean {
   }
   return false;
 }
+/** Whether a press landed inside a popup the panel opened above itself — the confirmation a section inside it opened, say — so that popup handles the press instead of the panel's own modal layer cancelling it as an outside press. */ function pressedInsideOpenPopup(target: Node, own: HTMLElement | null): boolean {
+  for (const popup of document.querySelectorAll(OPEN_POPUP_SELECTOR)) {
+    if (own !== null && (popup === own || own.contains(popup))) continue;
+    if (popup.contains(target)) return true;
+  }
+  return false;
+}
 const mayDismiss = (reason: DismissReason, own: HTMLElement | null): boolean => reason !== "window-blur" && !hasOpenPopup(own);
 function firstRecordListControl(): HTMLElement | null {
   const control = document.querySelector('[data-slot="record-list"] tbody tr:first-child a[href], [data-slot="record-list"] tbody tr:first-child button');
@@ -91,8 +98,10 @@ export function SidePanel(props: SidePanelProps) {
     },
     [requestClose, sheetRef],
   );
+  // A press inside a confirmation this sheet opened is the confirmation's to handle: without this, the sheet's modal layer scores it as an outside press and swallows the click.
+  const containsSheetPopup = useCallback((target: Node) => pressedInsideOpenPopup(target, sheetRef.current), [sheetRef]);
   useDismissableLayer({ open: open && variant === "desktop", layerRef: panelRef, onDismiss: handleDismiss });
-  useModalFocusContainment({ open: open && variant === "phone", dialogRef: sheetRef, initialFocusRef: headingRef, onDismiss: handleSheetDismiss });
+  useModalFocusContainment({ open: open && variant === "phone", dialogRef: sheetRef, initialFocusRef: headingRef, onDismiss: handleSheetDismiss, contains: containsSheetPopup });
   if (variant === "phone") {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>

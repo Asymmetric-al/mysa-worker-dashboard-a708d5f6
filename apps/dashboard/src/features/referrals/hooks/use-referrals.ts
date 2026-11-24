@@ -11,8 +11,7 @@ const REFERRALS_SOURCE = { system: "local-store", reference: "outreach" } as con
 export type ReferralListReadResult = Awaited<ReturnType<typeof reads.referrals.readReferrals>>;
 export type ReferralListEnvelope = Extract<ReferralListReadResult, { readonly kind: "envelope" }>["envelope"];
 export type ReferralListPage = ReferralListEnvelope["data"];
-/** The folder's only GET transport: the read result, or an `unavailable` outcome naming the source behind the lists — never an empty envelope and never an empty list. */
-export const fetchReferralRead = async <TData>(path: string): Promise<ReadResult<ReadEnvelope<TData>>> =>
+/** The folder's only GET transport: the read result, or an `unavailable` outcome naming the source behind the lists — never an empty envelope and never an empty list. */ export const fetchReferralRead = async <TData>(path: string): Promise<ReadResult<ReadEnvelope<TData>>> =>
   fetchReadOrOutage<TData>({ url: path, admits: isRecord, source: REFERRALS_SOURCE, guidance: "The referral lists could not be read, because this request left the browser and no read result came back. Retry this view: nothing was changed, and a list that could not be read is not an empty list." });
 function referralsListPath(query: ReferralListQuery): string {
   const params = new URLSearchParams();

@@ -177,8 +177,7 @@ export type AutosaveStatusProps = { readonly recovery: DraftRecovery; readonly a
   };
   return (
     <div data-slot="autosave-status" data-autosave-state={state} className={cn("flex min-w-0 flex-col gap-2 text-start", className)}>
-      {/* `<output>` carries the `status` role natively, so the polite live region is a semantic element rather than a
-          role placed on a `div`. */}
+      {/* `<output>` carries the `status` role natively, so the polite live region is a semantic element rather than a role placed on a `div`. */}
       <output ref={regionRef} aria-live="polite" aria-atomic="true" aria-describedby={detailsId} tabIndex={-1} data-slot="autosave-status-region" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-card px-3 py-2">
         <Badge variant={wording.badge}>{wording.word}</Badge>
         <span className="min-w-0 text-sm text-pretty wrap-anywhere">{wording.statement}</span>

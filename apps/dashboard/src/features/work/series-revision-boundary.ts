@@ -10,6 +10,5 @@ import { parseCivilDate } from "@/modules/time/civil";
   if (latest === undefined) return facts.today;
   const today = parseCivilDate(facts.today);
   const boundary = parseCivilDate(latest);
-  if (today.status !== "parsed" || boundary.status !== "parsed") return facts.today;
-  return Temporal.PlainDate.compare(boundary.date, today.date) > 0 ? latest : facts.today;
+  return today.status !== "parsed" || boundary.status !== "parsed" ? facts.today : Temporal.PlainDate.compare(boundary.date, today.date) > 0 ? latest : facts.today;
 }

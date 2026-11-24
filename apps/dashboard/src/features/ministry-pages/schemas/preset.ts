@@ -12,7 +12,5 @@ export const applyPresetPayloadSchema: z.ZodType<ServiceApplyPresetPayload> = z.
   if (payload.draftRevisionId !== undefined || payload.variantId !== undefined) return;
   ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: "Open the page's draft first: a section change names the draft revision it edits." });
 });
-/** The validated `applyPreset` payload: the draft it composes into, and the preset chosen. */
-export type applyPresetPayload = z.infer<typeof applyPresetPayloadSchema>;
-/** Validates the whole `applyPreset` request: the payload above inside this application's one mutation envelope. */
-export const applyPresetInputSchema = mutationInputSchema(applyPresetPayloadSchema);
+/** The validated `applyPreset` payload: the draft it composes into, and the preset chosen. */ export type applyPresetPayload = z.infer<typeof applyPresetPayloadSchema>;
+/** Validates the whole `applyPreset` request: the payload above inside this application's one mutation envelope. */ export const applyPresetInputSchema = mutationInputSchema(applyPresetPayloadSchema);

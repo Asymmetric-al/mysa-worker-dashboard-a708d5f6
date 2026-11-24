@@ -1,7 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
-/** The runner for the domain and integration suites: both import the data service, the domain modules and the file-backed store directly, so they need no DOM and no browser. */
-export default defineConfig({
+/** The runner for the domain and integration suites: both import the data service, the domain modules and the file-backed store directly, so they need no DOM and no browser. */ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
     environment: "node",

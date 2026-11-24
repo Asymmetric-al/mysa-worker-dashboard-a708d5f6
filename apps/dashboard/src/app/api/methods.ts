@@ -2,8 +2,7 @@
 import type { NextRequest } from "next/server";
 import { toResponse } from "@/modules/data-service";
 import { denied, UNIDENTIFIED_ATTEMPT } from "@/modules/data-service/outcome";
-/** The methods a path answers in its own right: a transport implements `GET`, `POST`, or both, and every other member of this list is refused by {@link routeMethods} on its behalf. */
-const IMPLEMENTED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
+/** The methods a path answers in its own right: a transport implements `GET`, `POST`, or both, and every other member of this list is refused by {@link routeMethods} on its behalf. */ const IMPLEMENTED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 /** A method a path answers in its own right. */ export type ImplementedMethod = (typeof IMPLEMENTED_METHODS)[number];
 /** One method's handler, given the request and the route's own context exactly as Next hands them over. */ export type RouteHandler<Context> = (request: NextRequest, context: Context) => Response | Promise<Response>;
 /** Every method a path answers once {@link routeMethods} has run: the implemented ones, the `HEAD` derived from `GET`, the `OPTIONS` answer, and the `405` refusal standing in for each the path does not implement. */

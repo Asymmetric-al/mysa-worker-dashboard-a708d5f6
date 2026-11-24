@@ -63,10 +63,8 @@ export async function readPageOf<Envelope>(read: () => Promise<ReadResult<Envelo
   );
 }
 /** The URL's own parameter record, as Next 16 hands a page or a handler its search parameters. */ export type SearchParams = Readonly<Record<string, string | string[] | undefined>>;
-/** One parameter's first value as the address states it, unread: a repeated parameter is read once, and no list is treated as a decision the caller made. */
-export const firstValueOf = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value);
-/** One parameter's first value with the blank reading an absent parameter has, so a value the surface reads as no choice stays the service's own default. */
-export function paramOf(searchParams: SearchParams, name: string): string | undefined {
+/** One parameter's first value as the address states it, unread: a repeated parameter is read once, and no list is treated as a decision the caller made. */ export const firstValueOf = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value);
+/** One parameter's first value with the blank reading an absent parameter has, so a value the surface reads as no choice stays the service's own default. */ export function paramOf(searchParams: SearchParams, name: string): string | undefined {
   const stated = firstValueOf(searchParams[name])?.trim() ?? "";
   return stated === "" ? undefined : stated;
 }
@@ -75,15 +73,12 @@ export function paramOf(searchParams: SearchParams, name: string): string | unde
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
-/** The query string that restores the selection a page was opened with, so a way back returns to the page and the facets the caller left, and `""` where the address stated none. */
-export function searchSuffixOf(query: SearchParams): string {
+/** The query string that restores the selection a page was opened with, so a way back returns to the page and the facets the caller left, and `""` where the address stated none. */ export function searchSuffixOf(query: SearchParams): string {
   const params = new URLSearchParams();
   for (const [name, value] of Object.entries(query)) for (const stated of value === undefined ? [] : typeof value === "string" ? [value] : value) params.append(name, stated);
   const search = params.toString();
   return search === "" ? "" : `?${search}`;
 }
-/** One envelope in the wire's own encoding: what a client surface takes as its initial answer, so the browser neither re-requests records this render already holds nor waits for them. */
-export function wireFormOf<Value>(value: Value): Value {
-  const wire: unknown = JSON.parse(JSON.stringify(value));
-  return wire as Value;
+/** One envelope in the wire's own encoding: what a client surface takes as its initial answer, so the browser neither re-requests records this render already holds nor waits for them. */ export function wireFormOf<Value>(value: Value): Value {
+  return JSON.parse(JSON.stringify(value)) as Value;
 }

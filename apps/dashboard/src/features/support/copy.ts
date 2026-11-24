@@ -106,8 +106,7 @@ export const EMPTY_STATES: Readonly<Record<SupportEmptySurface, EmptyStateCopy>>
   },
   reports: { title: "No report has been opened yet", body: "The four reports read the same report result as this overview, so a report repeats the figures already stated here rather than computing a second set of them.", action: { label: "Open the received-support report", href: "/support/reports/received" } },
 };
-/** What the monthly-equivalent view states when the source reports no commitment at all: the measure is absent for a reason of its own, so the sentence never reads as a count of zero commitments beside a missing figure. */
-export const MONTHLY_EQUIVALENT_NO_COMMITMENTS: string =
+/** What the monthly-equivalent view states when the source reports no commitment at all: the measure is absent for a reason of its own, so the sentence never reads as a count of zero commitments beside a missing figure. */ export const MONTHLY_EQUIVALENT_NO_COMMITMENTS: string =
   "The source reports no commitment on this subject at all, so there is no commitment a monthly equivalent could belong to. A measure the source never calculated and a commitment the source does not report are two different facts, so neither is stated as an amount in the other's place.";
 export type GivingFollowUpCopy = { readonly actionLabel: string; readonly description: string; readonly resultNote: string };
 export const GIVING_FOLLOW_UP: GivingFollowUpCopy = {

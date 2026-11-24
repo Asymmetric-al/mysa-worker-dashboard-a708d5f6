@@ -78,7 +78,7 @@ const SERIES_STATUS_SR_PREFIX = "Series status";
 const PLANNED_TIME_PREFIX = "Planned time";
 const END_OF_SERIES_LABEL = "End";
 const PREVIEW_DATES_NOTE =
-  "These dates are what this plan's rule produces next, judged in the plan's own planning timezone rather than in the one this browser displays. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
+  "These dates are the plan's next dates, judged in the plan's own planning timezone rather than in the one this browser displays: the date the plan is waiting for an answer on when that date is still ahead, and the dates its rule produces after it. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
 const SERIES_STATE_TONES: Readonly<Record<SeriesStateName, StatusTone>> = { active: "positive", paused: "caution", stopped: "neutral" };
 const GROUP_HEADING_TAG: Readonly<Record<SeriesGroupHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
 /** The one type scale's heading utility per level, so a group heading states the level its caller renders it at with the same measure on every surface. */ const GROUP_HEADING_SCALE: Readonly<Record<SeriesGroupHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
@@ -103,6 +103,7 @@ const EFFECTIVE_BOUNDARY_LABEL = "Takes effect from";
 const OCCURRENCE_FORM = { heading: "Change this date", note: "This change applies to the date below and to nothing else: its kind stays as it is, and the rule that produces the following dates is not altered." } as const;
 const REVISION_FORM = { heading: "Revise the plan from the boundary", note: "The revision applies from the boundary stated above. Every date before it, and every completed date, keeps the rule it was planned under." } as const;
 const FORM_REFUSAL = { title: "Check the details of this change", description: "Nothing was sent: correct the fields named here and submit the change again." } as const;
+const SERVICE_REFUSAL = { title: "Check the details of this change", description: "This change was sent and the plan's service refused it: correct the fields it named, then submit the change again." } as const;
 const SERIES_COMMAND_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { seriesId: "Series", unfinishedWork: UNFINISHED_WORK_LEGEND };
 const UNFINISHED_WORK_OPTIONS: readonly { readonly value: string; readonly label: string; readonly hint?: string }[] = UNFINISHED_WORK_VALUES.map((value) => ({ value, label: UNFINISHED_WORK_LABELS[value], hint: UNFINISHED_WORK_HINTS[value] }));
 const OCCURRENCE_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { occurrenceId: "The date", title: "Title", category: CATEGORY_LABEL, dueOn: "Due date", kind: "Kind", plannedTime: PLANNED_TIME_PREFIX, timeZone: PLANNING_TIME_ZONE_LABEL, note: "Note" };
@@ -281,7 +282,11 @@ function CommandForm<Text extends string, Draft extends Readonly<Record<Text, st
   const [draft, setDraft] = useState<Draft>(initialDraft);
   const [errors, setErrors] = useState<FieldErrorLookup | null>(null);
   const { pending, outcome, submit: dispatch, retry, reapply } = useReviewedMutation<Payload>(submit);
-  const shown = errors ?? (outcome !== null && outcome.outcome === "invalid" ? fieldErrorsFromInvalid(outcome) : null);
+  // The refusal the summary states comes from one of two sources, and they report different outcomes: the form's own refusal
+  // never left this browser, while a service `invalid` outcome is a change that was sent and came back refused with the fields it names, so each states its own outcome rather than sharing a sentence that claims nothing was sent.
+  const refusal: { readonly errors: FieldErrorLookup; readonly copy: typeof FORM_REFUSAL | typeof SERVICE_REFUSAL } | null = errors !== null ? { errors, copy: FORM_REFUSAL } : outcome !== null && outcome.outcome === "invalid" ? { errors: fieldErrorsFromInvalid(outcome), copy: SERVICE_REFUSAL } : null;
+  const shown = refusal === null ? null : refusal.errors;
+  const refusalCopy = refusal === null ? FORM_REFUSAL : refusal.copy;
   const update = (patch: Partial<Draft>): void => setDraft((current) => ({ ...current, ...patch }));
   const edit = (name: Text, value: string): void => setDraft((current) => ({ ...current, [name]: value }));
   const submitDraft = (event: FormEvent<HTMLFormElement>): void => {
@@ -302,7 +307,7 @@ function CommandForm<Text extends string, Draft extends Readonly<Record<Text, st
         <form noValidate className="flex min-w-0 flex-col gap-3" onSubmit={submitDraft}>
           <p className="type-supporting text-pretty">{note}</p>
           {preamble}
-          <FormErrorSummary errors={shown} labels={fieldLabels} order={fieldOrder} title={FORM_REFUSAL.title} description={FORM_REFUSAL.description} headingLevel={4} />
+          <FormErrorSummary errors={shown} labels={fieldLabels} order={fieldOrder} title={refusalCopy.title} description={refusalCopy.description} headingLevel={4} />
           {children(draft, edit, shown, update)}
           <div className="flex flex-wrap items-center gap-2">
             <Button {...{ type: "submit", size: "sm", disabled: pending, className: COMMAND_BUTTON_CLASS }}>{applyLabel}</Button>
@@ -511,8 +516,7 @@ function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, o
   const completeInput = { ...both, payload: completeTaskSchema.parse({ taskId: actionable.taskId }) };
   const skipInput = { ...both, payload: skipOccurrenceSchema.parse({ occurrenceId: actionable.taskId }) };
   // Completing the date is the one command on this body that is not a series mutation, so it does not settle through the
-  // series hook's own re-read: the re-read is asked for here, at the one place this body sends the completion, and only
-  // when the attempt applied, because `unchanged`, the refusals and an `unknown` attempt leave every read as it stands.
+  // series hook's own re-read: the re-read is asked for here, at the one place this body sends the completion, and only when the attempt applied, because `unchanged`, the refusals and an `unknown` attempt leave every read as it stands.
   const submitComplete = async (input: MutationInput<CompleteTaskPayload>): Promise<MutationOutcome> => {
     const outcome = await completeTask.mutateAsync({ operationId: input.operationId, expectedRevision: input.expectedRevision, payload: input.payload });
     if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted") router.refresh();
@@ -569,9 +573,7 @@ export function SeriesStateControls({ scope, seriesId, revision, state, actions,
   const stateSentence = paused ? PAUSED_NOTE : stopped ? STOPPED_NOTE : SINGLE_ACTIONABLE_OCCURRENCE_NOTE;
   const pauseInput = { scope, expectedRevision: revision, payload: pauseSeriesSchema.parse({ seriesId }) };
   const resumeInput = { scope, expectedRevision: revision, payload: resumeSeriesSchema.parse({ seriesId }) };
-  // Stopping states what becomes of the dates it leaves behind, so the two fates are both reachable here rather than one
-  // being decided by the service's default. The selection starts at the fate the schema itself defaults to, which is the
-  // same `keep` the service applies when the field is absent.
+  // Stopping states what becomes of the dates it leaves behind, so the two fates are both reachable here rather than one being decided by the service's default. The selection starts at the fate the schema itself defaults to, which is the same `keep` the service applies when the field is absent.
   const [unfinishedWork, setUnfinishedWork] = useState<UnfinishedWork>(() => stopSeriesSchema.parse({ seriesId }).unfinishedWork);
   const stopInput = { scope, expectedRevision: revision, payload: stopSeriesSchema.parse({ seriesId, unfinishedWork }) };
   const stopConfirmation = {
@@ -590,7 +592,8 @@ export function SeriesStateControls({ scope, seriesId, revision, state, actions,
       <GroupHeading heading={headingLevel} headingId={headingId} label={GROUP_LEGENDS.series} badge={<StatusBadge label={SERIES_STATE_LABELS[state]} tone={SERIES_STATE_TONES[state]} srPrefix={SERIES_STATUS_SR_PREFIX} />} />
       <p className="type-supporting text-pretty">{stateSentence}</p>
       <div className="flex min-w-0 flex-col gap-3">
-        <ReviewedCommand<PauseSeriesPayload> {...COMMANDS.pause} input={pauseInput} submit={pauseSeries.mutateAsync} admitted={active} withheldReason={active ? withheldReasonFor(actions, "pauseSeries") : null} onCheckResult={onCheckResult} fieldLabels={SERIES_COMMAND_FIELD_LABELS} />
+        {/* A stopped plan offers no pause: stopping ends the plan for good, so its own read refuses a pause on it, and the badge and state sentence above already state that fate. */}
+        {stopped ? null : <ReviewedCommand<PauseSeriesPayload> {...COMMANDS.pause} input={pauseInput} submit={pauseSeries.mutateAsync} admitted={active} withheldReason={active ? withheldReasonFor(actions, "pauseSeries") : null} onCheckResult={onCheckResult} fieldLabels={SERIES_COMMAND_FIELD_LABELS} />}
         <ReviewedCommand<ResumeSeriesPayload> {...COMMANDS.resume} input={resumeInput} submit={resumeSeries.mutateAsync} admitted={paused} withheldReason={paused ? withheldReasonFor(actions, "resumeSeries") : null} onCheckResult={onCheckResult} fieldLabels={SERIES_COMMAND_FIELD_LABELS} />
         <ReviewedCommand<StopSeriesPayload> {...COMMANDS.stop} input={stopInput} submit={stopSeries.mutateAsync} admitted={!stopped} withheldReason={stopped ? null : withheldReasonFor(actions, "stopSeries")} onCheckResult={onCheckResult} fieldLabels={SERIES_COMMAND_FIELD_LABELS} confirmation={stopConfirmation} />
       </div>

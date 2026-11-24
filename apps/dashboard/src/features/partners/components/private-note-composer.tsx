@@ -3,6 +3,7 @@ import { LockKeyholeIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition, type FormEvent, type ReactElement } from "react";
 import { outcomeNotice, useAttemptedMutation, type OutcomeNoticeCopy } from "@/components/attempt";
+import { useUnsavedWork } from "@/components/context-switch-guard";
 import { FormField } from "@/components/form-field";
 import OperationResult, { focusAnnouncedRegion } from "@/components/operation-result";
 import StateNotice from "@/components/state-notice";
@@ -17,13 +18,15 @@ import { FORM_OUTCOME_COPY } from "../copy/states";
 import { useSavePrivateNote } from "../hooks/use-partner-mutations";
 import { PRIVATE_NOTE_AUDIENCE, type SavePrivateNotePayload } from "../schemas/private-note";
 const FIELD_LABEL = "Your note";
-/** The levels this composer can land at: a subsection under a record's own section title, or a group title inside the panel's and the sheet's section scale. */
-const NOTE_HEADING_TAG = { 3: "h3", 4: "h4" } as const;
+/** The levels this composer can land at: a subsection under a record's own section title, or a group title inside the panel's and the sheet's section scale. */ const NOTE_HEADING_TAG = { 3: "h3", 4: "h4" } as const;
 const NOTE_HEADING_SCALE = { 3: "type-subsection-title", 4: "type-group-title" } as const;
 const NOTE_HEADING_LEVEL = 3;
 const AUDIENCE_WORD = AUDIENCE_LABEL_COPY.private.label;
 const RETRY_LABEL = FORM_OUTCOME_COPY.unavailable.actionLabel ?? "Try again";
 const CHECK_LABEL = FORM_OUTCOME_COPY.unknown.actionLabel ?? "Check the result";
+const UNSAVED_WORK_DESCRIPTION = "This private note has been written on this screen and not saved yet.";
+const SAVE_BLOCKED_PENDING = "The note was not saved and the context was not switched, so nothing you typed has been discarded: a save of this note is already in flight, so nothing was sent again.";
+const SAVE_NOT_SETTLED = "The note was not saved and the context was not switched, so nothing you typed has been discarded: ";
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { body: FIELD_LABEL };
 const NOTICE_COPY: OutcomeNoticeCopy = {
   denied: { title: "A private note cannot be saved here", description: "A note is written inside the ministry that admits this record, and the context in view does not admit it. Nothing you typed was sent, and it stays in the box above this notice." },
@@ -96,11 +99,40 @@ export default function PrivateNoteComposer({ scope, partnerId, expectedRevision
   const reapply = (): void => {
     if (outcome !== null && outcome.outcome === "conflict") send(outcome.currentRevision);
   };
+  // The guard saves through this composer's own submit rather than a second save path, and every outcome that did not settle is stated as a refusal so the switch stops before any request is sent and the typed note stays in the box.
+  const saveForGuard = async (): Promise<void> => {
+    if (submittingRef.current) throw new Error(SAVE_BLOCKED_PENDING);
+    submittingRef.current = true;
+    try {
+      switch ((await note.submit({ scope, expectedRevision: revision, payload: enteredPayload() })).outcome) {
+        case "accepted":
+        case "alreadyAccepted":
+        case "unchanged":
+          return;
+        case "conflict":
+          throw new Error(`${SAVE_NOT_SETTLED}the record changed after this page was read, so the receipt states the conflict beside your note.`);
+        case "denied":
+          throw new Error(`${SAVE_NOT_SETTLED}this session is not permitted to save a note on this record.`);
+        case "invalid":
+          throw new Error(`${SAVE_NOT_SETTLED}the note was refused, and the box states what it needs.`);
+        case "unavailable":
+          throw new Error(`${SAVE_NOT_SETTLED}the source behind the note could not be reached, and the same retry is offered.`);
+        case "unknown":
+          throw new Error(`${SAVE_NOT_SETTLED}whether the note was saved is not known, and the same check answers it.`);
+      }
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+  // Discarding returns the composer to its blank starting state, so no receipt describes a note the box no longer holds.
+  const discardForGuard = (): void => {
+    setBody("");
+    note.reset();
+  };
+  useUnsavedWork(body.length === 0 ? null : { description: UNSAVED_WORK_DESCRIPTION, save: saveForGuard, discard: discardForGuard });
   return (
     <section data-slot="private-note-composer" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-3", className)}>
-      <Heading id={headingId} className={cn(NOTE_HEADING_SCALE[headingLevel], "text-pretty")}>
-        Write a private note
-      </Heading>
+      <Heading {...{ id: headingId, className: cn(NOTE_HEADING_SCALE[headingLevel], "text-pretty") }}>Write a private note</Heading>
       <Alert data-slot="private-note-audience">
         <LockKeyholeIcon aria-hidden="true" />
         <AlertTitle className="flex flex-wrap items-center gap-2">

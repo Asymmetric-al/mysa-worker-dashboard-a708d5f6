@@ -33,8 +33,7 @@ export interface Release {
   readonly locale: VariantLocale;
   readonly publishedAt: Temporal.Instant;
   readonly reach: ReleaseReach;
-  /** Change detection only: 32 bits that can collide. The release is identified by `releaseId`, `variantId` and `revisionId`, so a matching digest is never the sole comparison of two renditions. */
-  readonly contentChecksum: string;
+  /** Change detection only: 32 bits that can collide. The release is identified by `releaseId`, `variantId` and `revisionId`, so a matching digest is never the sole comparison of two renditions. */ readonly contentChecksum: string;
   readonly withdrawnAt?: Temporal.Instant;
   readonly supersededBy?: string;
 }
@@ -61,8 +60,7 @@ const ADMITTED_AUDIENCES: ReadonlyMap<VariantFamily, readonly VariantAudience[]>
 ]);
 export const admittedAudiences = (family: VariantFamily): readonly VariantAudience[] => ADMITTED_AUDIENCES.get(family) ?? [];
 export const variantKeyAllowed = (family: VariantFamily, audience: VariantAudience): boolean => ADMITTED_AUDIENCES.get(family)?.includes(audience) ?? false;
-/** Whether a variant key — one document, one audience, one exact locale tag — is free among the document's existing variants, or which variant already holds it. */
-export function assertVariantKeyUnique(existing: readonly ContentVariant[], key: VariantKey): VariantKeyUniqueness {
+/** Whether a variant key — one document, one audience, one exact locale tag — is free among the document's existing variants, or which variant already holds it. */ export function assertVariantKeyUnique(existing: readonly ContentVariant[], key: VariantKey): VariantKeyUniqueness {
   const holder = existing.find((variant) => variant.documentId === key.documentId && variant.audience === key.audience && localeTagsMatch(variant.locale.tag, key.locale.tag));
   return holder === undefined ? { status: "unique" } : { status: "duplicate", conflictingVariantId: holder.variantId };
 }
@@ -108,14 +106,13 @@ export type CreateVariantResult = { readonly status: "created"; readonly variant
   return { status: "created", variant };
 }
 const DIGEST_PART_SEPARATOR = "\u0000";
-function sortedEntries(record: Readonly<Record<string, string>>): ReadonlyArray<readonly [string, string]> {
-  return Object.keys(record)
+const sortedEntries = (record: Readonly<Record<string, string>>): ReadonlyArray<readonly [string, string]> =>
+  Object.keys(record)
     .sort()
     .flatMap((key) => {
       const value = record[key];
       return value === undefined ? [] : [[key, value] as const];
     });
-}
 const digestCarrier = (canonical: string, direction: ContentDirection): ContentDocumentJson => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: [{ type: "paragraph", content: [{ type: "text", text: canonical }] }], sections: [] });
 /** The change-detection digest of one revision's content: the profile's checksum over the canonical serialisation of the document, the placements in authored order, the alternative text and captions those placements carry, and the share presentation's title, description and image asset. It is 32 bits and collidable, so identities come from `variantId` and `revisionId`, and it is never the sole comparison of two renditions. */
 export function revisionChecksum(content: RevisionContent): string {
@@ -170,15 +167,13 @@ export type RestoreDraftInput = { readonly authorPrincipalId: string; readonly r
 /** Restores a revision as a new draft: a new identity, a new author and a new creation instant, with the body, sections, placements, captions, alternative text, share presentation and content checksum carried through unchanged. */
 export const restoreAsNewDraft = (revision: ContentRevision, restored: RestoreDraftInput): ContentRevision => ({ ...revision, revisionId: restored.revisionId, authorPrincipalId: restored.authorPrincipalId, createdAt: restored.at ?? now() });
 /** Points the variant's draft at a revision of that same variant, and changes nothing else: the candidate pointer and the release head are carried through untouched, because saving a draft neither submits it for review nor releases it. */
-/** Every archive transition answers the same way: the problems it found, or the change it applied. */
-const transition = (issues: readonly DocumentIssue[], applied: () => VariantChange): VariantChange => (issues.length === 0 ? applied() : { status: "invalid", issues });
+/** Every archive transition answers the same way: the problems it found, or the change it applied. */ const transition = (issues: readonly DocumentIssue[], applied: () => VariantChange): VariantChange => (issues.length === 0 ? applied() : { status: "invalid", issues });
 const revisionProblem = (failed: boolean, path: string, message: string): DocumentIssue[] => (failed ? [{ path, message }] : []);
-export function applyDraftRevision(variant: ContentVariant, revision: ContentRevision): VariantChange {
-  return transition(
-    [...revisionProblem(isBlank(revision.revisionId), "revision.revisionId", "A draft revision states its own identity."), ...revisionProblem(revision.variantId !== variant.variantId, "revision.variantId", "A draft revision belongs to the variant it was written for; this one belongs to another.")],
-    () => ({ status: "applied", variant: { ...variant, draftRevisionId: revision.revisionId } }),
-  );
-}
+export const applyDraftRevision = (variant: ContentVariant, revision: ContentRevision): VariantChange =>
+  transition([...revisionProblem(isBlank(revision.revisionId), "revision.revisionId", "A draft revision states its own identity."), ...revisionProblem(revision.variantId !== variant.variantId, "revision.variantId", "A draft revision belongs to the variant it was written for; this one belongs to another.")], () => ({
+    status: "applied",
+    variant: { ...variant, draftRevisionId: revision.revisionId },
+  }));
 export type FreezeCandidateInput = { readonly candidateId: string; readonly at?: Temporal.Instant };
 export type FreezeCandidateResult = { readonly status: "frozen"; readonly candidate: ContentCandidate; readonly variant: ContentVariant } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
 /** Freezes one exact revision for review: the candidate records the identity of the revision it freezes and that revision's 32-bit change-detection digest, so what a reviewer reads cannot drift afterwards, and the variant points at the candidate that froze it. */

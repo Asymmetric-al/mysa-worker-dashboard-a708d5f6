@@ -66,5 +66,4 @@ async function readInitiatives(request: Request): Promise<Response> {
   const { initiativeId, ...narrowing } = detail.data;
   return readResponse(READ_ATTEMPT, () => reads.outreach.readInitiative(initiativeId, narrowing));
 }
-const createInitiative = (request: Request): Promise<Response> => writeRoute(request, createInitiativeRequestSchema, mutations.outreach.createInitiative);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readInitiatives, POST: createInitiative });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readInitiatives, POST: (request: Request): Promise<Response> => writeRoute(request, createInitiativeRequestSchema, mutations.outreach.createInitiative) });

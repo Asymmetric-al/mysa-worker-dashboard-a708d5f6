@@ -66,8 +66,7 @@ const NoRowsNotice = ({ source, emptyTitle, emptyDescription }: NoRowsNoticeProp
   return source !== null ? <StateNotice kind="unavailable" title="This history cannot be read right now" description={COACHING_COPY.targets.unavailable} source={source} headingLevel={3} /> : <StateNotice kind="empty" title={emptyTitle} description={emptyDescription} headingLevel={3} />;
 };
 export default function TargetHistory({ versions, closedPeriods, locale, unavailable = null, className }: TargetHistoryProps): ReactElement {
-  const versionsHeadingId = useId();
-  const periodsHeadingId = useId();
+  const [versionsHeadingId, periodsHeadingId] = [useId(), useId()];
   const versionsNewestFirst = [...versions].reverse();
   const unreadableSource = unavailable === null ? null : unavailable.source;
   return (

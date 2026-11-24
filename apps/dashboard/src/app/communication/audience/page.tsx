@@ -41,8 +41,7 @@ function AudienceNotice({ result }: { readonly result: Exclude<Awaited<ReturnTyp
       return <StateNotice kind="unavailable" headingLevel={2} title={PAGE_COPY.unrecognised.title} description={PAGE_COPY.unrecognised.body} />;
   }
 }
-/** The publisher's Update-email audience: one read under the session's own scope, and the arm its result names. */
-export default async function CommunicationAudiencePage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
+/** The publisher's Update-email audience: one read under the session's own scope, and the arm its result names. */ export default async function CommunicationAudiencePage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   const stated = await searchParams;
   const result = await reads.audience.readAudience(audienceQueryOf(stated));
   return (

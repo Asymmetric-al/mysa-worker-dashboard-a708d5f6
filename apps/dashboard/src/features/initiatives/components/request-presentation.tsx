@@ -70,8 +70,7 @@ const SURFACE_COPY = {
   ministryLabel: "Ministry",
 } as const;
 type PresentStep = "details" | "review";
-/** Props of {@link RequestPresentation}. */
-export interface RequestPresentationProps {
+/** Props of {@link RequestPresentation}. */ export interface RequestPresentationProps {
   readonly initiativeId: string;
   readonly request: RequestRow;
   readonly envelope: InitiativeDetailEnvelope;
@@ -157,13 +156,12 @@ function RequestedAmount({ money, valueState, locale }: { readonly money: NonNul
 function RequestedTerms({ request, valueStates, locale }: { readonly request: RequestRow; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string }): ReactElement {
   const terms = request.terms;
   const money = terms.money;
-  const moneyState: ValueState = valueStates[`${request.requestId}.terms.money`] ?? "unknown";
   const facts: ReadonlyArray<{ readonly term: string; readonly value: ReactNode }> = [
     { term: REQUESTED_TERMS_COPY.versionLabel, value: <bdi className="mono-identifier wrap-anywhere">{terms.version}</bdi> },
     ...(money === null
       ? [terms.nonFinancial === null ? { term: REQUESTED_TERMS_COPY.amountLabel, value: <span className="text-muted-foreground">{REQUESTED_TERMS_COPY.notStated}</span> } : { term: REQUESTED_TERMS_COPY.nonFinancialLabel, value: <span className="text-pretty wrap-anywhere">{terms.nonFinancial}</span> }]
       : [
-          { term: REQUESTED_TERMS_COPY.amountLabel, value: <RequestedAmount money={money} valueState={moneyState} locale={locale} /> },
+          { term: REQUESTED_TERMS_COPY.amountLabel, value: <RequestedAmount money={money} valueState={valueStates[`${request.requestId}.terms.money`] ?? "unknown"} locale={locale} /> },
           { term: REQUESTED_TERMS_COPY.currencyLabel, value: <bdi className="mono-identifier wrap-anywhere">{money.currency}</bdi> },
           ...(money.cadence === null ? [] : [{ term: REQUESTED_TERMS_COPY.cadenceLabel, value: <span className="text-pretty wrap-anywhere">{cadenceValueFallback(money.cadence)}</span> }]),
           ...(money.term === null ? [] : [{ term: REQUESTED_TERMS_COPY.termLabel, value: <span className="text-pretty wrap-anywhere">{termValueFallback(money.term)}</span> }]),
@@ -184,10 +182,10 @@ function RequestedTerms({ request, valueStates, locale }: { readonly request: Re
 const EMPTY_PRESENT_VALUES: { presentedOn: string; manner: string } = { presentedOn: "", manner: "" };
 const ReviewSummary = ({ payload, request, scope, valueStates }: { readonly payload: PresentRequestPayload; readonly request: RequestRow; readonly scope: Scope; readonly valueStates: Readonly<Record<string, ValueState>> }): ReactElement => (
   <dl className="flex min-w-0 flex-col gap-3 text-sm">
-    <ReviewFact label={SURFACE_COPY.recipientLabel} value={<RecipientFact request={request} valueStates={valueStates} />} />
-    <ReviewFact label={PRESENTATION_COPY.versionRefLabel} value={<bdi className="mono-identifier wrap-anywhere">{payload.versionRef}</bdi>} />
+    <ReviewFact term={SURFACE_COPY.recipientLabel} value={<RecipientFact request={request} valueStates={valueStates} />} />
+    <ReviewFact term={PRESENTATION_COPY.versionRefLabel} value={<bdi className="mono-identifier wrap-anywhere">{payload.versionRef}</bdi>} />
     <ReviewFact
-      label={PRESENTATION_COPY.presentedOnLabel}
+      term={PRESENTATION_COPY.presentedOnLabel}
       value={
         <span className="flex min-w-0 flex-wrap items-baseline gap-1">
           {" "}
@@ -195,9 +193,9 @@ const ReviewSummary = ({ payload, request, scope, valueStates }: { readonly payl
         </span>
       }
     />
-    <ReviewFact label={PRESENTATION_COPY.mannerLabel} value={<span className="block whitespace-pre-wrap wrap-anywhere text-pretty">{payload.manner}</span>} />
-    <ReviewFact label={SURFACE_COPY.requestLabel} value={<bdi className="mono-identifier wrap-anywhere">{request.requestId}</bdi>} />
-    <ReviewFact label={SURFACE_COPY.ministryLabel} value={<bdi className="mono-identifier wrap-anywhere">{scope.ministryId}</bdi>} />
+    <ReviewFact term={PRESENTATION_COPY.mannerLabel} value={<span className="block whitespace-pre-wrap wrap-anywhere text-pretty">{payload.manner}</span>} />
+    <ReviewFact term={SURFACE_COPY.requestLabel} value={<bdi className="mono-identifier wrap-anywhere">{request.requestId}</bdi>} />
+    <ReviewFact term={SURFACE_COPY.ministryLabel} value={<bdi className="mono-identifier wrap-anywhere">{scope.ministryId}</bdi>} />
   </dl>
 );
 type PresentActionProps = {
@@ -217,7 +215,8 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<PresentStep>("details");
   const [errors, setErrors] = useState<FieldErrorLookup | null>(null);
-  const [reviewed, setReviewed] = useState<PresentRequestPayload | null>(null);
+  // The reviewed intent is held exactly as it was reviewed. Recording advances the Request's revision, and a revision read live here would restate the attempt's own identity after the fact, discarding the result the attempt already earned.
+  const [reviewed, setReviewed] = useState<{ readonly scope: Scope; readonly expectedRevision: string; readonly payload: PresentRequestPayload } | null>(null);
   const [recordedNow, setRecordedNow] = useState(false);
   const handleSettled = useCallback(
     (outcome: MutationOutcome): void => {
@@ -240,7 +239,7 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
       return;
     }
     setErrors(null);
-    setReviewed(checked.data);
+    setReviewed({ scope, expectedRevision: request.revision, payload: checked.data });
     setStep("review");
   };
   const closeReview = (): void => {
@@ -249,17 +248,19 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
     setOpen(false);
   };
   const presented = request.presentation !== null || recordedNow;
-  if (step === "review" && reviewed !== null) {
+  // A recorded presentation is never overwritten, so this step stays open only for the presentation it recorded itself. The read can state that presentation before this step's own answer arrives, so the step is judged by what it recorded rather than by the order the two answers arrive in; a Request that records a presentation this step did not record offers no recording control.
+  const recordedHere = reviewed !== null && request.presentation !== null && request.presentation.presentedOn === reviewed.payload.presentedOn && request.presentation.manner === reviewed.payload.manner && request.presentation.versionRef === reviewed.payload.versionRef;
+  if (step === "review" && reviewed !== null && (request.presentation === null || recordedHere)) {
     return (
       <div className="flex min-w-0 flex-col gap-3">
         <Separator />
         <ActionReview<PresentRequestPayload>
           title={SURFACE_COPY.reviewTitle}
-          description={<ReviewSummary payload={reviewed} request={request} scope={scope} valueStates={valueStates} />}
+          description={<ReviewSummary payload={reviewed.payload} request={request} scope={scope} valueStates={valueStates} />}
           confirmLabel={SURFACE_COPY.confirmLabel}
           cancelLabel={SURFACE_COPY.backLabel}
           onCancel={closeReview}
-          input={{ scope, expectedRevision: request.revision, payload: reviewed }}
+          input={reviewed}
           submit={submit}
           checkResult={onCheckResult}
           onSettled={handleSettled}

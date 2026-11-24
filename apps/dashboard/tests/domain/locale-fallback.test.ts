@@ -3,7 +3,7 @@ import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { withLanguagePreference, type MembershipRecord } from "@/modules/audience/membership";
-import { admittedLocales, directionOfTag, resolveLocale, type DocumentEdition, type LocaleResolution } from "@/modules/content/locale";
+import { admittedLocales, directionOfTag, resolveLocale, type DocumentEdition, type LocaleInput, type LocaleResolution } from "@/modules/content/locale";
 import type { ContentDocument, VariantAudience } from "@/modules/content/variant";
 import { mutations, reads, type MutationInput } from "@/modules/data-service";
 import { canReadProtected, resolveSession, type AccessDecision, type ResolvedSession, type SessionSource } from "@/modules/data-service/authorize";
@@ -81,19 +81,24 @@ function servedEditionOf(set: EditionSet, resolution: Extract<LocaleResolution, 
   if (served === undefined) throw new Error(`The served release ${resolution.release.releaseId} is none of the editions this case supplied, so the answer came from outside them.`);
   return served;
 }
-/** Three states a reader can be answered with, kept apart so a surface cannot render one as another. */
-type ResolutionState = "requested" | "fallback" | "language-unavailable";
+/** Three states a reader can be answered with, kept apart so a surface cannot render one as another. */ type ResolutionState = "requested" | "fallback" | "language-unavailable";
 const stateOf = (resolution: LocaleResolution): ResolutionState => (resolution.status === "language-unavailable" ? "language-unavailable" : resolution.fallbackOccurred ? "fallback" : "requested");
-function resolveEdition(set: EditionSet, requestedLocale: string, audience: VariantAudience, siteDefaultLocale: string = NO_DECLARED_SITE_DEFAULT): LocaleResolution {
-  const resolution = resolveLocale({ document: set.document, releases: set.editions, audience, requestedLocale, siteDefaultLocale });
+function checkedResolution(input: LocaleInput, requestedLocale: string, audience: VariantAudience): LocaleResolution {
+  const resolution = resolveLocale(input);
   const served = resolution.status === "resolved" ? resolution : null; // One unconditional set of assertions, so neither branch a case happens to take can skip the invariant: the audience asked for is the audience served, and the locale reported is the locale that release is published in.
   expect([resolution.requestedLocale, served === null ? audience : served.release.audience, served === null ? null : served.servedLocale.tag]).toEqual([requestedLocale, audience, served === null ? null : served.release.locale.tag]);
   expect(served === null ? null : served.servedLocale.direction).toBe(served === null ? null : served.release.locale.direction);
   return resolution;
 }
+function resolveEdition(set: EditionSet, requestedLocale: string, audience: VariantAudience, siteDefaultLocale: string = NO_DECLARED_SITE_DEFAULT): LocaleResolution {
+  return checkedResolution({ document: set.document, releases: set.editions, audience, requestedLocale, siteDefaultLocale }, requestedLocale, audience);
+}
+/** The same resolution a receiving reader gets: the exact policy, with another admitted language of the same document, Site and audience admitted as a substitute. */
+function resolveForReader(set: EditionSet, requestedLocale: string, audience: VariantAudience, siteDefaultLocale: string = NO_DECLARED_SITE_DEFAULT): LocaleResolution {
+  return checkedResolution({ document: set.document, releases: set.editions, audience, requestedLocale, siteDefaultLocale, substituteLanguage: true }, requestedLocale, audience);
+}
 const resolved = (resolution: LocaleResolution, what: string): Extract<LocaleResolution, { readonly status: "resolved" }> => (resolution.status === "resolved" ? resolution : throwing(`${what} was expected to be served and was answered with ${JSON.stringify(resolution)}`));
-/** The unavailable half of a resolution, or a failure naming what was served instead. */
-function unavailableResolution(resolution: LocaleResolution, what: string): Extract<LocaleResolution, { readonly status: "language-unavailable" }> {
+/** The unavailable half of a resolution, or a failure naming what was served instead. */ function unavailableResolution(resolution: LocaleResolution, what: string): Extract<LocaleResolution, { readonly status: "language-unavailable" }> {
   if (resolution.status !== "language-unavailable") throw new Error(`${what} was expected to have no permitted edition and an edition was served: ${JSON.stringify(resolution)}`);
   return resolution;
 }
@@ -206,8 +211,7 @@ describe("only currently admitted releases are served", () => {
     const readerRefusal = denialOf(readerPage, `readPageLocales(${PAGE_DOCUMENT}) as a reader persona`);
     expect(readerRefusal.reasonCode).toBe("not-admitted");
     expect([...readerRefusal.keys]).toEqual(["operationId", "outcome", "reasonCode"]);
-    const protectedRead = denialOf(await reads.updates.readRelease({ variantId: PROTECTED_VARIANT, session: READER_SOURCE }), `readRelease(${PROTECTED_VARIANT}) as a reader persona`);
-    expect(protectedRead.reasonCode).toBe("not-admitted");
+    expect(denialOf(await reads.updates.readRelease({ variantId: PROTECTED_VARIANT, session: READER_SOURCE }), `readRelease(${PROTECTED_VARIANT}) as a reader persona`).reasonCode).toBe("not-admitted");
     const update = await editionsOf(UPDATE_DOCUMENT);
     const choosable = admittedLocales({ document: update.document, siteDefaultLocale: NO_DECLARED_SITE_DEFAULT, audience: "public", releases: update.editions });
     expect([choosable.map((locale) => locale.releaseId).sort(), [choosable.some((locale) => locale.releaseId === EN_SUPPORTER_RELEASE), choosable.some((locale) => locale.tag === "ar")]]).toEqual([[EN_PUBLIC_RELEASE, FR_RELEASE].sort(), [false, false]]);
@@ -216,6 +220,56 @@ describe("only currently admitted releases are served", () => {
     for (const expected of ["title", "editions", "count", "total"]) expect(served).not.toHaveProperty(expected);
     for (const expected of ["title", "sharePresentation"]) expect(served.release).not.toHaveProperty(expected);
     for (const expected of [SUPPORTER_TITLE, EN_SUPPORTER_RELEASE, "approved-supporter"]) expect(JSON.stringify(served)).not.toContain(expected);
+  });
+});
+describe("a reader of published editions is given another language of the same document, Site and audience", () => {
+  it("answers a language this document never published with its most recent admitted edition, naming the language actually served", async () => {
+    const update = await editionsOf(UPDATE_DOCUMENT);
+    // A reader who asks for German has no German edition. Nothing declares a Site default, so the substitute is the document's own most recently published admitted edition in that audience — the French one, published after the English — and the surface is told both tags so it can say which language it is showing.
+    const resolution = resolved(resolveForReader(update, "de", "public"), "a German request over an Update that publishes English and French");
+    expect([resolution.fallbackOccurred, resolution.requestedLocale, resolution.servedLocale.tag, resolution.release.releaseId, resolution.release.variantId]).toEqual([true, "de", "fr", FR_RELEASE, FR_VARIANT]);
+    expect(stateOf(resolution)).toBe("fallback");
+    expect(servedEditionOf(update, resolution).documentId).toBe(UPDATE_DOCUMENT);
+  });
+  it("keeps the substitute inside one document, one Site and one audience, exactly as the declared-default path did", async () => {
+    const update = await editionsOf(UPDATE_DOCUMENT);
+    const page = await editionsOf(PAGE_DOCUMENT);
+    const acrossDocuments: EditionSet = { document: update.document, editions: [...update.editions, ...page.editions] }; // One list holding every edition of both documents, which is what a substitute that walked the Site instead of the document would be handed.
+    const served = resolved(resolveForReader(acrossDocuments, "de", "public"), "a German request over every edition of both documents");
+    const servedRelease = servedEditionOf(acrossDocuments, served);
+    expect([served.servedLocale.tag, served.release.audience, servedRelease.documentId, servedRelease.siteId]).toEqual(["fr", "public", UPDATE_DOCUMENT, HARBOUR_SITE]);
+    // The French edition stamped with another Site is not this Site's substitute, so the answer is this Site's own most recent admitted edition instead.
+    const french = editionOf(update, FR_VARIANT);
+    const onAnotherSite: EditionSet = { document: update.document, editions: [...update.editions.map((edition) => (edition.variantId === FR_VARIANT ? { ...french, siteId: "site-otago" } : edition)), ...page.editions] };
+    expect(resolved(resolveForReader(onAnotherSite, "de", "public"), "the same request with the French edition on another Site").release.releaseId).toBe(EN_PUBLIC_RELEASE);
+    // The audience is the one asked for in both directions: a protected reader is substituted inside their own audience, and a public reader is never handed the protected edition.
+    const supporter = resolved(resolveForReader(update, "de", "approved-supporter"), "a German request in the approved-supporter audience");
+    expect([supporter.release.releaseId, supporter.release.audience, supporter.servedLocale.tag]).toEqual([EN_SUPPORTER_RELEASE, "approved-supporter", "en"]);
+    expect(resolved(resolveForReader(update, "de", "public"), "a German request in the public audience").release.releaseId).toBe(FR_RELEASE);
+  });
+  it("refuses a language whose own release was withdrawn rather than substituting another language for it", async () => {
+    const update = await editionsOf(UPDATE_DOCUMENT);
+    const french = editionOf(update, FR_VARIANT);
+    const withdrawn: EditionSet = { document: update.document, editions: update.editions.map((edition) => (edition.variantId === FR_VARIANT ? { ...french, withdrawnAt: Temporal.Instant.from("2026-11-19T09:00:00Z") } : edition)) }; // The one variable is the withdrawal: the request, the document and the editions are otherwise identical.
+    const refused = unavailableResolution(resolveForReader(withdrawn, "fr", "public"), "French after its only public release was withdrawn");
+    expect(refused.requestedLocale).toBe("fr");
+    // A language whose edition never existed is not refused: it is answered by the document's most recent admitted edition, so the refusal follows the withdrawn language rather than the absence of a German one.
+    const german = resolved(resolveForReader(withdrawn, "de", "public"), "a German request over the same editions");
+    expect([german.fallbackOccurred, german.servedLocale.tag, german.release.releaseId]).toEqual([true, "en", EN_PUBLIC_RELEASE]);
+  });
+  it("leaves the exact policy a preview reads untouched: the same request without substitution answers Language unavailable", async () => {
+    const update = await editionsOf(UPDATE_DOCUMENT);
+    unavailableResolution(resolveEdition(update, "de", "public"), "a German request resolved exactly, as a preview resolves it");
+    const substituted = resolved(resolveForReader(update, "de", "public"), "the same German request with substitution admitted");
+    expect([substituted.fallbackOccurred, substituted.servedLocale.tag]).toEqual([true, "fr"]);
+  });
+  it("never serves a protected edition to a public audience, and names no protected edition in the answer", async () => {
+    const update = await editionsOf(UPDATE_DOCUMENT);
+    const protectedOnly: EditionSet = { document: update.document, editions: update.editions.filter((edition) => edition.audience === "approved-supporter") };
+    unavailableResolution(resolveForReader(protectedOnly, "de", "public"), "German for a public audience over the approved-supporter edition alone");
+    const answered = resolved(resolveForReader(update, "de", "public"), "German for a public audience over both audiences' editions");
+    expect([answered.release.audience, answered.release.releaseId]).toEqual(["public", FR_RELEASE]);
+    for (const expected of [SUPPORTER_TITLE, EN_SUPPORTER_RELEASE, "approved-supporter"]) expect(JSON.stringify(answered)).not.toContain(expected);
   });
 });
 const CHOICE_BY_STATE: Readonly<Record<MembershipRecord["state"], MembershipRecord["choice"]>> = { active: "immediate", "awaiting-proof": "immediate", off: "off", restricted: "off" };
@@ -303,14 +357,12 @@ describe("direction is content, not styling", () => {
     expect(overview.data.editions.length).toBeGreaterThan(0); // Every tag is a BCP-47 language tag: a two- or three-letter language subtag, and nothing that would have to be guessed at.
     for (const edition of overview.data.editions) expect(edition.locale.tag).toMatch(/^[a-z]{2,3}(?:-[A-Za-z0-9]{1,8})*$/u);
     // The Arabic edition is right-to-left and the English and French ones are left-to-right, stated on the record rather than left to the reader to infer from the tag. The Arabic edition is a draft, so it is asserted on the edition record, which carries its direction before it is ever released.
-    const arabic = overview.data.editions.find((edition) => edition.variantId === AR_VARIANT);
-    expect(arabic?.locale).toEqual({ tag: "ar", direction: "rtl" });
+    expect(overview.data.editions.find((edition) => edition.variantId === AR_VARIANT)?.locale).toEqual({ tag: "ar", direction: "rtl" });
     const update = await editionsOf(UPDATE_DOCUMENT);
     expect(editionOf(update, "variant-update-autumn-en-public").locale).toEqual({ tag: "en", direction: "ltr" });
     expect(editionOf(update, FR_VARIANT).locale).toEqual({ tag: "fr", direction: "ltr" });
     const pageRead = await envelopeOf(reads.pages.readPageLocales({ pageId: PAGE_DOCUMENT, session: SOURCE }), `readPageLocales(${PAGE_DOCUMENT})`);
-    const pageArabic = pageRead.data.editions.find((edition) => edition.locale.tag === "ar");
-    expect(pageArabic?.locale).toEqual({ tag: "ar", direction: "rtl" });
+    expect(pageRead.data.editions.find((edition) => edition.locale.tag === "ar")?.locale).toEqual({ tag: "ar", direction: "rtl" });
   });
   it("preserves the direction the record states instead of inferring it from the tag", async () => {
     const update = await editionsOf(UPDATE_DOCUMENT);
@@ -322,8 +374,7 @@ describe("direction is content, not styling", () => {
     const rightToLeft = resolved(resolveEdition(statedRightToLeft, "ku", "public"), "an edition whose record states right-to-left");
     expect(leftToRight.servedLocale).toEqual({ tag: "ku", direction: "ltr" });
     expect(rightToLeft.servedLocale).toEqual({ tag: "ku", direction: "rtl" });
-    const fallback = resolved(resolveEdition(update, "ar", "public", "en"), "Arabic answered with the English edition");
-    expect(fallback.servedLocale).toEqual({ tag: "en", direction: "ltr" });
+    expect(resolved(resolveEdition(update, "ar", "public", "en"), "Arabic answered with the English edition").servedLocale).toEqual({ tag: "en", direction: "ltr" });
   });
   it("stores no bidi control character in the seeded Arabic content", async () => {
     for (const variantId of [AR_VARIANT, "variant-page-harbour-youth-ar-public"]) {
@@ -341,8 +392,7 @@ describe("direction is content, not styling", () => {
   });
   it("refuses an unrecognised language tag instead of resolving it to a default", async () => {
     const update = await editionsOf(UPDATE_DOCUMENT);
-    const refused = unavailableResolution(resolveEdition(update, "English (US)", "public"), "a language display name instead of a tag");
-    expect(refused.requestedLocale).toBe("English (US)");
+    expect(unavailableResolution(resolveEdition(update, "English (US)", "public"), "a language display name instead of a tag").requestedLocale).toBe("English (US)");
     const substituted = resolved(resolveEdition(update, "English (US)", "public", "en"), "a language display name with English declared"); // With a declared default the Site's edition is served, and it is reported as the substitution it is rather than as an exact match on the request.
     expect([substituted.fallbackOccurred, substituted.servedLocale.tag]).toEqual([true, "en"]);
     expect(substituted.servedLocale.tag).not.toBe(substituted.requestedLocale);

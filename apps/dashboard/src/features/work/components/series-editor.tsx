@@ -219,9 +219,7 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
   const current = editFacts?.current ?? null;
   const seriesId = editFacts?.seriesId ?? null;
   const effectiveFrom = editFacts?.effectiveFrom ?? "";
-  const planState: SeriesState = editFacts?.state ?? "active";
-  const admittedActions: readonly ReadAction[] = editFacts?.actions ?? EMPTY_ACTIONS;
-  const stopped = planState === "stopped";
+  const stopped = (editFacts?.state ?? "active") === "stopped";
   const headingId = useId();
   const optionIdPrefix = useId();
   const Heading = HEADING_TAG[headingLevel];
@@ -281,7 +279,6 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
     setRefusal(null);
     void submit({ scope, expectedRevision, payload: checked.parsed }).then(settle);
   };
-  const endGroupDescription = `${DESCRIPTIONS.ends} ${ONGOING_POLICY_NOTE}`;
   return (
     <section dir={dir} aria-labelledby={headingId} aria-busy={pending ? true : undefined} data-slot="series-editor" data-mode={props.mode} className={cn("flex min-w-0 flex-col gap-5", className)}>
       <div className="flex min-w-0 flex-col gap-1">
@@ -331,7 +328,7 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
                   <FormChoiceGroup name={FIELD_NAMES.profile} legend={LABELS.profiles} description={DESCRIPTIONS.profiles} errors={refusal} required value={values.profile} options={PROFILE_OPTIONS} onValueChange={changeProfile} idPrefix={optionIdPrefix} />
                   {intervalUnit === null ? null : <BoundField spec={intervalSpec(intervalUnit)} values={values} errors={refusal} onEdit={edit} />}
                   {REPEAT_PROFILE_FIELDS[values.profile].includes("dayOfMonth") ? <BoundField spec={FIELDS.dayOfMonth} values={values} errors={refusal} onEdit={edit} /> : null}
-                  <FormChoiceGroup name={FIELD_NAMES.end} legend={LABELS.ends} description={endGroupDescription} errors={refusal} required value={values.endKind} options={END_OPTIONS} onValueChange={changeEndKind} orientation="vertical" idPrefix={optionIdPrefix} />
+                  <FormChoiceGroup name={FIELD_NAMES.end} legend={LABELS.ends} description={`${DESCRIPTIONS.ends} ${ONGOING_POLICY_NOTE}`} errors={refusal} required value={values.endKind} options={END_OPTIONS} onValueChange={changeEndKind} orientation="vertical" idPrefix={optionIdPrefix} />
                   {values.endKind === "on-date" ? <BoundField spec={FIELDS.endOn} values={values} errors={refusal} onEdit={edit} /> : null}
                   {values.endKind === "after-count" ? <BoundField spec={FIELDS.endCount} values={values} errors={refusal} onEdit={edit} /> : null}
                   {receipt === null || receipt.outcome === "invalid" ? null : (
@@ -353,7 +350,7 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
             <p className="type-supporting text-pretty">{PAUSED_NOTE}</p>
             <p className="type-supporting text-pretty">{STOPPED_NOTE}</p>
           </div>
-          <SeriesStateControls scope={scope} seriesId={editFacts.seriesId} revision={expectedRevision} state={editFacts.state} actions={admittedActions} onCheckResult={onCheckResult} headingLevel={headingLevel} />
+          <SeriesStateControls scope={scope} seriesId={editFacts.seriesId} revision={expectedRevision} state={editFacts.state} actions={editFacts?.actions ?? EMPTY_ACTIONS} onCheckResult={onCheckResult} headingLevel={headingLevel} />
         </>
       )}
     </section>

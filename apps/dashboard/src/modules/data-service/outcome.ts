@@ -24,30 +24,25 @@ export type UnavailableOutcome = { readonly outcome: "unavailable"; readonly ope
 export type UnknownOutcome = { readonly outcome: "unknown"; readonly operationId: string };
 export type MutationOutcome = AcceptedOutcome | AlreadyAcceptedOutcome | UnchangedOutcome | ConflictOutcome | DeniedOutcome | InvalidOutcome | UnavailableOutcome | UnknownOutcome;
 export type ReadResult<T> = { readonly kind: "envelope"; readonly envelope: T } | { readonly kind: "denied"; readonly denied: DeniedOutcome } | { readonly kind: "unavailable"; readonly unavailable: UnavailableOutcome } | { readonly kind: "refused"; readonly refused: InvalidOutcome };
-/** Answers that the operation was applied exactly once. */
-export function accepted(input: { operationId: string; revision: string; created?: readonly string[]; changed?: readonly string[]; items?: readonly PerItemResult[] }): AcceptedOutcome {
+/** Answers that the operation was applied exactly once. */ export function accepted(input: { operationId: string; revision: string; created?: readonly string[]; changed?: readonly string[]; items?: readonly PerItemResult[] }): AcceptedOutcome {
   return { outcome: "accepted", operationId: echoedOperationId(input.operationId), revision: input.revision, ...(input.created === undefined ? {} : { created: input.created }), ...(input.changed === undefined ? {} : { changed: input.changed }), ...(input.items === undefined ? {} : { items: input.items }) };
 }
 /** Answers a replay: the same `operationId` with the same intent returns the stored result, with no new effect and no new revision. */
-export function alreadyAccepted(input: { operationId: string; revision: string; result: MutationResult; created?: readonly string[]; changed?: readonly string[]; items?: readonly PerItemResult[] }): AlreadyAcceptedOutcome {
-  return {
-    outcome: "alreadyAccepted",
-    operationId: echoedOperationId(input.operationId),
-    revision: input.revision,
-    result: input.result,
-    ...(input.created === undefined ? {} : { created: input.created }),
-    ...(input.changed === undefined ? {} : { changed: input.changed }),
-    ...(input.items === undefined ? {} : { items: input.items }),
-  };
-}
-/** Answers that the payload would change nothing. */
-export const unchanged = (input: { operationId: string; revision: string }): UnchangedOutcome => ({ outcome: "unchanged", operationId: echoedOperationId(input.operationId), revision: input.revision });
+export const alreadyAccepted = (input: { operationId: string; revision: string; result: MutationResult; created?: readonly string[]; changed?: readonly string[]; items?: readonly PerItemResult[] }): AlreadyAcceptedOutcome => ({
+  outcome: "alreadyAccepted",
+  operationId: echoedOperationId(input.operationId),
+  revision: input.revision,
+  result: input.result,
+  ...(input.created === undefined ? {} : { created: input.created }),
+  ...(input.changed === undefined ? {} : { changed: input.changed }),
+  ...(input.items === undefined ? {} : { items: input.items }),
+});
+/** Answers that the payload would change nothing. */ export const unchanged = (input: { operationId: string; revision: string }): UnchangedOutcome => ({ outcome: "unchanged", operationId: echoedOperationId(input.operationId), revision: input.revision });
 /** Answers that the caller's input is stale, carrying both the current value and the caller's preserved input so a surface can show them side by side and let someone decide. */
 export function conflict(input: { operationId: string; currentRevision: string; current: unknown; preservedInput: unknown; reason: ConflictReason }): ConflictOutcome {
   return { outcome: "conflict", operationId: echoedOperationId(input.operationId), currentRevision: input.currentRevision, current: input.current, preservedInput: input.preservedInput, reason: input.reason };
 }
-/** Answers that the caller has no authority for this request. */
-export const denied = (input: { operationId: string; reasonCode: DenialReason }): DeniedOutcome => redactDenial<DeniedOutcome>({ outcome: "denied", operationId: echoedOperationId(input.operationId), reasonCode: input.reasonCode });
+/** Answers that the caller has no authority for this request. */ export const denied = (input: { operationId: string; reasonCode: DenialReason }): DeniedOutcome => redactDenial<DeniedOutcome>({ outcome: "denied", operationId: echoedOperationId(input.operationId), reasonCode: input.reasonCode });
 function fieldMessagesFromIssues(error: ZodError): FieldMessages {
   const messages = new Map<string, string[]>();
   const report = (key: string, message: string): void => {
@@ -72,8 +67,7 @@ function fieldMessagesFromIssues(error: ZodError): FieldMessages {
 }
 /** The one answer a read gives when the request it was asked to serve is not one it admits: the caller's own query or segment is the fault, so the caller has to correct it. */
 export const refusedRead = (operationId: string, fields: FieldMessages | ZodError): ReadResult<never> => ({ kind: "refused", refused: invalid({ operationId, fields }) });
-/** Answers that the source behind the work is down. */
-export const unavailable = (input: { operationId: string; source: SourceReference; guidance: string }): UnavailableOutcome => ({ outcome: "unavailable", operationId: echoedOperationId(input.operationId), source: input.source, guidance: input.guidance });
+/** Answers that the source behind the work is down. */ export const unavailable = (input: { operationId: string; source: SourceReference; guidance: string }): UnavailableOutcome => ({ outcome: "unavailable", operationId: echoedOperationId(input.operationId), source: input.source, guidance: input.guidance });
 /** Answers that the effect may have been applied and the acknowledgement was lost. */ export const unknown = (input: { operationId: string }): UnknownOutcome => ({ outcome: "unknown", operationId: echoedOperationId(input.operationId) });
 export const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
 const INVALID_SESSION_FAULT = "InvalidSessionIdError";

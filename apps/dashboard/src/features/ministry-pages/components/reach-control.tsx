@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useId, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
+import { factFrame } from "@/components/fact-list";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -36,28 +37,18 @@ export type ReachControlProps = {
   readonly disabledReason?: string;
   readonly className?: string;
 };
+const ReachFact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-2", termClassName: "font-medium", valueClassName: "min-w-0 wrap-anywhere" });
 const ReachComparison = ({ recorded, intended }: { readonly recorded: Reach; readonly intended: Reach }): ReactElement => (
   <dl className="flex min-w-0 flex-col gap-2 text-sm">
-    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-      <dt className="font-medium">{REACH_CONTROL_COPY.recordedTerm}</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        <bdi>{copy.reach[recorded].label}</bdi>
-      </dd>
-    </div>
-    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-      <dt className="font-medium">{REACH_CONTROL_COPY.intendedTerm}</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        <bdi>{copy.reach[intended].label}</bdi>
-      </dd>
-    </div>
+    <ReachFact term={REACH_CONTROL_COPY.recordedTerm} value={<bdi>{copy.reach[recorded].label}</bdi>} />
+    <ReachFact term={REACH_CONTROL_COPY.intendedTerm} value={<bdi>{copy.reach[intended].label}</bdi>} />
     <div className="flex min-w-0 flex-col gap-0.5">
       <dt className="text-muted-foreground">{REACH_CONTROL_COPY.meaningTerm}</dt>
       <dd className="min-w-0 text-pretty">{copy.reach[intended].explanation}</dd>
     </div>
   </dl>
 );
-/** How far one released edition reaches: the three settings, what each means, and the reviewed save that applies one of them. */
-export default function ReachControl({ variantId, documentId, scope, expectedRevision, current, onSaved, disabled = false, disabledReason, className }: ReachControlProps): ReactElement {
+/** How far one released edition reaches: the three settings, what each means, and the reviewed save that applies one of them. */ export default function ReachControl({ variantId, documentId, scope, expectedRevision, current, onSaved, disabled = false, disabledReason, className }: ReachControlProps): ReactElement {
   const idPrefix = useId();
   const legendId = useId();
   const scopeNoteId = useId();

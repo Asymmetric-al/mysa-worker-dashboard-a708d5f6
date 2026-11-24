@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from "react";
 import LocaleSwitcher, { type LocaleEdition } from "@/components/locale-switcher";
-import RenderedContent from "@/components/rendered-content";
+import RenderedContent, { RENDERED_PROSE } from "@/components/rendered-content";
 import SimulationLabel from "@/components/simulation-label";
 import { StateNotice, type NoticeHeadingLevel, type NoticeRetry } from "@/components/state-notice";
 import { NOTICE_HEADING_TAG, nestedNoticeHeadingLevel } from "@/lib/notice-heading";
@@ -62,25 +62,6 @@ const INERT_STATEMENT =
   "This preview is inert. It cannot publish the edition, it cannot submit a notification to any recipient, it cannot subscribe a reader, and it cannot start giving. The read that authorised it offers no action of any kind, so nothing on this surface changes the edition, its audience or its giving destination.";
 const MEDIA_HEADING = "Media in this preview";
 const MEDIA_NOT_READY_TITLE: Readonly<Record<PreviewPlacement["kind"], string>> = { image: "This image is unavailable", video: "This video is unavailable" };
-const PREVIEW_PROSE = cn(
-  "min-w-0 type-body break-words",
-  "[&_p]:mb-3 [&_p:last-child]:mb-0",
-  "[&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:type-section-title [&_h2:first-child]:mt-0",
-  "[&_h3]:mt-5 [&_h3]:mb-2 [&_h3]:type-subsection-title",
-  "[&_h4]:mt-4 [&_h4]:mb-2 [&_h4]:type-group-title",
-  "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:ps-5 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:ps-5 [&_li]:mb-1",
-  "[&_blockquote]:my-3 [&_blockquote]:border-s-2 [&_blockquote]:border-border [&_blockquote]:ps-3",
-  "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-4",
-  "[&_strong]:font-semibold [&_em]:italic",
-  "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:text-xs",
-  "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-3",
-  "[&_hr]:my-4 [&_hr]:border-border",
-  "[&_section]:mb-4 [&_section:last-child]:mb-0",
-  "[&_figure]:my-4 [&_figure]:flex [&_figure]:flex-col [&_figure]:gap-2",
-  "[&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
-  "[&_video]:h-auto [&_video]:w-full [&_video]:max-w-full [&_video]:rounded-lg",
-  "[&_figcaption]:text-xs [&_figcaption]:text-muted-foreground",
-);
 function Heading({ level, className, children }: { readonly level: NoticeHeadingLevel; readonly className?: string; readonly children: ReactNode }): ReactElement {
   const Tag = NOTICE_HEADING_TAG[level];
   return <Tag className={cn(HEADING_SCALE[level], className)}>{children}</Tag>;
@@ -94,8 +75,7 @@ const IdentityPair = ({ label, children }: { readonly label: string; readonly ch
 function languageLabelOf(tag: string): string {
   const trimmed = tag.trim();
   if (trimmed.length === 0) return "";
-  const base = (trimmed.split("-")[0] ?? "").toLowerCase();
-  const name = LOCALE_DISPLAY_NAMES[trimmed] ?? LOCALE_DISPLAY_NAMES[base];
+  const name = LOCALE_DISPLAY_NAMES[trimmed] ?? LOCALE_DISPLAY_NAMES[(trimmed.split("-")[0] ?? "").toLowerCase()];
   return name === undefined ? trimmed : `${name} (${trimmed})`;
 }
 function servedPathOf(path: string): string | undefined {
@@ -186,7 +166,7 @@ function AuthorisedPreview({ preview, requestedLocale, headingLevel, locales, on
       <StateNotice kind="empty" title={EMPTY_BODY.title} description={EMPTY_BODY.description} headingLevel={headingLevel} />
     ) : (
       <Card data-slot="preview-document" className="min-w-0">
-        <CardContent className={PREVIEW_PROSE}>
+        <CardContent className={RENDERED_PROSE}>
           {/* The one renderer's output for the acknowledged revision, placed exactly as the read produced it. */}
           <RenderedContent html={preview.renderedHtml} direction={direction} lang={tag} slot="update-preview-body" />
         </CardContent>
@@ -249,8 +229,7 @@ function DenialPreview({ reason, requestedLocale, headingLevel, onRetry }: { rea
 }
 function languageAbsentTitle(requestedLocale: string | undefined): string {
   const requested = requestedLocale === undefined ? "" : requestedLocale.trim();
-  if (requested.length === 0) return LANGUAGE_ABSENT.title;
-  return `${LANGUAGE_ABSENT.title}: ${languageLabelOf(requested)}`;
+  return requested.length === 0 ? LANGUAGE_ABSENT.title : `${LANGUAGE_ABSENT.title}: ${languageLabelOf(requested)}`;
 }
 function InvalidPreview({ issues, headingLevel, onRetry }: { readonly issues: readonly { readonly message: string }[]; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined }): ReactElement {
   const messages = issues.map((issue) => issue.message.trim()).filter((message) => message.length > 0);

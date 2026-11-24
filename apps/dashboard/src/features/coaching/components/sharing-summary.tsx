@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { CalendarXIcon, ClockIcon, EyeOffIcon, HourglassIcon, TriangleAlertIcon } from "lucide-react";
 import { useId, type ReactElement, type ReactNode } from "react";
+import { factFrame } from "@/components/fact-list";
 import SimulationLabel from "@/components/simulation-label";
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { COACHING_STATUS, statusBadgeProps, type StatusTone } from "@/components/status-badge";
@@ -44,6 +45,19 @@ export const OUTCOME_STAGE_NAME: Readonly<Record<SharingOutcomeId, string>> = { 
 export const OUTCOME_STATE_FIELD: Readonly<Record<SharingOutcomeId, keyof SharingOutcomeSet>> = { delivery: "delivery", "identity-verification": "identityVerification", "deliberate-acceptance": "acceptance", "active-access": "access" };
 const OUTCOME_NOT_REACHED_WORD: Readonly<Record<SharingOutcomeId, string>> = { delivery: "No invitation recorded", "identity-verification": "Identity not verified", "deliberate-acceptance": "Not accepted yet", "active-access": "Access not live yet" };
 const OUTCOME_UNKNOWN_WORD: Readonly<Record<SharingOutcomeId, string>> = { delivery: "Recording uncertain", "identity-verification": "Verification unknown", "deliberate-acceptance": "Acceptance unknown", "active-access": "Access unknown" };
+// The sentence a row states follows the state its badge states, so a row never asserts a fact its own word denies: the reached sentences are the copy's own (they carry the teaching of what the fact does not prove), a stage that was not reached says what is absent instead, and a stage whose record could not be read says neither. The Access sentence is worded for every way access can be not live — never accepted, revoked, ended, left or expired — so it names the lifecycle state above rather than restating it.
+const OUTCOME_NOT_REACHED_SENTENCE: Readonly<Record<SharingOutcomeId, string>> = {
+  delivery: "No invitation is recorded for this relationship, so no coach has been named and nothing is readable through it.",
+  "identity-verification": "The person's identity has not been verified against the account they act in, so that account is not established as theirs.",
+  "deliberate-acceptance": "No acceptance is recorded, so the person has not taken the invitation up deliberately, and an invitation on its own shares nothing.",
+  "active-access": "Access is not live for this relationship, so no module is readable through it. The lifecycle state above states why it is not live.",
+};
+const OUTCOME_UNKNOWN_SENTENCE: Readonly<Record<SharingOutcomeId, string>> = {
+  delivery: "The record behind this stage could not be read at this moment, so whether an invitation was recorded is unknown here and this row claims neither that it was nor that it was not.",
+  "identity-verification": "The record behind this stage could not be read at this moment, so whether the person's identity was verified is unknown here and this row claims neither that it was nor that it was not.",
+  "deliberate-acceptance": "The record behind this stage could not be read at this moment, so whether an acceptance was recorded is unknown here and this row claims neither that it was nor that it was not.",
+  "active-access": "The record behind this stage could not be read at this moment, so whether access is live is unknown here and this row claims neither that it is nor that it is not.",
+};
 const OUTCOME_TONE: Readonly<Record<SharingOutcome, StatusTone>> = { reached: "info", "not-reached": "muted", unknown: "caution" };
 export function outcomeWord(entry: SharingOutcomeCopy, state: SharingOutcome): string {
   switch (state) {
@@ -53,6 +67,16 @@ export function outcomeWord(entry: SharingOutcomeCopy, state: SharingOutcome): s
       return OUTCOME_NOT_REACHED_WORD[entry.id];
     case "unknown":
       return OUTCOME_UNKNOWN_WORD[entry.id];
+  }
+}
+/** The sentence printed under a row's own word: the copy's reached description only where the row states the stage was reached, and the state's own sentence otherwise. */ function outcomeSentence(entry: SharingOutcomeCopy, state: SharingOutcome): string {
+  switch (state) {
+    case "reached":
+      return entry.description;
+    case "not-reached":
+      return OUTCOME_NOT_REACHED_SENTENCE[entry.id];
+    case "unknown":
+      return OUTCOME_UNKNOWN_SENTENCE[entry.id];
   }
 }
 export const MODULE_READ_STATE_TONE: Readonly<Record<ModuleReadState, StatusTone>> = { empty: "muted", partial: "info", withheld: "caution", unavailable: "danger", ended: "neutral" };
@@ -76,8 +100,7 @@ export function civilDateText(value: CivilDateInput): string {
   return parsed.status === "parsed" ? serialiseCivilDate(parsed.date) : value.trim();
 }
 const STORED_DAY = /^(\d{4}-\d{2}-\d{2})(?:[T ]|$)/u;
-/** The calendar day a stored instant belongs to, which is the day every coaching surface states rather than a time of day: the one reading of a stored timestamp. */
-export function storedDayText(storedInstant: string): string {
+/** The calendar day a stored instant belongs to, which is the day every coaching surface states rather than a time of day: the one reading of a stored timestamp. */ export function storedDayText(storedInstant: string): string {
   const day = STORED_DAY.exec(storedInstant)?.[1];
   return day === undefined ? storedInstant.trim() : civilDateText(day);
 }
@@ -116,12 +139,8 @@ function buildRangeView(range: FinancialRange, locale: string): RangeView {
   if (entry === undefined) return asSupplied(null);
   return { from: described.value.from, to: described.value.to, currency: entry.currency, state: entry.state, formatting: entry.formatting, problem: null };
 }
-export const Fact = ({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement => (
-  <div className="flex flex-wrap items-baseline gap-x-1.5">
-    <dt className="font-medium">{term}</dt>
-    <dd className="min-w-0 break-words">{children}</dd>
-  </div>
-);
+export const Fact = factFrame({ rowClassName: "flex flex-wrap items-baseline gap-x-1.5", termClassName: "font-medium", valueClassName: "min-w-0 break-words" });
+const RelationshipFact = factFrame({ rowClassName: "flex flex-col gap-0.5", termClassName: "font-medium", valueClassName: "text-pretty text-muted-foreground" });
 const Section = ({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }): ReactElement => (
   <section aria-labelledby={id} className="flex min-w-0 flex-col gap-3">
     <h3 {...{ id, className: "type-subsection-title" }}>{title}</h3>
@@ -135,8 +154,7 @@ export const StatementAlert = ({ icon, label, sentence }: { readonly icon: React
     <AlertDescription>{sentence}</AlertDescription>
   </Alert>
 );
-/** A module the read answers `null` for is the complete share, never an unknown one; `undefined` is a module this grant does not share at all. */
-function moduleWordAndTone(readState: ModuleReadState | null | undefined): { readonly label: string; readonly tone: StatusTone } {
+/** A module the read answers `null` for is the complete share, never an unknown one; `undefined` is a module this grant does not share at all. */ function moduleWordAndTone(readState: ModuleReadState | null | undefined): { readonly label: string; readonly tone: StatusTone } {
   if (readState === undefined) return { label: "Switched off", tone: "muted" };
   if (readState === null) return { label: MODULE_COMPLETE_COPY.label, tone: "positive" };
   return { label: MODULE_READ_STATE_COPY[readState].label, tone: MODULE_READ_STATE_TONE[readState] };
@@ -184,24 +202,18 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
         <Section id={`${headingId}-relationship`} title={SECTION_TITLES.relationship}>
           <p className="type-supporting text-pretty">{lifecycle.description}</p>
           <dl className="flex flex-col gap-2 text-sm">
-            <div className="flex flex-col gap-0.5">
-              <dt className="font-medium">Source</dt>
-              <dd className="text-pretty text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  <bdi>{sourceAvailability.label}</bdi>
-                </span>
-                {`. ${sourceAvailability.description}`}
-              </dd>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <dt className="font-medium">Access hold</dt>
-              <dd className="text-pretty text-muted-foreground">
-                <span className="font-medium text-foreground">
-                  <bdi>{hold.label}</bdi>
-                </span>
-                {`. ${hold.description}`}
-              </dd>
-            </div>
+            <RelationshipFact term="Source">
+              <span className="font-medium text-foreground">
+                <bdi>{sourceAvailability.label}</bdi>
+              </span>
+              {`. ${sourceAvailability.description}`}
+            </RelationshipFact>
+            <RelationshipFact term="Access hold">
+              <span className="font-medium text-foreground">
+                <bdi>{hold.label}</bdi>
+              </span>
+              {`. ${hold.description}`}
+            </RelationshipFact>
           </dl>
         </Section>
         <Separator />
@@ -215,7 +227,7 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
                     <span className="font-medium">{OUTCOME_STAGE_NAME[entry.id]}</span>
                     <StatusBadge label={outcomeWord(entry, state)} tone={OUTCOME_TONE[state]} />
                   </p>
-                  <p className="type-supporting text-pretty">{entry.description}</p>
+                  <p className="type-supporting text-pretty">{outcomeSentence(entry, state)}</p>
                   {entry.id === "delivery" ? <SimulationLabel effect="mail-submission" /> : null}
                 </li>
               );

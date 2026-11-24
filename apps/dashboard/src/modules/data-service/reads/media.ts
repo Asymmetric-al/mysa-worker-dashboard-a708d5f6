@@ -88,13 +88,11 @@ function readingAuthority(worlds: { readonly session: ResolvedSession; readonly 
   return liveEditions === 0 && withdrawnEditions > 0 ? { scope, state: "withdrawn" } : undefined;
 }
 const isMediaSegment = (value: unknown): value is string => typeof value === "string" && value.length <= SEGMENT_MAX_LENGTH && SEGMENT_PATTERN.test(value);
-function renditionAnswer(session: ResolvedSession, asset: MediaAssetRecord, scope: Scope, data: MediaRenditionResponse): MediaAssetReadResult {
-  return answerOf(scope, instantAt(session.clockOffsetMs).toString(), { data, source: bytesSourceOf(asset), revision: asset.revision, valueStates: { contentLength: data.contentLength === 0 ? "zero" : "value" }, actions: NO_ACTIONS });
-}
+const renditionAnswer = (session: ResolvedSession, asset: MediaAssetRecord, scope: Scope, data: MediaRenditionResponse): MediaAssetReadResult =>
+  answerOf(scope, instantAt(session.clockOffsetMs).toString(), { data, source: bytesSourceOf(asset), revision: asset.revision, valueStates: { contentLength: data.contentLength === 0 ? "zero" : "value" }, actions: NO_ACTIONS });
 const requestedPurpose = (asset: MediaAssetRecord, segment: string): MediaAssetRenditionPurpose | undefined => KIND_PURPOSES[asset.kind].find((candidate) => candidate === segment) ?? asset.renditions.find((record) => record.renditionId === segment)?.purpose;
 const sizedRendition = (asset: MediaAssetRecord, record: MediaAssetRenditionRecord, byteLength: number): MediaSizedRendition => ({ assetId: asset.assetId, renditionId: record.renditionId, purpose: record.purpose, mimeType: record.mimeType, byteLength });
-/** The bytes one serving decision admitted: its own range when it named one, and the whole rendition otherwise. */
-const admittedWindow = (byteRange: ByteRange | null, totalBytes: number): MediaByteWindow => (byteRange === null ? { start: 0, end: totalBytes - 1 } : { start: byteRange.start, end: byteRange.end });
+/** The bytes one serving decision admitted: its own range when it named one, and the whole rendition otherwise. */ const admittedWindow = (byteRange: ByteRange | null, totalBytes: number): MediaByteWindow => (byteRange === null ? { start: 0, end: totalBytes - 1 } : { start: byteRange.start, end: byteRange.end });
 const bytesSourceOf = (asset: MediaAssetRecord): MediaOriginalReference => ({ system: MEDIA_SOURCE_SYSTEM, reference: asset.assetId });
 // The scenario's own media rule, read from the one place that states it: the bytes this route serves and the state every rendering surface states come from the same answer.
 const servingStateOf = (scenarioId: string): MediaServingState => scenarioMediaServing(scenarioId);

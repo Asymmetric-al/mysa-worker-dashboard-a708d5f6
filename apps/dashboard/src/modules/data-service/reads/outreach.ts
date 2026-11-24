@@ -71,12 +71,8 @@ function slicePage<T>(rows: readonly T[], page: number, pageSize: number): reado
   const offset = (page - 1) * pageSize;
   return rows.slice(offset, offset + pageSize);
 }
-function markCount(states: Record<string, RecordedValueState>, path: string, count: number): void {
-  states[path] = count === 0 ? "zero" : "value";
-}
-function markOptional(states: Record<string, RecordedValueState>, path: string, present: boolean): void {
-  states[path] = present ? "value" : "unknown";
-}
+const markCount = (states: Record<string, RecordedValueState>, path: string, count: number): void => void (states[path] = count === 0 ? "zero" : "value");
+const markOptional = (states: Record<string, RecordedValueState>, path: string, present: boolean): void => void (states[path] = present ? "value" : "unknown");
 const earliestCivil = (dates: readonly (string | null)[]): string | null => dates.filter((value): value is string => value !== null).sort()[0] ?? null;
 function latestCivil(dates: readonly (string | null)[]): string | null {
   const stated = dates.filter((value): value is string => value !== null).sort();
@@ -105,8 +101,7 @@ export type InitiativeRow = { readonly initiativeId: string; readonly name: stri
 export type InitiativeListPage = { readonly items: readonly InitiativeRow[]; readonly total: number; readonly page: number; readonly pageSize: number };
 const lifecycleOf = (initiative: InitiativeRecord): InitiativeLifecycle => (initiative.state === "closed" ? "closed" : initiative.closureDisposition === null ? "open" : "reopened");
 /** The counts a row states when none of its working list survives the readable-partner filter. */ const NO_MEMBER_STATES: InitiativeMembershipCounts = { included: 0, removed: 0, excluded: 0 };
-/** The working-list counts of one initiative's members, over the members whose partner this session may read. */
-function memberStatesOf(members: readonly InitiativeMemberRecord[], partners: ReadonlyMap<string, PartnerRecord>): InitiativeMembershipCounts {
+/** The working-list counts of one initiative's members, over the members whose partner this session may read. */ function memberStatesOf(members: readonly InitiativeMemberRecord[], partners: ReadonlyMap<string, PartnerRecord>): InitiativeMembershipCounts {
   const counts = { included: 0, removed: 0, excluded: 0 };
   for (const member of members) {
     if (partners.get(member.partnerId) === undefined) continue;
@@ -170,10 +165,8 @@ function compareInitiatives(sort: InitiativeSort, left: InitiativeRow, right: In
 }
 type EnvelopeFields<T> = { readonly source: Parameters<typeof buildEnvelope>[0]["source"]; readonly revision: string; readonly data: T; readonly valueStates: Parameters<typeof buildEnvelope>[0]["valueStates"]; readonly actions: Parameters<typeof buildEnvelope>[0]["actions"] };
 type OutreachEnvelope = { readonly scope: Parameters<typeof buildEnvelope>[0]["scope"]; readonly now: Temporal.Instant };
-/** The result a read answers with, assembled through this file's own envelope builder. */
-function respond<T>(state: OutreachEnvelope, coverage: Parameters<typeof buildEnvelope>[0]["coverage"], fields: EnvelopeFields<T>): ReadResult<ReadEnvelope<T>> {
-  return answerOf(state.scope, state.now.toString(), { data: fields.data, source: fields.source, revision: fields.revision, coverage, valueStates: fields.valueStates, actions: fields.actions });
-}
+/** The result a read answers with, assembled through this file's own envelope builder. */ const respond = <T>(state: OutreachEnvelope, coverage: Parameters<typeof buildEnvelope>[0]["coverage"], fields: EnvelopeFields<T>): ReadResult<ReadEnvelope<T>> =>
+  answerOf(state.scope, state.now.toString(), { data: fields.data, source: fields.source, revision: fields.revision, coverage, valueStates: fields.valueStates, actions: fields.actions });
 /** Lists the initiatives of the admitted ministry with their purpose, accountable person, optional period and state, paged over the whole authorised result. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readInitiatives(query: InitiativesQuery = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<InitiativeListPage>>> {
   const opening = await openOutreach("readInitiatives", source);
@@ -267,14 +260,12 @@ function memberRowOf(member: InitiativeMemberRecord, partners: ReadonlyMap<strin
     revision: member.revision,
   };
 }
-function requestedTermsOf(terms: RequestRecord["terms"]): RequestedTermsRow {
-  return {
-    version: terms.version,
-    basis: "requested-terms",
-    money: terms.money === null ? null : { currency: terms.money.amount.currency, minorUnits: terms.money.amount.minorUnits, currencyExponent: exponentOf(terms.money.amount.currency) ?? null, cadence: terms.money.cadence, term: terms.money.term },
-    nonFinancial: terms.nonFinancial,
-  };
-}
+const requestedTermsOf = (terms: RequestRecord["terms"]): RequestedTermsRow => ({
+  version: terms.version,
+  basis: "requested-terms",
+  money: terms.money === null ? null : { currency: terms.money.amount.currency, minorUnits: terms.money.amount.minorUnits, currencyExponent: exponentOf(terms.money.amount.currency) ?? null, cadence: terms.money.cadence, term: terms.money.term },
+  nonFinancial: terms.nonFinancial,
+});
 function requestRowOf(request: RequestRecord, partners: ReadonlyMap<string, PartnerRecord>): InitiativeRequestRow {
   const recipient = partners.get(request.recipientPartnerId);
   const currentVersion = request.terms.version;
@@ -411,10 +402,8 @@ function measuredCount(count: number, denominator: number, denominatorMeaning: s
   const base = { count, denominator, denominatorMeaning };
   return denominator <= 0 ? base : { ...base, percentage: Math.round((count * 1000) / denominator) / 10 };
 }
-/** How one terms version accumulated across the results read's single pass: the Requests naming it, the responses bound to it, and whether any Request states it as its current terms. */
-type TermsVersionTally = { referencing: number; bound: number; current: boolean };
-/** The version a terms token names, taken from its trailing digits — the `terms-v<N>` form the composer and `storedTermsOf` produce — and 1 where the token states none, so versions order by the version they name rather than by their text. */
-function termsVersionOrdinal(termsVersion: string): number {
+/** How one terms version accumulated across the results read's single pass: the Requests naming it, the responses bound to it, and whether any Request states it as its current terms. */ type TermsVersionTally = { referencing: number; bound: number; current: boolean };
+/** The version a terms token names, taken from its trailing digits — the `terms-v<N>` form the composer and `storedTermsOf` produce — and 1 where the token states none, so versions order by the version they name rather than by their text. */ function termsVersionOrdinal(termsVersion: string): number {
   const stated = /(\d+)$/u.exec(termsVersion)?.[1];
   return stated === undefined ? 1 : Number(stated);
 }

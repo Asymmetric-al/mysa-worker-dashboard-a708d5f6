@@ -177,8 +177,8 @@ function SidebarMenuButton({
     </Tooltip>
   );
 }
-function SidebarMenuAction({ className, render, showOnHover = false, ...props }: useRender.ComponentProps<"button"> & React.ComponentProps<"button"> & { showOnHover?: boolean }) {
-  return useRender({
+const SidebarMenuAction = ({ className, render, showOnHover = false, ...props }: useRender.ComponentProps<"button"> & React.ComponentProps<"button"> & { showOnHover?: boolean }) =>
+  useRender({
     defaultTagName: "button",
     props: mergeProps<"button">(
       {
@@ -193,11 +193,10 @@ function SidebarMenuAction({ className, render, showOnHover = false, ...props }:
     render,
     state: { slot: "sidebar-menu-action", sidebar: "menu-action" },
   });
-}
 const SidebarMenuSub = ({ className, ...props }: React.ComponentProps<"ul">) => <ul data-slot="sidebar-menu-sub" data-sidebar="menu-sub" className={cn("mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-s border-sidebar-border px-2.5 py-0.5 group-data-[collapsible=icon]:hidden", className)} {...props} />;
 const SidebarMenuSubItem = ({ className, ...props }: React.ComponentProps<"li">) => <li data-slot="sidebar-menu-sub-item" data-sidebar="menu-sub-item" className={cn("group/menu-sub-item relative", className)} {...props} />;
-function SidebarMenuSubButton({ render, size = "md", isActive = false, className, ...props }: useRender.ComponentProps<"a"> & React.ComponentProps<"a"> & { size?: "sm" | "md"; isActive?: boolean }) {
-  return useRender({
+const SidebarMenuSubButton = ({ render, size = "md", isActive = false, className, ...props }: useRender.ComponentProps<"a"> & React.ComponentProps<"a"> & { size?: "sm" | "md"; isActive?: boolean }) =>
+  useRender({
     defaultTagName: "a",
     props: mergeProps<"a">(
       {
@@ -211,5 +210,4 @@ function SidebarMenuSubButton({ render, size = "md", isActive = false, className
     render,
     state: { slot: "sidebar-menu-sub-button", sidebar: "menu-sub-button", size, active: isActive },
   });
-}
 export { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarProvider, SidebarSeparator, SidebarTrigger, useSidebar };

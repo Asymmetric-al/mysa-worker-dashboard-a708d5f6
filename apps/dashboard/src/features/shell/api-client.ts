@@ -1,4 +1,5 @@
 import { isRecord } from "@/lib/guards";
+import { readJsonBody } from "@/lib/read-transport";
 import type { ReadEnvelope } from "@/modules/data-service/envelope";
 import type { MutationInput, MutationOutcome, ReadResult } from "@/modules/data-service";
 import type { UnavailableOutcome } from "@/modules/data-service/outcome";
@@ -17,14 +18,6 @@ const isOutcomeName = (value: unknown): value is MutationOutcome["outcome"] => t
 const isOutcomeBody = (value: unknown): value is MutationOutcome => isRecord(value) && isOutcomeName(value.outcome) && typeof value.operationId === "string";
 const unavailableMember = (operationId: string, guidance: string): UnavailableOutcome => ({ outcome: "unavailable", operationId, source: TRANSPORT_SOURCE, guidance });
 const unknownMember = (operationId: string): MutationOutcome => ({ outcome: "unknown", operationId });
-async function readJsonBody(response: Response): Promise<unknown> {
-  try {
-    const text = await response.text();
-    return text.trim().length === 0 ? undefined : (JSON.parse(text) as unknown);
-  } catch {
-    return undefined;
-  }
-}
 async function submit(path: string, body: unknown, operationId: string, guidance: string): Promise<MutationOutcome> {
   const response = await send(path, { method: "POST", body });
   if (response === undefined) return unavailableMember(operationId, guidance);

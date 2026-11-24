@@ -16,20 +16,17 @@ const NOT_AN_UPDATE_DESCRIPTION = "The edition this address names belongs to a P
 const UNPAIRED_ADDRESS_DESCRIPTION = "The edition this address names belongs to a different document, so the pair is not one this route can open. Open the " + "Update from its list and choose the edition from the editions it holds.";
 /** The page's words for each arm of the one read it makes, so a refusal states what could not be read in the page's own terms under the page's own title. */
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: NESTED_NOTICE_LEVEL, denied: { title: "This edition is not available in this session", body: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE }, refused: { title: REFUSED_TITLE, body: REFUSED_REQUEST_DESCRIPTION } };
-/** An outage behind this edition, stated under the page's own title: the service's guidance is the sentence unless it stated none, and the page's own words stand in only then. */
-function unavailableRefusal(result: ReadRefusal, guidance: string): ReactElement {
+/** An outage behind this edition, stated under the page's own title: the service's guidance is the sentence unless it stated none, and the page's own words stand in only then. */ function unavailableRefusal(result: ReadRefusal, guidance: string): ReactElement {
   const stated = guidance.trim();
   return pageRefusalOf(result, stated === "" ? { ...NOTICE_COPY, unavailable: { title: UNAVAILABLE_TITLE, body: UNAVAILABLE_FALLBACK } } : NOTICE_COPY, 6, { title: PAGE_TITLE });
 }
-/** A request this route does not serve — an edition of another family, or one this address does not pair — stated under the page's own title rather than as a heading of its own, because the route keeps one heading and states the refusal beneath it. */
-const routeRefusal = (description: string): ReactElement => (
+/** A request this route does not serve — an edition of another family, or one this address does not pair — stated under the page's own title rather than as a heading of its own, because the route keeps one heading and states the refusal beneath it. */ const routeRefusal = (description: string): ReactElement => (
   <PageColumn>
     <PageHeading title={PAGE_TITLE} />
     <StateNotice kind="refused" headingLevel={NESTED_NOTICE_LEVEL} title={REFUSED_TITLE} description={description} />
   </PageColumn>
 );
-/** The one editor of one Update edition: one read, one envelope, and an honest notice in place of the editor when the read answers with none. */
-export default async function CommunicationVariantEditorPage({ params }: { params: Promise<{ updateId: string; variantId: string }> }): Promise<ReactElement> {
+/** The one editor of one Update edition: one read, one envelope, and an honest notice in place of the editor when the read answers with none. */ export default async function CommunicationVariantEditorPage({ params }: { params: Promise<{ updateId: string; variantId: string }> }): Promise<ReactElement> {
   const { updateId, variantId } = await params;
   const result = await reads.updates.readDraft({ variantId });
   switch (result.kind) {

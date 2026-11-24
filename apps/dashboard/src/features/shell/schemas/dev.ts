@@ -17,12 +17,9 @@ const DEV_SCHEMA_MESSAGES = {
   failurePlanDisarmNotAbsent: "A failure plan is disarmed by stating a null plan, because the plan it clears is the one already armed.",
 } as const;
 const opaqueIdentifierSchema = z.string({ error: DEV_SCHEMA_MESSAGES.identifierRequired }).trim().min(1, DEV_SCHEMA_MESSAGES.identifierRequired).max(200, DEV_SCHEMA_MESSAGES.identifierTooLong);
-const setScenarioPayloadSchema = z.strictObject({ scenarioId: opaqueIdentifierSchema });
-const setClockPayloadSchema = z.strictObject({ offsetIso: z.iso.datetime({ offset: true, error: DEV_SCHEMA_MESSAGES.clockReadingRequired }) });
 const advanceClockPayloadSchema = z.strictObject({
   bySeconds: z.number({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole }).int({ error: DEV_SCHEMA_MESSAGES.clockAmountNotWhole }).positive({ error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange }).max(CLOCK_OFFSET_GUARD_SECONDS, { error: DEV_SCHEMA_MESSAGES.clockAmountOutOfRange }),
 });
-const resetSeedPayloadSchema = z.strictObject({});
 export type DevRequest<Action extends string, Payload> = MutationInput<Payload> & { readonly action: Action };
 function requestProjectionOf(raw: unknown, action: string): Record<string, unknown> | undefined {
   if (!isRecord(raw) || raw.action !== action) return undefined;
@@ -30,19 +27,18 @@ function requestProjectionOf(raw: unknown, action: string): Record<string, unkno
   delete projection.action;
   return projection;
 }
-function developmentRequestSchema<Action extends string, Payload>(action: Action, payload: z.ZodType<Payload>): z.ZodType<DevRequest<Action, Payload>> {
-  return z
+const developmentRequestSchema = <Action extends string, Payload>(action: Action, payload: z.ZodType<Payload>): z.ZodType<DevRequest<Action, Payload>> =>
+  z
     .looseObject({ action: z.literal(action, { error: DEV_SCHEMA_MESSAGES.actionRequired }) })
     .transform((raw): unknown => requestProjectionOf(raw, action))
     .pipe(mutationInputSchema(payload))
     .transform((input) => ({ action, ...input }));
-}
 export type AdvertisedFailureTarget = { kind: "read" | "mutation"; name: string };
 export type AdvertisedFailurePlan = { modes: readonly string[]; targets: readonly AdvertisedFailureTarget[] };
-export const setScenarioRequestSchema = developmentRequestSchema("setScenario", setScenarioPayloadSchema);
-export const setClockRequestSchema = developmentRequestSchema("setClock", setClockPayloadSchema);
+export const setScenarioRequestSchema = developmentRequestSchema("setScenario", z.strictObject({ scenarioId: opaqueIdentifierSchema }));
+export const setClockRequestSchema = developmentRequestSchema("setClock", z.strictObject({ offsetIso: z.iso.datetime({ offset: true, error: DEV_SCHEMA_MESSAGES.clockReadingRequired }) }));
 export const advanceClockRequestSchema = developmentRequestSchema("advanceClock", advanceClockPayloadSchema);
-export const resetSeedRequestSchema = developmentRequestSchema("resetSeed", resetSeedPayloadSchema);
+export const resetSeedRequestSchema = developmentRequestSchema("resetSeed", z.strictObject({}));
 export type AdvertisedFailureArming = { mode: string; target: AdvertisedFailureTarget };
 export type AdvertisedFailureDisarm = { plan: null };
 export type AdvertisedFailurePlanPayload = AdvertisedFailureArming | AdvertisedFailureDisarm;

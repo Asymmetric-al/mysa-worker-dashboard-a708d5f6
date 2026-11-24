@@ -121,6 +121,5 @@ const readSeries = readRoute(readGrammar(seriesReadQuerySchema, rawSeriesReadPar
   stopSeries: [stopSeriesBodySchema, mutations.series.stopSeries],
   resolveMissedPlan: [resolveMissedPlanBodySchema, mutations.series.resolveMissedPlan],
 });
-/** One named series mutation, selected by `payload.mutation`, applied at most once by operation identity. */
-const changeSeries = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, claimedBodySchema, (claim) => claim.payload.mutation, SERIES_WRITES);
+/** One named series mutation, selected by `payload.mutation`, applied at most once by operation identity. */ const changeSeries = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, claimedBodySchema, (claim) => claim.payload.mutation, SERIES_WRITES);
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readSeries, POST: changeSeries });

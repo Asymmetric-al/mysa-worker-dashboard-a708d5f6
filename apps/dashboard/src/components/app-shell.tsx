@@ -2,7 +2,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition, type ReactElement, type ReactNode, type RefObject } from "react";
 import ContextIndicator, { type AdmittedContext, type ContextRequest } from "@/components/context-indicator";
-import ContextSwitchGuard, { type ContextSwitchGuardCopy, type ContextSwitchResult } from "@/components/context-switch-guard";
+import ContextSwitchGuard, { type ContextSwitchGuardCopy, type ContextSwitchResult, type UnsavedWorkAnswer } from "@/components/context-switch-guard";
 import DevBanner from "@/components/dev-banner";
 import { isCurrent, SidebarNav } from "@/components/sidebar-nav";
 import StateNotice, { type StateNoticeProps } from "@/components/state-notice";
@@ -13,9 +13,10 @@ import type { Scope, SessionState } from "@/modules/data-service/envelope";
 /** The context switch, so it is available wherever the context indicator is visible. */ export type AppShellContextSwitch = {
   readonly copy: ContextSwitchGuardCopy;
   readonly resolvePendingScope: (request: ContextRequest) => Scope | null;
-  readonly switchTo: (pendingScope: Scope) => Promise<ContextSwitchResult>;
+  readonly switchTo: (pendingScope: Scope, resolution?: UnsavedWorkAnswer) => Promise<ContextSwitchResult>;
   readonly unsavedWork?: { readonly description: string };
-  readonly onSaveAndSwitch?: () => Promise<void>;
+  readonly saveUnsavedWork?: () => Promise<void>;
+  readonly discardUnsavedWork?: () => void;
 };
 export type AppShellProps = {
   readonly scope: Scope;
@@ -70,8 +71,8 @@ const describeMembership = (admission: AdmittedContext): string => `${admission.
 const isCurrentMembership = (admission: AdmittedContext, scope: Scope): boolean => admission.organizationId === scope.organizationId && admission.ministryId === scope.ministryId;
 const showsFinancialFacts = (currentPath: string): boolean => isCurrent(currentPath, "/support") || isCurrent(currentPath, "/coaching");
 /** The custom property this shell publishes for the sticky chrome's height. */ export const STICKY_OFFSET_PROPERTY = "--app-shell-sticky-offset";
-function useStickyOffset(headerRef: RefObject<HTMLElement | null>): void {
-  useEffect(() => {
+const useStickyOffset = (headerRef: RefObject<HTMLElement | null>): void =>
+  void useEffect(() => {
     const header = headerRef.current;
     if (header === null || typeof ResizeObserver === "undefined") return;
     const root = document.documentElement;
@@ -89,7 +90,6 @@ function useStickyOffset(headerRef: RefObject<HTMLElement | null>): void {
       root.style.removeProperty("scroll-padding-top");
     };
   }, [headerRef]);
-}
 const SKIP_LINK_CLASS = cn("absolute start-3 top-3 z-50 -translate-y-[200%] rounded-md border border-border bg-background", "px-3 py-2 text-sm font-medium text-foreground", "focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]", "print:hidden");
 /** The shell: the chrome every route renders inside. Every region of it is screen-only, so print media keeps the page's own content and drops the skip link, the navigation column, the sticky banner and the development region from paper. `Sidebar` puts a caller's class on its fixed inner container alone, which leaves the column's width-reserving wrapper in the printed layout, so the provider hides that whole column from print. */
 export const AppShell = ({ className, ...chrome }: AppShellProps): ReactElement => (
@@ -131,7 +131,25 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
     if (contextSwitch === undefined || pending === null) return;
     setSwitching(true);
     try {
-      const result = await contextSwitch.switchTo(pending.scope);
+      const result = await contextSwitch.switchTo(pending.scope, "discard");
+      setLastSwitch(result);
+      if (result.switched) {
+        // The typing is dropped only once the switch is accepted: a refused switch leaves the worker in this context with the work still theirs.
+        contextSwitch.discardUnsavedWork?.();
+        setPending(null);
+      }
+    } finally {
+      setSwitching(false);
+    }
+  }, [contextSwitch, pending]);
+  const saveAndSwitch = useCallback(async (): Promise<void> => {
+    const save = contextSwitch?.saveUnsavedWork;
+    if (contextSwitch === undefined || pending === null || save === undefined) return;
+    setSwitching(true);
+    try {
+      // The owning surface's own save runs first and states its refusal by throwing, so a save that did not settle stops the switch before any request is sent.
+      await save();
+      const result = await contextSwitch.switchTo(pending.scope, "save");
       setLastSwitch(result);
       if (result.switched) setPending(null);
     } finally {
@@ -185,7 +203,7 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
           outcome={switching ? null : (lastSwitch?.outcome ?? null)}
           onStay={stayOnContext}
           onDiscard={discardAndSwitch}
-          onSaveAndSwitch={contextSwitch.onSaveAndSwitch}
+          onSaveAndSwitch={contextSwitch.saveUnsavedWork === undefined ? undefined : saveAndSwitch}
         />
       )}
     </>

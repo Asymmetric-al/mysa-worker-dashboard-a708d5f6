@@ -105,8 +105,7 @@ const itemsOf = (outcome: MutationOutcome): readonly PerItemResult[] => (outcome
 const SURFACE_REASON_CODES = { excludedBeforeSubmit: "excluded-before-submit", batchUnchanged: "batch-unchanged", unnamed: "result-not-stated" } as const;
 /** Why this surface left one selected row out before submitting: the read's own words where it gave a reason, otherwise the two eligibility rules this bar already applies. */ function surfaceExclusionReason(row: BulkSelectionRow): string {
   const stated = row.selectionReason?.trim();
-  if (stated !== undefined && stated !== "") return stated;
-  return row.selectable ? CLOSED_ROW_REASON : BULK_SESSION_ROW_EXCLUSION_REASON;
+  return stated !== undefined && stated !== "" ? stated : row.selectable ? CLOSED_ROW_REASON : BULK_SESSION_ROW_EXCLUSION_REASON;
 }
 /** One selected row this surface withheld from the submission, reported in the vocabulary the service answers in. */ const excludedRowOf = (row: BulkSelectionRow): PerItemResult => ({ targetId: row.taskId, state: "excluded", reasonCode: SURFACE_REASON_CODES.excludedBeforeSubmit, reason: surfaceExclusionReason(row) });
 /** One submitted row the service answered only as part of a whole-batch `unchanged`, so the intent that was sent states its reason. */
@@ -184,14 +183,12 @@ function ReviewDescription({ prepared, perRowNotes }: { readonly prepared: Prepa
     </ReviewFacts>
   );
 }
-function TagFacts({ direction, tag }: { readonly direction: BulkTagDirection; readonly tag: string }): ReactElement {
-  return (
-    <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-      <span className="font-medium">{BULK_TAG_DIRECTION_LABELS[direction]}</span>
-      <bdi className="min-w-0 wrap-anywhere">{tag}</bdi>
-    </p>
-  );
-}
+const TagFacts = ({ direction, tag }: { readonly direction: BulkTagDirection; readonly tag: string }): ReactElement => (
+  <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+    <span className="font-medium">{BULK_TAG_DIRECTION_LABELS[direction]}</span>
+    <bdi className="min-w-0 wrap-anywhere">{tag}</bdi>
+  </p>
+);
 function FollowUpFacts({ template }: { readonly template: FollowUpTaskTemplate }): ReactElement {
   const { dueOn } = template;
   const rows: readonly FactSpec[] = [
@@ -234,14 +231,12 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
   const rowsSelected = selectedTasks.length > 0;
   const panelOpen = intent !== null && rowsSelected;
   const livePreparation = intent === null ? null : prepareBulk(intent, draft, eligibleIds[intent]);
-  const liveTarget: ReviewTarget | null = livePreparation?.kind === "ready" ? { prepared: livePreparation.prepared, revision: reviewRevision } : null;
-  const reviewTarget = panelOpen ? liveTarget : null;
+  const reviewTarget = panelOpen ? (livePreparation?.kind === "ready" ? { prepared: livePreparation.prepared, revision: reviewRevision } : null) : null;
   const receiptRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (settledOutcome !== null && !panelOpen) focusAnnouncedRegion(receiptRef.current);
   }, [settledOutcome, panelOpen]);
-  const settledItems = settledOutcome === null ? [] : settledRows;
-  const retainedCount = settledItems.filter((item) => rowKeepsSelection(item.state)).length;
+  const retainedCount = (settledOutcome === null ? [] : settledRows).filter((item) => rowKeepsSelection(item.state)).length;
   const eligibleCount = intent === null ? 0 : eligibleIds[intent].length;
   const selection: ActionReviewSelection = { count: eligibleCount, noun: eligibleCount === 1 ? ROW_NOUN.one : ROW_NOUN.many, excluded: intent === null ? 0 : selectedTasks.length - eligibleCount };
   const refusedFields = touched && livePreparation?.kind === "refused" ? fieldMessagesOf(livePreparation.error) : null;

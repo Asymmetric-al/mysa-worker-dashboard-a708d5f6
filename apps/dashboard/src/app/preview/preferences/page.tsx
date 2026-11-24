@@ -37,7 +37,7 @@ function MembershipPreferences({ envelope }: { readonly envelope: PreferencesEnv
   if (membershipId === null || publisherId === null || choice === null || state === "none") {
     if (publisherId === null) return <StateNotice kind="empty" headingLevel={2} title={NOTICE_COPY.noMembership.title} description={NOTICE_COPY.noMembership.description} action={NOTICE_COPY.noMembership.action} />;
     // The request step alone: this notice and that step would state the same absence twice, and the step is the one that offers the real first action an empty surface owes the person. The state, the absent membership and the revision are the read's own, so nothing composed here claims a membership exists or confirms one on render.
-    return <ProofFlow scope={scope} publisherId={publisherId} publisherLabel={publisherId} purpose={data.purpose} state={state} membership={null} expectedRevision={revision} confirmation={data.confirmation} languagePreference={data.languagePreference} headingLevel={2} />;
+    return <ProofFlow scope={scope} publisherId={publisherId} publisherLabel={publisherId} purpose={data.purpose} state={state} membership={null} expectedRevision={revision} confirmation={data.confirmation} confirmationMessage={null} languagePreference={data.languagePreference} headingLevel={2} />;
   }
   const choiceAction = availabilityOf(envelope, "setPreference");
   const languageAction = availabilityOf(envelope, "setLanguagePreference");
@@ -59,7 +59,7 @@ function MembershipPreferences({ envelope }: { readonly envelope: PreferencesEnv
         disabledReason={languageAction.reason}
         headingLevel={2}
       />
-      <ProofFlow scope={scope} publisherId={publisherId} publisherLabel={publisherId} purpose={data.purpose} state={state} membership={membership} expectedRevision={revision} confirmation={data.confirmation} languagePreference={data.languagePreference} headingLevel={2} />
+      <ProofFlow scope={scope} publisherId={publisherId} publisherLabel={publisherId} purpose={data.purpose} state={state} membership={membership} expectedRevision={revision} confirmation={data.confirmation} confirmationMessage={data.confirmationMessage} languagePreference={data.languagePreference} headingLevel={2} />
       <UnsubscribeConfirm scope={scope} target={{ publisherId, publisherLabel: "", purpose: data.purpose, purposeLabel: PURPOSE_LABEL[data.purpose], membershipState: state, expectedRevision: revision }} disabled={!unsubscribeAction.available} disabledReason={unsubscribeAction.reason} />
     </div>
   );

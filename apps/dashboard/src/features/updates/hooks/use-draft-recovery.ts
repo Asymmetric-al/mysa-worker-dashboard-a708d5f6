@@ -26,11 +26,9 @@ function withStorage<R>(use: (storage: Storage) => R, fallback: R): R {
 }
 function mirrorEntryOf(value: unknown): MirrorEntry | null {
   if (typeof value !== "object" || value === null) return null;
-  const record = value as Readonly<Record<string, unknown>>;
-  const { body, expectedRevision, scopeKey: entryScopeKey, variantId: entryVariantId, version } = record;
+  const { body, expectedRevision, scopeKey: entryScopeKey, variantId: entryVariantId, version } = value as Readonly<Record<string, unknown>>;
   if (version !== MIRROR_VERSION || typeof entryScopeKey !== "string" || typeof entryVariantId !== "string" || typeof expectedRevision !== "string") return null;
-  if (typeof body !== "object" || body === null) return null;
-  return { version: MIRROR_VERSION, scopeKey: entryScopeKey, variantId: entryVariantId, body: body as ContentDocument, expectedRevision };
+  return typeof body !== "object" || body === null ? null : { version: MIRROR_VERSION, scopeKey: entryScopeKey, variantId: entryVariantId, body: body as ContentDocument, expectedRevision };
 }
 function readMirrorEntry(): MirrorEntry | null {
   const raw = withStorage((storage) => storage.getItem(MIRROR_KEY), null);
@@ -86,7 +84,7 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
     if (mountedRef.current) setSnapshot((previous) => ({ ...previous, ...changes }));
   }, []);
   const settleWaiters = useCallback((outcome: MutationOutcome): void => {
-    const waiters = waitersRef.current;
+    const waiters = waitersRef.current; // The list is taken before it is cleared: clearing it first would leave every waiter of this save unanswered.
     waitersRef.current = [];
     for (const resolve of waiters) resolve(outcome);
   }, []);

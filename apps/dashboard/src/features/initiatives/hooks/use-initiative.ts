@@ -28,20 +28,17 @@ function windowOf(stated: InitiativeReadWindow | undefined): StatedWindow {
 }
 /** Reads one initiative through `GET /api/initiatives?initiativeId=…`, which answers with `readInitiative`'s envelope or that read's own `denied` / `unavailable` refusal. A stated window is part of the key, so every page of every list is its own entry and a page change asks the service for that page rather than re-windowing an answer already held. `seededWindow` is the window the Server Component's envelope was actually read under: that envelope may seed only the entry keyed by the same window, because seeding it under another page's key would answer a page the reader asked for with the page the server had already sent, and `refetchOnMount: false` would then keep presenting it without a request. Every other window is fetched. */
 export function useInitiative<D>(initiativeId: string, initialEnvelope: InitiativeEnvelope<D>, listWindow?: InitiativeReadWindow, seededWindow?: InitiativeReadWindow): InitiativeQuery<D> {
-  const scope = initialEnvelope.scope;
   const stated = windowOf(listWindow);
-  const seeded = windowOf(seededWindow).segment === stated.segment;
-  const queryKey: InitiativeQueryKey = [...scopeKey(scope), INITIATIVE_JOB, initiativeId, stated.segment];
+  const queryKey: InitiativeQueryKey = [...scopeKey(initialEnvelope.scope), INITIATIVE_JOB, initiativeId, stated.segment];
   const query = useQuery<ReadResult<ReadEnvelope<D>>, Error, ReadResult<ReadEnvelope<D>>, InitiativeQueryKey>({
     queryKey,
     queryFn: () => readEnvelope<ReadEnvelope<D>>(INITIATIVE_API.initiatives, { initiativeId, ...stated.params }),
-    ...(seeded ? { initialData: { kind: "envelope", envelope: initialEnvelope } as ReadResult<ReadEnvelope<D>> } : {}),
+    ...(windowOf(seededWindow).segment === stated.segment ? { initialData: { kind: "envelope", envelope: initialEnvelope } as ReadResult<ReadEnvelope<D>> } : {}),
     staleTime: 0,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
     retry: false,
   });
   const result: ReadResult<ReadEnvelope<D>> | undefined = query.data;
-  if (result === undefined) return { status: "loading", isFetching: true };
-  return { status: "ready", result, isFetching: query.isFetching };
+  return result === undefined ? { status: "loading", isFetching: true } : { status: "ready", result, isFetching: query.isFetching };
 }

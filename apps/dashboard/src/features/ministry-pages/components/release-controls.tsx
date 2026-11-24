@@ -24,8 +24,7 @@ type ReviewInput<P> = ActionReviewProps<P>["input"];
 type PerVariantItem = NonNullable<Extract<SettledOutcome, { readonly outcome: "accepted" }>["items"]>[number];
 export type ReleaseVariantView = { readonly variantId: string; readonly locale: string; readonly lifecycle: ContentLifecycleState; readonly candidateId?: string; readonly revisionId?: string; readonly releaseHeadId?: string };
 type ReleaseCandidate = { readonly variantId: string; readonly locale: string; readonly candidateId: string };
-/** The scope every write states, so the service checks that authority instead of inferring it. */
-export type ReleaseControlsProps = {
+/** The scope every write states, so the service checks that authority instead of inferring it. */ export type ReleaseControlsProps = {
   readonly scope: PageScope;
   readonly documentId: string;
   readonly expectedRevision: string;

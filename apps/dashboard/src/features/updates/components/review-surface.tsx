@@ -47,9 +47,7 @@ async function postReviewAnswer(input: MutationInput<ReviewDecisionPayload>, can
   } catch {
     body = undefined;
   }
-  if (isOutcome(body)) return body;
-  if (answer.status === 404 || answer.status === 405) return unavailable({ operationId: input.operationId, source: { system: HANDLER_SYSTEM, reference: REVIEW_ENDPOINT }, guidance: TRANSPORT_GUIDANCE });
-  return unknown({ operationId: input.operationId });
+  return isOutcome(body) ? body : answer.status === 404 || answer.status === 405 ? unavailable({ operationId: input.operationId, source: { system: HANDLER_SYSTEM, reference: REVIEW_ENDPOINT }, guidance: TRANSPORT_GUIDANCE }) : unknown({ operationId: input.operationId });
 }
 export function UpdateReviewSurface({ candidates, activeVariantId, candidateId, scope, expectedRevision, policyRequiresReview, notifyRequestedByAuthor, headingLevel }: UpdateReviewSurfaceProps): ReactElement {
   const [onScreenVariantId, setOnScreenVariantId] = useState(activeVariantId);
@@ -57,8 +55,7 @@ export function UpdateReviewSurface({ candidates, activeVariantId, candidateId, 
   const decide = useCallback(
     async (input: MutationInput<ReviewDecisionPayload>): Promise<MutationOutcome> => {
       const outcome = await postReviewAnswer(input, candidateId);
-      const resolved = outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
-      if (resolved) router.refresh();
+      if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") router.refresh();
       return outcome;
     },
     [candidateId, router],

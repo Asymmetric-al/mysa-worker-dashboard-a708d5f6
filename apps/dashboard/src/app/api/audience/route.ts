@@ -26,5 +26,4 @@ const readAudience = readRoute(
   (query) => reads.audience.readAudience(query),
 );
 /** Opens one purpose-specific membership for the caller, leaves it `awaiting-proof`, and answers with whichever of the service's eight outcomes the attempt produced. */
-const openMembership = (request: Request): Promise<Response> => writeRoute(request, signupRequestSchema, mutations.audience.signupForPurpose);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readAudience, POST: openMembership });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readAudience, POST: (request: Request): Promise<Response> => writeRoute(request, signupRequestSchema, mutations.audience.signupForPurpose) });

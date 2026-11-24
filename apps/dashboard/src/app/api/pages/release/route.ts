@@ -19,5 +19,4 @@ const WRITES = {
   requestChanges: (raw, { operationId, sessionId }) => dispatch(requestChangesBodySchema, raw, operationId, "operation", (input) => mutations.pages.requestChanges(sessionId, input)),
   publishVariants: (raw, { operationId, sessionId }) => dispatch(publishVariantsBodySchema, raw, operationId, "operation", (input) => mutations.pages.publishVariants(sessionId, input)),
 } satisfies Readonly<Record<(typeof RELEASE_OPERATIONS)[number], ClaimedWrite>>;
-const advanceRelease = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: advanceRelease });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES) });

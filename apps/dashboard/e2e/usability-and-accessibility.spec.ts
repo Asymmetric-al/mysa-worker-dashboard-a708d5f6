@@ -1,5 +1,4 @@
-/** Criterion 20 — usability and recovery: the retained jobs complete at 320 CSS pixels with the keyboard alone, at 200 % zoom and with reduced motion. */
-import { fileURLToPath } from "node:url";
+/** Criterion 20 — usability and recovery: the retained jobs complete at 320 CSS pixels with the keyboard alone, at 200 % zoom and with reduced motion. */ import { fileURLToPath } from "node:url";
 import {} from "@axe-core/playwright"; // AA tag set once and reuses that judgement rather than keeping a second copy of it. The types come from `@playwright/test`, which is what the runner is built on.
 import type { Locator, Page } from "@playwright/test";
 import {

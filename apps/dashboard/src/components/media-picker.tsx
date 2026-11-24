@@ -24,15 +24,15 @@ export type MediaPlacementDescriptor = { readonly altText: string; readonly capt
 export type MediaPlacement = MediaPlacementDescriptor & { readonly placementId?: string };
 /** The poster image chosen beside a video: its own file, prepared into a poster rendition when the video is registered. */ export type MediaPosterInput = { readonly file: File };
 /** The caption track chosen beside a video: the WebVTT file itself, in the language the placement states. */ export type MediaCaptionInput = { readonly file: File; readonly language: string; readonly label?: string };
-export type MediaRegisterInput = { readonly kind: MediaPickerKind; readonly file: File; readonly placement: MediaPlacementDescriptor; readonly poster?: MediaPosterInput; readonly captions?: MediaCaptionInput };
+/** One registration's own input, with the transport's stop signal beside the media it carries: stopping the wait aborts the request rather than abandoning it, and the signal is never part of what is registered. */
+export type MediaRegisterInput = { readonly kind: MediaPickerKind; readonly file: File; readonly placement: MediaPlacementDescriptor; readonly poster?: MediaPosterInput; readonly captions?: MediaCaptionInput; readonly signal?: AbortSignal };
 /** The outcome every transport answers with, taken from the one receipt that renders it. */ export type MediaPickerOutcome = OperationResultProps["outcome"];
 export type MediaPickerProps = {
   readonly kind: MediaPickerKind;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly placement?: MediaPlacement;
-  /** The direction of the edition these words are being written for, stated on the authored fields alone: the picker's own labels, descriptions and controls stay at the interface's direction. */
-  readonly direction?: ContentDirection;
+  /** The direction of the edition these words are being written for, stated on the authored fields alone: the picker's own labels, descriptions and controls stay at the interface's direction. */ readonly direction?: ContentDirection;
   readonly onRegister: (input: MediaRegisterInput) => Promise<MediaPickerOutcome>;
   readonly onReplace?: (input: { readonly placementId: string } & MediaRegisterInput) => Promise<MediaPickerOutcome>;
   readonly onRemove?: (input: { readonly placementId: string }) => Promise<MediaPickerOutcome>;
@@ -164,6 +164,7 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
   const wasOpenRef = useRef(open);
   const attemptRef = useRef(0);
   const busyRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const lastAttemptRef = useRef<"register" | "remove">("register");
   const [phase, setPhase] = useState<PickerPhase>({ name: "choosing" });
   const [file, setFile] = useState<File | null>(null);
@@ -175,7 +176,6 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
   const [localErrors, setLocalErrors] = useState<Readonly<Record<string, readonly string[]>>>({});
   const [serverErrors, setServerErrors] = useState<FieldErrorLookup | null>(null);
   const [outcome, setOutcome] = useState<MediaPickerOutcome | null>(null);
-  const [stoppedWaiting, setStoppedWaiting] = useState(false);
   const [faulted, setFaulted] = useState(false);
   const replaceId = onReplace === undefined ? undefined : placement?.placementId;
   const removeId = onRemove === undefined ? undefined : placement?.placementId;
@@ -188,7 +188,6 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
     setOutcome(null);
     setServerErrors(null);
     setLocalErrors({});
-    setStoppedWaiting(false);
     setFaulted(false);
   };
   useEffect(() => {
@@ -211,7 +210,8 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
       if (previous !== null && previous.isConnected) previous.focus();
     }
   }, [open]);
-  const finishAttempt = (settled: MediaPickerOutcome): void => {
+  const finishAttempt = (attempt: number, settled: MediaPickerOutcome): void => {
+    if (attemptRef.current !== attempt) return; // The person stopped waiting on this attempt, so the cancelled state on screen is final and the answer that arrives later is never presented as its result.
     const keepForm = lastAttemptRef.current === "register" && keepsFormVisible(settled);
     setOutcome(settled);
     setServerErrors(settled.outcome === "invalid" ? fieldErrorsFromInvalid(settled) : null);
@@ -232,9 +232,10 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
     setPhase({ name: "described" });
   };
   const cancelPreparation = (): void => {
-    const submitting = phase.name === "preparing" && phase.stage === "submitting";
+    // Both cancel paths stop the work itself: an attempt that is still in flight is aborted, so a registration that had not been written creates nothing, and the cancelled state below states that nothing was added whichever path was taken.
+    abortRef.current?.abort();
+    abortRef.current = null;
     attemptRef.current += 1;
-    setStoppedWaiting(submitting);
     setPhase({ name: "cancelled" });
   };
   const submitPlacement = async (): Promise<void> => {
@@ -246,8 +247,7 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
       altTextRef.current?.focus();
       return;
     }
-    // A caption track is bound to the placement's own language rather than to a second one beside it, so a track with no
-    // language is refused here, where the field that states it is on screen, instead of by the service one request later.
+    // A caption track is bound to the placement's own language rather than to a second one beside it, so a track with no language is refused here, where the field that states it is on screen, instead of by the service one request later.
     const captionTrack = kind === "video" ? captionFile : null;
     if (captionTrack !== null && composed.language === undefined) {
       setLocalErrors({ "placement.language": ["A caption track states the language its cues are in, so give the media's language before adding the track."] });
@@ -257,38 +257,47 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
     }
     setLocalErrors({});
     setFaulted(false);
-    setStoppedWaiting(false);
     busyRef.current = true;
     lastAttemptRef.current = "register";
     setPhase({ name: "preparing", stage: "submitting" });
+    const attempt = attemptRef.current;
+    // The one controller this attempt is stopped by: it travels beside the file as transport state, so "Stop waiting" reaches the request itself rather than only the screen that was waiting on it.
+    const controller = new AbortController();
+    abortRef.current = controller;
     const poster = kind === "video" && posterFile !== null ? { file: posterFile } : undefined;
     const captionLanguage = composed.language;
     const label = trackLabel.trim();
     const captions = captionTrack === null || captionLanguage === undefined ? undefined : { file: captionTrack, language: captionLanguage, ...(label === "" ? {} : { label }) };
-    const input: MediaRegisterInput = { kind, file, placement: composed, ...(poster === undefined ? {} : { poster }), ...(captions === undefined ? {} : { captions }) };
+    const input: MediaRegisterInput = { kind, file, placement: composed, ...(poster === undefined ? {} : { poster }), ...(captions === undefined ? {} : { captions }), signal: controller.signal };
     try {
       const settled = replaceId !== undefined && onReplace !== undefined ? await onReplace({ placementId: replaceId, ...input }) : await onRegister(input);
-      finishAttempt(settled);
+      finishAttempt(attempt, settled);
     } catch {
-      setFaulted(true);
-      setPhase({ name: "described" });
+      // A stopped attempt is not a fault: the cancelled state already says nothing was added, and the aborted request's own answer, when one arrives, is discarded above rather than shown as a lost acknowledgement.
+      if (attemptRef.current === attempt) {
+        setFaulted(true);
+        setPhase({ name: "described" });
+      }
     } finally {
       busyRef.current = false;
+      if (abortRef.current === controller) abortRef.current = null;
     }
   };
   const removePlacement = async (): Promise<void> => {
     if (removeId === undefined || onRemove === undefined || busyRef.current) return;
     busyRef.current = true;
     setFaulted(false);
-    setStoppedWaiting(false);
     lastAttemptRef.current = "remove";
+    const attempt = attemptRef.current;
     setPhase({ name: "removing" });
     try {
       const settled = await onRemove({ placementId: removeId });
-      finishAttempt(settled);
+      finishAttempt(attempt, settled);
     } catch {
-      setFaulted(true);
-      setPhase({ name: "confirming-removal" });
+      if (attemptRef.current === attempt) {
+        setFaulted(true);
+        setPhase({ name: "confirming-removal" });
+      }
     } finally {
       busyRef.current = false;
     }
@@ -503,32 +512,30 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
       </p>
     );
   }
-  function renderVideoTracks(): ReactElement {
-    return (
-      <div className="flex flex-col gap-4 rounded-lg border border-border p-3">
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">What plays beside the video</p>
-          <p className="text-sm text-muted-foreground">Both of these are optional. Each is prepared by this application&rsquo;s own pipeline and served from the same asset as the video, so neither is a file on a public path.</p>
-        </div>
-        <FormField label="Poster image" name="poster" optionalHint description="The image a player shows before the video starts. It goes through the same image pipeline as a placed image, so its metadata is removed and its alternative text is the one this placement states." error={errorsFor("poster")}>
-          {({ id, describedBy, invalid }) => <Input id={id} type="file" accept={ACCEPT_HINT.image} aria-describedby={describedBy} aria-invalid={invalid} className="h-auto cursor-pointer py-2" onChange={handlePosterInputChange} />}
-        </FormField>
-        {renderChosenTrack(posterFile, "Poster image")}
-        <FormField label="Caption track (WebVTT)" name="captions" optionalHint description="The video's cues as a WebVTT file, served with the video and offered in the player's own caption menu. Its language is the video's own language, stated above." error={errorsFor("captions")}>
-          {({ id, describedBy, invalid }) => <Input id={id} type="file" accept={".vtt,text/vtt"} aria-describedby={describedBy} aria-invalid={invalid} className="h-auto cursor-pointer py-2" onChange={handleCaptionInputChange} />}
-        </FormField>
-        {renderChosenTrack(captionFile, "Caption track")}
-        {captionFile === null ? null : (
-          <FormField label="Track label" name="captions.label" optionalHint description="What the player's caption menu calls this track, such as English. Leave it empty to use the language stated above." error={errorsFor("captions.label")}>
-            {({ id, describedBy, invalid }) => <Input id={id} value={trackLabel} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => setTrackLabel(event.target.value)} />}
-          </FormField>
-        )}
+  const renderVideoTracks = (): ReactElement => (
+    <div className="flex flex-col gap-4 rounded-lg border border-border p-3">
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-medium">What plays beside the video</p>
+        <p className="text-sm text-muted-foreground">Both of these are optional. Each is prepared by this application&rsquo;s own pipeline and served from the same asset as the video, so neither is a file on a public path.</p>
       </div>
-    );
-  }
+      <FormField label="Poster image" name="poster" optionalHint description="The image a player shows before the video starts. It goes through the same image pipeline as a placed image, so its metadata is removed and its alternative text is the one this placement states." error={errorsFor("poster")}>
+        {({ id, describedBy, invalid }) => <Input id={id} type="file" accept={ACCEPT_HINT.image} aria-describedby={describedBy} aria-invalid={invalid} className="h-auto cursor-pointer py-2" onChange={handlePosterInputChange} />}
+      </FormField>
+      {renderChosenTrack(posterFile, "Poster image")}
+      <FormField label="Caption track (WebVTT)" name="captions" optionalHint description="The video's cues as a WebVTT file, served with the video and offered in the player's own caption menu. Its language is the video's own language, stated above." error={errorsFor("captions")}>
+        {({ id, describedBy, invalid }) => <Input id={id} type="file" accept={".vtt,text/vtt"} aria-describedby={describedBy} aria-invalid={invalid} className="h-auto cursor-pointer py-2" onChange={handleCaptionInputChange} />}
+      </FormField>
+      {renderChosenTrack(captionFile, "Caption track")}
+      {captionFile === null ? null : (
+        <FormField label="Track label" name="captions.label" optionalHint description="What the player's caption menu calls this track, such as English. Leave it empty to use the language stated above." error={errorsFor("captions.label")}>
+          {({ id, describedBy, invalid }) => <Input id={id} value={trackLabel} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => setTrackLabel(event.target.value)} />}
+        </FormField>
+      )}
+    </div>
+  );
   function renderCancelled(): ReactElement {
-    const description = stoppedWaiting ? "You stopped waiting. The request had already been sent, so its result appears here when it arrives. Nothing in your draft was changed." : mediaStateReason("cancelled").label;
-    return <StateNotice kind="empty" title="No media added" description={description} action={{ label: "Choose another file", onClick: backToChoosing }} />;
+    const reason = mediaStateReason("cancelled"); // Stopping the wait is the same state whichever stage it stopped, so the canonical wording states that nothing was added and offers the way back.
+    return <StateNotice kind="empty" title="No media added" description={reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`} action={{ label: "Choose another file", onClick: backToChoosing }} />;
   }
   function renderFaulted(): ReactElement | null {
     if (!faulted) return null;
@@ -560,31 +567,27 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
       </div>
     );
   }
-  function renderRemovalConfirmation(): ReactElement {
-    return (
-      <div className="flex flex-col gap-4">
-        <Alert>
-          <TriangleAlertIcon aria-hidden="true" />
-          <AlertTitle>Remove this placement?</AlertTitle>
-          <AlertDescription>
-            <p>This removes the {kind} from the draft you are editing and changes released content, so it asks before it acts.</p>
-            <p>It recalls nothing that was already sent or read, the registered file stays available to every other placement, and the text around the placement is unchanged.</p>
-          </AlertDescription>
-        </Alert>
-        {renderFaulted()}
-      </div>
-    );
-  }
-  function renderRemoving(): ReactElement {
-    return (
-      <div aria-busy={true} className="flex flex-col gap-3">
-        <output className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner className="shrink-0" />
-          <span>Removing this placement&hellip;</span>
-        </output>
-      </div>
-    );
-  }
+  const renderRemovalConfirmation = (): ReactElement => (
+    <div className="flex flex-col gap-4">
+      <Alert>
+        <TriangleAlertIcon aria-hidden="true" />
+        <AlertTitle>Remove this placement?</AlertTitle>
+        <AlertDescription>
+          <p>This removes the {kind} from the draft you are editing and changes released content, so it asks before it acts.</p>
+          <p>It recalls nothing that was already sent or read, the registered file stays available to every other placement, and the text around the placement is unchanged.</p>
+        </AlertDescription>
+      </Alert>
+      {renderFaulted()}
+    </div>
+  );
+  const renderRemoving = (): ReactElement => (
+    <div aria-busy={true} className="flex flex-col gap-3">
+      <output className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner className="shrink-0" />
+        <span>Removing this placement&hellip;</span>
+      </output>
+    </div>
+  );
   function renderBody(): ReactElement {
     switch (phase.name) {
       case "choosing":
@@ -601,12 +604,7 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
           </div>
         );
       case "cancelled":
-        return (
-          <div className="flex flex-col gap-4">
-            {renderCancelled()}
-            {outcome === null ? null : renderReceipt(outcome)}
-          </div>
-        );
+        return renderCancelled();
       case "confirming-removal":
         return renderRemovalConfirmation();
       case "removing":
@@ -643,17 +641,15 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
         return [{ label: "Done", variant: "default", onClick: close }];
     }
   }
-  function renderFooter(): ReactElement {
-    return (
-      <DialogFooter>
-        {footerActions().map((action) => (
-          <Button key={action.label} type="button" variant={action.variant ?? "outline"} disabled={action.disabled} className={action.className} onClick={action.onClick}>
-            {action.label}
-          </Button>
-        ))}
-      </DialogFooter>
-    );
-  }
+  const renderFooter = (): ReactElement => (
+    <DialogFooter>
+      {footerActions().map((action) => (
+        <Button key={action.label} type="button" variant={action.variant ?? "outline"} disabled={action.disabled} className={action.className} onClick={action.onClick}>
+          {action.label}
+        </Button>
+      ))}
+    </DialogFooter>
+  );
   const replacing = replaceId !== undefined;
   const removing = phase.name === "confirming-removal" || phase.name === "removing";
   const title = removing ? `Remove this ${kind}` : replacing ? `Replace this ${kind}` : kind === "image" ? "Add an image" : "Add a video";

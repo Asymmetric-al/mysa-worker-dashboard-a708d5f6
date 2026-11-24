@@ -1,7 +1,7 @@
 "use client";
 import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlertIcon } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type ReactElement } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogMedia, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -47,9 +47,10 @@ function announcementFor(summary: OutcomeSummary): string {
   if (summary.detail === undefined) return summary.sentence;
   return `${summary.sentence} ${summary.detail.label}: ${summary.detail.value}.`;
 }
-export type ContextSelection = Omit<Scope, "principalId">;
+/** The worker's own answer to the guard's question: the unsaved work is saved through its owning surface, or it is discarded. Staying answers no switch and is sent as nothing at all. */ export type UnsavedWorkAnswer = "save" | "discard";
+export type ContextSelection = Omit<Scope, "principalId"> & { readonly resolveUnsavedWork?: UnsavedWorkAnswer };
 export type SelectContextDispatch = (input: MutationInput<ContextSelection>) => Promise<MutationOutcome>;
-export type ContextSwitchRequest = { readonly pendingScope: Scope; readonly expectedRevision: string; readonly operationId?: string };
+export type ContextSwitchRequest = { readonly pendingScope: Scope; readonly expectedRevision: string; readonly operationId?: string; readonly resolution?: UnsavedWorkAnswer };
 export type ContextSwitchResult = { readonly requestedScope: Scope; readonly operationId: string; readonly switched: boolean; readonly outcome: MutationOutcome; readonly summary: OutcomeSummary; readonly announcement: string };
 export type ContextFenceOptions = { readonly scope: Scope; readonly selectContext: SelectContextDispatch; readonly copy: ContextSwitchGuardCopy };
 export type ContextFence = { readonly switchContext: (request: ContextSwitchRequest) => Promise<ContextSwitchResult>; readonly isSwitching: boolean; readonly lastResult: ContextSwitchResult | null; readonly isStale: (scopeAtRequestTime: Scope) => boolean };
@@ -74,7 +75,12 @@ export type ContextFence = { readonly switchContext: (request: ContextSwitchRequ
         await queryClient.cancelQueries();
         queryClient.clear();
         fenceRef.current = request.pendingScope;
-        const outcome = await selectContext({ operationId, scope, expectedRevision: request.expectedRevision, payload: { organizationId: request.pendingScope.organizationId, ministryId: request.pendingScope.ministryId, supportSubjectId: request.pendingScope.supportSubjectId } });
+        const outcome = await selectContext({
+          operationId,
+          scope,
+          expectedRevision: request.expectedRevision,
+          payload: { organizationId: request.pendingScope.organizationId, ministryId: request.pendingScope.ministryId, supportSubjectId: request.pendingScope.supportSubjectId, ...(request.resolution === undefined ? {} : { resolveUnsavedWork: request.resolution }) },
+        });
         const switched = outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
         if (!switched) fenceRef.current = scope;
         const summary = summariseOutcome(outcome, copy);
@@ -111,6 +117,54 @@ export type ContextFence = { readonly switchContext: (request: ContextSwitchRequ
   );
   return { switchContext, isSwitching, lastResult, isStale: isStaleFor };
 }
+/** One surface's unsaved work: what it holds in the worker's words, how to save it through that surface's own save, and how to drop it. */ export type UnsavedWorkHandle = { readonly description: string; readonly save: () => Promise<void>; readonly discard: () => void };
+type UnsavedWorkRegistry = { readonly register: (handle: UnsavedWorkHandle) => () => void };
+const NO_REGISTRY: UnsavedWorkRegistry = { register: () => () => undefined };
+const UnsavedWorkRegistryContext = createContext<UnsavedWorkRegistry>(NO_REGISTRY);
+const UnsavedWorkEntryContext = createContext<UnsavedWorkHandle | null>(null);
+/** Holds the unsaved work the surfaces below the shell register, in the order they registered it, so the guard speaks for the surface the worker reached last rather than one form overwriting another. */ export function UnsavedWorkProvider({ children }: { readonly children: ReactNode }): ReactElement {
+  const [handles, setHandles] = useState<readonly UnsavedWorkHandle[]>([]);
+  const registry = useMemo<UnsavedWorkRegistry>(
+    () => ({
+      register: (handle) => {
+        setHandles((current) => [...current, handle]);
+        return () => setHandles((current) => current.filter((candidate) => candidate !== handle));
+      },
+    }),
+    [],
+  );
+  const entry = handles.length === 0 ? null : (handles[handles.length - 1] ?? null);
+  return (
+    <UnsavedWorkRegistryContext.Provider value={registry}>
+      <UnsavedWorkEntryContext.Provider value={entry}>{children}</UnsavedWorkEntryContext.Provider>
+    </UnsavedWorkRegistryContext.Provider>
+  );
+}
+/** Registers one surface's unsaved work while it holds some, and withdraws it as soon as it holds none. */ export function useUnsavedWork(handle: UnsavedWorkHandle | null): void {
+  const registry = useContext(UnsavedWorkRegistryContext);
+  const latest = useRef<UnsavedWorkHandle | null>(handle);
+  const active = handle !== null;
+  useEffect(() => {
+    latest.current = handle;
+  }, [handle]);
+  useEffect(() => {
+    if (!active) return undefined;
+    // One stable registration per active period, reading the current handle through the ref: a form re-renders on every keystroke, and registering each of those objects would churn the shell for a change the guard never sees.
+    const registered: UnsavedWorkHandle = {
+      get description(): string {
+        return latest.current?.description ?? "";
+      },
+      save: async (): Promise<void> => {
+        await latest.current?.save();
+      },
+      discard: (): void => {
+        latest.current?.discard();
+      },
+    };
+    return registry.register(registered);
+  }, [active, registry]);
+}
+/** The unsaved work most recently registered below the shell, which is what the guard offers to save or discard. */ export const useUnsavedWorkEntry = (): UnsavedWorkHandle | null => useContext(UnsavedWorkEntryContext);
 type GuardAction = "discard" | "save";
 export type ContextSwitchGuardProps = {
   readonly copy: ContextSwitchGuardCopy;
@@ -126,8 +180,8 @@ export type ContextSwitchGuardProps = {
   readonly outcome?: MutationOutcome | null;
 };
 const DISCARD_FAILED = "The switch did not complete and its result is not known. Nothing here has been discarded; check the current context before trying again.";
-/** The Save / Discard / Stay guard for a context change. */
-export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onStay, onDiscard, onSaveAndSwitch, busy = false, className, pendingScopeLabel, outcome = null }: ContextSwitchGuardProps): ReactElement {
+const SAVE_FAILED = "The save did not report a result, so the switch did not happen. Nothing here has been discarded; check whether the save is in place before trying again.";
+/** The Save / Discard / Stay guard for a context change. */ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onStay, onDiscard, onSaveAndSwitch, busy = false, className, pendingScopeLabel, outcome = null }: ContextSwitchGuardProps): ReactElement {
   const [pendingAction, setPendingAction] = useState<GuardAction | null>(null);
   const [actionFailure, setActionFailure] = useState<string | null>(null);
   const saveNoteId = useId();
@@ -160,8 +214,9 @@ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onSt
           } else {
             await onDiscard();
           }
-        } catch {
-          setActionFailure(action === "save" ? "The save did not report a result, so the switch did not happen. Nothing here has been discarded; check whether the save is in place before trying again." : DISCARD_FAILED);
+        } catch (error) {
+          // A refusal the owning surface states in its own words is reported as it stands, so the worker reads what actually blocked the save rather than a generic line; the two constants are the fallback for a failure that states nothing.
+          setActionFailure(error instanceof Error && error.message.trim() !== "" ? error.message.trim() : action === "save" ? SAVE_FAILED : DISCARD_FAILED);
         } finally {
           pendingRef.current = null;
           setPendingAction(null);

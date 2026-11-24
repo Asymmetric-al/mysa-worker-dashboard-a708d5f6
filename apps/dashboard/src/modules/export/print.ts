@@ -68,13 +68,12 @@ function printRows(result: ReportResult, locale: string): readonly PrintRow[] {
   return result.rows.map((row, index) => PRINT_COLUMNS.flatMap((column) => column.cells.map(([, , write]) => write({ index, row, locale, stateOf }))));
 }
 const NO_AMOUNT_MINOR_UNITS: MinorUnits = minorUnitsOf(0);
-function printSummary(result: ReportResult, locale: string): readonly PrintSummaryLine[] {
-  return result.summary.map((entry) => {
+const printSummary = (result: ReportResult, locale: string): readonly PrintSummaryLine[] =>
+  result.summary.map((entry) => {
     const state = entry.received.valueState;
     const formatted = formatMinor({ currency: entry.currency, minorUnits: entry.received.minorUnits ?? NO_AMOUNT_MINOR_UNITS }, state, locale);
     return { label: `${RECEIVED_MEASURE_LABEL} (${entry.currency})`, text: formatted.text, accessibleLabel: formatted.accessibleLabel, state };
   });
-}
 const carriesWithheldValue = (result: ReportResult): boolean => Object.values(result.valueStates).some((state) => state === "withheld");
 function printNotes(result: ReportResult): readonly string[] {
   const notes: string[] = [];
@@ -86,8 +85,7 @@ function printNotes(result: ReportResult): readonly string[] {
   return notes;
 }
 const printTitle = (result: ReportResult): string => `${REPORT_TITLE[result.snapshot.query.reportId]} (${civilDateText(result.snapshot.period.from)} to ${civilDateText(result.snapshot.period.to)})`;
-/** Renders one report result as the printable page's model: its title, its period state, the snapshot facts it states, its per-currency summary, its table and the notes that keep it honest. */
-export function printModel(result: ReportResult, options?: { locale?: string }): PrintModel {
+/** Renders one report result as the printable page's model: its title, its period state, the snapshot facts it states, its per-currency summary, its table and the notes that keep it honest. */ export function printModel(result: ReportResult, options?: { locale?: string }): PrintModel {
   const locale = options?.locale ?? "en";
   const inProgress = result.snapshot.period.state === "in-progress";
   const completeness = result.rows.length === result.total ? "whole-query" : "page-only";

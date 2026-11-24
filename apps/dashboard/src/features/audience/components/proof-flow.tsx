@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useId, useMemo, useState, type ReactElement } from "react";
 import { intentKeyOf, useReviewedMutation } from "@/components/action-review";
 import { hasSettled } from "@/components/attempt";
+import { FactList, factFrame } from "@/components/fact-list";
 import FormField, { fieldErrorsFromInvalid } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
 import SimulationLabel from "@/components/simulation-label";
@@ -11,10 +12,11 @@ import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MEMBERSHIP_STATE_DESCRIPTIONS, PURPOSE_LABEL } from "@/features/audience/copy/membership";
-import { CONFIRMATION_DEADLINE_COPY, LANGUAGE_PREFERENCE_COPY, PROOF_FLOW_COPY } from "@/features/audience/copy/preferences";
+import { CONFIRMATION_DEADLINE_COPY, LANGUAGE_PREFERENCE_COPY, PROOF_FLOW_COPY, PROOF_MESSAGE_COPY, PROOF_RESEND_COPY } from "@/features/audience/copy/preferences";
 import { useConfirmMembership, useSignupForPurpose } from "@/features/audience/hooks/use-audience-mutations";
 import type { ConfirmPayload, SignupPayload } from "@/features/audience/schemas/confirmation";
 import { cn } from "@/lib/cn";
+import type { ConfirmationMessage } from "@/modules/audience/membership";
 import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 /** The membership state the preferences read states, including `none` for a reader who holds no membership yet. */ export type ProofMembershipState = MembershipStatus | "none";
@@ -29,6 +31,7 @@ export type ProofFlowProps = {
   readonly membership: ProofMembership | null;
   readonly expectedRevision: string;
   readonly confirmation?: ProofConfirmationWindow;
+  /** The confirmation message the read composed for the membership it states, rendered in place of sending one; null where the read states no awaiting-proof membership. */ readonly confirmationMessage?: ConfirmationMessage | null;
   readonly languagePreference?: string | null;
   readonly headingLevel?: 2 | 3 | 4;
   readonly dir?: "ltr" | "rtl";
@@ -55,6 +58,7 @@ const SURFACE_COPY = {
   offNoControl: "Changing that choice is the person's own act on the preferences surface, so this flow offers no control that would turn notices on.",
   restrictedNoControl: "A restriction is not a preference, and confirming an address never clears one, so this flow offers no control here.",
 } as const;
+const MessageFact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-1.5", termClassName: "text-muted-foreground", valueClassName: "min-w-0 wrap-anywhere" });
 function DeadlineStatement({ deadlineLabel, expired, id }: { readonly deadlineLabel: string; readonly expired: boolean; readonly id: string }): ReactElement {
   const sentence = CONFIRMATION_DEADLINE_COPY(deadlineLabel, expired);
   const at = sentence.indexOf(deadlineLabel);
@@ -70,31 +74,19 @@ function DeadlineStatement({ deadlineLabel, expired, id }: { readonly deadlineLa
 }
 function MembershipFacts({ membership }: { readonly membership: ProofMembership }): ReactElement | null {
   const facts = [
-    { label: SURFACE_COPY.addressFact, value: (membership.email ?? "").trim(), reference: true },
-    { label: SURFACE_COPY.languageFact, value: (membership.languagePreference ?? "").trim(), reference: false },
+    { term: SURFACE_COPY.addressFact, value: (membership.email ?? "").trim(), valueClassName: "min-w-0 wrap-anywhere" },
+    { term: SURFACE_COPY.languageFact, value: (membership.languagePreference ?? "").trim() },
   ].filter((fact) => fact.value !== "");
   if (facts.length === 0) return null;
-  return (
-    <dl className="flex min-w-0 flex-col gap-1 text-sm">
-      {facts.map((fact) => (
-        <div key={fact.label} className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-          <dt className="text-muted-foreground">{fact.label}</dt>
-          <dd className={fact.reference ? "min-w-0 wrap-anywhere" : "min-w-0"}>
-            <bdi>{fact.value}</bdi>
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
+  return <FactList className="flex min-w-0 flex-col gap-1 text-sm" rowClassName="flex min-w-0 flex-wrap items-baseline gap-x-1.5" termClassName="text-muted-foreground" valueClassName="min-w-0" facts={facts.map((fact) => ({ ...fact, value: <bdi>{fact.value}</bdi> }))} />;
 }
 type ReceiptProps = { readonly outcome: MutationOutcome; readonly headingLevel: 3 | 4; readonly fieldLabels: Readonly<Record<string, string>>; readonly onCheckResult: (() => void) | undefined; readonly onRetrySameWork: () => void; readonly onReapply: () => void };
 const Receipt = ({ outcome, headingLevel, fieldLabels, onCheckResult, onRetrySameWork, onReapply }: ReceiptProps): ReactElement => (
   <OperationResult outcome={outcome} headingLevel={headingLevel} fieldLabels={fieldLabels} onCheckResult={outcome.outcome === "unknown" ? onCheckResult : undefined} onRetrySameWork={outcome.outcome === "unavailable" ? onRetrySameWork : undefined} onReapply={outcome.outcome === "conflict" ? onReapply : undefined} />
 );
 /** The proof journey for one publisher's Update email: request, tentative acceptance, explicit confirmation, confirmed state. */
-export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, membership, expectedRevision, confirmation, languagePreference = null, headingLevel = 2, dir, onCheckResult, className }: ProofFlowProps): ReactElement {
-  const titleId = useId();
-  const closedReasonId = useId();
+export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, membership, expectedRevision, confirmation, confirmationMessage = null, languagePreference = null, headingLevel = 2, dir, onCheckResult, className }: ProofFlowProps): ReactElement {
+  const [titleId, closedReasonId, messageHeadingId, resendReasonId] = [useId(), useId(), useId(), useId()];
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [confirmAttemptFor, setConfirmAttemptFor] = useState<string | null>(null);
@@ -104,13 +96,18 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
   const submitConfirm = useCallback((input: MutationInput<ConfirmPayload>): Promise<MutationOutcome> => mutateConfirm({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [mutateConfirm]);
   const signupReview = useReviewedMutation<SignupPayload>(submitSignup);
   const confirmReview = useReviewedMutation<ConfirmPayload>(submitConfirm);
+  const resendReview = useReviewedMutation<SignupPayload>(submitSignup);
   const statedLanguage = languagePreference === null ? null : languagePreference.trim() === "" ? null : languagePreference.trim();
   const deliveredEmail = email.trim();
+  const recordedAddress = (membership?.email ?? "").trim();
   const signupInput = useMemo<Omit<MutationInput<SignupPayload>, "operationId">>(
     () => ({ scope, expectedRevision, payload: { publisherId, purpose, email: deliveredEmail, ...(statedLanguage === null ? {} : { languagePreference: statedLanguage }) } }),
     [scope, expectedRevision, publisherId, purpose, deliveredEmail, statedLanguage],
   );
+  // Asking for the message again is the request this membership was opened with, sent for the address the record already holds rather than for whatever the form field says: the service answers `unchanged` for a membership that exists, so nothing is created and the acceptance the window runs from stays where the person's own act put it.
+  const resendInput = useMemo<Omit<MutationInput<SignupPayload>, "operationId">>(() => ({ scope, expectedRevision, payload: { publisherId, purpose, email: recordedAddress } }), [scope, expectedRevision, publisherId, purpose, recordedAddress]);
   const signupOutcome = signupReview.reviewedIntent !== null && signupReview.reviewedIntent === intentKeyOf(signupInput) ? signupReview.outcome : null;
+  const resendOutcome = resendReview.reviewedIntent !== null && resendReview.reviewedIntent === intentKeyOf(resendInput) ? resendReview.outcome : null;
   const confirmOutcome = confirmAttemptFor !== null && membership !== null && confirmAttemptFor === membership.membershipId ? confirmReview.outcome : null;
   const requiresProof = membership !== null && state === "awaiting-proof";
   const windowClosed = requiresProof && confirmation !== undefined && confirmation.state === "expired";
@@ -120,11 +117,19 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
   const shownStep: ProofStep = step === "request" && recordedOutcome !== null && (recordedOutcome.outcome === "accepted" || recordedOutcome.outcome === "alreadyAccepted" || recordedOutcome.outcome === "unchanged") ? "awaiting-proof" : step;
   const StepHeading = SECTION_HEADING_TAG[headingLevel];
   const ZoneHeading = ZONE_HEADING_TAG[headingLevel];
-  const activeOutcome = confirmOutcome ?? signupOutcome;
-  const activeOperationId = confirmOutcome === null ? (signupOutcome === null ? null : signupReview.operationId) : confirmReview.operationId;
+  const activeReview = confirmOutcome === null ? (resendOutcome === null ? signupReview : resendReview) : confirmReview;
+  const activeOutcome = confirmOutcome ?? resendOutcome ?? signupOutcome;
+  const activeOperationId = activeOutcome === null ? null : activeReview.operationId;
   // The one act that opens a membership: the person's own activation of this control. Once the service has recorded it, what the page read is out of date, so the page is asked for its own read again — that is what puts the confirmation control in place without a manual reload. A refusal changed nothing, so nothing is re-read.
   const requestNotices = (): void => {
     void signupReview.submit(signupInput).then((recorded) => {
+      if (recorded.outcome === "accepted" || recorded.outcome === "alreadyAccepted" || recorded.outcome === "unchanged") router.refresh();
+    });
+  };
+  // Asking again from the state the membership is already in: the service answers `unchanged` for a membership that exists, so the page is asked to read itself again and state that answer where the request was made, exactly as the first request does.
+  const requestMessageAgain = (): void => {
+    if (windowClosed || recordedAddress === "") return;
+    void resendReview.submit(resendInput).then((recorded) => {
       if (recorded.outcome === "accepted" || recorded.outcome === "alreadyAccepted" || recorded.outcome === "unchanged") router.refresh();
     });
   };
@@ -143,8 +148,8 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
       if (hasSettled(recorded)) router.refresh();
     });
   };
-  const retryActiveStep = (): void => settleActiveStep(confirmOutcome === null ? signupReview.retry : confirmReview.retry);
-  const reapplyActiveStep = (): void => settleActiveStep(confirmOutcome === null ? signupReview.reapply : confirmReview.reapply);
+  const retryActiveStep = (): void => settleActiveStep(activeReview.retry);
+  const reapplyActiveStep = (): void => settleActiveStep(activeReview.reapply);
   return (
     <section aria-labelledby={titleId} dir={dir} data-slot="proof-flow" data-step={shownStep} data-operation-id={activeOperationId === null ? undefined : activeOperationId} className={cn("min-w-0", className)}>
       <Card className="min-w-0">
@@ -195,6 +200,34 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
               </div>
               {membership === null ? null : <MembershipFacts membership={membership} />}
               {deadlineLabel === null ? null : <DeadlineStatement deadlineLabel={deadlineLabel} expired={windowClosed} id={closedReasonId} />}
+              {confirmationMessage === null ? null : (
+                <section aria-labelledby={messageHeadingId} data-slot="confirmation-message" className="flex min-w-0 flex-col gap-2 rounded-md border border-border bg-background p-3">
+                  <ZoneHeading id={messageHeadingId} className="text-base font-medium">
+                    {PROOF_MESSAGE_COPY.heading}
+                  </ZoneHeading>
+                  <dl className="flex min-w-0 flex-col gap-1 text-sm">
+                    <MessageFact
+                      term={PROOF_MESSAGE_COPY.senderLabel}
+                      value={
+                        <>
+                          <bdi>{confirmationMessage.sender.name}</bdi> <bdi>{confirmationMessage.sender.address}</bdi>
+                        </>
+                      }
+                    />
+                    <MessageFact term={PROOF_MESSAGE_COPY.toLabel} value={<bdi>{confirmationMessage.to}</bdi>} />
+                    <MessageFact term={PROOF_MESSAGE_COPY.subjectLabel} value={confirmationMessage.subject} />
+                  </dl>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    {confirmationMessage.wording.map((paragraph) => (
+                      <p key={paragraph} className="text-sm text-pretty">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                  <SimulationLabel effect="mail-submission" />
+                  <p className="text-sm text-pretty text-muted-foreground">{PROOF_MESSAGE_COPY.renderedHere}</p>
+                </section>
+              )}
               {membership === null ? (
                 <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.awaitingReadback}</p>
               ) : (
@@ -207,6 +240,18 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
                   </div>
                   {shownStep === "confirmation-closed" ? <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.closedReason}</p> : null}
                   {confirmation === undefined ? <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.noWindowStated}</p> : null}
+                </div>
+              )}
+              {membership === null || recordedAddress === "" ? null : (
+                <div className="flex min-w-0 flex-col gap-2">
+                  <p id={resendReasonId} className="text-sm text-pretty text-muted-foreground">
+                    {PROOF_RESEND_COPY.description}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button type="button" className={BUTTON_WRAP_CLASS} onClick={requestMessageAgain} disabled={resendReview.pending || windowClosed} aria-describedby={resendReasonId}>
+                      {resendReview.pending ? `${PROOF_RESEND_COPY.label} — working` : PROOF_RESEND_COPY.label}
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>

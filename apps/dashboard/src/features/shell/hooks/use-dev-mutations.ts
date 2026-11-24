@@ -27,12 +27,9 @@ function intentKeyOf(intent: DevIntent): string {
   const { action, scope, expectedRevision, payload } = intent;
   return [action, scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId, expectedRevision, payloadFields(payload)].join("|");
 }
-// A scenario change, a reset or a clock change alters what every read in the context means, so every entry in the
-// scope is re-read and the rendered tree is asked again, where the other controls touch one entry. A boundary is
-// evaluated against the scenario clock at the moment it is read, so an advance moves the as-of of every envelope and
-// every judgement built on it — a referral's expiry, a series' missed dates, a coaching cutoff, a notification
-// window — and only a fresh read and a fresh render state the answer at the instant now in force. A failure plan
-// arms the fate of named mutations and faults and leaves what every read says as it was, so it is not one of these.
+// A scenario change, a reset or a clock change alters what every read in the context means, so every entry in the scope is re-read and the rendered tree is asked again, where the other controls touch one entry. A boundary is evaluated against the scenario clock at the moment it is read, so an advance moves the as-of
+// of every envelope and every judgement built on it — a referral's expiry, a series' missed dates, a coaching cutoff, a notification window — and only a fresh read and a fresh render state the answer at the instant now in force. A failure plan arms the fate of named mutations and faults and leaves what every read says
+// as it was, so it is not one of these.
 const changesWhatEveryReadMeans = (action: DevTransportAction): boolean => action === "setScenario" || action === "resetSeed" || action === "setClock" || action === "advanceClock";
 export interface DevMutationTransports {
   readonly onSetScenario: (scenarioId: string) => Promise<MutationOutcome>;
@@ -65,8 +62,7 @@ export interface DevMutationTransports {
   const settle = useCallback(
     async (action: DevTransportAction, outcome: MutationOutcome): Promise<void> => {
       if (action === "selectPersona") {
-        // A switch that was not applied leaves this browser acting as the identity it already acted as, so nothing it
-        // holds is stale. One that was applied changes which identity every read answers for, and every query key is
+        // A switch that was not applied leaves this browser acting as the identity it already acted as, so nothing it holds is stale. One that was applied changes which identity every read answers for, and every query key is
         if (!(outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged")) return; // scoped to the identity that answered it, so the whole client world is dropped rather than invalidated.
         queryClient.clear();
         refreshOnceFor(outcome.operationId);

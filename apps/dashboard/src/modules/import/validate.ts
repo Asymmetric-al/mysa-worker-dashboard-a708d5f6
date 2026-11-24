@@ -64,8 +64,7 @@ const faultLabelOf = (kind: ImportRowFaultKind, fieldId: ImportFieldId | null, h
   if (heading !== "") return heading;
   return columnNumber === null ? "Cell length" : `Column ${columnNumber}`;
 };
-/** Validates every data row of a parsed file against a confirmed mapping, returning one entry per row in file order and keyed by the row number `parse.ts` assigned: the value or a readable. */
-export function validateRows(parsed: ParsedCsvFile, confirmedMapping: ImportConfirmedMapping): ImportValidation {
+/** Validates every data row of a parsed file against a confirmed mapping, returning one entry per row in file order and keyed by the row number `parse.ts` assigned: the value or a readable. */ export function validateRows(parsed: ParsedCsvFile, confirmedMapping: ImportConfirmedMapping): ImportValidation {
   const problems: ImportValidationProblem[] = [];
   const ignoredByColumn = new Map(confirmedMapping.ignored.map((column) => [column.index, column] as const));
   const fields = orderedFields(confirmedMapping);
@@ -312,8 +311,7 @@ const fieldIdOf = (value: string): ImportFieldId | null => (!KNOWN_FIELD_IDS.has
 const byReference = (left: ImportMatchSuggestion, right: ImportMatchSuggestion): number => compareCodeUnits(left.reference.system, right.reference.system) || compareCodeUnits(left.reference.reference, right.reference.reference);
 const uniqueSorted = (values: readonly string[]): string[] => uniqueInOrder(values).sort(compareCodeUnits);
 const phraseList = (phrases: readonly string[]): string => listOf(phrases) || "nothing";
-/** One row that looks like another row of the same file: the name they share, and the other rows of the file carrying it with no contact method in common. */
-export type ImportDuplicateLooking = { readonly rowNumber: number; readonly name: string; readonly otherRowNumbers: readonly number[] };
+/** One row that looks like another row of the same file: the name they share, and the other rows of the file carrying it with no contact method in common. */ export type ImportDuplicateLooking = { readonly rowNumber: number; readonly name: string; readonly otherRowNumbers: readonly number[] };
 const NAME_FORMS: readonly (readonly ImportFieldId[])[] = [["display-name"], ["name-organization"], ["name-given", "name-family"]]; // The forms a name is read from, in the order a row is believed: the label a contact is shown under, then the organization it acts as, then its given and family names joined.
 const NAME_SPACE = /\s+/gu;
 const valuesOf = (row: ImportValidatedRow, fieldId: ImportFieldId): readonly string[] =>

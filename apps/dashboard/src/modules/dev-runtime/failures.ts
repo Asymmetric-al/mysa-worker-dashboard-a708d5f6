@@ -45,8 +45,7 @@ const demonstrableTargetFor = (kind: FailureTargetKind, name: string): Demonstra
 const modesWording = (target: DemonstrableTarget): string => target.modes.map((mode) => MODE_LABEL[mode]).join(" or ");
 export type ClaimedFailureTarget = { readonly kind: FailureTargetKind; readonly name: string };
 export type FailurePlanRequest = { readonly mode: FailureMode; readonly target: ClaimedFailureTarget; readonly armedAt: string };
-/** Arms one mode on one named call and returns the new plan; stores nothing, and answers every refusal as a value. */
-export function setFailurePlan(current: FailurePlanDocument, request: FailurePlanRequest): Result<FailurePlan, FailurePlanRefusal> {
+/** Arms one mode on one named call and returns the new plan; stores nothing, and answers every refusal as a value. */ export function setFailurePlan(current: FailurePlanDocument, request: FailurePlanRequest): Result<FailurePlan, FailurePlanRefusal> {
   const target = demonstrableTargetFor(request.target.kind, request.target.name);
   if (target === undefined) return err(refuse("unknown-target", `No ${request.target.kind} named ${request.target.name} demonstrates a failure in this release.`));
   if (!target.modes.includes(request.mode)) return err(refuse("mode-not-demonstrable-on-target", `${target.name} demonstrates ${modesWording(target)}, not ${MODE_LABEL[request.mode]}.`));

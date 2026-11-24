@@ -86,8 +86,7 @@ const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
     )}
   </li>
 );
-/** The admitted Pages index, with both family catalogues beneath it. */
-export function PagesIndex({ pages, catalogues, onStarted, className }: PagesIndexProps): ReactElement {
+/** The admitted Pages index, with both family catalogues beneath it. */ export function PagesIndex({ pages, catalogues, onStarted, className }: PagesIndexProps): ReactElement {
   const headingId = useId();
   const pagesEnvelope = envelopeOf(pages);
   const pagesRefusal = refusalOf(pages);

@@ -23,13 +23,11 @@ const SET_INCOMPLETE_DESCRIPTION =
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { grantId: "Coaching relationship", moduleKey: "Module", enabled: "Sharing of this module" };
 const CARD_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 type RowHeadingLevel = 2 | 3 | 4;
-/** The one type scale's heading utility per level, so the modules card states the level it sits at with the same measure on every surface. */
-const CARD_HEADING_SCALE: Readonly<Record<RowHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The one type scale's heading utility per level, so the modules card states the level it sits at with the same measure on every surface. */ const CARD_HEADING_SCALE: Readonly<Record<RowHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const ROW_HEADING_LEVEL: Readonly<Record<RowHeadingLevel, RowHeadingLevel>> = { 2: 3, 3: 4, 4: 4 };
 type StateVariant = "secondary" | "outline" | "destructive" | "ghost";
 const STATE_VARIANT: Readonly<Record<ModuleReadState, StateVariant>> = { empty: "outline", partial: "secondary", withheld: "outline", unavailable: "destructive", ended: "secondary" };
-/** The tone a complete share carries: the secondary tone the sharing summary gives its own complete-share badge, so one reading looks the same on both surfaces. */
-const COMPLETE_VARIANT: StateVariant = "secondary";
+/** The tone a complete share carries: the secondary tone the sharing summary gives its own complete-share badge, so one reading looks the same on both surfaces. */ const COMPLETE_VARIANT: StateVariant = "secondary";
 export type ModuleToggleEntry = { readonly key: ModuleKey; readonly enabled: boolean; readonly readState: ModuleReadState | null; readonly source?: SourceReference | null };
 export type ModuleTogglesProps = {
   readonly grantId: string;
@@ -92,9 +90,7 @@ interface ModuleRowProps {
 }
 function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowHeadingLevel, onOutcome, onCheckResult }: ModuleRowProps): ReactElement {
   const copy = MODULE_COPY[entry.key];
-  const nameId = useId();
-  const stateId = useId();
-  const descriptionId = useId();
+  const [nameId, stateId, descriptionId] = [useId(), useId(), useId()];
   const { mutateAsync: changeModule } = useSetModule();
   const submit = useCallback<MutationSubmit<ModuleChangePayload>>((input) => changeModule({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload }), [changeModule]);
   const direct = useReviewedMutation<ModuleChangePayload>(submit);
@@ -214,8 +210,7 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
   );
 }
 export default function ModuleToggles({ grantId, modules, scope, expectedRevision, grantState, cutoffInstant, onOutcome, onCheckResult, headingLevel = 2, className }: ModuleTogglesProps): ReactElement {
-  const headingId = useId();
-  const gateId = useId();
+  const [headingId, gateId] = [useId(), useId()];
   const CardHeading = CARD_HEADING_TAG[headingLevel];
   const cutoff = cutoffInstant === null || cutoffInstant === undefined || cutoffInstant.trim() === "" ? null : cutoffInstant;
   const gate = gateFor(grantState, cutoff);

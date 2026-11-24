@@ -1,5 +1,4 @@
-/** The generated workload's partner half through the real partner reads: the roster, one record body with its support history, the facet counts, the scope boundary and an unreadable workload. */
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+/** The generated workload's partner half through the real partner reads: the roster, one record body with its support history, the facet counts, the scope boundary and an unreadable workload. */ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { reads } from "@/modules/data-service";
 import type { SessionSource } from "@/modules/data-service/authorize";
 import type { GiftRowRecord, PartnerRecord } from "@/modules/data-service/envelope";
@@ -19,14 +18,11 @@ const SECOND_GIFT_MINOR_UNITS = 10_000;
 const PERIOD = { from: "2026-01-01", to: "2026-11-20" } as const;
 const TIME_ZONE = "UTC";
 type WorkloadFixture = { readonly header: { readonly coverage: { readonly from: string; readonly to: string; readonly state: "partial" }; readonly currencies: readonly string[] }; readonly partners: readonly PartnerRecord[]; readonly gifts: readonly GiftRowRecord[] };
-/** The workload header the generator writes: the coverage its gift rows were generated over and the currencies they are stated in. */
-const HEADER: WorkloadFixture["header"] = { coverage: { from: "2022-11-20", to: "2026-10-31", state: "partial" }, currencies: ["USD"] };
-/** One generated partner in the shape the generator writes: an opaque `partner-workload-NNNNN` id and one permitted email address. */
-function workloadPartner(partnerId: string, kind: PartnerRecord["kind"], displayName: string, tags: readonly string[], nameParts: PartnerRecord["nameParts"] = null): PartnerRecord {
+/** The workload header the generator writes: the coverage its gift rows were generated over and the currencies they are stated in. */ const HEADER: WorkloadFixture["header"] = { coverage: { from: "2022-11-20", to: "2026-10-31", state: "partial" }, currencies: ["USD"] };
+/** One generated partner in the shape the generator writes: an opaque `partner-workload-NNNNN` id and one permitted email address. */ function workloadPartner(partnerId: string, kind: PartnerRecord["kind"], displayName: string, tags: readonly string[], nameParts: PartnerRecord["nameParts"] = null): PartnerRecord {
   return { partnerId, kind, displayName, nameParts, contactMethods: [{ kind: "email", value: `${partnerId}@example.org`, permitted: true, verified: false }], restrictions: [], tags, favourite: false, stage: null, audience: "shared", source: { system: "crm", reference: partnerId }, revision: "rev-1" };
 }
-/** One generated gift row, attributed to the partner it names and dated inside the seed's current year. */
-function workloadGift(index: number, partnerId: string, minorUnits: number, originalGiftOn: string): GiftRowRecord {
+/** One generated gift row, attributed to the partner it names and dated inside the seed's current year. */ function workloadGift(index: number, partnerId: string, minorUnits: number, originalGiftOn: string): GiftRowRecord {
   const suffix = String(index).padStart(6, "0");
   const giftId = `gift-workload-${suffix}`;
   return {

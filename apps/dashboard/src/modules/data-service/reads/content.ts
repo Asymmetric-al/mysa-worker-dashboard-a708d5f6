@@ -15,7 +15,7 @@ import { mediaStateReason, type MediaRenditionPurpose, type MediaStateReason } f
 import { GOAL_MEASURE } from "@/modules/support/goal";
 import { clampPageSize } from "@/modules/support/report";
 import { canEdit, canView, type ResolvedSession, type SessionSource } from "../authorize";
-import { PAGE_SECTION_TYPES, PAGE_SECTION_TYPES_BY_FAMILY, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetRecordSchema, project, releaseRecordSchema, storedInstantSchema, supportProjectionRecordSchema } from "../envelope";
+import { PAGE_SECTION_TYPES, PAGE_SECTION_TYPES_BY_FAMILY, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetDescriptorRecordSchema, mediaAssetRecordSchema, project, releaseRecordSchema, storedInstantSchema, supportProjectionRecordSchema } from "../envelope";
 import type { ContentAudience, ContentCaptionTrackRecord, ContentDocumentRecord, ContentFamily, ContentKind, Coverage, CoverageState, MediaAssetKind, MediaPlacementRecord, PageSectionType, ReadAction, ReadEnvelope, RecordedValueState, ReleaseRecord, Scope, SharePresentationRecord } from "../envelope";
 import type { SupportBasis, SupportGoalMeasure, SupportProjectionRecord } from "../envelope";
 import { storedContentRevisionRecordSchema } from "../envelope";
@@ -37,6 +37,8 @@ const contentWorkspaceSchema = z.object({
   contentReviews: z.array(contentReviewRecordSchema).default([]),
   releases: z.array(releaseRecordSchema),
   mediaAssets: z.array(mediaAssetRecordSchema),
+  // A store written before registrations recorded how their media is described stays readable: the collection it does not carry is empty rather than a refused read.
+  mediaAssetDescriptors: z.array(mediaAssetDescriptorRecordSchema).default([]),
   supportProjection: supportProjectionRecordSchema.nullable().optional(),
 });
 type ContentWorkspaceState = z.infer<typeof contentWorkspaceSchema>;
@@ -58,9 +60,8 @@ async function openContentWorkspace(job: string, source?: SessionSource): Promis
   return !opened.ok ? { ok: false, result: opened.result } : { ok: true, workspace: { session: opened.session, scope: opened.scope, asOf: opened.instant, state: opened.state } };
 }
 /** The result a read answers with: the data it states, its recorded value states and its advisory actions, stated at the workspace's own scope and instant. */
-function respond<T>(workspace: ContentWorkspace, referenced: string, revision: string, data: T, valueStates: Readonly<Record<string, RecordedValueState>>, actions: readonly ReadAction[]): ReadResult<ReadEnvelope<T>> {
-  return answerOf(workspace.scope, workspace.asOf.toString(), { data, source: storeSource(referenced), revision, valueStates, actions });
-}
+const respond = <T>(workspace: ContentWorkspace, referenced: string, revision: string, data: T, valueStates: Readonly<Record<string, RecordedValueState>>, actions: readonly ReadAction[]): ReadResult<ReadEnvelope<T>> =>
+  answerOf(workspace.scope, workspace.asOf.toString(), { data, source: storeSource(referenced), revision, valueStates, actions });
 const localeOf = (tag: string, direction: ContentLocale["direction"]): ContentLocale => ({ tag, direction });
 const releaseLocaleOf = (tag: string): ContentLocale => ({ tag, direction: directionOfTag(tag) });
 type RevisionChecksums = ReadonlyMap<string, string>;
@@ -69,28 +70,23 @@ function checksumsOf(state: ContentWorkspaceState): RevisionChecksums {
   for (const revision of state.contentRevisions) index.set(revision.revisionId, revision.contentChecksum);
   return index;
 }
-function releaseOf(record: ReleaseRecord, checksums: RevisionChecksums): Release {
-  return {
-    releaseId: record.releaseId,
-    variantId: record.variantId,
-    revisionId: record.revisionId,
-    audience: record.audience,
-    locale: releaseLocaleOf(record.locale),
-    publishedAt: Temporal.Instant.from(record.publishedAt),
-    reach: record.reach,
-    contentChecksum: checksums.get(record.revisionId) ?? "",
-    ...(record.withdrawnAt === null ? {} : { withdrawnAt: Temporal.Instant.from(record.withdrawnAt) }),
-    ...(record.supersededBy === null ? {} : { supersededBy: record.supersededBy }),
-  };
-}
+const releaseOf = (record: ReleaseRecord, checksums: RevisionChecksums): Release => ({
+  releaseId: record.releaseId,
+  variantId: record.variantId,
+  revisionId: record.revisionId,
+  audience: record.audience,
+  locale: releaseLocaleOf(record.locale),
+  publishedAt: Temporal.Instant.from(record.publishedAt),
+  reach: record.reach,
+  contentChecksum: checksums.get(record.revisionId) ?? "",
+  ...(record.withdrawnAt === null ? {} : { withdrawnAt: Temporal.Instant.from(record.withdrawnAt) }),
+  ...(record.supersededBy === null ? {} : { supersededBy: record.supersededBy }),
+});
 type ContentVariantRecordLike = ContentWorkspaceState["contentVariants"][number];
 const findDocument = (state: ContentWorkspaceState, documentId: string): ContentDocumentRecord | undefined => state.contentDocuments.find((candidate) => candidate.documentId === documentId);
 const findVariant = (state: ContentWorkspaceState, variantId: string): ContentVariantRecordLike | undefined => state.contentVariants.find((candidate) => candidate.variantId === variantId);
 const variantOfFrozenCandidate = (state: ContentWorkspaceState, candidateId: string): ContentVariantRecordLike | undefined => state.contentVariants.find((variant) => variant.candidateId === candidateId);
-interface CandidateResolution {
-  readonly record: ContentVariantRecordLike;
-  readonly candidateId: string | null;
-}
+type CandidateResolution = { readonly record: ContentVariantRecordLike; readonly candidateId: string | null };
 function resolveCandidateIdentity(state: ContentWorkspaceState, identity: string): CandidateResolution | undefined {
   const edition = findVariant(state, identity);
   if (edition !== undefined) return { record: edition, candidateId: edition.candidateId };
@@ -122,14 +118,17 @@ function newestReleaseOf(releases: readonly ReleaseRecord[]): ReleaseRecord | un
   return newest;
 }
 const isWithdrawnRelease = (record: ReleaseRecord): boolean => record.withdrawnAt !== null;
+// No Site in this store declares a default language, and this read resolves exactly rather than substituting one: a preview shows the edition written in the language it names, or answers Language unavailable.
 const NO_DECLARED_SITE_DEFAULT = "";
 const renditionPath = (assetId: string, renditionId: string): string => `/api/media/${encodeURIComponent(assetId)}/${encodeURIComponent(renditionId)}`;
 export type ContentRenditionView = { readonly renditionId: string; readonly purpose: MediaRenditionPurpose; readonly mimeType: string; readonly path: string };
-export type ContentPlacementView = { readonly placementId: string; readonly assetId: string; readonly kind: MediaAssetKind; readonly sectionElement: string | null } & { readonly position: number; readonly altText: string; readonly caption: string | null; readonly credit: string | null } & {
-  readonly state: "ready" | "unavailable";
-  readonly reason: MediaStateReason | null;
-  readonly renditions: readonly ContentRenditionView[];
-} & { readonly captionTracks: readonly ContentCaptionTrackRecord[] };
+export type ContentPlacementView = { readonly placementId: string; readonly assetId: string; readonly kind: MediaAssetKind; readonly sectionElement: string | null } & {
+  readonly position: number;
+  readonly altText: string;
+  readonly caption: string | null;
+  readonly credit: string | null;
+  readonly language: string | null;
+} & { readonly state: "ready" | "unavailable"; readonly reason: MediaStateReason | null; readonly renditions: readonly ContentRenditionView[] } & { readonly captionTracks: readonly ContentCaptionTrackRecord[] };
 const MAIN_RENDITION_PURPOSES: Readonly<Record<MediaAssetKind, MediaRenditionPurpose>> = { image: "display", video: "playback" };
 const mainRenditionPurpose = (kind: MediaAssetKind): MediaRenditionPurpose => MAIN_RENDITION_PURPOSES[kind];
 const RENDERABLE_PURPOSES: Readonly<Record<MediaRenditionPurpose, RenderRenditionPurpose>> = { display: "display", playback: "playback", poster: "poster", captions: "captions", transcript: "transcript" };
@@ -141,28 +140,32 @@ function placementViews(workspace: ContentWorkspace, placements: readonly MediaP
   return placements.map((placement) => {
     const asset = workspace.state.mediaAssets.find((candidate) => candidate.assetId === placement.assetId);
     const tracks = captionTracks.filter((track) => track.assetId === placement.assetId);
+    // The language a placement is in stays on the asset's descriptor rather than on the placement, because the picker states it once per upload, so it is read from there: a video placed without a caption track still tells its reader what language it is in.
+    const language = workspace.state.mediaAssetDescriptors.find((candidate) => candidate.assetId === placement.assetId)?.language ?? null;
     const reason = mediaStateReason("unavailable");
-    if (asset === undefined) return unreadablePlacement(placement, "video", reason, tracks);
-    if (!canView(workspace.session, { kind: "media-asset", scope: asset.scope }).allowed) return unreadablePlacement(placement, asset.kind, reason, tracks);
+    if (asset === undefined) return unreadablePlacement(placement, "video", reason, tracks, language);
+    if (!canView(workspace.session, { kind: "media-asset", scope: asset.scope }).allowed) return unreadablePlacement(placement, asset.kind, reason, tracks, language);
     const visible = project(asset, VISIBLE_MEDIA_ASSET_FIELDS);
     const renditions: ContentRenditionView[] = visible.renditions.map((rendition) => ({ renditionId: rendition.renditionId, purpose: rendition.purpose, mimeType: rendition.mimeType, path: renditionPath(visible.assetId, rendition.renditionId) }));
     const main = renditions.some((rendition) => rendition.purpose === mainRenditionPurpose(visible.kind));
     const ready = main && serving === "served";
     const { placementId, assetId, sectionElement, position, altText, caption, credit } = placement;
-    return { placementId, assetId, kind: visible.kind, sectionElement, position, altText, caption, credit, state: ready ? "ready" : "unavailable", reason: ready ? null : reason, renditions, captionTracks: tracks };
+    return { placementId, assetId, kind: visible.kind, sectionElement, position, altText, caption, credit, language, state: ready ? "ready" : "unavailable", reason: ready ? null : reason, renditions, captionTracks: tracks };
   });
 }
-function unreadablePlacement(placement: MediaPlacementRecord, kind: MediaAssetKind, reason: MediaStateReason, tracks: readonly ContentCaptionTrackRecord[]): ContentPlacementView {
-  return { placementId: placement.placementId, assetId: placement.assetId, kind, sectionElement: placement.sectionElement, position: placement.position, altText: placement.altText, caption: placement.caption, credit: placement.credit, state: "unavailable", reason, renditions: [], captionTracks: tracks };
+function unreadablePlacement(placement: MediaPlacementRecord, kind: MediaAssetKind, reason: MediaStateReason, tracks: readonly ContentCaptionTrackRecord[], language: string | null): ContentPlacementView {
+  return { placementId: placement.placementId, assetId: placement.assetId, kind, sectionElement: placement.sectionElement, position: placement.position, altText: placement.altText, caption: placement.caption, credit: placement.credit, language, state: "unavailable", reason, renditions: [], captionTracks: tracks };
 }
 type RevisionRender = { readonly status: "rendered"; readonly html: string; readonly document: ContentDocumentJson } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
 // The key each rendition of one placement travels under: the main rendition keeps the placement's own identity and each ancillary purpose gets a key of its own, so a poster, a caption track and a transcript can never stand in for one another.
 const renditionKeys = (placementId: string): Readonly<Record<RenderRenditionPurpose, string>> => ({ display: placementId, playback: placementId, poster: `${placementId}:poster`, captions: `${placementId}:captions`, transcript: `${placementId}:transcript` });
-function renderRevision(body: unknown, placements: readonly ContentPlacementView[]): RevisionRender {
+function renderRevision(body: unknown, placements: readonly ContentPlacementView[], locale: string): RevisionRender {
   const renderedPlacements: RenderMediaPlacement[] = [];
   const renditions: Record<string, RenderRendition> = {};
   for (const placement of placements) {
     const captionTrack = placement.captionTracks.find((track) => track.isDefault) ?? placement.captionTracks[0];
+    // The language a reader is told is the media's own stored language, which the asset's descriptor holds whether or not the placement carries a caption track; a video whose descriptor states none falls back to the track's language, which the picker writes from that same stated value.
+    const language = placement.language ?? captionTrack?.language ?? null;
     const keys = renditionKeys(placement.placementId);
     // Only a placement the media source serves reaches the renderer with rendition addresses: an unavailable placement carries none, so the single renderer states its text alternative and caption in the place of a player, and the preview's own rendition list stays empty for it.
     if (placement.state === "ready") {
@@ -171,19 +174,22 @@ function renderRevision(body: unknown, placements: readonly ContentPlacementView
         renditions[keys[purpose]] = { src: rendition.path, purpose };
       }
     }
+    // The track's own language and label reach the renderer under the track's roles — `captionsLanguage` for its `srclang` and `captionsLabel` for its name — while the language the figure states beside the player is the one settled above, so no placement states a language twice.
     renderedPlacements.push({
       placementId: placement.placementId,
       kind: placement.kind,
       altText: placement.altText,
       ...(placement.caption === null ? {} : { caption: placement.caption }),
+      ...(placement.credit === null ? {} : { credit: placement.credit }),
       ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }),
       ...(hasRendition(placement, "poster") ? { posterId: keys.poster } : {}),
       ...(hasRendition(placement, "captions") ? { captionsId: keys.captions } : {}),
       ...(hasRendition(placement, "transcript") ? { transcriptId: keys.transcript } : {}),
       ...(captionTrack === undefined ? {} : { captionsLanguage: captionTrack.language, captionsLabel: captionTrack.label }),
+      ...(language === null ? {} : { language }),
     });
   }
-  const rendered = renderToHtml(body, { media: "inline", placements: renderedPlacements, renditions: renditions as RenderRenditions });
+  const rendered = renderToHtml(body, { media: "inline", placements: renderedPlacements, renditions: renditions as RenderRenditions, lang: locale });
   if (rendered.status === "invalid") return { status: "invalid", issues: rendered.issues };
   const parsed = parseDocument(body);
   return parsed.status === "invalid" ? { status: "invalid", issues: parsed.issues } : { status: "rendered", html: rendered.html, document: parsed.document };
@@ -260,8 +266,7 @@ function documentViewOf(record: ContentDocumentRecord): ContentDocumentView {
   const { documentId, family, kind, siteId, sourceSubject } = record;
   return { documentId, family, kind, siteId, sourceSubject, givingBinding: record.givingBinding === null ? null : { designation: record.givingBinding.designation, label: record.givingBinding.label }, managedFieldKeys: [...record.managedFields], recordRevision: record.revision };
 }
-/** The identity every edition read states about one stored edition, so each read names it once rather than restating the same four fields. */
-export type EditionSubject = { readonly document: ContentDocumentView; readonly variant: ContentVariant; readonly audience: ContentAudience; readonly locale: ContentLocale };
+/** The identity every edition read states about one stored edition, so each read names it once rather than restating the same four fields. */ export type EditionSubject = { readonly document: ContentDocumentView; readonly variant: ContentVariant; readonly audience: ContentAudience; readonly locale: ContentLocale };
 const subjectOf = (record: ContentVariantRecordLike, documentRecord: ContentDocumentRecord): EditionSubject => ({ document: documentViewOf(documentRecord), variant: contentVariantOf(record), audience: record.audience, locale: localeOf(record.locale, record.direction) });
 /** One edition by the identity a read names, with the document it belongs to and the subject both are stated as; nothing when no edition of this workspace holds that identity. */
 type EditionResolution = { readonly record: ContentVariantRecordLike; readonly documentRecord: ContentDocumentRecord; readonly subject: EditionSubject };
@@ -309,17 +314,15 @@ const listedFamiliesOf = (requested: readonly ContentFamily[] | undefined): read
 // The page number a caller's request states, or the first page: a value that is not a whole page number is not one this read can answer with.
 const pageOf = (requested: number | undefined): number => (requested !== undefined && Number.isSafeInteger(requested) && requested >= 1 ? requested : 1);
 /** One listed document as a page of the index states it: the whole entry when the page carries every one of its editions, and otherwise the entry narrowed to the editions that page carries and to their awaiting-release state, so a row is never listed twice and an entry never states an edition it does not carry. */
-function pageEntryOf(whole: ContentDocumentIndexEntry, listedVariantIds: ReadonlySet<string>): ContentDocumentIndexEntry {
-  return whole.editions.length === listedVariantIds.size ? whole : { ...whole, editions: whole.editions.filter((edition) => listedVariantIds.has(edition.variantId)), awaitingRelease: whole.awaitingRelease.filter((variantId) => listedVariantIds.has(variantId)) };
-}
-function collectionRevisionOf(listed: readonly ListedContentDocument[]): string {
-  return `content-documents/${String(listed.length)}/${digest(
+const pageEntryOf = (whole: ContentDocumentIndexEntry, listedVariantIds: ReadonlySet<string>): ContentDocumentIndexEntry =>
+  whole.editions.length === listedVariantIds.size ? whole : { ...whole, editions: whole.editions.filter((edition) => listedVariantIds.has(edition.variantId)), awaitingRelease: whole.awaitingRelease.filter((variantId) => listedVariantIds.has(variantId)) };
+const collectionRevisionOf = (listed: readonly ListedContentDocument[]): string =>
+  `content-documents/${String(listed.length)}/${digest(
     listed
       .map(({ record }) => `${record.documentId}@${record.revision}`)
       .toSorted(compareCodeUnits)
       .join("\u0000"),
   )}`;
-}
 function titleOf(state: ContentWorkspaceState, variants: readonly ContentVariantRecordLike[]): ContentDocumentTitleView {
   for (const variant of variants) {
     const revision = currentRevisionOf(state, variant);
@@ -406,7 +409,7 @@ export async function readDraft(input: { readonly variantId: string; readonly se
     return respond(workspace, documentRecord.documentId, record.revision, data, { sections: "unknown", placements: "unknown" }, [{ name: "save-draft", available: true, reason: "A save replaces the broken draft pointer with a new revision of this edition." }]);
   }
   const placements = placementViews(workspace, revision.mediaPlacements, revision.captions);
-  const rendered = renderRevision(revision.body, placements);
+  const rendered = renderRevision(revision.body, placements, record.locale);
   if (rendered.status === "invalid") {
     const data: ContentDraftData = { status: "invalid", ...subject, revisionId: revision.revisionId, recordRevision: record.revision, issues: rendered.issues };
     return respond(workspace, documentRecord.documentId, record.revision, data, { sections: "unknown", placements: "unknown" }, [{ name: "save-draft", available: true, reason: "A fresh save writes an admitted document and replaces the unreadable revision." }]);
@@ -480,7 +483,7 @@ export async function readCandidate(input: { readonly variantId: string; readonl
     return respond(workspace, documentRecord.documentId, record.revision, data, { changedSections: "unavailable", changedPlacements: "unavailable" }, [{ name: "submit-for-review", available: true, reason: "A fresh submission replaces the candidate that cannot be resolved." }]);
   }
   const placements = placementViews(workspace, frozen.mediaPlacements, frozen.captions);
-  const rendered = renderRevision(frozen.body, placements);
+  const rendered = renderRevision(frozen.body, placements, record.locale);
   if (rendered.status === "invalid") {
     const data: ContentCandidateData = { status: "invalid", ...subject, candidateId, issues: rendered.issues, recordRevision: record.revision };
     return respond(workspace, documentRecord.documentId, record.revision, data, { changedSections: "unknown", changedPlacements: "unknown" }, [{ name: "request-changes", available: true, reason: "The frozen revision cannot be approved as it stands." }]);
@@ -565,9 +568,8 @@ function candidateReviewActions(review: ContentReviewRecord | undefined): readon
     ...RELEASE_ACTION_OFFERS.map((offer) => releaseActionOf(offer, review, releaseRefusal)),
   ];
 }
-function releaseActionOf(offer: ReleaseActionOffer, review: ContentReviewRecord | undefined, releaseRefusal: string | null): ReadAction {
-  return review !== undefined && offer.mode !== review.notifyMode ? { name: offer.name, available: false, reason: NOT_ASKED_FOR_REASON } : releaseRefusal !== null ? { name: offer.name, available: false, reason: releaseRefusal } : { name: offer.name, available: true, reason: offer.meaning };
-}
+const releaseActionOf = (offer: ReleaseActionOffer, review: ContentReviewRecord | undefined, releaseRefusal: string | null): ReadAction =>
+  review !== undefined && offer.mode !== review.notifyMode ? { name: offer.name, available: false, reason: NOT_ASKED_FOR_REASON } : releaseRefusal !== null ? { name: offer.name, available: false, reason: releaseRefusal } : { name: offer.name, available: true, reason: offer.meaning };
 /** One edition's frozen candidate as a release surface reads it: the frozen revision gives the checksum and the candidate's own review record the recorded mode, and the notify fact is decided by the very action the review step offers, so no surface states a notification policy the service would refuse. */
 function candidateViewOf(state: ContentWorkspaceState, variant: ContentVariantRecordLike): ContentEditionCandidateView | null {
   const candidateId = variant.candidateId;
@@ -684,7 +686,7 @@ export async function readRelease(input: { readonly variantId: string; readonly 
     return respond(workspace, documentRecord.documentId, record.revision, data, { placements: "unknown", siblingHeads: "value" }, [{ name: "withdraw-release", available: true }]);
   }
   const placements = placementViews(workspace, revision.mediaPlacements, revision.captions);
-  const rendered = renderRevision(revision.body, placements);
+  const rendered = renderRevision(revision.body, placements, record.locale);
   if (rendered.status === "invalid") {
     const data: ContentReleaseData = { status: "invalid", ...subject, releaseId: named.releaseId, issues: rendered.issues, siblingHeads, recordRevision: record.revision };
     return respond(workspace, documentRecord.documentId, record.revision, data, { placements: "unknown", siblingHeads: "value" }, [{ name: "withdraw-release", available: true }]);
@@ -779,7 +781,7 @@ export async function readPreview(input: { readonly variantId: string; readonly 
     return respond(workspace, documentRecord.documentId, record.revision, data, { placements: "unknown" }, []);
   }
   const placements = placementViews(workspace, admitted.mediaPlacements, admitted.captions);
-  const rendered = renderRevision(admitted.body, placements);
+  const rendered = renderRevision(admitted.body, placements, record.locale);
   if (rendered.status === "invalid") {
     const data: ContentPreviewData = { status: "invalid", variantId: record.variantId, revisionId: admitted.revisionId, issues: rendered.issues };
     return respond(workspace, documentRecord.documentId, record.revision, data, { placements: "unknown" }, []);

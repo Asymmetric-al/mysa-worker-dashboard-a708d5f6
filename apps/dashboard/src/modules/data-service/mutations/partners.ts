@@ -149,15 +149,12 @@ function stateDocumentOf(docs: MutationContext["docs"]): StateDocument {
   if (!parsed.success) throw unreadableState("a record family in the state document is not readable");
   return parsed.data;
 }
-function writeState(docs: MutationContext["docs"], state: StateDocument, change: Partial<Record<StateFamily, unknown>>): void {
-  docs.state = { ...state, ...change };
-}
+const writeState = (docs: MutationContext["docs"], state: StateDocument, change: Partial<Record<StateFamily, unknown>>): void => void (docs.state = { ...state, ...change });
 const partnerOf = (state: StateDocument, partnerId: string): StoredPartnerRecord | undefined => state.partners.find((record) => record.partnerId === partnerId);
 const withPartner = (state: StateDocument, next: StoredPartnerRecord): readonly StoredPartnerRecord[] => state.partners.map((record) => (record.partnerId === next.partnerId ? next : record));
 const savedViewOf = (state: StateDocument, viewId: string): StoredSavedView | undefined => state.savedViews.find((view) => view.viewId === viewId);
-function sameNameParts(left: PartnerNameParts | null, right: PartnerNameParts | null): boolean {
-  return left === null || right === null ? left === right : left.given === right.given && left.family === right.family && left.additional.length === right.additional.length && left.additional.every((part, index) => part === right.additional[index]);
-}
+const sameNameParts = (left: PartnerNameParts | null, right: PartnerNameParts | null): boolean =>
+  left === null || right === null ? left === right : left.given === right.given && left.family === right.family && left.additional.length === right.additional.length && left.additional.every((part, index) => part === right.additional[index]);
 const sameSequence = <T>(left: readonly T[], right: readonly T[], same: (one: T, other: T) => boolean): boolean => left.length === right.length && left.every((one, index) => right[index] !== undefined && same(one, right[index]));
 const sameContactMethods = (left: readonly PartnerContactMethod[], right: readonly PartnerContactMethod[]): boolean => sameSequence(left, right, (one, other) => one.kind === other.kind && one.value === other.value && one.permitted === other.permitted);
 const sameRestrictions = (left: readonly PartnerRestriction[], right: readonly PartnerRestriction[]): boolean => sameSequence(left, right, (one, other) => one.kind === other.kind && one.detail === other.detail);
@@ -272,19 +269,16 @@ function applySetTag(context: MutationContext, payload: SetTagInput, scope: Scop
 /** Marks one partner record as a favourite, or clears the mark. */ export async function setFavourite(input: MutationInput<SetFavouriteInput>, source?: SessionSource): Promise<MutationOutcome> {
   return runPartnerMutation<SetFavouriteInput, PartnerChangeResult>(input, source, { name: "setFavourite", schema: setFavouriteInput, authorize: ADMISSION_ESTABLISHES_AUTHORITY, readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId), apply: applySetFavourite });
 }
-function applySetFavourite(context: MutationContext, payload: SetFavouriteInput, scope: Scope): ApplyResult<PartnerChangeResult> {
-  return editPartner(
+const applySetFavourite = (context: MutationContext, payload: SetFavouriteInput, scope: Scope): ApplyResult<PartnerChangeResult> =>
+  editPartner(
     context,
     scope,
     payload.partnerId,
     (record) => (record.favourite === payload.favourite ? null : { favourite: payload.favourite }),
     (next) => ({ partnerId: next.partnerId, revision: next.revision }),
   );
-}
-/** Creates the worker's own private preparation record for a contact, with its opening note if one is given. */
-export async function createPrivatePreparation(input: MutationInput<CreatePrivatePreparationInput>, source?: SessionSource): Promise<MutationOutcome> {
-  return runPartnerMutation<CreatePrivatePreparationInput, PartnerPreparationResult>(input, source, { name: "createPrivatePreparation", schema: createPrivatePreparationInput, authorize: (session) => authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))), apply: applyCreatePrivatePreparation });
-}
+/** Creates the worker's own private preparation record for a contact, with its opening note if one is given. */ export const createPrivatePreparation = async (input: MutationInput<CreatePrivatePreparationInput>, source?: SessionSource): Promise<MutationOutcome> =>
+  runPartnerMutation<CreatePrivatePreparationInput, PartnerPreparationResult>(input, source, { name: "createPrivatePreparation", schema: createPrivatePreparationInput, authorize: (session) => authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))), apply: applyCreatePrivatePreparation });
 function applyCreatePrivatePreparation({ docs, session }: MutationContext, payload: CreatePrivatePreparationInput): ApplyResult<PartnerPreparationResult> {
   const state = stateDocumentOf(docs);
   const partnerId = newRecordId(),
@@ -299,11 +293,10 @@ function applyCreatePrivatePreparation({ docs, session }: MutationContext, paylo
   return { changed: true, revision, result: { partnerId, revision, note: { noteId: note.noteId, revision: note.revision } }, created: [partnerId, note.noteId] };
 }
 /** Changes the permitted fields of one partner record: its display name and name parts, its contact methods with their own `permitted` flag, its restrictions and its relationship label. */
-export async function saveContactEdits(input: MutationInput<SaveContactEditsInput>, source?: SessionSource): Promise<MutationOutcome> {
-  return runPartnerMutation<SaveContactEditsInput, PartnerChangeResult>(input, source, { name: "saveContactEdits", schema: saveContactEditsInput, authorize: ADMISSION_ESTABLISHES_AUTHORITY, readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId), apply: applySaveContactEdits });
-}
-function applySaveContactEdits(context: MutationContext, payload: SaveContactEditsInput, scope: Scope): ApplyResult<PartnerChangeResult> {
-  return editPartner(
+export const saveContactEdits = async (input: MutationInput<SaveContactEditsInput>, source?: SessionSource): Promise<MutationOutcome> =>
+  runPartnerMutation<SaveContactEditsInput, PartnerChangeResult>(input, source, { name: "saveContactEdits", schema: saveContactEditsInput, authorize: ADMISSION_ESTABLISHES_AUTHORITY, readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId), apply: applySaveContactEdits });
+const applySaveContactEdits = (context: MutationContext, payload: SaveContactEditsInput, scope: Scope): ApplyResult<PartnerChangeResult> =>
+  editPartner(
     context,
     scope,
     payload.partnerId,
@@ -320,7 +313,6 @@ function applySaveContactEdits(context: MutationContext, payload: SaveContactEdi
     },
     (next) => ({ partnerId: next.partnerId, revision: next.revision }),
   );
-}
 function applyPreparationArchive(context: MutationContext, payload: ArchivePreparationInput, scope: Scope, archived: boolean): ApplyResult<PartnerChangeResult> {
   const state = stateDocumentOf(context.docs);
   const record = partnerOf(state, payload.partnerId);
@@ -330,19 +322,17 @@ function applyPreparationArchive(context: MutationContext, payload: ArchivePrepa
   writeState(context.docs, state, { partners: withPartner(state, next) });
   return { changed: true, revision: next.revision, result: { partnerId: next.partnerId, revision: next.revision }, changedIds: [next.partnerId] };
 }
-function runPreparationArchive(input: MutationInput<ArchivePreparationInput>, source: SessionSource | undefined, name: MutationName, schema: z.ZodType<ArchivePreparationInput>, archived: boolean): Promise<MutationOutcome> {
-  return runPartnerMutation<ArchivePreparationInput, PartnerChangeResult>(input, source, {
+const runPreparationArchive = (input: MutationInput<ArchivePreparationInput>, source: SessionSource | undefined, name: MutationName, schema: z.ZodType<ArchivePreparationInput>, archived: boolean): Promise<MutationOutcome> =>
+  runPartnerMutation<ArchivePreparationInput, PartnerChangeResult>(input, source, {
     name,
     schema,
     authorize: (session) => authorityOf(canEdit(session, ownPreparationTarget(input.scope, session))),
     readCurrent: (documents, payload) => partnerCurrentTarget(documents, payload.partnerId),
     apply: (context, payload, scope) => applyPreparationArchive(context, payload, scope, archived),
   });
-}
 /** Archives one private preparation record: it leaves the working lists and nothing is deleted. */
 export const archivePreparation = async (input: MutationInput<ArchivePreparationInput>, source?: SessionSource): Promise<MutationOutcome> => runPreparationArchive(input, source, "archivePreparation", archivePreparationInput, true);
-/** Restores one archived private preparation record to the working lists. */
-export const restorePreparation = async (input: MutationInput<RestorePreparationInput>, source?: SessionSource): Promise<MutationOutcome> => runPreparationArchive(input, source, "restorePreparation", restorePreparationInput, false);
+/** Restores one archived private preparation record to the working lists. */ export const restorePreparation = async (input: MutationInput<RestorePreparationInput>, source?: SessionSource): Promise<MutationOutcome> => runPreparationArchive(input, source, "restorePreparation", restorePreparationInput, false);
 /** Writes one private note about one partner record. */ export async function savePrivateNote(input: MutationInput<SavePrivateNoteInput>, source?: SessionSource): Promise<MutationOutcome> {
   return runPartnerMutation<SavePrivateNoteInput, NoteChangeResult>(input, source, { name: "savePrivateNote", schema: savePrivateNoteInput, authorize: (session) => authorityOf(canEdit(session, ownPrivateNoteTarget(input.scope, session))), apply: applySavePrivateNote });
 }

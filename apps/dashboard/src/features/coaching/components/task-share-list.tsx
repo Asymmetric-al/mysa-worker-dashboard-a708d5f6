@@ -1,9 +1,10 @@
 "use client";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useId, useState, type ReactElement, type ReactNode } from "react";
+import { useCallback, useId, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
 import { scopeKey } from "@/components/context-switch-guard";
+import { factFrame } from "@/components/fact-list";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
@@ -22,8 +23,7 @@ export type TaskShareDueDate = CivilDate | string;
 export interface TaskShareListEntry {
   readonly shareId: string;
   readonly taskId: string;
-  /** The share record's own revision, which a stop presents: the service compares it before it writes, so a share that moved since this page read it settles as a conflict rather than being overwritten. */
-  readonly revision: string;
+  /** The share record's own revision, which a stop presents: the service compares it before it writes, so a share that moved since this page read it settles as a conflict rather than being overwritten. */ readonly revision: string;
   readonly state: TaskShareSummaryState;
   readonly reviewedDescription: string | null;
   readonly dueOn: TaskShareDueDate | null;
@@ -56,12 +56,7 @@ const WITHHELD_REASON_STATEMENT: Readonly<Record<TaskShareRefusalReason, string>
 };
 const STOP_EFFECT = STOP_EFFECT_COPY["remove-task-share"];
 const CONTROL_CLASS = `${BUTTON_WRAP_CLASS} text-start`;
-const Fact = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
-  <div className="flex min-w-0 items-baseline gap-x-1.5">
-    <dt className="shrink-0 text-muted-foreground">{label}</dt>
-    <dd className="min-w-0 wrap-anywhere">{children}</dd>
-  </div>
-);
+const Fact = factFrame({ rowClassName: "flex min-w-0 items-baseline gap-x-1.5", termClassName: "shrink-0 text-muted-foreground", valueClassName: "min-w-0 wrap-anywhere" });
 const withheldReasonStatement = (reason: TaskShareRefusalReason | null | undefined): string => (reason === null || reason === undefined ? "The read did not state why this summary is held. Nothing is shown until you review it again." : WITHHELD_REASON_STATEMENT[reason]);
 function SharedDescription({ description }: { readonly description: string | null }): ReactElement {
   const text = description === null ? "" : description.trim();
@@ -113,7 +108,7 @@ function TaskShareItem({ entry, stopping, reviewRegionId, onStop }: TaskShareIte
           </h3>
         </div>
         <dl className="grid min-w-0 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-          <Fact label="Due">
+          <Fact term="Due">
             {entry.dueOn === null ? (
               <span className="text-muted-foreground">{"No due date"}</span>
             ) : (
@@ -123,10 +118,10 @@ function TaskShareItem({ entry, stopping, reviewRegionId, onStop }: TaskShareIte
               </>
             )}
           </Fact>
-          <Fact label="Status">
+          <Fact term="Status">
             <bdi>{TASK_STATUS_WORD[entry.taskStatus]}</bdi>
           </Fact>
-          <Fact label="Shared on">
+          <Fact term="Shared on">
             {entry.sharedAt === null ? (
               <span className="text-muted-foreground">{"No share date recorded"}</span>
             ) : (
@@ -150,8 +145,7 @@ function TaskShareItem({ entry, stopping, reviewRegionId, onStop }: TaskShareIte
   );
 }
 export default function TaskShareList({ shares, scope, locale, unavailable }: TaskShareListProps): ReactElement {
-  const regionHeadingId = useId();
-  const reviewRegionId = useId();
+  const [regionHeadingId, reviewRegionId] = [useId(), useId()];
   const queryClient = useQueryClient();
   const { mutateAsync: stopTaskShare } = useStopTaskShare();
   const [stopping, setStopping] = useState<{ readonly shareId: string; readonly taskId: string; readonly state: TaskShareSummaryState; readonly revision: string } | null>(null);

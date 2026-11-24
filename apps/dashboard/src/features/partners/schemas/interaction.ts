@@ -20,8 +20,7 @@ export const interactionKindSchema = z.enum(INTERACTION_KINDS, { error: "Choose 
 export const INTERACTION_PRECISIONS = ["date", "approximate", "unknown"] as const satisfies readonly InteractionRecord["precision"][];
 export type InteractionPrecision = (typeof INTERACTION_PRECISIONS)[number];
 export const interactionPrecisionSchema = z.enum(INTERACTION_PRECISIONS, { error: "Say how precisely you know the day: the day itself, roughly, or not at all." });
-/** Whether the text names a day that exists, read through the one civil-date owner so a form and the service refuse the same days. */
-const civilDateExists = (value: string): boolean => parseCivilDate(value).status === "parsed";
+/** Whether the text names a day that exists, read through the one civil-date owner so a form and the service refuse the same days. */ const civilDateExists = (value: string): boolean => parseCivilDate(value).status === "parsed";
 export const civilDateSchema = z.string({ error: INTERACTION_MESSAGES.dateInvalid }).refine(civilDateExists, { error: INTERACTION_MESSAGES.dateInvalid });
 export const interactionOccurredOnSchema = z.strictObject({ precision: interactionPrecisionSchema, date: civilDateSchema.optional() }).superRefine((value, context) => {
   if (value.precision === "unknown" && value.date !== undefined) {

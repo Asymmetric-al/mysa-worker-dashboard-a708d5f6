@@ -1,5 +1,4 @@
-/** The variant and release identity model (success criterion 17), proven at the service boundary: a draft, a candidate and a release are three separate identities; a candidate freezes the exact revision under review. */
-import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from "vitest";
+/** The variant and release identity model (success criterion 17), proven at the service boundary: a draft, a candidate and a release are three separate identities; a candidate freezes the exact revision under review. */ import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type MutationInput, type Scope } from "@/modules/data-service";
 import { resolveSession } from "@/modules/data-service/authorize";
@@ -40,8 +39,7 @@ let control: World;
 let partial: World;
 let reviewer: World;
 let blind: World;
-/** The seeded document sets the worlds are laid down from, captured once so every case starts from the same bytes. */
-let baselineDocuments: SeededSessionDocuments;
+/** The seeded document sets the worlds are laid down from, captured once so every case starts from the same bytes. */ let baselineDocuments: SeededSessionDocuments;
 let partialDocuments: SeededSessionDocuments;
 let reviewerDocuments: SeededSessionDocuments;
 const laidDownSessions = [CONTROL_SESSION_ID, PARTIAL_SESSION_ID, REVIEWER_SESSION_ID, BLIND_SESSION_ID];
@@ -82,15 +80,13 @@ function alreadyAcceptedOutcome(outcome: MutationOutcome): Extract<MutationOutco
 }
 const invalidOutcome = (outcome: MutationOutcome): InvalidOutcome => (outcome.outcome !== "invalid" ? throwing(`This change was expected to be refused by validation and was answered with ${JSON.stringify(outcome)}.`) : outcome);
 const unchangedOutcome = (outcome: MutationOutcome): Extract<MutationOutcome, { outcome: "unchanged" }> => (outcome.outcome !== "unchanged" ? throwing(`This change was expected to answer that the record already said it, and it answered with ${JSON.stringify(outcome)}.`) : outcome);
-/** The per-edition results of one release, which an aggregate answer would not carry at all. */
-function itemsOf(outcome: Extract<MutationOutcome, { outcome: "accepted" }>): readonly PerItemResult[] {
+/** The per-edition results of one release, which an aggregate answer would not carry at all. */ function itemsOf(outcome: Extract<MutationOutcome, { outcome: "accepted" }>): readonly PerItemResult[] {
   const items = requiredSaying(outcome.items, "This change reports no per-item results, so no edition's own outcome could be asserted.");
   return items;
 }
 const itemFor = (items: readonly PerItemResult[], variantId: string): PerItemResult => firstWhere(items, "targetId", variantId, `per-edition result for ${variantId}`);
 const isPlainRecord = (value: JsonValue): value is { readonly [field: string]: JsonValue } => typeof value === "object" && value !== null && !Array.isArray(value);
-/** The release modes a stored release result states, one per edition: read from the replayed attempt rather than from the surface, because the mode a submission recorded is the fact this file checks against the record. */
-function notifyModesOf(result: JsonValue): readonly (string | null)[] {
+/** The release modes a stored release result states, one per edition: read from the replayed attempt rather than from the surface, because the mode a submission recorded is the fact this file checks against the record. */ function notifyModesOf(result: JsonValue): readonly (string | null)[] {
   if (!isPlainRecord(result)) throw new Error("A release attempt's stored result is an object carrying its per-edition outcomes.");
   const editions = result["editions"];
   if (!Array.isArray(editions)) throw new Error("A release attempt's stored result carries one entry per selected edition.");
@@ -293,8 +289,7 @@ it("review is exactly one step, and it cannot be widened: answers a candidate on
   expect(submitted.review.approvalScope).toBe("this-variant-only");
   acceptedOutcome(await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId: first }, await editionRevision(control, edition), control.scope)));
   expect([frozenCandidate(await candidateOf(control, edition)).review.decision, outcomeIs(await mutations.updates.approveCandidate(control.sessionId, attempt({ candidateId: first }, await editionRevision(control, edition), control.scope)), "unchanged").outcome]).toEqual(["approved", "unchanged"]);
-  const reanswered = invalidOutcome(await mutations.updates.requestChanges(control.sessionId, attempt({ candidateId: first }, await editionRevision(control, edition), control.scope)));
-  expect(Object.keys(reanswered.fields)).toContain("candidateId");
+  expect(Object.keys(invalidOutcome(await mutations.updates.requestChanges(control.sessionId, attempt({ candidateId: first }, await editionRevision(control, edition), control.scope))).fields)).toContain("candidateId");
   const resubmitted = invalidOutcome(await mutations.updates.submitForReview(control.sessionId, attempt({ variantId: edition, revisionId: first }, await editionRevision(control, edition), control.scope)));
   expect(Object.keys(resubmitted.fields)).toContain("revisionId");
   const secondRound = await saveDraftText(control, edition, ["Dansk udkast, anden runde."]);
@@ -395,8 +390,7 @@ it("independent release heads and the partial failure: reports a partial release
   expect(releasedView(await releaseOf(partial, AR_EDITION)).release.releaseId).toBe(AR_PRIOR_RELEASE);
 });
 it("independent release heads and the partial failure: takes a lost acknowledgement as no claim of success, and still advances only the edition that could release", async () => {
-  const registry = firstWhere(DEMONSTRABLE_TARGETS, "name", "publishVariants", "a demonstration of a lost acknowledgement on publishVariants");
-  expect(registry.modes).toContain("unknown");
+  expect(firstWhere(DEMONSTRABLE_TARGETS, "name", "publishVariants", "a demonstration of a lost acknowledgement on publishVariants").modes).toContain("unknown");
   acceptedOutcome(await mutations.dev.setFailurePlan(attempt({ mode: "unknown", target: { kind: "mutation", name: "publishVariants" } } as const, (await devStateOf(partial)).revision, partial.scope), partial.source));
   const armed = (await devStateOf(partial)).data;
   expect([armed.failurePlan.armed, armed.failurePlan.mode, armed.failurePlan.target?.name]).toEqual([true, "unknown", "publishVariants"]);
@@ -445,4 +439,25 @@ it("a section save that writes nothing is not an acceptance: answers unchanged w
   const advanced = await pageOf(control);
   expect(accepted.revision).not.toBe(draft.recordRevision);
   expect([pageDraftOf(advanced).recordRevision, pageDraftOf(advanced).revisionId, pageSectionOf(advanced, 0).presentation]).toEqual([accepted.revision, draft.revisionId, moved]);
+});
+it("a preset composes the draft edition: replaces the sections the draft held with its own, releases nothing and answers unchanged when it is applied again", async () => {
+  const before = await pageOf(control);
+  const draft = pageDraftOf(before);
+  const presetId = "preset-opening-and-story" as const;
+  const preset = required(
+    before.data.presets.find((entry) => entry.presetId === presetId),
+    `the opening-and-story preset of ${PAGE_ID}`,
+  );
+  expect(preset.sections).toEqual(["introduction", "story"]);
+  // The seeded draft of this Page holds exactly one section, and a preset composes the edition it describes: the composed draft holds the preset's sections in their order, and the section the draft held is gone rather than shifted down the list.
+  const accepted = acceptedOutcome(await mutations.pages.applyPreset(control.sessionId, attempt({ variantId: draft.variantId, presetId }, draft.recordRevision, control.scope)));
+  const composed = await pageOf(control);
+  expect(composed.data.sections.map((section) => section.element)).toEqual([...preset.sections]);
+  expect(pageDraftOf(composed).recordRevision).toBe(accepted.revision);
+  // Composing a draft releases nothing: every edition of this Page states the same release head, released edition, reach and last release it stated before the preset.
+  const releaseFacts = (view: PageView): readonly unknown[] => view.data.editions.map((edition) => [edition.variantId, edition.releaseHeadId, edition.headRelease, edition.reach, edition.lastReleaseAt]);
+  expect(releaseFacts(composed)).toEqual(releaseFacts(before));
+  // The composed draft already states what the preset proposes, so applying the same preset again is answered with the revision on the record instead of a new one.
+  const repeated = unchangedOutcome(await mutations.pages.applyPreset(control.sessionId, attempt({ variantId: draft.variantId, presetId }, accepted.revision, control.scope)));
+  expect([repeated.revision, pageDraftOf(await pageOf(control))]).toEqual([accepted.revision, pageDraftOf(composed)]);
 });

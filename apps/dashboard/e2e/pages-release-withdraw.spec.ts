@@ -1,5 +1,4 @@
-/** Criterion 12 — Worker and Project pages. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 12 — Worker and Project pages. */ import type { Locator, Page } from "@playwright/test";
 import { test, expect, actAs, armLostAcknowledgement, arrayAt, chooseFile, clearFailurePlan, fieldAt, fixturePathOf, isRecord, jsonOf, newAttemptId, requestRendition, stringAt } from "../playwright.config";
 const PAGE_DOCUMENT = "doc-page-harbour-youth";
 const PAGE_FAMILY = "worker-page";
@@ -10,6 +9,7 @@ const PROJECT_PAGE_FAMILY = "project-page";
 const PROJECT_PAGE_FAMILY_LABEL = "Project Page";
 const PROJECT_SECTION_HEADING = "A kitchen the whole week uses"; // The prose this file composes into the Project Page, so the preview assertion is about text only this test wrote.
 const PROJECT_SECTION_BODY = "On Fridays the hall seats forty, and the kitchen is where every one of those plates begins.";
+const PRAYER_SECTION_BODY = ["Give thanks for the six new faces who joined us, and pray for the leaders who welcome them each Friday.", "Ask for the teams who prepare the meal afterwards, and for the families who bring them."] as const; // The two paragraphs this file writes into one Body, separated by the blank line that field's own help text promises a writer.
 const ENGLISH = "en";
 const ARABIC = "ar";
 const ARABIC_DRAFT_PROSE = "أمسيات الجمعة";
@@ -19,14 +19,14 @@ const REACH = { notPublic: "Not public", linkPublic: "Shared by link: public", l
 const ONE_LISTED_EDITION = "1 edition is listed publicly.";
 const NO_LISTED_EDITION = "No editions are listed publicly.";
 const GIVING_SIMULATION = "simulated giving destination; no payment is taken";
+const APPROVED_DESIGNATION_LABEL = "Harbour Youth general fund"; // The one approved giving designation the seed records, named by the Page whose document carries it.
 const IMAGE_ALT_TEXT = "The youth group gathered in the church hall after a Friday meal."; // The words this file places an image with, so the placement the section states is one only this test wrote.
 const VIDEO_ALT_TEXT = "The youth group's welcome message, filmed in the hall."; // The text alternative criterion 18's video placement carries, written here so the assertion reads the record rather than the form.
 const VIDEO_LANGUAGE = "en"; // The media's own language, which is also the language the WebVTT track is offered in: it is never the interface's language.
 const VIDEO_TRACK_LABEL = "English";
 const VIDEO_FIXTURES = { media: "sample-h264.mp4", poster: "poster.jpg", captions: "sample.vtt" } as const;
 const PREPARATION_TIMEOUT_MS = 120_000; // Preparing a real MP4 is the heaviest work this application does on this device: the file is decoded, checked and re-muxed before any receipt exists.
-// Every receipt this file awaits is a write that has already reached the service: the store rewrites the whole session document and re-checksums the
-// revision, which on a loaded machine has taken sixteen seconds in this very file. The wait is stated rather than left to a default an assertion assumes.
+// Every receipt this file awaits is a write that has already reached the service: the store rewrites the whole session document and re-checksums the revision, which on a loaded machine has taken sixteen seconds in this very file. The wait is stated rather than left to a default an assertion assumes.
 const WRITE_RECEIPT_TIMEOUT_MS = 60_000;
 const POLLED_CLICK_TIMEOUT_MS = 2_000; // How long one attempt to choose an option may wait for the control to answer.
 const MEDIA_ROUTE = /^\/api\/media\/[A-Za-z0-9][A-Za-z0-9._:%-]*\/[A-Za-z0-9][A-Za-z0-9._:%-]*$/u; // The address every rendition is served from: a rendition of this application, never a file on a public path.
@@ -159,7 +159,7 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   const fields = paneOf(page, "fields");
   await expect(fields.getByRole("heading", { name: "Prayer — Section fields", exact: true })).toBeVisible();
   await fields.getByLabel("Heading", { exact: true }).fill("A prayer for this term");
-  await fields.getByLabel("Body", { exact: true }).fill("Give thanks for the six new faces who joined us, and pray for the leaders who welcome them each Friday.");
+  await fields.getByLabel("Body", { exact: true }).fill(PRAYER_SECTION_BODY.join("\n\n"));
   await fields.getByRole("button", { name: "Save this section", exact: true }).click();
   for (const said of ["A prayer for this term", "Give thanks for the six new faces who joined us"]) await expect(paneOf(page, "preview")).toContainText(said);
   const chosenFields = paneOf(page, "fields");
@@ -172,6 +172,9 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await expect(chosenFields.getByText("Presentation is limited to the options a section offers; a page has no styles of its own.", { exact: true })).toBeVisible();
   const renderedPrayer = page.locator('[data-slot="page-preview-frame"]').locator("section.content-section").filter({ hasText: "A prayer for this term" });
   for (const style of [/content-layout-single-column/u, /content-treatment-normal/u]) await expect(renderedPrayer).toHaveClass(style);
+  const prayerBody = renderedPrayer.locator(".content-section-text > p").filter({ hasText: /new faces|prepare the meal/u }); // The Body's own paragraphs, told apart from the Heading the same section renders as a paragraph of its own, so the count below is about the blank line rather than about the section's field count.
+  await expect(prayerBody, "A blank line in a saved Body separates one paragraph from the next, exactly as the field's own help text promises").toHaveCount(2);
+  await expect(prayerBody.nth(1), "The second paragraph is the second block of the saved text, in the author's own order").toContainText(PRAYER_SECTION_BODY[1]);
   await chooseOption(chosenFields, "Two columns with image and text");
   await chooseOption(chosenFields, "Emphasized");
   await chosenFields.getByRole("button", { name: "Save this section", exact: true }).click();
@@ -257,8 +260,7 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await addSection(page, "Video"); // --- the video step: a real MP4 with a poster and a WebVTT caption track, placed and played ------------- The finding's record is that a Page's video section could never hold a placement at all, so the whole player is asserted here rather than only the receipt.
   await expect(page.getByRole("button", { name: nameOfLabelAtPosition("Video", 4) })).toBeVisible();
   await selectSection(page, 4, "Video");
-  const videoFields = paneOf(page, "fields");
-  await videoFields.getByRole("button", { name: "Add a video", exact: true }).click();
+  await paneOf(page, "fields").getByRole("button", { name: "Add a video", exact: true }).click();
   const videoPicker = page.locator('[data-slot="media-picker"][data-kind="video"]');
   await expect(videoPicker).toBeVisible();
   await chooseFile(videoPicker, VIDEO_FIXTURES.media);
@@ -408,7 +410,7 @@ test("each reach value is stated in words and demonstrated at the discovery inde
   await expect(page.locator('[data-slot="public-reading-view"]')).not.toContainText(PAGE_TITLE);
 });
 test("Giving unavailable stands with no fallback fund, and containment hides every address without touching the draft", async ({ page }) => {
-  await openBuilder(page);
+  await openProjectBuilder(page); // The Project Page's document records no approved designation, so its Give placement is the one that states the unavailable state; the Worker Page seeded beside it carries the approved designation asserted below.
   const giving = page.locator('[data-slot="giving-designation"][data-giving-state="unavailable"][data-layout="panel"]');
   await expect(giving, "The Page carries no approved designation, so the placement states *Giving unavailable*: no other fund, no default destination and no amount, rather than a zero or an empty figure").toBeVisible();
   await expect(giving.getByRole("heading", { name: "Giving unavailable", exact: true })).toBeVisible();
@@ -418,6 +420,13 @@ test("Giving unavailable stands with no fallback fund, and containment hides eve
   await expect(giving.getByText("This preview shows where giving would go. It cannot start a payment.", { exact: true })).toBeVisible();
   await expect(giving.getByRole("button", { name: /pay|donate|give/iu })).toHaveCount(0);
   await expect(giving).not.toContainText(/[$€£¥]/u);
+  await openBuilder(page); // The Worker Page's document records one approved designation, so the same placement shows the destination its organization approved instead of the unavailable state.
+  const approved = page.locator('[data-giving-state="approved"][data-layout="panel"]');
+  await expect(approved, "The approved designation is the one destination this placement states, and it names the fund rather than a default, a zero or an empty figure").toBeVisible();
+  await expect(approved).toContainText(APPROVED_DESIGNATION_LABEL);
+  await expect(approved.getByText(GIVING_SIMULATION, { exact: true }), "An approved destination is still a simulated one, labelled where the placement states it").toBeVisible();
+  await expect(approved.getByText("This preview shows where giving would go. It cannot start a payment.", { exact: true })).toBeVisible();
+  await expect(approved.getByRole("button", { name: /pay|donate|give/iu }), "The approved destination starts no payment either: the placement shows where giving would go and takes nothing").toHaveCount(0);
   const catalogue = page.locator('[data-slot="family-catalogue"]'); // The two sections a source owns are listed as read-only, so no worker-entered amount can be composed into a Page at all: a progress module appears only where the source qualifies one.
   for (const managed of [
     { sectionType: "giving", reason: "Managed by the giving designation approved for this page" },
@@ -458,9 +467,14 @@ test("Giving unavailable stands with no fallback fund, and containment hides eve
   await expect(page.locator('head meta[name="robots"]')).toHaveAttribute("content", /noindex/u);
 });
 test("a public edition serves what it published while its draft stays shut, and a release whose acknowledgement was lost recovers exactly once", async ({ page }) => {
-  await page.goto(readingPath(PAGE_DOCUMENT, ARABIC)); // A language this Page publishes nothing in is not served from its draft: the Arabic edition holds a saved draft and no release, so no address may render that draft in its place.
-  await expect(page.locator('[data-slot="public-reading-view-language-unavailable"]')).toBeVisible();
+  await page.goto(readingPath(PAGE_DOCUMENT, ARABIC)); // A language this Page publishes nothing in is answered by an admitted edition of the same Page — its English release, with the substitution stated — and never by its draft: the Arabic edition holds a saved draft and no release, so no address may render that draft in its place.
+  const substituted = page.locator('[data-slot="public-reading-view-edition"]');
+  await expect(substituted).toBeVisible();
+  await expect(substituted).toContainText(PAGE_TITLE);
   await expect(page.locator('[data-slot="public-reading-view"]')).not.toContainText(ARABIC_DRAFT_PROSE);
+  await page.goto(readingPath(PROJECT_PAGE_DOCUMENT, ENGLISH)); // A Page whose one edition holds a draft and no release has no admitted edition at all, so nothing may stand in and the address says Language unavailable rather than standing the draft in for a publication.
+  await expect(page.locator('[data-slot="public-reading-view-language-unavailable"]')).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Language unavailable", exact: true })).toBeVisible();
   await actAs(page, "reader-unauthorized"); // A reader holding no grant of any kind asks for the same Page. A listed public edition is public, so this reader is served it — that is the public reading experience, and what it must never become is a route to the draft, to another edition, or to a record the published world does not hold.
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   const publicEdition = page.locator('[data-slot="public-reading-view-edition"]');
@@ -469,7 +483,7 @@ test("a public edition serves what it published while its draft stays shut, and 
   await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Reading an edition changes nothing.");
   await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Access is checked again every time this edition is opened");
   await page.goto(readingPath(PAGE_DOCUMENT, ARABIC));
-  await expect(page.locator('[data-slot="public-reading-view-language-unavailable"]')).toBeVisible();
+  await expect(page.locator('[data-slot="public-reading-view-edition"]')).toContainText(PAGE_TITLE);
   await expect(page.locator('[data-slot="public-reading-view"]')).not.toContainText(ARABIC_DRAFT_PROSE);
   await page.goto("/preview/pages/doc-page-not-in-this-scope/en"); // An address naming a Page the published world does not hold is refused, and the refusal is the same whether or not such a Page exists: it carries no title, no prose and no existence hint.
   await expect(page.locator('[data-slot="public-reading-view"][data-read-kind="denied"]')).toBeVisible();

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SourceReference } from "@/lib/ids";
 import { compareCodeUnits } from "@/lib/ordering";
 import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
-import { missedPlan, nextOccurrences, type DisclosedMonthDayResolution, type PlanResolutions, type RepeatProfile, type SeriesEnd, type SeriesOccurrence, type SeriesRule, type SeriesState } from "@/modules/time/recurrence";
+import { missedPlan, nextOccurrences, planPreview, type DisclosedMonthDayResolution, type PlanResolutions, type RepeatProfile, type SeriesEnd, type SeriesOccurrence, type SeriesRule, type SeriesState } from "@/modules/time/recurrence";
 import { canEdit, canView, type ResolvedSession, type SessionSource } from "../authorize";
 import { principalIdSchema, project, taskRecordSchema, taskSeriesRecordSchema } from "../envelope";
 import type { PrincipalId, ReadAction, ReadEnvelope, RecordedValueState, Scope, SeriesEndRecord, SeriesRuleRecord, SeriesRuleRevisionRecord, TaskKind, TaskRecord, TaskRecordStatus, TaskSeriesRecord } from "../envelope";
@@ -234,12 +234,24 @@ function toSeriesRevisions(revisions: readonly SeriesRuleRevisionRecord[]): read
   return views;
 }
 const resolutionView = (resolution: DisclosedMonthDayResolution): SeriesPreviewResolution => ({ dueOn: serialiseCivilDate(resolution.dueOn), requestedDay: resolution.requestedDay, resolvedDay: resolution.resolvedDay });
-function previewOf(options: { readonly series: TaskSeriesRecord; readonly rule: SeriesRule; readonly today: CivilDate }): SeriesPreviewView {
+/** The date the plan is waiting for an answer on, absent when the plan names no current date, that date has already been answered, or its due date cannot be read: a date that is no longer awaiting an answer is not one the plan is waiting for. */
+function awaitingAnswerOf(occurrence: TaskListRow | null): CivilDate | null {
+  const stored = occurrence === null || !isAwaitingAction(occurrence.status) ? null : occurrence.dueOn;
+  const parsed = stored === null ? undefined : parseCivilDate(stored);
+  return parsed !== undefined && parsed.status === "parsed" ? parsed.date : null;
+}
+function previewOf(options: { readonly series: TaskSeriesRecord; readonly rule: SeriesRule; readonly today: CivilDate; readonly awaitingAnswer: CivilDate | null }): SeriesPreviewView {
   if (options.series.state === "stopped") return { status: "not-admitted", reason: "stopped" };
-  const preview = nextOccurrences(options.rule, options.today, PREVIEW_DATE_COUNT);
+  const preview = planPreview({ rule: options.rule, today: options.today, awaitingAnswer: options.awaitingAnswer, count: PREVIEW_DATE_COUNT });
   if (preview.status === "refused") return preview.reason === "end-reached" ? { status: "ended" } : { status: "unreadable", reason: preview.reason };
   const dates = preview.dates.map(serialiseCivilDate);
   return { status: "preview", dates, dateCount: dates.length, monthDayResolutions: preview.monthDayResolutions.map(resolutionView) };
+}
+/** The civil day a recorded missed-plan resolution answered the plan through, absent while the plan has never been answered. */ function answeredThroughOf(series: TaskSeriesRecord): CivilDate | undefined {
+  const stored = series.planReviewAnsweredOn;
+  if (stored === null) return undefined;
+  const parsed = parseCivilDate(stored);
+  return parsed.status === "parsed" ? parsed.date : undefined;
 }
 function planReviewOf(options: { readonly series: TaskSeriesRecord; readonly rule: SeriesRule; readonly occurrences: readonly TaskRecord[]; readonly today: CivilDate; readonly instant: ScenarioInstant }): SeriesPlanReviewView {
   const recordedPlanNeedsReview = options.series.planNeedsReview;
@@ -255,7 +267,8 @@ function planReviewOf(options: { readonly series: TaskSeriesRecord; readonly rul
   const anchor = latest ?? options.rule.firstDueOn;
   const ahead = nextOccurrences(options.rule, anchor, PLAN_WALK_COUNT);
   if (ahead.status === "preview") for (const date of ahead.dates) if (serialiseCivilDate(date) < serialiseCivilDate(options.today)) planned.push({ dueOn: date, status: "open" });
-  const review = missedPlan({ rule: options.rule, occurrences: planned, now: options.instant });
+  const answeredThrough = answeredThroughOf(options.series);
+  const review = missedPlan({ rule: options.rule, occurrences: planned, now: options.instant, ...(answeredThrough === undefined ? {} : { acknowledgedThrough: answeredThrough }) });
   if (review.state === "on-track") return { state: "on-track", missedDates: [], missedDateCount: 0, resolutions: [], recordedPlanNeedsReview };
   const missedDates = review.missedDates.map(serialiseCivilDate);
   return { state: "needs-review", missedDates, missedDateCount: missedDates.length, resolutions: review.resolutions, recordedPlanNeedsReview };
@@ -301,7 +314,7 @@ export async function readSeries(query: SeriesReadQuery, source?: SessionSource)
   const currentOccurrence = stopped || named === undefined ? null : taskRow({ task: named, session: opening.session, scope: opening.scope, today: today.text, privateTags });
   const actionableOccurrenceId = series.state === "active" && currentOccurrence !== null && isAwaitingAction(currentOccurrence.status) ? currentOccurrence.taskId : null;
   const planReview = planReviewOf({ series, rule, occurrences, today: today.date, instant: opening.instant });
-  const preview = previewOf({ series, rule, today: today.date });
+  const preview = previewOf({ series, rule, today: today.date, awaitingAnswer: awaitingAnswerOf(currentOccurrence) });
   const leftBehind = stopped
     ? occurrences
         .filter((task) => isAwaitingAction(task.status))

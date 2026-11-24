@@ -20,13 +20,11 @@ const HINT_CLASS = "type-supporting leading-5";
   return held === "" ? "Civil dates here are written and read as year-month-day, for example 2026-09-12." : `Civil dates here are written and read as year-month-day, and this one is ${held}.`;
 }
 function messagesOf(value: unknown): readonly string[] {
-  const raw: readonly unknown[] = Array.isArray(value) ? value : [value];
   const messages: string[] = [];
-  for (const entry of raw) if (typeof entry === "string" && entry.trim() !== "" && !messages.includes(entry)) messages.push(entry);
+  for (const entry of Array.isArray(value) ? value : [value]) if (typeof entry === "string" && entry.trim() !== "" && !messages.includes(entry)) messages.push(entry);
   return messages;
 }
-/** The per-field messages an `invalid` outcome produced, keyed as the `error` prop of a field expects them. */
-export type FieldErrorLookup = { readonly byField: Readonly<Record<string, readonly string[]>>; readonly form: readonly string[]; readonly count: number };
+/** The per-field messages an `invalid` outcome produced, keyed as the `error` prop of a field expects them. */ export type FieldErrorLookup = { readonly byField: Readonly<Record<string, readonly string[]>>; readonly form: readonly string[]; readonly count: number };
 /** Maps an `invalid` outcome onto the messages a form renders. */ export function fieldErrorsFromInvalid(outcome: Pick<InvalidOutcome, "fields">): FieldErrorLookup {
   const byField: Record<string, readonly string[]> = {};
   const form: string[] = [];
@@ -78,8 +76,7 @@ function FieldMarkers({ required, optionalHint }: { readonly required: boolean; 
       </span>
     );
   }
-  if (optionalHint) return <span className="font-normal text-muted-foreground">(optional)</span>;
-  return null;
+  return optionalHint ? <span className="font-normal text-muted-foreground">(optional)</span> : null;
 }
 const FieldMessage = ({ id, messages }: { readonly id: string; readonly messages: readonly string[] }): ReactElement => (
   <div className="flex min-w-0 items-start gap-1.5">
@@ -155,8 +152,7 @@ export type FormFieldGroupProps = {
 }
 /** The heading levels a surrounding page can need; the level is the caller's, not the summary's. */ export type SummaryHeadingLevel = 2 | 3 | 4;
 const SUMMARY_HEADING_TAG: Readonly<Record<SummaryHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
-/** The one type scale's utility per level, so the one error summary states its heading at the measure of the level it lands at. */
-const SUMMARY_HEADING_SCALE: Readonly<Record<SummaryHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The one type scale's utility per level, so the one error summary states its heading at the measure of the level it lands at. */ const SUMMARY_HEADING_SCALE: Readonly<Record<SummaryHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const DEFAULT_SUMMARY_TITLE = "There is a problem with this form";
 type SummaryEntry = { readonly path: string | null; readonly label: string; readonly messages: readonly string[] };
 export type FormErrorSummaryProps = {
@@ -194,8 +190,7 @@ function focusControl(controlId: string): void {
   (focusable ?? target).focus();
   target.scrollIntoView({ block: "center" });
 }
-/** The aggregate surface a failed submit renders above its fields. */
-export function FormErrorSummary({ errors, labels, order, title = DEFAULT_SUMMARY_TITLE, description, headingLevel = 2, className }: FormErrorSummaryProps): ReactElement | null {
+/** The aggregate surface a failed submit renders above its fields. */ export function FormErrorSummary({ errors, labels, order, title = DEFAULT_SUMMARY_TITLE, description, headingLevel = 2, className }: FormErrorSummaryProps): ReactElement | null {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const announcedFor = useRef<FieldErrorLookup | null | undefined>(undefined);
   const titleId = useId();

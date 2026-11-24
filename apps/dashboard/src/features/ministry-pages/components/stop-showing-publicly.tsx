@@ -14,19 +14,15 @@ export type ContainmentScope = StopShowingVariables["scope"];
 type ContainmentOutcome = OperationResultProps["outcome"];
 const DELETES_NOTHING = "Nothing is deleted. The Page, its drafts, its review candidates and its media all stay exactly as they are; only how far the Page reaches changes.";
 const REACH_NOT_EDITORIAL = "This is a reach change and not an editorial one: it changed how far the Page reaches and nothing about its content, so no draft was tidied, no translation was corrected and no review candidate was cleared.";
-/** The count this control acts on: a whole number of editions, or none when the caller stated nothing usable. */
-export const statedEditionCount = (editionCount: number): number => (Number.isFinite(editionCount) && editionCount > 0 ? Math.trunc(editionCount) : 0);
-/** The payload this confirmation is the acknowledgement for. */
-export const containmentAcknowledgement = (documentId: string): StopShowingPayload => ({ documentId, acknowledgeContainsAllLocales: true });
+/** The count this control acts on: a whole number of editions, or none when the caller stated nothing usable. */ export const statedEditionCount = (editionCount: number): number => (Number.isFinite(editionCount) && editionCount > 0 ? Math.trunc(editionCount) : 0);
+/** The payload this confirmation is the acknowledgement for. */ export const containmentAcknowledgement = (documentId: string): StopShowingPayload => ({ documentId, acknowledgeContainsAllLocales: true });
 function containmentStatement(outcome: ContainmentOutcome, editions: number): { readonly title: string; readonly sentences: readonly string[] } | null {
   if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted")
     return { title: "Every language edition is contained", sentences: [copy.stopShowingPublicly.resultSummary(editions), REACH_NOT_EDITORIAL, "On the next read, the public discovery index leaves these editions out and the direct address refuses them: open the discovery index to see the result for yourself."] };
-  if (outcome.outcome === "unchanged") return { title: "Nothing needed containing", sentences: ["No edition of this Page was public or listed when you confirmed, so nothing was changed and no edition's reach was altered."] };
-  return null;
+  return outcome.outcome === "unchanged" ? { title: "Nothing needed containing", sentences: ["No edition of this Page was public or listed when you confirmed, so nothing was changed and no edition's reach was altered."] } : null;
 }
 export type StopShowingPubliclyProps = { readonly scope: ContainmentScope; readonly documentId: string; readonly expectedRevision: string; readonly editionCount: number; readonly disabled?: boolean; readonly disabledReason?: string; readonly className?: string };
-/** The confirmation and result for containing a Page. */
-export function StopShowingPublicly({ scope, documentId, expectedRevision, editionCount, disabled = false, disabledReason, className }: StopShowingPubliclyProps): ReactElement {
+/** The confirmation and result for containing a Page. */ export function StopShowingPublicly({ scope, documentId, expectedRevision, editionCount, disabled = false, disabledReason, className }: StopShowingPubliclyProps): ReactElement {
   const titleId = useId();
   const reasonId = useId();
   const [dialogOpen, setDialogOpen] = useState(false);

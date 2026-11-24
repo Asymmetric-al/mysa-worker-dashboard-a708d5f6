@@ -85,8 +85,7 @@ const AGREEMENT_STATEMENTS: readonly string[] = [
 type ResponseStep = "form" | "review";
 type ResponseFormValues = { kind: string; respondentId: string; standingEvidence: string };
 type ResponseFormPayload = { readonly initiativeId: string; readonly requestId: string; readonly kind: string; readonly respondentId: string; readonly standingEvidence: string | null; readonly termsVersionRef: string };
-/** Props of {@link RequestResponseForm}. */
-export interface RequestResponseFormProps {
+/** Props of {@link RequestResponseForm}. */ export interface RequestResponseFormProps {
   readonly initiativeId: string;
   readonly request: RequestRow;
   readonly scope: Scope;
@@ -151,7 +150,7 @@ function ReviewSummary({ payload, request, scope }: { readonly payload: RecordRe
     { term: RESPONSE_SURFACE_COPY.requestLabel, value: <bdi className="mono-identifier wrap-anywhere">{request.requestId}</bdi> },
     { term: RESPONSE_SURFACE_COPY.ministryLabel, value: <bdi className="mono-identifier wrap-anywhere">{scope.ministryId}</bdi> },
   ];
-  return <FactList className="flex min-w-0 flex-col gap-3 text-sm" rows={facts} row={(fact) => <ReviewFact key={fact.term} label={fact.term} value={fact.value} />} />;
+  return <FactList className="flex min-w-0 flex-col gap-3 text-sm" rows={facts} row={(fact) => <ReviewFact key={fact.term} term={fact.term} value={fact.value} />} />;
 }
 function RecordedResponse({ response, request }: { readonly response: ResponseRow; readonly request: RequestRow }): ReactElement {
   const kindCopy = copyForKind(responseKindOf(response.kind));

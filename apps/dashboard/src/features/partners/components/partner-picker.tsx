@@ -24,21 +24,9 @@ const PICKER_COPY = {
 const PICKER_PAGE_SIZE = Math.min(20, ROSTER_PAGE_SIZE_CAP);
 const READ_PARAM = { search: "search", facet: "facet", page: "page", pageSize: "pageSize" } as const;
 export type PartnerSelection = { readonly partnerId: string; readonly kind: PartnerKind; readonly displayName: string; readonly source: SourceReference };
-/** The opaque, source-qualified reference this selection and the record it came from share: what `excludeRefs` is compared against. */
-export const partnerSelectionRef = (selection: PartnerSelection): string => formatSourceReference({ system: selection.source.system, reference: selection.partnerId });
-/** Whether two selections denote the same record in the same source, so a chosen value is recognised after a re-read. */
-export const samePartnerSelection = (left: PartnerSelection, right: PartnerSelection): boolean => left.partnerId === right.partnerId && sameSourceReference(left.source, right.source);
-interface PartnerPickerCommonProps {
-  readonly scope: Scope;
-  readonly label: string;
-  readonly description?: string;
-  readonly error?: string | readonly string[];
-  readonly disabled?: boolean;
-  readonly name?: string;
-  readonly excludeRefs?: readonly string[];
-  readonly headingLevel?: 2 | 3 | 4;
-  readonly className?: string;
-}
+/** The opaque, source-qualified reference this selection and the record it came from share: what `excludeRefs` is compared against. */ export const partnerSelectionRef = (selection: PartnerSelection): string => formatSourceReference({ system: selection.source.system, reference: selection.partnerId });
+/** Whether two selections denote the same record in the same source, so a chosen value is recognised after a re-read. */ export const samePartnerSelection = (left: PartnerSelection, right: PartnerSelection): boolean => left.partnerId === right.partnerId && sameSourceReference(left.source, right.source);
+type PartnerPickerCommonProps = { readonly scope: Scope; readonly label: string; readonly description?: string; readonly error?: string | readonly string[]; readonly disabled?: boolean; readonly name?: string; readonly excludeRefs?: readonly string[]; readonly headingLevel?: 2 | 3 | 4; readonly className?: string };
 export type PartnerPickerProps = PartnerPickerCommonProps & { readonly mode: "multiple"; readonly value: readonly PartnerSelection[]; readonly onValueChange: (value: readonly PartnerSelection[]) => void };
 type PartnerPage = { readonly options: readonly PartnerSelection[]; readonly total: number };
 const isPartnerKind = (value: string): value is PartnerKind => PARTNER_KINDS.some((kind) => kind === value);
@@ -82,8 +70,7 @@ async function readPartnerPage(url: string): Promise<PartnerPageReadResult> {
   const envelope: ReadEnvelope<PartnerPage> = { ...result.envelope, data: pageOf(result.envelope.data, url, result.envelope.source) };
   return { kind: "envelope", envelope };
 }
-/** The address of one picker read: the roster job, asked with the search, the record class, the page and the size the roster's own grammar produced. */
-function pickerReadUrl(request: RosterRequestParams): string {
+/** The address of one picker read: the roster job, asked with the search, the record class, the page and the size the roster's own grammar produced. */ function pickerReadUrl(request: RosterRequestParams): string {
   const search = new URLSearchParams();
   search.set(ROSTER_QUERY_PARAM, ROSTER_READ_JOB.roster);
   if (request.search !== undefined && request.search !== "") search.set(READ_PARAM.search, request.search);
@@ -176,8 +163,7 @@ function PartnerCombobox({ field, options, excluded, pending, disabled, term, on
     </Combobox>
   );
 }
-/** The one partner selector: the labelled field, the settled search it sends to the service, and the shared notice for every state that is not a result. */
-export default function PartnerPicker(props: PartnerPickerProps): ReactElement {
+/** The one partner selector: the labelled field, the settled search it sends to the service, and the shared notice for every state that is not a result. */ export default function PartnerPicker(props: PartnerPickerProps): ReactElement {
   const { scope, label, description, error, disabled = false, excludeRefs, headingLevel = 3, className, name } = props;
   const generatedName = useId();
   const [typed, setTyped] = useState("");

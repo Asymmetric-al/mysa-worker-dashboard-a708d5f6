@@ -1,0 +1,5 @@
+A short welcome from the youth group, written out for anyone who cannot play the clip.
+
+The clip is a synthetic test pattern generated for this repository, so it shows colour bars, a moving marker and a steady tone rather than people.
+
+No third-party footage, no recorded speech and no photograph appears in it, so this text is the whole of what the video has to say.

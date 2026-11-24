@@ -1,5 +1,4 @@
-/** Criterion 1 — whole-query agreement: one query, one snapshot, six artifacts (AAP 0.8.8, 0.12.2). */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 1 — whole-query agreement: one query, one snapshot, six artifacts (AAP 0.8.8, 0.12.2). */ import type { Locator, Page } from "@playwright/test";
 import { AMOUNT_STATE_WORDS, CSV_FIELD, NEUTRALISER, countOf, ensureWorkload, listTotalOf, csvFileOf, csvTextOf, expect, expectSameAmount, isInert, metadataOf, printedColumnAmounts, rowMinorUnitsOf, statedAmountOf, sumOf, test, withoutNeutraliser, type CsvFile, type StatedAmount } from "../playwright.config";
 const openReport = async (page: Page, href: string, heading: string): Promise<void> => {
   await page.goto(href);
@@ -111,8 +110,7 @@ async function matrixCellsOf(page: Page): Promise<readonly MatrixStatedCell[]> {
 const SCROLL_TOLERANCE_PX = 1;
 type ScrollPlace = { readonly offset: number; readonly height: number };
 const scrollPlaceAt = (page: Page): Promise<ScrollPlace> => page.evaluate(() => ({ offset: window.scrollY, height: document.documentElement.scrollHeight }));
-/** Reads the place a reader leaves a list at, with the row's own link brought into view exactly as the click requires, once the document has stopped growing. */
-async function scrollPlaceOfRow(page: Page, link: Locator, subject: string): Promise<ScrollPlace> {
+/** Reads the place a reader leaves a list at, with the row's own link brought into view exactly as the click requires, once the document has stopped growing. */ async function scrollPlaceOfRow(page: Page, link: Locator, subject: string): Promise<ScrollPlace> {
   await expect(async () => {
     await link.scrollIntoViewIfNeeded();
   }, `${subject} states the row's own link and can bring it into view, which is what makes the place the reader stands at one they can leave from.`).toPass({ timeout: 15_000 });
@@ -125,8 +123,7 @@ async function scrollPlaceOfRow(page: Page, link: Locator, subject: string): Pro
   }
   return place;
 }
-/** Asserts the reader is back at the place they left: within the tolerance, on a document at least as tall as the one they left, and inside the list rather than at its top. */
-async function expectRestoredScrollPlace(page: Page, place: ScrollPlace, subject: string): Promise<void> {
+/** Asserts the reader is back at the place they left: within the tolerance, on a document at least as tall as the one they left, and inside the list rather than at its top. */ async function expectRestoredScrollPlace(page: Page, place: ScrollPlace, subject: string): Promise<void> {
   // The offset must come back within the tolerance on a document at least as tall as the one it was taken on, which is what makes the place the reader left one they can stand at again.
   const restored = async (): Promise<number | undefined> => {
     const read = await scrollPlaceAt(page);
@@ -192,8 +189,8 @@ async function asPrinted<T>(page: Page, read: (printed: Locator) => Promise<T>):
   }
 }
 type PrintedPage = { readonly facts: SnapshotFacts; readonly summaryAmount: StatedAmount; readonly rowsStated: number; readonly rows: number; readonly rowAmounts: readonly number[]; readonly about: string };
-function readPrintedPage(page: Page, withAmounts = false): Promise<PrintedPage> {
-  return asPrinted(page, async (region) => {
+const readPrintedPage = (page: Page, withAmounts = false): Promise<PrintedPage> =>
+  asPrinted(page, async (region) => {
     const facts = await snapshotFactsOf(page, "print");
     const summaryLine = region
       .locator("li")
@@ -210,7 +207,6 @@ function readPrintedPage(page: Page, withAmounts = false): Promise<PrintedPage> 
       about,
     };
   });
-}
 const firstGiftLink = (page: Page): Locator => page.getByRole("link", { name: /^Open gift /u }).first();
 const fileMinorUnitsOf = (file: CsvFile, subject: string): number =>
   sumOf(

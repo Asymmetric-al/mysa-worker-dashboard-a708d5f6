@@ -1,9 +1,8 @@
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
-import { isDevelopment } from "@/lib/guards";
 import type { SourceReference } from "@/lib/ids";
 import { compareCodeUnits } from "@/lib/ordering";
-import { MEMBER_CHOICES, UPDATE_EMAIL_PURPOSE, type MembershipRecord as DomainMembership, type MembershipState as DomainMembershipState, type AudiencePurpose, type MemberChoice } from "@/modules/audience/membership";
+import { MEMBER_CHOICES, UPDATE_EMAIL_PURPOSE, confirmationMessageOf, type ConfirmationMessage, type MembershipRecord as DomainMembership, type MembershipState as DomainMembershipState, type AudiencePurpose, type MemberChoice } from "@/modules/audience/membership";
 import { dedupeKey, mayRepeatIntent, type SendOutcomeState } from "@/modules/audience/consent";
 import { EXCLUSION_REASONS, membershipAccessAt, type ContentAudience, type ExclusionReason } from "@/modules/audience/resolve";
 import { directionOfTag, resolveLocale, type ContentLocale } from "@/modules/content/locale";
@@ -16,11 +15,12 @@ import { readSession } from "@/modules/store/repository";
 import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { confirmationDeadline, notificationDeadline } from "@/modules/time/window";
-import { assertScope, canReadProtected, readResultOfRefusal, recordRefusalOutage, resolveSession, sessionStateRefusal, type ResolvedSession, type SessionSource } from "../authorize";
+import { assertScope, audienceRecordsSessionIdOf, canReadProtected, readResultOfRefusal, recordRefusalOutage, resolveSession, sessionStateRefusal, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   buildEnvelope,
   contentDocumentRecordSchema,
   contentVariantRecordSchema,
+  mediaAssetDescriptorRecordSchema,
   mediaAssetRecordSchema,
   membershipRecordSchema,
   ministryIdSchema,
@@ -34,6 +34,7 @@ import {
   type ContentDocumentRecord,
   type ContentFamily,
   type ContentVariantRecord,
+  type MediaAssetDescriptorRecord,
   type MediaAssetRecord,
   type NotificationSendResultRecord,
   type NotificationUnservedRecipientRecord,
@@ -48,7 +49,6 @@ import type { ReadResult } from "../outcome";
 import { storedContentRevisionRecordSchema } from "../envelope";
 import { answerOf, countState, deniedRead, hashedRevision, instantOf, readAction, sourceUnavailableRead, storeUnavailableRead } from "./frame";
 import { contentDocumentOf, membershipOf } from "../projection";
-const PREVIEW_PUBLISHER_SESSION_ID = "established-worker";
 const STORE_READ_GUIDANCE = "The local synthetic store could not be read for this request. Retry the same request; if it keeps failing, reset the development data from Settings and reopen the session.";
 const FIRST_PAGE = 1;
 const NOTICE_SENDER = Object.freeze({ name: "Update notices", address: "update-notice@example.invalid" });
@@ -77,17 +77,16 @@ export type AudienceView = { readonly publisherId: string | null; readonly purpo
 } & { readonly sourceSuppliedRows: number; readonly members: readonly AudienceMember[]; readonly page: PageWindow };
 export type PinnedCopy = { readonly intentId: string; readonly sendResultId: string; readonly releaseId: string; readonly renditionId: string; readonly state: SendOutcomeState; readonly recordedAt: string };
 export type ConfirmationWindowView = { readonly state: "not-awaiting-proof" | "open" | "expired"; readonly deadline: string | null; readonly remainingMilliseconds: number | null };
-/** One language this publisher releases its Updates in, as the reader's own language choice offers it: the tag a save records, that language's name in itself, and the direction it is read in. */
-export type OfferedLanguage = ContentLocale & { readonly label: string };
+/** One language this publisher releases its Updates in, as the reader's own language choice offers it: the tag a save records, that language's name in itself, and the direction it is read in. */ export type OfferedLanguage = ContentLocale & { readonly label: string };
 // The reader's own preference record for one publisher and one purpose: `publisherId` is the membership's own publisher when the session holds one and otherwise the one publisher the Update-email records this read was answered from name, and it stays null when those records name none or several.
 export type PreferencesView = { readonly state: "none" | DomainMembershipState; readonly membershipId: string | null; readonly publisherId: string | null } & { readonly purpose: AudiencePurpose; readonly choice: MemberChoice | null; readonly choiceOptions: readonly MemberChoice[] } & {
   readonly languagePreference: string | null;
   /** The languages this publisher currently offers this reader, and never one whose every edition this reader may not open. */ readonly languageOptions: readonly OfferedLanguage[];
   readonly email: string | null;
   readonly acceptedOn: string | null;
-} & { readonly confirmation: ConfirmationWindowView; readonly pending: { readonly claimsMailSent: false; readonly nextStep: string } | null } & { readonly readingGrant: { readonly granted: boolean; readonly audience: ContentAudience } } & {
-  readonly unsubscribeScope: { readonly publisherId: string; readonly purpose: AudiencePurpose } | null;
-} & { readonly pinnedCopies: readonly PinnedCopy[] };
+} & { readonly confirmation: ConfirmationWindowView; readonly pending: { readonly claimsMailSent: false; readonly nextStep: string } | null } & {
+  /** The confirmation message this surface renders in place of sending one, present exactly while the membership is `awaiting-proof` and null in every other state. */ readonly confirmationMessage: ConfirmationMessage | null;
+} & { readonly readingGrant: { readonly granted: boolean; readonly audience: ContentAudience } } & { readonly unsubscribeScope: { readonly publisherId: string; readonly purpose: AudiencePurpose } | null } & { readonly pinnedCopies: readonly PinnedCopy[] };
 export type InboxReading = { readonly state: "link-only"; readonly href: string } | { readonly state: "rendered"; readonly href: string; readonly title: string | null; readonly html: string } | { readonly state: "unavailable"; readonly href: string; readonly reason: string };
 export type InboxMessage = { readonly messageId: string; readonly intentId: string; readonly releaseId: string; readonly variantId: string | null } & { readonly renditionId: string; readonly state: SendOutcomeState; readonly audience: ContentAudience | null } & {
   readonly locale: ContentLocale | null;
@@ -133,6 +132,8 @@ const storedStateSchema = z.object({
   contentRevisions: z.array(storedContentRevisionRecordSchema),
   releases: z.array(releaseRecordSchema),
   mediaAssets: z.array(mediaAssetRecordSchema),
+  // A session store written before registrations recorded how their media is described stays readable: the collection it does not carry is empty rather than a refused read.
+  mediaAssetDescriptors: z.array(mediaAssetDescriptorRecordSchema).default([]),
 });
 type StoredState = z.infer<typeof storedStateSchema>;
 type StoredRevision = StoredContentRevisionRecord;
@@ -150,8 +151,7 @@ async function loadWorld(sessionId: string): Promise<{ readonly ok: true; readon
   const parsed = storedStateSchema.safeParse(documents.state);
   return !parsed.success ? { ok: false, reference: "unreadable-state-document" } : { ok: true, world: { sessionId, state: parsed.data } };
 }
-/** Resolves the session this read acts for and the two worlds it may answer from — the caller's own, and the published world the reader crossing reaches — or the read's own refusal. */
-export async function resolveWorlds(job: string, source?: SessionSource): Promise<WorldResolution> {
+/** Resolves the session this read acts for and the two worlds it may answer from — the caller's own, and the published world the reader crossing reaches — or the read's own refusal. */ export async function resolveWorlds(job: string, source?: SessionSource): Promise<WorldResolution> {
   const resolved = await resolveSession(source);
   if (!resolved.ok) {
     recordRefusalOutage(job, resolved.refusal);
@@ -160,8 +160,10 @@ export async function resolveWorlds(job: string, source?: SessionSource): Promis
   const { session } = resolved;
   const own = await loadWorld(session.sessionId);
   if (!own.ok) return { ok: false, result: storeUnavailableRead(job, own.reference, STORE_READ_GUIDANCE) };
-  if (!(isDevelopment() && session.admittedMemberships.length === 0 && session.sessionId !== PREVIEW_PUBLISHER_SESSION_ID)) return { ok: true, session, own: own.world, published: own.world };
-  const publisher = await loadWorld(PREVIEW_PUBLISHER_SESSION_ID);
+  // The world the crossing reaches is the same one an audience mutation writes, so what a reader changes here is what the publisher's own read reports.
+  const recordsSessionId = audienceRecordsSessionIdOf(session);
+  if (recordsSessionId === session.sessionId) return { ok: true, session, own: own.world, published: own.world };
+  const publisher = await loadWorld(recordsSessionId);
   return !publisher.ok ? { ok: false, result: storeUnavailableRead(job, publisher.reference, STORE_READ_GUIDANCE) } : { ok: true, session, own: own.world, published: publisher.world };
 }
 /** The scope a read states in one world: the context the caller selected, the context the world holds, or nothing when neither names one. */ export function scopeOf(session: ResolvedSession, world: World): Scope | undefined {
@@ -211,26 +213,36 @@ type EnvelopeFields<T> = { readonly source: Parameters<typeof buildEnvelope>[0][
 /** The result a read answers with, assembled through this file's own envelope builder. */ function respond<T>(scope: Scope, at: Temporal.Instant, fields: EnvelopeFields<T>): ReadResult<ReadEnvelope<T>> {
   return answerOf(scope, at.toString(), { data: fields.data, source: fields.source, revision: fields.revision, coverage: { from: null, to: fields.to === undefined ? at.toString() : fields.to, state: "complete" }, valueStates: fields.valueStates, actions: fields.actions });
 }
-/** The state a rendition count is stated in: a source that is down states `unavailable`, because an unreadable rendition set is never a number. */
-const renditionCountState = (serving: "served" | "unavailable", count: number): RecordedValueState => (serving === "served" ? countState(count) : "unavailable");
+/** The state a rendition count is stated in: a source that is down states `unavailable`, because an unreadable rendition set is never a number. */ const renditionCountState = (serving: "served" | "unavailable", count: number): RecordedValueState => (serving === "served" ? countState(count) : "unavailable");
 type RenderingMedia = { readonly placements: readonly RenderMediaPlacement[]; readonly renditions: RenderRenditions; readonly references: readonly MediaReference[] };
 /** One revision's media as a rendering surface receives it. While the scenario's media source is down no rendition address reaches the renderer, so the single renderer states each placement's own text alternative and caption in the place of a player it cannot make loadable, and every rendition is still named to the surface with `state: "unavailable"` so the surface can say so and offer a retry. */
-function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetRecord[], serving: "served" | "unavailable"): RenderingMedia {
+function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetRecord[], descriptors: readonly MediaAssetDescriptorRecord[], serving: "served" | "unavailable"): RenderingMedia {
   const byId = new Map(assets.map((asset) => [asset.assetId, asset] as const));
+  const languageById = new Map(descriptors.map((descriptor) => [descriptor.assetId, descriptor.language] as const));
   const placementList: RenderMediaPlacement[] = [];
   const renditions: Record<string, RenderRendition> = {};
   const references: MediaReference[] = [];
   const readable = serving === "served";
   for (const placement of [...revision.mediaPlacements].sort((left, right) => left.position - right.position)) {
     const asset = byId.get(placement.assetId);
+    const captions = revision.captions.find((track) => track.assetId === placement.assetId);
+    // The language a reader is told is the media's own stored language, which its descriptor holds whether or not the placement carries a caption track; the track's language is the fallback, because the picker writes that same stated value into both records.
+    const language = languageById.get(placement.assetId) ?? captions?.language ?? null;
     if (asset === undefined) {
-      placementList.push({ placementId: placement.placementId, kind: "image", altText: placement.altText, ...(placement.caption === null ? {} : { caption: placement.caption }), ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }) });
+      placementList.push({
+        placementId: placement.placementId,
+        kind: "image",
+        altText: placement.altText,
+        ...(placement.caption === null ? {} : { caption: placement.caption }),
+        ...(placement.credit === null ? {} : { credit: placement.credit }),
+        ...(language === null ? {} : { language }),
+        ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }),
+      });
       continue;
     }
     const main = asset.renditions.find((rendition) => (asset.kind === "video" ? rendition.purpose === "playback" : rendition.purpose === "display"));
     const poster = asset.renditions.find((rendition) => rendition.purpose === "poster");
     const transcript = asset.renditions.find((rendition) => rendition.purpose === "transcript");
-    const captions = revision.captions.find((track) => track.assetId === placement.assetId);
     const captionRendition = captions === undefined ? undefined : asset.renditions.find((rendition) => rendition.renditionId === captions.renditionId);
     if (main !== undefined) {
       const path = renditionPath(asset.assetId, main.renditionId);
@@ -254,11 +266,14 @@ function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetR
       if (readable) renditions[transcriptKey] = { src: path, purpose: "transcript" };
       references.push({ assetId: asset.assetId, renditionId: transcript.renditionId, purpose: transcript.purpose, path, state: serving });
     }
+    // The placement's credit and the language settled above travel to the renderer with the rendition keys, so the figure states them beside the player instead of leaving the reader to infer them; the caption track keeps its own language and label under the track's roles, so no placement states a language twice.
     placementList.push({
       placementId: placement.placementId,
       kind: asset.kind,
       altText: placement.altText,
       ...(placement.caption === null ? {} : { caption: placement.caption }),
+      ...(placement.credit === null ? {} : { credit: placement.credit }),
+      ...(language === null ? {} : { language }),
       ...(placement.sectionElement === null ? {} : { sectionElement: placement.sectionElement }),
       ...(poster === undefined ? {} : { posterId: `${placement.placementId}:poster` }),
       ...(captions === undefined ? {} : { captionsId: `${placement.placementId}:captions`, captionsLanguage: captions.language, captionsLabel: captions.label }),
@@ -268,9 +283,9 @@ function renderingMediaOf(revision: StoredRevision, assets: readonly MediaAssetR
   return { placements: placementList, renditions, references };
 }
 type RevisionRendering = { readonly ok: true; readonly html: string; readonly media: RenderingMedia } | { readonly ok: false; readonly reason: string };
-function renderingOf(revision: StoredRevision, assets: readonly MediaAssetRecord[], serving: "served" | "unavailable"): RevisionRendering {
-  const media = renderingMediaOf(revision, assets, serving);
-  const rendered = renderToHtml(revision.body, { placements: media.placements, renditions: media.renditions });
+function renderingOf(revision: StoredRevision, assets: readonly MediaAssetRecord[], descriptors: readonly MediaAssetDescriptorRecord[], serving: "served" | "unavailable", locale: string): RevisionRendering {
+  const media = renderingMediaOf(revision, assets, descriptors, serving);
+  const rendered = renderToHtml(revision.body, { placements: media.placements, renditions: media.renditions, lang: locale });
   return rendered.status === "invalid" ? { ok: false, reason: "The edition's content does not satisfy the content profile this build renders." } : { ok: true, html: rendered.html, media };
 }
 type ResolvedRelease = { readonly record: ReleaseRecord; readonly variant: ContentVariantRecord | undefined; readonly revision: StoredRevision | undefined; readonly document: ContentDocumentRecord | undefined; readonly domain: Release | undefined };
@@ -280,8 +295,7 @@ type ResolvedRelease = { readonly record: ReleaseRecord; readonly variant: Conte
   const document = variant === undefined ? undefined : state.contentDocuments.find((candidate) => candidate.documentId === variant.documentId);
   return { record, variant, revision, document, domain: domainReleaseOf(record, variant, revision) };
 }
-/** Reports whether a release still serves its readers: a release that has been withdrawn or superseded serves nobody. */
-export const releaseStillServes = (release: Release): boolean => release.withdrawnAt === undefined && release.supersededBy === undefined;
+/** Reports whether a release still serves its readers: a release that has been withdrawn or superseded serves nobody. */ export const releaseStillServes = (release: Release): boolean => release.withdrawnAt === undefined && release.supersededBy === undefined;
 const zeroMemberStates = (): Record<DomainMembershipState, number> => ({ active: 0, "awaiting-proof": 0, off: 0, restricted: 0 });
 function zeroExclusionCounts(): Record<ExclusionReason, number> {
   const counts = {} as Record<ExclusionReason, number>;
@@ -395,6 +409,8 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
   const confirmation = confirmationWindowOf(domain, at);
   // A session holding no membership names no publisher on its own record, so the one publisher the Update-email records name is stated instead: it is read out of those records rather than typed in here, and stays null whenever they name none or more than one.
   const publisherId = membership?.publisherId ?? singlePublisherOf(published.state.memberships.filter((row) => row.purpose === UPDATE_EMAIL_PURPOSE)) ?? null;
+  // The message the pending result points at: composed from the record this read has just stated, so it names the same address, the same publisher and the same membership a confirmation would act on, and carries nothing for a reader to follow. The sender is the notice identity this file already states, never a second one invented beside it.
+  const confirmationMessage = domain === undefined || domain.state !== "awaiting-proof" ? null : confirmationMessageOf({ publisherLabel: domain.publisherId, sender: NOTICE_SENDER, to: domain.email, membershipId: domain.membershipId });
   const data: PreferencesView = {
     state: domain?.state ?? "none",
     membershipId: membership?.membershipId ?? null,
@@ -408,6 +424,7 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
     acceptedOn: membership?.acceptedAt ?? null,
     confirmation,
     pending: domain !== undefined && domain.state === "awaiting-proof" ? { claimsMailSent: false, nextStep: "confirm-from-the-rendered-message" } : null,
+    confirmationMessage,
     readingGrant: { granted: readingGrant, audience: "approved-supporter" },
     // The scope an unsubscribe addresses is the membership's own publisher and purpose: a session that holds no membership has nothing to turn off, so it states none here even where the view names the publisher a request step would address.
     unsubscribeScope: membership === undefined ? null : { publisherId: membership.publisherId, purpose: UPDATE_EMAIL_PURPOSE },
@@ -416,6 +433,7 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
   const valueStates: Readonly<Record<string, RecordedValueState>> = {
     "confirmation.deadline": textState(data.confirmation.deadline),
     "confirmation.remainingMilliseconds": data.confirmation.remainingMilliseconds === null ? "unknown" : countState(data.confirmation.remainingMilliseconds),
+    "confirmationMessage.subject": textState(confirmationMessage?.subject),
     pinnedCopies: countState(pinnedCopies.length),
     languageOptions: countState(data.languageOptions.length),
   };
@@ -427,9 +445,8 @@ export async function readPreferences(source?: SessionSource): Promise<ReadResul
   ];
   return respond(scope, at, { to: null, data, source: { system: "audience-memberships", reference: publisherId ?? "no-membership" }, revision: membership?.revision ?? collectionRevision(domains.map((row) => `${row.membershipId}@${String(row.revision)}`)), valueStates, actions });
 }
-function readingGrantOf(session: ResolvedSession, memberships: readonly DomainMembership[], recipientId: string): boolean {
-  return [...new Set(memberships.map((row) => row.publisherId))].sort(compareCodeUnits).some((publisherId) => canReadProtected(session, { audience: "approved-supporter", reader: { recipientId, publisherId, purpose: UPDATE_EMAIL_PURPOSE, memberships } }).allowed);
-}
+const readingGrantOf = (session: ResolvedSession, memberships: readonly DomainMembership[], recipientId: string): boolean =>
+  [...new Set(memberships.map((row) => row.publisherId))].sort(compareCodeUnits).some((publisherId) => canReadProtected(session, { audience: "approved-supporter", reader: { recipientId, publisherId, purpose: UPDATE_EMAIL_PURPOSE, memberships } }).allowed);
 function confirmationWindowOf(membership: DomainMembership | undefined, at: Temporal.Instant): ConfirmationWindowView {
   if (membership === undefined || membership.state !== "awaiting-proof") return { state: "not-awaiting-proof", deadline: null, remainingMilliseconds: null };
   const acceptedAt = membership.acceptedAt;
@@ -466,7 +483,7 @@ export async function readInbox(query: InboxQuery = {}, source?: SessionSource):
     const pinned: NoticePinnedRendition = { variantId: release.variantId, releaseId: release.releaseId, revisionId: release.revisionId, audience: release.audience, locale: resolved.domain.locale, renditionId: copy.renditionId, checksum: resolved.revision.contentChecksum };
     const notice = buildNotice({ publisher: { displayName: UNNAMED_PUBLISHER }, purpose: intent.purpose, pinned, sender: NOTICE_SENDER, link: href });
     const protectedNotice = release.audience === "approved-supporter";
-    const rendered = protectedNotice ? undefined : renderingOf(resolved.revision, published.state.mediaAssets, scenarioMediaServing(session.scenarioId));
+    const rendered = protectedNotice ? undefined : renderingOf(resolved.revision, published.state.mediaAssets, published.state.mediaAssetDescriptors, scenarioMediaServing(session.scenarioId), resolved.record.locale);
     const reading: InboxReading = rendered === undefined ? { state: "link-only", href } : rendered.ok ? { state: "rendered", href, title: resolved.revision.sharePresentation.title, html: rendered.html } : { state: "unavailable", href, reason: rendered.reason };
     messages.push({
       messageId: `${result.sendResultId}:${copy.recipientId}`,
@@ -521,14 +538,12 @@ function languagePreferenceOf(session: ResolvedSession, own: World, published: W
   }
   return null;
 }
-/** Reports whether the caller holds a protected-reading grant for this publisher, decided now from the reader's own membership rows. */
-export function grantHeldFor(session: ResolvedSession, scope: Scope, own: World, published: World): boolean {
-  return readingGrantOf(
+/** Reports whether the caller holds a protected-reading grant for this publisher, decided now from the reader's own membership rows. */ export const grantHeldFor = (session: ResolvedSession, scope: Scope, own: World, published: World): boolean =>
+  readingGrantOf(
     session,
     readerOwnedMemberships(session, own, published).map((row) => membershipOf(row, scope)),
     session.principalId,
   );
-}
 /** A language's name in that language, or the tag itself where the runtime cannot name it. */ function languageNameOf(tag: string): string {
   try {
     const named = new Intl.DisplayNames([tag], { type: "language" }).of(tag)?.trim() ?? "";
@@ -537,8 +552,7 @@ export function grantHeldFor(session: ResolvedSession, scope: Scope, own: World,
     return tag;
   }
 }
-/** The languages this publisher releases Updates in that this reader may read them in, named and ordered once so the choice offers exactly what a save can act on. */
-function languageOptionsOf(state: StoredState, grantHeld: boolean): readonly OfferedLanguage[] {
+/** The languages this publisher releases Updates in that this reader may read them in, named and ordered once so the choice offers exactly what a save can act on. */ function languageOptionsOf(state: StoredState, grantHeld: boolean): readonly OfferedLanguage[] {
   const byTag = new Map<string, OfferedLanguage>();
   for (const record of state.releases) {
     const resolved = resolveRelease(record, state);
@@ -571,20 +585,21 @@ function editionsOf(documentId: string, state: StoredState): readonly AdmittedEd
 const requestedLocaleOf = (requested: string | undefined, preference: string | null, editions: readonly AdmittedEdition[]): string => (requested !== undefined && requested.length > 0 ? requested : preference !== null && preference.length > 0 ? preference : (editions[0]?.domain.locale.tag ?? ""));
 type EditionResolution = { readonly status: "served"; readonly edition: AdmittedEdition; readonly locale: ContentLocale; readonly fallbackOccurred: boolean } | { readonly status: "protected-not-permitted" } | { readonly status: "unavailable" };
 function resolveEditionFor(input: { readonly document: ContentDocumentRecord; readonly editions: readonly AdmittedEdition[]; readonly requestedLocale: string; readonly grantHeld: boolean }): EditionResolution {
-  const attempt = (audience: ContentAudience): { readonly edition: AdmittedEdition; readonly locale: ContentLocale; readonly fallbackOccurred: boolean } | undefined => {
+  // One audience's answer. A substitute language is admitted only in an audience this reader may actually read: an approved-supporter audience is asked without one for a reader holding no grant, so a substitute can never be the fact that tells them a protected edition exists.
+  const attempt = (audience: ContentAudience, substituteLanguage: boolean): { readonly edition: AdmittedEdition; readonly locale: ContentLocale; readonly fallbackOccurred: boolean } | undefined => {
     const candidates = input.editions.filter((edition) => edition.record.audience === audience);
     if (candidates.length === 0) return undefined;
-    const resolution = resolveLocale({ document: contentDocumentOf(input.document), siteDefaultLocale: "", audience, releases: candidates.map((edition) => ({ ...edition.domain, documentId: input.document.documentId, siteId: input.document.siteId })), requestedLocale: input.requestedLocale });
+    const resolution = resolveLocale({ document: contentDocumentOf(input.document), siteDefaultLocale: "", audience, releases: candidates.map((edition) => ({ ...edition.domain, documentId: input.document.documentId, siteId: input.document.siteId })), requestedLocale: input.requestedLocale, substituteLanguage });
     if (resolution.status !== "resolved") return undefined;
     const chosen = candidates.find((edition) => edition.record.releaseId === resolution.release.releaseId);
     return chosen === undefined ? undefined : { edition: chosen, locale: resolution.servedLocale, fallbackOccurred: resolution.fallbackOccurred };
   };
   if (input.grantHeld) {
-    const preferred = attempt("approved-supporter") ?? attempt("public");
+    const preferred = attempt("approved-supporter", true) ?? attempt("public", true);
     return preferred === undefined ? { status: "unavailable" } : { status: "served", ...preferred };
   }
-  const publicEdition = attempt("public");
-  return publicEdition !== undefined ? { status: "served", ...publicEdition } : attempt("approved-supporter") === undefined ? { status: "unavailable" } : { status: "protected-not-permitted" };
+  const publicEdition = attempt("public", true);
+  return publicEdition !== undefined ? { status: "served", ...publicEdition } : attempt("approved-supporter", false) === undefined ? { status: "unavailable" } : { status: "protected-not-permitted" };
 }
 export type ReceivingListQuery = { readonly locale?: string; readonly page?: number; readonly pageSize?: number };
 /** The Updates a receiving reader may open now. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
@@ -643,15 +658,19 @@ export async function readReceivingPost(query: ReceivingPostQuery, source?: Sess
   const document = published.state.contentDocuments.find((candidate) => candidate.documentId === query.updateId && candidate.family === "update");
   if (document === undefined) return deniedRead("no-permission");
   const grantHeld = grantHeldFor(session, scope, own, published);
-  const admitted = editionsOf(document.documentId, published.state).filter((edition) => releaseStillServes(edition.domain));
+  const documentEditions = editionsOf(document.documentId, published.state);
+  const admitted = documentEditions.filter((edition) => releaseStillServes(edition.domain));
   // A pinned address names one edition, so the pin narrows the candidates before the language chooses among them: the reader's language still selects within that edition rather than across its siblings.
   const pinned = (query.variant ?? "").trim();
-  const editions = pinned.length === 0 ? admitted : admitted.filter((edition) => edition.record.variantId === pinned && (edition.record.audience === "public" || grantHeld));
+  const narrowedTo = (candidates: readonly AdmittedEdition[]): readonly AdmittedEdition[] => (pinned.length === 0 ? candidates : candidates.filter((edition) => edition.record.variantId === pinned && (edition.record.audience === "public" || grantHeld)));
+  const editions = narrowedTo(admitted);
+  // The language is resolved over every edition the address may open, those that no longer serve included, so a language withdrawn under this address is answered from its own state instead of another language standing in for it.
+  const resolvable = narrowedTo(documentEditions);
   // A pin that leaves no edition this reader may open answers exactly as an address naming no Update does — unknown, in another scope, withdrawn, superseded, or protected without the grant — because naming which would state that the edition exists.
   if (pinned.length > 0 && editions.length === 0) return deniedRead("no-permission");
   const preference = languagePreferenceOf(session, own, published);
   const requestedLocale = requestedLocaleOf(query.locale, preference, editions);
-  const resolution = resolveEditionFor({ document, editions, requestedLocale, grantHeld });
+  const resolution = resolveEditionFor({ document, editions: resolvable, requestedLocale, grantHeld });
   if (resolution.status === "protected-not-permitted") return deniedRead("no-protected-grant");
   if (resolution.status === "unavailable") {
     const unavailableData: ReceivingPostView = { ...UNSERVED_POST_FIELDS, state: "language-unavailable", documentId: document.documentId, requestedLocale, simulated: [SIMULATED_PUBLICATION_REACH] };
@@ -659,7 +678,7 @@ export async function readReceivingPost(query: ReceivingPostQuery, source?: Sess
   }
   const served = resolution;
   const serving = scenarioMediaServing(session.scenarioId);
-  const rendered = renderingOf(served.edition.revision, published.state.mediaAssets, serving);
+  const rendered = renderingOf(served.edition.revision, published.state.mediaAssets, published.state.mediaAssetDescriptors, serving, served.edition.record.locale);
   if (!rendered.ok) return sourceUnavailableRead({ job: "readReceivingPost", source: { system: "content-render", reference: "unrenderable-edition" }, guidance: STORE_READ_GUIDANCE });
   const data: ReceivingPostView = {
     state: "rendered",
@@ -718,7 +737,8 @@ export async function readReceivingPage(query: ReceivingPageQuery, source?: Sess
   const live = editions.filter((edition) => releaseStillServes(edition.domain));
   const preference = languagePreferenceOf(session, own, published);
   const requestedLocale = requestedLocaleOf(query.locale, preference, editions);
-  const resolution = resolveEditionFor({ document, editions: live, requestedLocale, grantHeld });
+  // The language is resolved over every edition of this document, those that no longer serve included, so a language withdrawn here is answered from that state — the tombstone below, or Language unavailable — rather than by another language standing in.
+  const resolution = resolveEditionFor({ document, editions, requestedLocale, grantHeld });
   if (resolution.status === "protected-not-permitted") return deniedRead("no-protected-grant");
   if (resolution.status === "unavailable") {
     const withdrawn = editions.filter((edition) => edition.domain.withdrawnAt !== undefined);
@@ -736,7 +756,7 @@ export async function readReceivingPage(query: ReceivingPageQuery, source?: Sess
   // Reach decides what a direct link serves for this caller: the reach control's own words say only the owner can open a Not public edition, so the world that holds the edition serves it, while a caller reading across the reading crossing is served a link for a `link-public` or `listed` edition alone and is otherwise refused the neutral answer an address that was never recorded receives.
   if (reading && !isDirectlyReadable({ reach: edition.record.reach, withdrawnAt: edition.domain.withdrawnAt })) return deniedRead("no-permission");
   const serving = scenarioMediaServing(session.scenarioId);
-  const rendered = renderingOf(edition.revision, published.state.mediaAssets, serving);
+  const rendered = renderingOf(edition.revision, published.state.mediaAssets, published.state.mediaAssetDescriptors, serving, edition.record.locale);
   if (!rendered.ok) return sourceUnavailableRead({ job: "readReceivingPage", source: { system: "content-render", reference: "unrenderable-edition" }, guidance: STORE_READ_GUIDANCE });
   const giving: GivingPlacement = document.givingBinding === null ? { state: "giving-unavailable" } : { state: "available", designation: document.givingBinding.designation, label: document.givingBinding.label, simulated: SIMULATED_GIVING_DESTINATION };
   const data: ReceivingPageView = {

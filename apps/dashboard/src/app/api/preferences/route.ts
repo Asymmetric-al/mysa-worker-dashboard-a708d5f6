@@ -27,5 +27,4 @@ const preferenceQuerySchema = z.record(z.string(), z.string()).superRefine((clai
   readGrammar(preferenceQuerySchema, (search) => Object.fromEntries(search)),
   () => reads.audience.readPreferences(),
 );
-const savePreference = (request: Request): Promise<Response> => writeRoute(request, preferenceBodySchema, mutations.audience.setPreference);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPreferences, POST: savePreference });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPreferences, POST: (request: Request): Promise<Response> => writeRoute(request, preferenceBodySchema, mutations.audience.setPreference) });

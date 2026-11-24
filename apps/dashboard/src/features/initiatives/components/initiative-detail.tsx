@@ -47,8 +47,7 @@ const BREADCRUMB = [{ label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUT
 const WORK_LINK_SUFFIX = "opens the Work surface, where this task is owned";
 const NOT_RECORDED_WORD = "Not recorded";
 const NEXT_WORK_EMPTY_BODY = "The read answers no open or reopened task for this initiative, so nothing is listed here. A task created with this initiative as its context appears on the Work surface first.";
-/** The noun each paged list of this record states its window with, so a pager never says "items". */
-const DRAFT_REQUEST_LABEL = "Draft a Request";
+/** The noun each paged list of this record states its window with, so a pager never says "items". */ const DRAFT_REQUEST_LABEL = "Draft a Request";
 const DRAFT_REQUEST_ABSENT_BODY = "Drafting is not on offer in this read.";
 const REQUESTS_EMPTY_BODY = "A Request is one independently answerable invitation: who is asked, the organization that person represents, why, and the terms version they would answer. Answering it creates no gift, pledge, task or message of its own.";
 const RESULTS_NOT_READ_BODY = "The results read was not part of the answer this page composed, so the counts it would state are unavailable here rather than empty or zero. Nothing stands in for them.";
@@ -186,14 +185,10 @@ const ResultsPanel = ({ initiativeId, resultsEnvelope }: ResultsPanelProps): Rea
     {resultsEnvelope === undefined ? <StateNotice kind="unavailable" headingLevel={3} title={STATE_NOTICE_COPY.unavailable.title} description={RESULTS_NOT_READ_BODY} /> : <InitiativeResults initiativeId={initiativeId} initialEnvelope={resultsEnvelope} />}
   </div>
 );
-/** What one history entry recorded, in the closed vocabulary of its kind: a new kind is a compile error rather than a silently worded entry. */
-const historySentenceOf = (entry: InitiativeHistoryRow): string => {
-  if (entry.kind === "member-state") return `${MEMBERSHIP_CHANGE_LABEL}: ${MEMBERSHIP_STATE_COPY[entry.state].label}`;
-  if (entry.kind === "request-response") return `${RESPONSE_RECORDED_LABEL}: ${RESPONSE_KIND_COPY[COPY_KIND_OF_RECORDED_KIND[entry.responseKind]].label}`;
-  return assertNever(entry, "Unexpected initiative history entry");
+/** What one history entry recorded, in the closed vocabulary of its kind: a new kind is a compile error rather than a silently worded entry. */ const historySentenceOf = (entry: InitiativeHistoryRow): string => {
+  return entry.kind === "member-state" ? `${MEMBERSHIP_CHANGE_LABEL}: ${MEMBERSHIP_STATE_COPY[entry.state].label}` : entry.kind === "request-response" ? `${RESPONSE_RECORDED_LABEL}: ${RESPONSE_KIND_COPY[COPY_KIND_OF_RECORDED_KIND[entry.responseKind]].label}` : assertNever(entry, "Unexpected initiative history entry");
 };
-/** One dated history entry: the instant it was recorded, the sentence that says what happened, and the facts the read states with it. */
-const HistoryEntry = ({ entry }: { readonly entry: InitiativeHistoryRow }): ReactElement => (
+/** One dated history entry: the instant it was recorded, the sentence that says what happened, and the facts the read states with it. */ const HistoryEntry = ({ entry }: { readonly entry: InitiativeHistoryRow }): ReactElement => (
   <li className="flex min-w-0 flex-col gap-1 border-b border-border pb-2 last:border-b-0 last:pb-0">
     <RecordedInstant value={entry.at} className="text-sm" />
     <p className="type-body text-pretty">{historySentenceOf(entry)}</p>
@@ -259,8 +254,7 @@ function RefusalNotice({ refusal, onRetry }: { readonly refusal: ReadRefusal; re
   }
 }
 export type InitiativeDetailProps = { readonly envelope: InitiativeEnvelope; readonly candidates?: WorkingListProps["candidates"]; readonly resultsEnvelope?: NonNullable<InitiativeResultsProps["initialEnvelope"]>; readonly className?: string };
-/** One initiative's detail surface: its header and the overview, working-list, Requests, results and history tabs. */
-export default function InitiativeDetail({ envelope, candidates, resultsEnvelope, className }: InitiativeDetailProps): ReactElement {
+/** One initiative's detail surface: its header and the overview, working-list, Requests, results and history tabs. */ export default function InitiativeDetail({ envelope, candidates, resultsEnvelope, className }: InitiativeDetailProps): ReactElement {
   const initiativeId = envelope.data.initiative.initiativeId;
   const [tab, setTab] = useState<TabKey>(FIRST_TAB);
   const [dialog, setDialog] = useState<"close" | "reopen" | null>(null);
@@ -285,8 +279,6 @@ export default function InitiativeDetail({ envelope, candidates, resultsEnvelope
   const initiative: InitiativeDetailData["initiative"] = current.data.initiative;
   const identity = { displayName: initiative.name, secondaryName: initiative.purpose, kind: "Initiative", reference: { system: current.source.system, reference: initiativeId } };
   const status = <Badge variant={initiative.state === "closed" ? "outline" : "secondary"}>{INITIATIVE_STATE_COPY[initiative.state].label}</Badge>;
-  const closeAdmitted = admits(current.actions, "closeInitiative");
-  const reopenAdmitted = admits(current.actions, "reopenInitiative");
   return (
     <div data-slot="initiative-detail" data-initiative-state={initiative.state} className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
       <RecordDetail {...{ layout: "page", identity, status, breadcrumb: BREADCRUMB }} />
@@ -315,8 +307,8 @@ export default function InitiativeDetail({ envelope, candidates, resultsEnvelope
           <HistoryPanel envelope={current} />
         </TabsContent>
       </Tabs>
-      {closeAdmitted ? <CloseInitiativeDialog open={dialog === "close"} onOpenChange={(open) => setDialog(open ? "close" : null)} initiativeId={initiativeId} envelope={current} onClosed={reread} onCheckResult={reread} /> : null}
-      {reopenAdmitted ? <ReopenInitiativeDialog open={dialog === "reopen"} onOpenChange={(open) => setDialog(open ? "reopen" : null)} initiativeId={initiativeId} envelope={current} onReopened={reread} /> : null}
+      {admits(current.actions, "closeInitiative") ? <CloseInitiativeDialog open={dialog === "close"} onOpenChange={(open) => setDialog(open ? "close" : null)} initiativeId={initiativeId} envelope={current} onClosed={reread} onCheckResult={reread} /> : null}
+      {admits(current.actions, "reopenInitiative") ? <ReopenInitiativeDialog open={dialog === "reopen"} onOpenChange={(open) => setDialog(open ? "reopen" : null)} initiativeId={initiativeId} envelope={current} onReopened={reread} /> : null}
     </div>
   );
 }

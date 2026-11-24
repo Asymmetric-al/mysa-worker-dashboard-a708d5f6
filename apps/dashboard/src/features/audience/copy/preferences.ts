@@ -32,6 +32,14 @@ export const PROOF_FLOW_COPY = {
   confirmedState: { title: "This address is confirmed", description: "This publisher's Update email for this purpose is now active for this address. A confirmed membership is not a delivery, and it subscribes you to no other purpose, publisher or record." },
   expiryStatement: `The address can be confirmed within ${CONFIRMATION_WINDOW_HOURS} elapsed hours of accepting. The window is measured in elapsed hours from the moment you accept, and reloading this page, retrying or resending the message never extends it.`,
 };
+export const PROOF_MESSAGE_COPY = {
+  heading: "The confirmation message this page renders",
+  senderLabel: "From",
+  toLabel: "To",
+  subjectLabel: "Subject",
+  renderedHere: "This message is rendered on this page rather than submitted anywhere, so confirming the address is done with the Confirm control here and at no other moment.",
+} as const;
+export const PROOF_RESEND_COPY = { label: "Send the message again", description: "Asking for the message again sends the same request for this membership, for the address the record already holds. It creates nothing new, confirms nothing and never extends the window the acceptance set." } as const;
 export const CONFIRMATION_DEADLINE_COPY = (deadlineLabel: string, expired: boolean): string => (expired ? `The confirmation window closed at ${deadlineLabel}. A new request for notices starts a new window.` : `This address can be confirmed until ${deadlineLabel}.`);
 export const PREFERENCES_ENTRY_COPY: { readonly description: string; readonly linkLabel: string } = {
   description:

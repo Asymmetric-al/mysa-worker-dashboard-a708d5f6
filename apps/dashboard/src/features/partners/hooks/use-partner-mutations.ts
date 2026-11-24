@@ -18,8 +18,7 @@ export const PARTNER_KEY = { roster: "partners", facets: "facets", savedViews: "
 export type PartnerKeySegment = (typeof PARTNER_KEY)[keyof typeof PARTNER_KEY];
 export const PARTNER_MUTATION_NAMES = ["createPrivatePreparation", "saveContactEdits", "savePrivateNote", "logInteraction", "archivePreparation", "restorePreparation", "saveView", "renameView", "deleteView", "setTag", "setFavourite"] as const;
 export type PartnerMutationName = (typeof PARTNER_MUTATION_NAMES)[number];
-/** The `[partnerId]` segment the saved-view route carries and does not use: a saved view belongs to the caller, not to a partner, so the handler awaits and discards the segment, and this value places the request while identifying no record. */
-const SAVED_VIEW_ROUTE_PLACEHOLDER = "no-partner";
+/** The `[partnerId]` segment the saved-view route carries and does not use: a saved view belongs to the caller, not to a partner, so the handler awaits and discards the segment, and this value places the request while identifying no record. */ const SAVED_VIEW_ROUTE_PLACEHOLDER = "no-partner";
 export const PARTNER_POST_PATHS = {
   create: (): string => "/api/partners",
   edits: (partnerId: string): string => `/api/partners/${encodeURIComponent(partnerId)}/edits`,
@@ -97,9 +96,7 @@ async function refreshPartnerReads(queryClient: QueryClient, outcome: MutationOu
   });
   await Promise.all(keys.map((key) => queryClient.invalidateQueries(key)));
 }
-function submittedOf<TPayload>(settlement: PartnerSettlement<TPayload> | null): PartnerMutationHandle<TPayload>["submitted"] {
-  return settlement === null || !PRESERVING_OUTCOMES.has(settlement.outcome.outcome) ? null : { expectedRevision: settlement.input.expectedRevision, payload: settlement.input.payload };
-}
+const submittedOf = <TPayload>(settlement: PartnerSettlement<TPayload> | null): PartnerMutationHandle<TPayload>["submitted"] => (settlement === null || !PRESERVING_OUTCOMES.has(settlement.outcome.outcome) ? null : { expectedRevision: settlement.input.expectedRevision, payload: settlement.input.payload });
 function usePartnerMutation<TPayload extends object>(config: PartnerMutationConfig<TPayload>, url: string, partnerId?: string): PartnerMutationHandle<TPayload> {
   const queryClient = useQueryClient();
   const [settlement, setSettlement] = useState<PartnerSettlement<TPayload> | null>(null);
@@ -153,22 +150,16 @@ const SET_TAG: PartnerMutationConfig<SetTagPayload> = { name: "setTag", schema: 
 const SET_FAVOURITE: PartnerMutationConfig<SetFavouritePayload> = { name: "setFavourite", schema: setFavouritePayloadSchema, routeDiscriminant: { field: "operation" } };
 /** Drives `createPrivatePreparation` and answers one of the eight outcomes: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const useCreatePrivatePreparation = (): PartnerMutationHandle<CreatePrivatePreparationPayload> => usePartnerMutation(CREATE_PRIVATE_PREPARATION, PARTNER_POST_PATHS.create());
-/** Drives `saveContactEdits` for the record named by `partnerId` and answers one of the eight mutation outcomes. */
-export const useSaveContactEdits = (partnerId: string): PartnerMutationHandle<SaveContactEditsPayload> => usePartnerMutation(SAVE_CONTACT_EDITS, PARTNER_POST_PATHS.edits(partnerId), partnerId);
-/** Drives `savePrivateNote` for the record named by `partnerId` and answers one of the eight mutation outcomes. */
-export const useSavePrivateNote = (partnerId: string): PartnerMutationHandle<SavePrivateNotePayload> => usePartnerMutation(SAVE_PRIVATE_NOTE, PARTNER_POST_PATHS.notes(partnerId), partnerId);
-/** Drives `logInteraction` for the record named by `partnerId` and answers one of the eight mutation outcomes. */
-export const useLogInteraction = (partnerId: string): PartnerMutationHandle<LogInteractionPayload> => usePartnerMutation(LOG_INTERACTION, PARTNER_POST_PATHS.interactions(partnerId), partnerId);
+/** Drives `saveContactEdits` for the record named by `partnerId` and answers one of the eight mutation outcomes. */ export const useSaveContactEdits = (partnerId: string): PartnerMutationHandle<SaveContactEditsPayload> => usePartnerMutation(SAVE_CONTACT_EDITS, PARTNER_POST_PATHS.edits(partnerId), partnerId);
+/** Drives `savePrivateNote` for the record named by `partnerId` and answers one of the eight mutation outcomes. */ export const useSavePrivateNote = (partnerId: string): PartnerMutationHandle<SavePrivateNotePayload> => usePartnerMutation(SAVE_PRIVATE_NOTE, PARTNER_POST_PATHS.notes(partnerId), partnerId);
+/** Drives `logInteraction` for the record named by `partnerId` and answers one of the eight mutation outcomes. */ export const useLogInteraction = (partnerId: string): PartnerMutationHandle<LogInteractionPayload> => usePartnerMutation(LOG_INTERACTION, PARTNER_POST_PATHS.interactions(partnerId), partnerId);
 /** Drives `archivePreparation` for the preparation named by `partnerId` and answers one of the eight mutation outcomes. */
 export const useArchivePreparation = (partnerId: string): PartnerMutationHandle<ArchivePreparationPayload> => usePartnerMutation(ARCHIVE_PREPARATION, PARTNER_POST_PATHS.archive(partnerId), partnerId);
 /** Drives `restorePreparation` for the preparation named by `partnerId` and answers one of the eight mutation outcomes. */
 export const useRestorePreparation = (partnerId: string): PartnerMutationHandle<RestorePreparationPayload> => usePartnerMutation(RESTORE_PREPARATION, PARTNER_POST_PATHS.archive(partnerId), partnerId);
-/** Drives `saveView` for the caller's own roster query and answers one of the eight mutation outcomes; the path places a caller-level change, so it names no partner. */
-export const useSaveView = (): PartnerMutationHandle<SaveViewPayload> => usePartnerMutation(SAVE_VIEW, PARTNER_POST_PATHS.views());
-/** Drives `renameView` on one of the caller's saved views and answers one of the eight mutation outcomes; the path places a caller-level change, so it names no partner. */
-export const useRenameView = (): PartnerMutationHandle<RenameViewPayload> => usePartnerMutation(RENAME_VIEW, PARTNER_POST_PATHS.views());
-/** Drives `deleteView` on one of the caller's saved views and answers one of the eight mutation outcomes; the path places a caller-level change, so it names no partner. */
-export const useDeleteView = (): PartnerMutationHandle<DeleteViewPayload> => usePartnerMutation(DELETE_VIEW, PARTNER_POST_PATHS.views());
+/** Drives `saveView` for the caller's own roster query and answers one of the eight mutation outcomes; the path places a caller-level change, so it names no partner. */ export const useSaveView = (): PartnerMutationHandle<SaveViewPayload> => usePartnerMutation(SAVE_VIEW, PARTNER_POST_PATHS.views());
+/** Drives `renameView` on one of the caller's saved views and answers one of the eight mutation outcomes; the path places a caller-level change, so it names no partner. */ export const useRenameView = (): PartnerMutationHandle<RenameViewPayload> => usePartnerMutation(RENAME_VIEW, PARTNER_POST_PATHS.views());
+/** Drives `deleteView` on one of the caller's saved views and answers one of the eight mutation outcomes; the path places a caller-level change, so it names no partner. */ export const useDeleteView = (): PartnerMutationHandle<DeleteViewPayload> => usePartnerMutation(DELETE_VIEW, PARTNER_POST_PATHS.views());
 /** Drives `setTag` on the record named by `partnerId` and answers one of the eight outcomes: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const useSetTag = (partnerId: string): PartnerMutationHandle<SetTagPayload> => usePartnerMutation(SET_TAG, PARTNER_POST_PATHS.tags(partnerId), partnerId);
 /** Drives `setFavourite` on the record named by `partnerId` and answers one of the eight outcomes: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */

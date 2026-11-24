@@ -27,8 +27,7 @@ const COACH_SHARE_STATE_COPY: Readonly<Record<TaskShareSummaryState, { readonly 
   removed: { label: "No longer shared", sentence: "The worker stopped sharing this summary. The task itself keeps working; only this summary is withdrawn from this view." },
   unavailable: { label: "Unavailable", sentence: "The task behind this summary cannot be read at the moment. This is an outage, not an empty share and not a removal." },
 };
-/** What each module carries for the coach who reads it, in the coach's own voice, beside what it never carries. The worker-facing `MODULE_COPY` sentence addresses the worker and stays on the worker's surfaces. */
-const COACH_MODULE_PURPOSE_COPY: Readonly<Record<ModuleKey, string>> = {
+/** What each module carries for the coach who reads it, in the coach's own voice, beside what it never carries. The worker-facing `MODULE_COPY` sentence addresses the worker and stays on the worker's surfaces. */ const COACH_MODULE_PURPOSE_COPY: Readonly<Record<ModuleKey, string>> = {
   "support-goal": "You read the support goal set for this ministry — its amount, the measure it is counted in and the date it took effect — and never a gift row, a donor, a commitment or a per-record amount behind it.",
   "support-results": "You read the support received over the one fixed range of dates the worker reviewed before sharing it, on the one named basis every figure in this application measures, and never a gift row, a donor, a commitment or any way to rebuild a total.",
   targets: "You read the targets the worker set and the count recorded for each period, and never the label the worker gave a target, a private note or a donor.",
@@ -150,8 +149,7 @@ function TargetProgressChart({ body, locale }: { readonly body: Extract<ModuleBo
   return <ChartFigure title={MODULE_COPY.targets.name} summary={chartSummary} caption={chartCaption} kind="bar" series={series} units="Recorded counts per period" coverage={body.coverage} asOf={body.asOf} table={table} locale={locale} />;
 }
 const EXPECTED_BODY_KIND: Readonly<Record<ModuleKey, ModuleBody["kind"]>> = { "support-goal": "support-goal", "support-results": "support-results", targets: "target-progress", "check-ins": "check-ins", "task-summaries": "task-shares" };
-/** The word one module carries: the read's own state, or the complete share the read answers `null` for, in the same vocabulary the worker's sharing summary states a module in. */
-function moduleStateWord(state: ModuleReadState | null): { readonly label: string; readonly tone: StatusTone } {
+/** The word one module carries: the read's own state, or the complete share the read answers `null` for, in the same vocabulary the worker's sharing summary states a module in. */ function moduleStateWord(state: ModuleReadState | null): { readonly label: string; readonly tone: StatusTone } {
   if (state === null) return { label: MODULE_COMPLETE_COPY.label, tone: "positive" };
   return { label: MODULE_READ_STATE_COPY[state].label, tone: MODULE_READ_STATE_TONE[state] };
 }
@@ -221,14 +219,12 @@ const COVERAGE_STATEMENT: Readonly<Record<CoverageState, string>> = {
   partial: "The source reports this reviewed period as only partly covered, so the received figure is an incomplete subtotal and never a whole-period total.",
   unknown: "Whether the source covers this whole reviewed period is not known, so the received figure is an incomplete subtotal rather than a whole-period figure.",
 };
-/** The coverage each figure was measured under, taken from that figure's own report rather than from the read envelope: a row that states an incomplete subtotal is never announced beside a sentence claiming complete coverage. */
-function coverageStatementsOf(figures: readonly ReceivedFigure[]): readonly string[] {
+/** The coverage each figure was measured under, taken from that figure's own report rather than from the read envelope: a row that states an incomplete subtotal is never announced beside a sentence claiming complete coverage. */ function coverageStatementsOf(figures: readonly ReceivedFigure[]): readonly string[] {
   const states = [...new Set(figures.map((figure) => figure.coverageState))].toSorted(compareCodeUnits);
   return states.map((state) => COVERAGE_STATEMENT[state]);
 }
 const RUNNING_PERIOD_WORD = "In progress";
-/** The read's own reason the figures could not be projected, stated as a sentence of this surface: a figure that could not be read is never shown as zero or left unstated. */
-function figureProblemText(problem: string): string {
+/** The read's own reason the figures could not be projected, stated as a sentence of this surface: a figure that could not be read is never shown as zero or left unstated. */ function figureProblemText(problem: string): string {
   const trimmed = problem.trim();
   const terminated = trimmed.endsWith(".") || trimmed.endsWith("!") || trimmed.endsWith("?") ? trimmed : `${trimmed}.`;
   return `No received figure is stated for this reviewed range: ${terminated}`;

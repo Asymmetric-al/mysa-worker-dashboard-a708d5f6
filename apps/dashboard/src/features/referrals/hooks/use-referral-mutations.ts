@@ -24,7 +24,5 @@ function useReferralChange<TPayload>(path: string, schema: ZodType<TPayload>): U
     },
   });
 }
-/** Records that an introduction actually happened, over `POST /api/referrals` (`recordIntroduction`). */
-export const useRecordIntroduction = (): UseMutationResult<MutationOutcome, Error, MutationInput<IntroductionPayload>> => useReferralChange("/api/referrals", introductionPayloadSchema);
-/** Continues one ordinarily expired referral cycle, over `POST /api/referrals/continue` (`continueReferral`). */
-export const useContinueReferral = (): UseMutationResult<MutationOutcome, Error, MutationInput<ContinueReferralPayload>> => useReferralChange("/api/referrals/continue", continueReferralPayloadSchema);
+/** Records that an introduction actually happened, over `POST /api/referrals` (`recordIntroduction`). */ export const useRecordIntroduction = (): UseMutationResult<MutationOutcome, Error, MutationInput<IntroductionPayload>> => useReferralChange("/api/referrals", introductionPayloadSchema);
+/** Continues one ordinarily expired referral cycle, over `POST /api/referrals/continue` (`continueReferral`). */ export const useContinueReferral = (): UseMutationResult<MutationOutcome, Error, MutationInput<ContinueReferralPayload>> => useReferralChange("/api/referrals/continue", continueReferralPayloadSchema);

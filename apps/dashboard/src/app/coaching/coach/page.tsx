@@ -39,9 +39,7 @@ const GrantedPortfolio = ({ envelope, query }: { readonly envelope: PortfolioEnv
   );
 };
 const bodyOf = (result: PortfolioResult, query: RecordListQueryState): ReactElement => (result.kind === "envelope" ? <GrantedPortfolio envelope={result.envelope} query={query} /> : <ReadNotices failure={result} copy={NOTICE_COPY} />);
-/** The coach's read-only portfolio: one read, one snapshot, and the family's own surfaces rendering it. */
-export default async function CoachingCoachPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
+/** The coach's read-only portfolio: one read, one snapshot, and the family's own surfaces rendering it. */ export default async function CoachingCoachPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   const stated = await searchParams;
-  const result = await reads.coach.readCoachPortfolio();
-  return <PageColumn>{bodyOf(result, initialQueryOf(stated))}</PageColumn>;
+  return <PageColumn>{bodyOf(await reads.coach.readCoachPortfolio(), initialQueryOf(stated))}</PageColumn>;
 }

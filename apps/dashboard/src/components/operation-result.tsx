@@ -23,8 +23,7 @@ export const OUTCOME_HEADINGS: Readonly<Record<OutcomeName, string>> = {
   unknown: "Result not confirmed",
 };
 const RECEIPT_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-/** The one type scale's utility per level, so a receipt states its own heading at the measure of the level it lands at. */
-const RECEIPT_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
+/** The one type scale's utility per level, so a receipt states its own heading at the measure of the level it lands at. */ const RECEIPT_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
 export type ReceiptHeadingLevel = keyof typeof RECEIPT_HEADING_TAG;
 /** The closed per-item vocabulary, listed once so the set has a runtime form as well as a type. */ export const PER_ITEM_RESULT_STATES = ["accepted", "unchanged", "excluded", "failed"] as const;
 export type PerItemResultState = (typeof PER_ITEM_RESULT_STATES)[number];
@@ -98,8 +97,7 @@ const ReceiptButton = ({ label, variant, onSelect }: { readonly label: string; r
     {label}
   </Button>
 );
-/** The word and tone of one per-item state, including a state the closed four do not name. */
-export const perItemStatus = (state: string): StatusBadgeSpec => PER_ITEM_RESULT_STATUS[state as PerItemResultState] ?? { label: state.trim() === "" ? NOT_STATED_TEXT : state, tone: "muted" };
+/** The word and tone of one per-item state, including a state the closed four do not name. */ export const perItemStatus = (state: string): StatusBadgeSpec => PER_ITEM_RESULT_STATUS[state as PerItemResultState] ?? { label: state.trim() === "" ? NOT_STATED_TEXT : state, tone: "muted" };
 export type PerItemColumn = { readonly key: string; readonly label: string };
 const PER_ITEM_CELL_CLASS = "min-w-0 border-b border-border px-2 py-2 align-top text-start wrap-anywhere";
 const PER_ITEM_HEAD_CLASS = cn(PER_ITEM_CELL_CLASS, "font-medium text-muted-foreground");
@@ -201,9 +199,7 @@ function conflictFieldLabel(path: string, fieldLabels: Readonly<Record<string, s
 /** The keys a record actually states, so a key holding no value is not read as a field. */ const statedKeys = (record: Record<string, unknown>): readonly string[] => Object.keys(record).filter((key) => record[key] !== undefined);
 /** Whether the record's value agrees with every field the caller's input states for it, in any key order and in any order the keys were written. */ function valuesAgree(held: unknown, entered: unknown): boolean {
   if (held === entered) return true;
-  if (Array.isArray(entered)) return Array.isArray(held) && held.length === entered.length && entered.every((member: unknown, index: number) => valuesAgree(held[index], member));
-  if (!isRecord(entered)) return false;
-  return isRecord(held) && statedKeys(entered).every((key) => key in held && valuesAgree(held[key], entered[key]));
+  return Array.isArray(entered) ? Array.isArray(held) && held.length === entered.length && entered.every((member: unknown, index: number) => valuesAgree(held[index], member)) : !isRecord(entered) ? false : isRecord(held) && statedKeys(entered).every((key) => key in held && valuesAgree(held[key], entered[key]));
 }
 type ConflictDifference = { readonly key: string; readonly label: string; readonly current: unknown; readonly input: unknown };
 const labelledAt = (labels: Readonly<Record<string, string | undefined>> | undefined, path: string): boolean => (labels?.[path]?.trim() ?? "") !== "";
@@ -317,9 +313,7 @@ type ReceiptContext = {
 };
 function unknownRecoverySentence(offersCheck: boolean, offersReplay: boolean): string | null {
   if (offersCheck && offersReplay) return "Nothing here starts a second attempt: checking the result reads what happened, and retrying " + "sends this same operation, which answers with its original result instead of repeating the " + "effect.";
-  if (offersCheck) return "Nothing here starts a second attempt: checking the result reads what happened, and applies " + "nothing.";
-  if (offersReplay) return "Nothing here starts a second attempt: retrying sends this same operation, which answers with " + "its original result instead of repeating the effect.";
-  return null;
+  return offersCheck ? "Nothing here starts a second attempt: checking the result reads what happened, and applies " + "nothing." : offersReplay ? "Nothing here starts a second attempt: retrying sends this same operation, which answers with " + "its original result instead of repeating the effect." : null;
 }
 const receipt = (summary: ReactNode, details: ReactNode): ReceiptBody => ({ summary, details });
 function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "invalid" }>, context: ReceiptContext): ReceiptBody {
@@ -462,8 +456,7 @@ function InvalidReceipt({ outcome, title, headingLevel, fieldLabels, className }
     </Card>
   );
 }
-/** The element a receipt states its outcome in: the outcome's own role, its accessible name, and the programmatic focus stop that lets a surface move a keyboard user onto it. */
-const ANNOUNCED_REGION_SELECTOR = '[role="status"][tabindex], [role="alert"][tabindex]';
+/** The element a receipt states its outcome in: the outcome's own role, its accessible name, and the programmatic focus stop that lets a surface move a keyboard user onto it. */ const ANNOUNCED_REGION_SELECTOR = '[role="status"][tabindex], [role="alert"][tabindex]';
 /** Moves focus onto the region a rendered receipt announces its outcome in, so a settled change is read where it is named rather than on an unnamed wrapper beside it; the container stands in only when the receipt it holds states no such region. */
 export function focusAnnouncedRegion(container: HTMLElement | null): void {
   if (container === null) return;
@@ -482,8 +475,7 @@ export type OperationResultProps = {
   readonly fieldLabels?: Readonly<Record<string, string | undefined>>;
   readonly className?: string;
 };
-/** The one receipt for a mutation outcome. */
-export function OperationResult({ outcome, heading, headingLevel = 3, onCheckResult, onRetrySameWork, onReapply, perItemColumns, renderItemAction, fieldLabels, className }: OperationResultProps): ReactElement {
+/** The one receipt for a mutation outcome. */ export function OperationResult({ outcome, heading, headingLevel = 3, onCheckResult, onRetrySameWork, onReapply, perItemColumns, renderItemAction, fieldLabels, className }: OperationResultProps): ReactElement {
   const titleId = useId();
   const regionRef = useRef<HTMLDivElement | null>(null);
   const stated = heading?.trim() ?? "";

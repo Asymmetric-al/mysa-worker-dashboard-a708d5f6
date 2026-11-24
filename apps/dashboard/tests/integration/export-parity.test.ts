@@ -1,5 +1,4 @@
-/** Whole-query agreement of the export: the integration half of success criterion 1, driven through the real store, the real service read and the real writers. */
-import { parse } from "csv-parse/sync";
+/** Whole-query agreement of the export: the integration half of success criterion 1, driven through the real store, the real service read and the real writers. */ import { parse } from "csv-parse/sync";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { exportResponse } from "@/app/api/export/respond";
 import { reads } from "@/modules/data-service";
@@ -83,8 +82,7 @@ function parseExport(csv: string): ParsedExport {
   });
   return { meta, header, rows, records, lines: new Set(csv.split(CSV_RECORD_SEPARATOR)) };
 }
-/** The whole-query export, the paged report it is measured against, and the file parsed back: the three facts every agreement case starts from. */
-async function exportedRun(): Promise<{ readonly exported: ExportEnvelope; readonly paged: ReportEnvelope; readonly parsed: ParsedExport }> {
+/** The whole-query export, the paged report it is measured against, and the file parsed back: the three facts every agreement case starts from. */ async function exportedRun(): Promise<{ readonly exported: ExportEnvelope; readonly paged: ReportEnvelope; readonly parsed: ParsedExport }> {
   const exported = await exportEnvelope({ period: CLOSED_PERIOD, timeZone: TIME_ZONE });
   const paged = await reportEnvelope(EXPORT_REPORT_ID, { period: CLOSED_PERIOD, timeZone: TIME_ZONE });
   return { exported, paged, parsed: parseExport(exported.data.csv) };
@@ -132,20 +130,18 @@ function fractionDigitsOf(text: string): number {
   return point === -1 ? 0 : numeric.length - point - 1;
 }
 const factOf = (facts: readonly PrintFact[], field: string): string | undefined => facts.find((fact) => fact.field === field)?.value;
-function snapshotIdentityOf(snapshot: Snapshot): Readonly<Record<string, unknown>> {
-  return {
-    reportId: snapshot.query.reportId,
-    currency: snapshot.query.currency.kind === "one" ? `one:${snapshot.query.currency.currency}` : "all",
-    period: { from: snapshot.period.from.toString(), to: snapshot.period.to.toString(), state: snapshot.period.state },
-    scope: { ...snapshot.scope },
-    basis: snapshot.basis,
-    currencies: [...snapshot.currencies],
-    coverage: { ...snapshot.coverage },
-    asOf: snapshot.asOf,
-    lastSourceUpdate: snapshot.lastSourceUpdate,
-    source: { ...snapshot.source },
-  };
-}
+const snapshotIdentityOf = (snapshot: Snapshot): Readonly<Record<string, unknown>> => ({
+  reportId: snapshot.query.reportId,
+  currency: snapshot.query.currency.kind === "one" ? `one:${snapshot.query.currency.currency}` : "all",
+  period: { from: snapshot.period.from.toString(), to: snapshot.period.to.toString(), state: snapshot.period.state },
+  scope: { ...snapshot.scope },
+  basis: snapshot.basis,
+  currencies: [...snapshot.currencies],
+  coverage: { ...snapshot.coverage },
+  asOf: snapshot.asOf,
+  lastSourceUpdate: snapshot.lastSourceUpdate,
+  source: { ...snapshot.source },
+});
 beforeAll(async () => {
   const base = firstSaying(await seed(), "sessionId", DEFAULT_SESSION_ID, `The seed lays down no session "${DEFAULT_SESSION_ID}", so no export case can start from the seeded world.`);
   sessionDocuments = { state: withVolumeRows(base.documents.state, SESSION_ID), operations: base.documents.operations, meta: base.documents.meta };
@@ -321,8 +317,7 @@ it("whole-query export agreement (criterion 1): hands over a file rendered from 
   expect(printModel(paged.data).facts.filter((fact) => !pageDependent.has(fact.field))).toEqual(exported.data.metadata.filter((fact) => !pageDependent.has(fact.field)));
   expect(exported.data.metadata.filter((fact) => !pageDependent.has(fact.field))).toEqual(snapshotMetadata(paged.data).filter((fact) => !pageDependent.has(fact.field)));
   const headerRecord = parsed.records.find((record) => record[0] !== CSV_META_FIELD);
-  const unknownRecord = parsed.records.find((record) => record[0] === UNKNOWN_CURRENCY_ROW_ID);
-  for (const record of [headerRecord, unknownRecord]) {
+  for (const record of [headerRecord, parsed.records.find((record) => record[0] === UNKNOWN_CURRENCY_ROW_ID)]) {
     if (record === undefined) throw new Error("The exported file is missing a record this case compares with the one writer's output.");
     expect(parsed.lines.has(record.map((value) => neutralizeCell(value)).join(","))).toBe(true);
   }

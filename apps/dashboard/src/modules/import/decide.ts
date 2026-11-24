@@ -105,8 +105,7 @@ const DECISION_INPUT_SCHEMA = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("unresolved"), rowNumber: z.number().int().min(1) }),
 ]);
 type ParseFailure = { readonly issues: readonly { readonly path: readonly PropertyKey[]; readonly message: string }[] };
-/** Records one row's decision, or refuses it with the reason it cannot stand, and returns the set the service persists. */
-export function recordDecision(set: ImportDecisionSet, input: ImportDecisionInput, context: ImportDecisionContext): ImportRecordDecisionResult {
+/** Records one row's decision, or refuses it with the reason it cannot stand, and returns the set the service persists. */ export function recordDecision(set: ImportDecisionSet, input: ImportDecisionInput, context: ImportDecisionContext): ImportRecordDecisionResult {
   const parsed = DECISION_INPUT_SCHEMA.safeParse(input);
   if (!parsed.success) return { ok: false, refusal: unreadableDecisionRefusal(parsed.error) };
   const refused = contextRefusal(set, context);
@@ -210,8 +209,7 @@ function revalidateRow(row: ParsedCsvRow, corrections: readonly ImportCellCorrec
     correctedColumns.add(correction.columnNumber);
   }
   const faults = validated.faults.filter((fault) => fault.columnNumber === null || !correctedColumns.has(fault.columnNumber));
-  const revalidated = validateRows({ ...context.file, rows: [{ rowNumber: row.rowNumber, cells }], dataRowCount: 1, rowFaults: faults }, context.mapping);
-  return revalidated.rows[0] ?? null;
+  return validateRows({ ...context.file, rows: [{ rowNumber: row.rowNumber, cells }], dataRowCount: 1, rowFaults: faults }, context.mapping).rows[0] ?? null;
 }
 const fieldAtColumn = (mapping: ImportConfirmedMapping, columnNumber: number): ImportFieldId | null => mapping.assignments.find((candidate) => candidate.columnIndex === columnNumber)?.fieldId ?? null;
 const headerAt = (headers: readonly string[], columnNumber: number): string => headers[columnNumber - 1] ?? "";
@@ -251,8 +249,7 @@ export interface ImportDecisionSummary {
 }
 export type ImportSummaryResult = { readonly ok: true; readonly summary: ImportDecisionSummary } | { readonly ok: false; readonly refusal: ImportDecisionRefusal };
 type PreservedColumnTally = { columnNumber: number; header: string; reason: ImportPreservedReason; statesConsent: boolean; cellCount: number };
-/** Counts the decision set against the file it belongs to, refusing rather than describing a file the set was not taken against. */
-export function summariseDecisions(set: ImportDecisionSet, context: ImportDecisionContext): ImportSummaryResult {
+/** Counts the decision set against the file it belongs to, refusing rather than describing a file the set was not taken against. */ export function summariseDecisions(set: ImportDecisionSet, context: ImportDecisionContext): ImportSummaryResult {
   const refused = contextRefusal(set, context);
   if (refused !== null) return { ok: false, refusal: refused };
   const decisionByRow = new Map<number, ImportRowDecision>(set.decisions.map((decision) => [decision.rowNumber, decision]));
@@ -304,12 +301,11 @@ export function summariseDecisions(set: ImportDecisionSet, context: ImportDecisi
   };
   return { ok: true, summary };
 }
-function countedEntries<Key, Entry>(order: readonly Key[], counts: ReadonlyMap<Key, number>, entry: (key: Key, count: number) => Entry): Entry[] {
-  return order.flatMap((key) => {
+const countedEntries = <Key, Entry>(order: readonly Key[], counts: ReadonlyMap<Key, number>, entry: (key: Key, count: number) => Entry): Entry[] =>
+  order.flatMap((key) => {
     const count = counts.get(key);
     return count === undefined ? [] : [entry(key, count)];
   });
-}
 function effectiveRowOf(validated: ImportValidatedRow, decision: ImportRowDecision | undefined, context: ImportDecisionContext): ImportValidatedRow {
   if (decision === undefined) return validated;
   if (decision.kind !== "create" && decision.kind !== "reuse") return validated;

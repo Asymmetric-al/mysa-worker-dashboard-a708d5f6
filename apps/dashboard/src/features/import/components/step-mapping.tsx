@@ -72,8 +72,8 @@ const CHOSEN_STATUS: ColumnStatus = { kind: "chosen", label: "Chosen by you", va
 const NOT_USED_STATUS: ColumnStatus = { kind: "ignored", label: "Not used", variant: "outline" };
 const UNMAPPED_STATUS: ColumnStatus = { kind: "ignored", label: "Not mapped", variant: "outline" };
 type ColumnView = { readonly column: ImportColumnMapping; readonly choice: ColumnChoice; readonly occurrenceLabel: string | null; readonly suggestedLabel: string; readonly status: ColumnStatus; readonly reason: string | null; readonly note: string | null; readonly errors: readonly string[] };
-function buildColumnViews(input: { readonly suggestion: ImportSuggestedMapping; readonly ignored: readonly ImportIgnoredColumn[]; readonly refusals: ReadonlyMap<number, readonly ImportMappingRefusal[]>; readonly choiceOf: (columnIndex: number) => ColumnChoice }): readonly ColumnView[] {
-  return input.suggestion.columns.map((column) => {
+const buildColumnViews = (input: { readonly suggestion: ImportSuggestedMapping; readonly ignored: readonly ImportIgnoredColumn[]; readonly refusals: ReadonlyMap<number, readonly ImportMappingRefusal[]>; readonly choiceOf: (columnIndex: number) => ColumnChoice }): readonly ColumnView[] =>
+  input.suggestion.columns.map((column) => {
     const choice = input.choiceOf(column.index);
     const ignored = input.ignored.find((candidate) => candidate.index === column.index) ?? null;
     const refusals = input.refusals.get(column.index) ?? NO_REFUSALS;
@@ -98,7 +98,6 @@ function buildColumnViews(input: { readonly suggestion: ImportSuggestedMapping; 
       errors,
     };
   });
-}
 type ColumnViewProps = { readonly view: ColumnView; readonly disabled: boolean; readonly onChoose: (columnIndex: number, value: string) => void };
 type ColumnControlProps = ColumnViewProps & { readonly branch: "table" | "card" };
 function ColumnControl({ view, branch, disabled, onChoose }: ColumnControlProps): ReactElement {
@@ -176,8 +175,6 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
     if (mapping === null || mapping.assignments.length === 0) return;
     onConfirm(mapping);
   };
-  const confirmHint = mapping === null ? MAPPING_COPY.confirmBlocked : mapping.assignments.length === 0 ? MAPPING_COPY.confirmNeedsField : MAPPING_COPY.confirmNote;
-  const confirmLabel = submitting ? MAPPING_COPY.confirmingLabel : confirmedMapping === null ? MAPPING_COPY.confirmLabel : MAPPING_COPY.reconfirmLabel;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1 text-sm">
@@ -241,10 +238,10 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
         )}
       </div>
       <Separator />
-      <FormField label="Confirm the column mapping" name="confirmedMapping" description={confirmHint} error={fieldErrors === null ? undefined : fieldErrors.byField["confirmedMapping"]}>
+      <FormField label="Confirm the column mapping" name="confirmedMapping" description={mapping === null ? MAPPING_COPY.confirmBlocked : mapping.assignments.length === 0 ? MAPPING_COPY.confirmNeedsField : MAPPING_COPY.confirmNote} error={fieldErrors === null ? undefined : fieldErrors.byField["confirmedMapping"]}>
         {({ id, describedBy }) => (
           <Button id={id} aria-describedby={describedBy} type="button" disabled={!(mapping !== null && mapping.assignments.length > 0 && !submitting)} onClick={handleConfirm}>
-            {confirmLabel}
+            {submitting ? MAPPING_COPY.confirmingLabel : confirmedMapping === null ? MAPPING_COPY.confirmLabel : MAPPING_COPY.reconfirmLabel}
           </Button>
         )}
       </FormField>

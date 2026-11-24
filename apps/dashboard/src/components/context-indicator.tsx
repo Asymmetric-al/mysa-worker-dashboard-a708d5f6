@@ -132,8 +132,7 @@ function ContextChooser({ admissions, current, scope, onRequestContext, supportS
     </DropdownMenu>
   );
 }
-/** The active context, always stated, and the one place a change of context is asked for. */
-export function ContextIndicator({ scope, admissions, onRequestContext, showSupportSubject = false, lastResult = null, className }: ContextIndicatorProps): ReactElement {
+/** The active context, always stated, and the one place a change of context is asked for. */ export function ContextIndicator({ scope, admissions, onRequestContext, showSupportSubject = false, lastResult = null, className }: ContextIndicatorProps): ReactElement {
   const current = admissions.find((admission) => isCurrentContext(admission, scope)) ?? null;
   const canChoose = admissions.length > 1;
   const organizationLabel = current === null ? null : labelOrNull(current.organizationLabel);

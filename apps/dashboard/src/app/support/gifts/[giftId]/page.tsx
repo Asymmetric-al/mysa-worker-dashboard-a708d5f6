@@ -8,8 +8,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Gift" };
 const LEDGER_HREF = "/support/gifts";
 const RETURN_LABEL = "Back to the gifts ledger";
-/** The title this route states above its own notice, in the words the record itself reads at once the ledger answers, so a refusal keeps a page-level heading rather than reading as a paragraph. */
-const noticeCopyOf = (giftId: string, carried: string): ReadNoticeCopy => ({
+/** The title this route states above its own notice, in the words the record itself reads at once the ledger answers, so a refusal keeps a page-level heading rather than reading as a paragraph. */ const noticeCopyOf = (giftId: string, carried: string): ReadNoticeCopy => ({
   headingLevel: 1,
   denied: {
     title: "This gift is not shown in this context",

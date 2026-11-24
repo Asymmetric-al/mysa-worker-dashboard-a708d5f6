@@ -1,5 +1,4 @@
-/** Proves a partial release, and the one review step that authorises a release at all (success criteria 9 and 17). */
-import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
+/** Proves a partial release, and the one review step that authorises a release at all (success criteria 9 and 17). */ import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { isRecord } from "@/lib/guards";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type MutationOutcome, type Scope } from "@/modules/data-service";
@@ -9,15 +8,13 @@ import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments, type SessionStat
 import { readSession, resetSession } from "@/modules/store/repository";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import { expectEnvelope, firstSaying, requiredSaying, throwing } from "../helpers/answers";
-/** This file's own session: a private id, so no other suite's seeded world is shared, disturbed or stranded. */
-const SESSION_ID = "it-publish-partial";
+/** This file's own session: a private id, so no other suite's seeded world is shared, disturbed or stranded. */ const SESSION_ID = "it-publish-partial";
 const SESSION = { sessionId: SESSION_ID };
 const DOCUMENT_ID = "doc-update-autumn";
 const PUBLIC_EN_EDITION = "variant-update-autumn-en-public";
 const PUBLIC_AR_EDITION = "variant-update-autumn-ar-public";
 const SEEDED_EN_RELEASE = "release-update-en-1";
-/** The prose a later save writes, so a published revision and a newer draft can never be confused. */
-const LATER_PROSE = ["Autumn at Harbour Youth", "A later wording, written after the review."];
+/** The prose a later save writes, so a published revision and a newer draft can never be confused. */ const LATER_PROSE = ["Autumn at Harbour Youth", "A later wording, written after the review."];
 const AWAITING_REVIEW_CODE = "awaiting-review";
 const SIMULATED_PARTIAL_RELEASE_CODE = "simulated-partial-release";
 const PARTIAL_RELEASE_SCENARIO = "partial-release-failure" as const;
@@ -64,8 +61,7 @@ async function draftEnvelopeRevision(variantId: string): Promise<string> {
 }
 const acceptedOutcome = (outcome: MutationOutcome): Extract<MutationOutcome, { outcome: "accepted" }> => (outcome.outcome === "accepted" ? outcome : throwing(`This change must be accepted, and the service answered ${describeOutcome(outcome)}.`));
 function createdId(outcome: Extract<MutationOutcome, { outcome: "accepted" }>, what: string): string {
-  const created = requiredSaying(outcome.created?.[0], `An accepted ${what} must report the record it created, and this answer reported none: ${describeOutcome(outcome)}`);
-  return created;
+  return requiredSaying(outcome.created?.[0], `An accepted ${what} must report the record it created, and this answer reported none: ${describeOutcome(outcome)}`);
 }
 async function saveDraftAndSubmit(variantId: string, prose: readonly string[], direction: "ltr" | "rtl" = "ltr"): Promise<{ readonly draftRevisionId: string; readonly candidateId: string }> {
   const saved = acceptedOutcome(await mutations.updates.saveDraft(SESSION_ID, { operationId: newOperationId(), scope: scope(), expectedRevision: await draftEnvelopeRevision(variantId), payload: { variantId, body: documentBody(prose, direction) } }));
@@ -78,8 +74,7 @@ async function answerReviewAsApproved(variantId: string, candidateId: string): P
   acceptedOutcome(await mutations.updates.approveCandidate(SESSION_ID, { operationId: newOperationId(), scope: scope(), expectedRevision: candidate.revision, payload: { candidateId } }));
 }
 type ApprovedEdition = { readonly draftRevisionId: string; readonly candidateId: string; readonly contentChecksum: string };
-/** The three writes criterion 9 names — save, submit, approve — made through the named mutations and nothing else. */
-async function draftSubmitAndApprove(variantId: string, prose: readonly string[], direction: "ltr" | "rtl" = "ltr"): Promise<ApprovedEdition> {
+/** The three writes criterion 9 names — save, submit, approve — made through the named mutations and nothing else. */ async function draftSubmitAndApprove(variantId: string, prose: readonly string[], direction: "ltr" | "rtl" = "ltr"): Promise<ApprovedEdition> {
   const written = await saveDraftAndSubmit(variantId, prose, direction);
   await answerReviewAsApproved(variantId, written.candidateId);
   const candidate = await candidateView(variantId);
@@ -88,8 +83,7 @@ async function draftSubmitAndApprove(variantId: string, prose: readonly string[]
 }
 type EditionSelection = { readonly variantId: string; readonly mode?: typeof PUBLISH_ONLY | typeof PUBLISH_AND_NOTIFY };
 type PublicationInput = Parameters<typeof mutations.updates.publishVariants>[1];
-/** One publication request, built once, so a replay can present the identical operation identity and payload. */
-async function publicationInput(selections: readonly EditionSelection[], operationId: string = newOperationId()): Promise<PublicationInput> {
+/** One publication request, built once, so a replay can present the identical operation identity and payload. */ async function publicationInput(selections: readonly EditionSelection[], operationId: string = newOperationId()): Promise<PublicationInput> {
   const matrix = await variantMatrix();
   return { operationId, scope: scope(), expectedRevision: matrix.revision, payload: { documentId: DOCUMENT_ID, variants: selections.map((selection) => ({ variantId: selection.variantId, ...(selection.mode === undefined ? {} : { mode: selection.mode }) })) } };
 }
@@ -106,8 +100,7 @@ async function disarmFailure(): Promise<void> {
 async function selectScenario(scenarioId: ScenarioId): Promise<void> {
   acceptedOutcome(await mutations.dev.setScenario({ operationId: newOperationId(), scope: scope(), expectedRevision: await developmentRevision(), payload: { scenarioId } }, SESSION));
 }
-/** Puts this session back on the baseline scenario, so a case that selected another one leaves nothing behind for the case after it. */
-async function restoreScenario(): Promise<void> {
+/** Puts this session back on the baseline scenario, so a case that selected another one leaves nothing behind for the case after it. */ async function restoreScenario(): Promise<void> {
   const state = expectEnvelope(await reads.dev.readDevState(SESSION), "this session's development state");
   if (state.data.scenario.id === DEFAULT_SCENARIO_ID) return;
   await selectScenario(DEFAULT_SCENARIO_ID);
@@ -177,8 +170,7 @@ it("publishing one submission whose editions do not share a fate: keeps the fail
   if (seededCandidate.data.status !== "reviewable") throw new Error("The seeded Arabic edition must hold a frozen candidate for this case to start from it.");
   expect(seededCandidate.data.review.decision).toBeNull();
   await answerReviewAsApproved(PUBLIC_AR_EDITION, seededCandidate.data.candidate.candidateId);
-  const firstPublication = acceptedOutcome(await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_AR_EDITION }])));
-  expect(firstPublication.items?.[0]?.state).toBe("released");
+  expect(acceptedOutcome(await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_AR_EDITION }]))).items?.[0]?.state).toBe("released");
   const before = await editionView(PUBLIC_AR_EDITION);
   if (before.releaseHeadId === null || before.headRelease === null) throw new Error("The Arabic edition's first release must stand at its head before the partial attempt.");
   const failing = await saveDraftAndSubmit(PUBLIC_AR_EDITION, ["الخريف في هاربر يوث", "نص أحدث لا يزال قيد المراجعة."], "rtl");
@@ -205,8 +197,7 @@ it("publishing one submission whose editions do not share a fate: simulates the 
   const seededCandidate = await candidateView(PUBLIC_AR_EDITION);
   if (seededCandidate.data.status !== "reviewable") throw new Error("The seeded Arabic edition must hold a frozen candidate for this case to release it before the simulated partial release.");
   await answerReviewAsApproved(PUBLIC_AR_EDITION, seededCandidate.data.candidate.candidateId);
-  const firstRelease = acceptedOutcome(await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_AR_EDITION }])));
-  expect(firstRelease.items?.[0]?.state).toBe("released");
+  expect(acceptedOutcome(await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_AR_EDITION }]))).items?.[0]?.state).toBe("released");
   const priorGood = await editionView(PUBLIC_AR_EDITION); // The head the simulated failure has to keep, laid down by the same mutation every other case releases through.
   if (priorGood.releaseHeadId === null || priorGood.headRelease === null) throw new Error("The Arabic edition must hold the release head the simulated failure keeps before this case starts.");
   const failing = await draftSubmitAndApprove(PUBLIC_AR_EDITION, ["الخريف في هاربر يوث", "نص أحدث ينتظر إصداره."], "rtl");
@@ -305,8 +296,7 @@ it("publishing one submission whose editions do not share a fate: completes the 
   acceptedOutcome(await mutations.updates.publishVariants(SESSION_ID, publishInput));
   expect((await storedOperationsFor(publishInput.operationId))[0]?.result).toMatchObject({ editions: [{ variantId: PUBLIC_EN_EDITION, state: "released", notifyMode: PUBLISH_ONLY }] });
   expect(await notificationCounts()).toEqual(notificationsBefore);
-  const escalated = await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_EN_EDITION, mode: PUBLISH_AND_NOTIFY }]));
-  expect(escalated.outcome).toBe("invalid");
+  expect((await mutations.updates.publishVariants(SESSION_ID, await publicationInput([{ variantId: PUBLIC_EN_EDITION, mode: PUBLISH_AND_NOTIFY }]))).outcome).toBe("invalid");
   expect(await notificationCounts()).toEqual(notificationsBefore);
   const state = await storedState();
   expect(state.releases.filter((release) => release.variantId === PUBLIC_EN_EDITION)).toHaveLength(2);

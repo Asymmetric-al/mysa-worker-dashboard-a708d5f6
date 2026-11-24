@@ -18,8 +18,7 @@ function exclusionReasonFor(membership: MembershipRecord, now: Temporal.Instant)
   return membership.state === "off" ? (membership.confirmedAt === undefined ? "off" : "unsubscribed") : membership.state === "awaiting-proof" ? (isConfirmationOpen(membership, now) ? "awaiting-proof" : "confirmation-expired") : hasConsent(membership) ? undefined : "unqualified";
 }
 const lateSignupReason = (membership: MembershipRecord, intent: NotificationIntent): ExclusionReason | undefined => (membership.acceptedAt === undefined ? undefined : Temporal.Instant.compare(membership.acceptedAt, intent.acceptedAt) > 0 ? "signed-up-after-intent" : undefined);
-/** The recipients who may receive this publisher's notice for `input.intent`, and everyone else on the same publisher and purpose with the reason they may not. */
-export function eligibleRecipients(input: EligibilityInput): EligibilityResult {
+/** The recipients who may receive this publisher's notice for `input.intent`, and everyone else on the same publisher and purpose with the reason they may not. */ export function eligibleRecipients(input: EligibilityInput): EligibilityResult {
   const rowsByRecipient = new Map<string, MembershipRecord[]>();
   for (const membership of input.memberships.filter((membership) => membership.publisherId === input.publisherId && membership.purpose === input.purpose)) rowsByRecipient.set(membership.recipientId, [...(rowsByRecipient.get(membership.recipientId) ?? []), membership]);
   const eligible: EligibleRecipient[] = [];
@@ -36,8 +35,7 @@ export function eligibleRecipients(input: EligibilityInput): EligibilityResult {
   return { eligible, excluded, ceilingSaturated: ceilingCount !== undefined && eligible.length > ceilingCount };
 }
 export type MembershipAccess = { readonly admitted: boolean; readonly state: MembershipState; readonly reason?: ExclusionReason };
-/** Whether one membership row admits at `now`, re-evaluated on every read by the receiving preview and the synthetic inbox so a stale row can never grant access. */
-export function membershipAccessAt(membership: MembershipRecord, now: Temporal.Instant): MembershipAccess {
+/** Whether one membership row admits at `now`, re-evaluated on every read by the receiving preview and the synthetic inbox so a stale row can never grant access. */ export function membershipAccessAt(membership: MembershipRecord, now: Temporal.Instant): MembershipAccess {
   const reason = exclusionReasonFor(membership, now);
   return reason === undefined ? { admitted: true, state: membership.state } : { admitted: false, state: membership.state, reason };
 }

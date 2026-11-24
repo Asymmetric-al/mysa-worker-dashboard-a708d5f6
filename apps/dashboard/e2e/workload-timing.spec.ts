@@ -8,39 +8,31 @@ const RECEIVED_REPORT_HREF = `/support/reports/received?${new URLSearchParams({ 
 const SAMPLES = 30;
 const P95_BUDGET_MS = 500;
 const EXPORT_BUDGET_MS = 30_000;
-/** The whole-result gift count the filtered query must state, which tells the generated workload from the seed alone, and the exported rows the run must produce. */
-const MIN_EXPORTED_ROWS = 90_000;
+/** The whole-result gift count the filtered query must state, which tells the generated workload from the seed alone, and the exported rows the run must produce. */ const MIN_EXPORTED_ROWS = 90_000;
 const MEANINGFUL_CONTENT_SLOT = '[data-slot="whole-result-summary"]';
 const MEANINGFUL_CONTENT_MARK = "__workloadFirstMeaningfulRenderMs";
-/** The export section the report renders from the server, whose adoption by the client renderer is the moment its control's click handler exists. */
-const EXPORT_SLOT = '[data-slot="export-print-actions"]';
+/** The export section the report renders from the server, whose adoption by the client renderer is the moment its control's click handler exists. */ const EXPORT_SLOT = '[data-slot="export-print-actions"]';
 /** The property the client renderer sets on every DOM node it adopts, so its presence on the export section is that adoption rather than the section merely existing in the server's HTML. */
-/** Every wait is bounded well above the budget it is judged by, so a slow host reports a slow sample rather than a navigation or download timeout. */
-const NAVIGATION_TIMEOUT_MS = 120_000;
+/** Every wait is bounded well above the budget it is judged by, so a slow host reports a slow sample rather than a navigation or download timeout. */ const NAVIGATION_TIMEOUT_MS = 120_000;
 const MARK_TIMEOUT_MS = 60_000;
 const TEST_TIMEOUT_MS = 900_000;
-/** How many times one counted load is taken before the run states the condition: a load that produced no number is discarded and taken again, and a measured sample is never taken twice. */
-const LOAD_ATTEMPT_LIMIT = 5;
-/** The record names this run prints, so a discarded load and the record it belongs to are matched by name rather than by position. */
-const WARM_UP_TEST = "warm-up-page-load";
+/** How many times one counted load is taken before the run states the condition: a load that produced no number is discarded and taken again, and a measured sample is never taken twice. */ const LOAD_ATTEMPT_LIMIT = 5;
+/** The record names this run prints, so a discarded load and the record it belongs to are matched by name rather than by position. */ const WARM_UP_TEST = "warm-up-page-load";
 const GIFTS_LOAD_TEST = "filtered-gifts-page-load";
 const EXPORT_TEST = "whole-query-csv-export";
-/** The words the runner lists the skip with, so a run of the ordinary gate says why nothing was timed. */
-const SKIP_REASON = "The published-workload measurement runs only through `bun run measure:workload` (WORKLOAD_MEASUREMENT=1); the ordinary `bun run test` gate does not time anything.";
+/** The words the runner lists the skip with, so a run of the ordinary gate says why nothing was timed. */ const SKIP_REASON = "The published-workload measurement runs only through `bun run measure:workload` (WORKLOAD_MEASUREMENT=1); the ordinary `bun run test` gate does not time anything.";
 const CSV_ROW_TOTAL_FIELD = "row_total";
 type LoadSample = { readonly sampleMs: number; readonly serverReadMs: number; readonly domContentLoadedEnd: number; readonly loadEnd: number; readonly timeOrigin: number };
 type MachineRecord = { readonly cpu: string; readonly cores: number; readonly memoryBytes: number; readonly osRelease: string; readonly loadAverage: readonly number[]; readonly runtime: string };
 type CsvCounts = { readonly rowTotal: number; readonly dataRecords: number; readonly records: number };
 const millis = (value: number): number => Math.round(value * 10) / 10;
-/** The nearest-rank percentile the plan fixes: the ascending samples read at `ceil(fraction × n) − 1`. */
-function percentileOf(samples: readonly number[], fraction: number): number {
+/** The nearest-rank percentile the plan fixes: the ascending samples read at `ceil(fraction × n) − 1`. */ function percentileOf(samples: readonly number[], fraction: number): number {
   const sorted = [...samples].sort((left, right) => left - right);
   const value = sorted[Math.ceil(fraction * sorted.length) - 1];
   if (value === undefined) throw new Error(`No sample holds the ${String(fraction)} rank of ${String(sorted.length)} samples, so no percentile exists to report.`);
   return value;
 }
-/** The median of the samples: the middle value of an odd count, and the mean of the middle pair of an even one. */
-function medianOf(samples: readonly number[]): number {
+/** The median of the samples: the middle value of an odd count, and the mean of the middle pair of an even one. */ function medianOf(samples: readonly number[]): number {
   const sorted = [...samples].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
   const upper = sorted[middle];
@@ -48,16 +40,13 @@ function medianOf(samples: readonly number[]): number {
   if (upper === undefined || lower === undefined) throw new Error(`No middle pair exists in ${String(sorted.length)} samples, so no median exists to report.`);
   return sorted.length % 2 === 1 ? upper : (lower + upper) / 2;
 }
-/** The machine the measurement ran on, in the shape the run's own log states it. */
-function machineRecord(): MachineRecord {
+/** The machine the measurement ran on, in the shape the run's own log states it. */ function machineRecord(): MachineRecord {
   const processors = cpus();
   return { cpu: processors[0]?.model ?? "unknown", cores: processors.length, memoryBytes: totalmem(), osRelease: release(), loadAverage: loadavg(), runtime: (process.versions as { bun?: string }).bun ?? process.version };
 }
-/** A load whose document the development server replaced under the read: it produced no number, so it is discarded and taken again rather than counted as a sample. */
-class ReplacedDocumentError extends Error {}
+/** A load whose document the development server replaced under the read: it produced no number, so it is discarded and taken again rather than counted as a sample. */ class ReplacedDocumentError extends Error {}
 /** What a replaced document looks like from outside: Playwright's own words for a context that is gone, and the time-origin mismatch this file names itself. */
-/** The reason a load produced no number, or `undefined` where the failure is anything else and has to be reported as it stands rather than taken again. */
-function replacedDocumentReasonOf(error: unknown): string | undefined {
+/** The reason a load produced no number, or `undefined` where the failure is anything else and has to be reported as it stands rather than taken again. */ function replacedDocumentReasonOf(error: unknown): string | undefined {
   if (error instanceof ReplacedDocumentError) return error.message;
   const message = error instanceof Error ? error.message : String(error);
   return ["Execution context was destroyed", "Navigating frame was detached", "Cannot find context with specified id", "the document was replaced"].find((phrase) => message.includes(phrase));
@@ -77,9 +66,8 @@ async function withRetake<T>(subject: string, index: number, take: () => Promise
   }
   throw new Error(`${subject} ${String(index)} produced no number in ${String(LOAD_ATTEMPT_LIMIT)} attempts: the development server replaced the document under every one of them, the last time because ${lastReason}. The run states that condition rather than waiting out a timeout it would never measure.`);
 }
-/** Installs the first-meaningful-render mark into every document this page loads, so the sample shares the navigation's time origin and carries the server read, the response, the parse and the render. */
-async function installFirstRenderMark(page: Page): Promise<void> {
-  await page.addInitScript(
+/** Installs the first-meaningful-render mark into every document this page loads, so the sample shares the navigation's time origin and carries the server read, the response, the parse and the render. */ const installFirstRenderMark = async (page: Page): Promise<void> =>
+  void (await page.addInitScript(
     (state: { readonly mark: string; readonly slot: string }): void => {
       const clock = window as unknown as Record<string, number | undefined>;
       let observer: MutationObserver | undefined;
@@ -94,10 +82,8 @@ async function installFirstRenderMark(page: Page): Promise<void> {
       recordMark();
     },
     { mark: MEANINGFUL_CONTENT_MARK, slot: MEANINGFUL_CONTENT_SLOT },
-  );
-}
-/** One document's sample, read in a single call inside the page: the mark it wrote, its own navigation timing and its time origin, so a document the server replaces cannot hand back a mark from one navigation beside the timing of another. */
-async function sampleInPage(page: Page): Promise<LoadSample | null> {
+  ));
+/** One document's sample, read in a single call inside the page: the mark it wrote, its own navigation timing and its time origin, so a document the server replaces cannot hand back a mark from one navigation beside the timing of another. */ async function sampleInPage(page: Page): Promise<LoadSample | null> {
   const handle = await page.waitForFunction(
     (mark: string): LoadSample | null => {
       const clock = window as unknown as Record<string, number | undefined>;
@@ -146,16 +132,14 @@ async function awaitExportHydration(page: Page): Promise<void> {
     throw new Error(`The received-support report's ${EXPORT_SLOT} section never reached the client renderer within ${String(NAVIGATION_TIMEOUT_MS)} ms, so the export control behind it is still the server's HTML with no click handler: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
-/** The whole-result gift count the loaded ledger states for its query, read from the summary the sample's mark waits for. */
-async function wholeResultGiftCount(page: Page): Promise<number> {
+/** The whole-result gift count the loaded ledger states for its query, read from the summary the sample's mark waits for. */ async function wholeResultGiftCount(page: Page): Promise<number> {
   const summary = page.locator(MEANINGFUL_CONTENT_SLOT);
   await expect(summary, "The ledger states the whole-result figures of the query it read.").toBeVisible();
   let total = 0;
   for (const line of await summary.locator("li").allInnerTexts()) for (const match of line.matchAll(/\band\s+([\d,]+)\s+gifts?\b/gu)) total += Number((match[1] ?? "0").replaceAll(",", ""));
   return total;
 }
-/** The whole-result row count the report states for the query its export writes, which is the count the file's own total is compared with. */
-async function rowsStatedByReport(page: Page): Promise<number> {
+/** The whole-result row count the report states for the query its export writes, which is the count the file's own total is compared with. */ async function rowsStatedByReport(page: Page): Promise<number> {
   const actions = page.locator('[data-slot="export-print-actions"]');
   await expect(actions, "The report states how many rows its whole-query export will hold.").toBeVisible();
   const stated = (await actions.innerText()).replace(/\s+/gu, " ");
@@ -164,8 +148,7 @@ async function rowsStatedByReport(page: Page): Promise<number> {
   if (digits === "" || !Number.isSafeInteger(value)) throw new Error(`The report states no readable whole-result row count beside its export control, so the file has no count to agree with: ${JSON.stringify(stated.slice(0, 200))}`);
   return value;
 }
-/** What one exported file holds, counted through the one parser the application fixes: `#meta` records, one column header record and one record per authorised row. */
-function csvCountsOf(text: string, subject: string): CsvCounts {
+/** What one exported file holds, counted through the one parser the application fixes: `#meta` records, one column header record and one record per authorised row. */ function csvCountsOf(text: string, subject: string): CsvCounts {
   const records: string[][] = parse(text, { bom: true, relax_column_count: true }); // `bom: true` because an unstripped byte-order mark would corrupt the first header name, and a relaxed column count because the file legitimately mixes three-field metadata with wider data records.
   const header = records.findIndex((record) => (record[0] ?? "").trim() !== "" && record[0] !== CSV_META);
   const stated = (records.find((record) => record[0] === CSV_META && record[1] === "row_total")?.[2] ?? "").trim();
@@ -175,8 +158,7 @@ function csvCountsOf(text: string, subject: string): CsvCounts {
   if (!/^\d+$/u.test(stated) || !Number.isSafeInteger(rowTotal)) throw new Error(`${subject} states ${JSON.stringify(stated)} as its ${CSV_ROW_TOTAL_FIELD}, which is not a count of rows.`);
   return { rowTotal, dataRecords: records.length - header - 1, records: records.length };
 }
-/** This file measures the workload the established worker's session carries, and reads both surfaces as that persona. */
-test.use({ persona: "established-worker" });
+/** This file measures the workload the established worker's session carries, and reads both surfaces as that persona. */ test.use({ persona: "established-worker" });
 test("measures thirty filtered Gifts page loads once and reports their 95th percentile", async ({ page }) => {
   test.skip(process.env.WORKLOAD_MEASUREMENT !== "1", SKIP_REASON);
   test.setTimeout(TEST_TIMEOUT_MS);

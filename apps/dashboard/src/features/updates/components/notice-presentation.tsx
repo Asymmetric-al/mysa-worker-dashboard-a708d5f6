@@ -61,19 +61,17 @@ function admittedPosterOf(notice: Notice, facts: NoticePosterFacts | undefined):
   const languages = (facts.captionLanguages ?? []).map((language) => textOf(language)).filter((language) => language.length > 0);
   return { path, alt: alt.length === 0 ? "Poster image for the video in the linked edition" : alt, captionLanguages: facts.captionLanguages === undefined ? undefined : languages, transcriptAvailable: facts.transcriptAvailable };
 }
-function omissionItemsOf(input: { readonly protectedCopy: boolean; readonly posterShown: boolean; readonly ancillaryAvailable: boolean }): readonly string[] {
-  return [
-    input.protectedCopy ? "No protected prose: no title, no excerpt, no body text, no summary and no subject detail beyond the generic subject the message states." : "No Update prose: the message carries its generic wording and a link, not the published body, so the copy a reader reads is the edition at the link.",
-    input.posterShown ? "No image other than the one admitted poster shown on this notice: no further picture, no thumbnail and no embedded media travels with the message." : "No image at all: no portrait, no poster, no thumbnail and no embedded media, so nothing from the edition is previewed here.",
-    "No location: no address, region, map, coordinate or travel detail appears in the message.",
-    input.ancillaryAvailable ? "No transcript and no caption text: the linked edition offers them, and both stay at the link rather than travelling in the message." : "No transcript and no caption: neither the text of either nor the track file itself travels with the message.",
-    input.protectedCopy
-      ? "No hidden alternative: no preview snippet, no alternative text describing protected content and no subject line detail that would disclose something the body withholds."
-      : "No hidden alternative: nothing about the edition travels beyond the wording the sender wrote and the one poster the notice admits, if it admits one.",
-    "No attachment of any kind: no document, no calendar invitation, no archive and no second file.",
-    "No per-recipient credential of any kind: the message carries no bearer token, no signed or personalised link and no tracking pixel, so nothing in it reports whether, when or by whom it was opened, and following the link reveals nothing about anyone else.",
-  ];
-}
+const omissionItemsOf = (input: { readonly protectedCopy: boolean; readonly posterShown: boolean; readonly ancillaryAvailable: boolean }): readonly string[] => [
+  input.protectedCopy ? "No protected prose: no title, no excerpt, no body text, no summary and no subject detail beyond the generic subject the message states." : "No Update prose: the message carries its generic wording and a link, not the published body, so the copy a reader reads is the edition at the link.",
+  input.posterShown ? "No image other than the one admitted poster shown on this notice: no further picture, no thumbnail and no embedded media travels with the message." : "No image at all: no portrait, no poster, no thumbnail and no embedded media, so nothing from the edition is previewed here.",
+  "No location: no address, region, map, coordinate or travel detail appears in the message.",
+  input.ancillaryAvailable ? "No transcript and no caption text: the linked edition offers them, and both stay at the link rather than travelling in the message." : "No transcript and no caption: neither the text of either nor the track file itself travels with the message.",
+  input.protectedCopy
+    ? "No hidden alternative: no preview snippet, no alternative text describing protected content and no subject line detail that would disclose something the body withholds."
+    : "No hidden alternative: nothing about the edition travels beyond the wording the sender wrote and the one poster the notice admits, if it admits one.",
+  "No attachment of any kind: no document, no calendar invitation, no archive and no second file.",
+  "No per-recipient credential of any kind: the message carries no bearer token, no signed or personalised link and no tracking pixel, so nothing in it reports whether, when or by whom it was opened, and following the link reveals nothing about anyone else.",
+];
 const MissingRendering = ({ which }: { readonly which: "html" | "plain" | "both" }): ReactElement => (
   <Alert variant="default" role={undefined} data-notice-missing-rendering={which}>
     <AlertDescription>
@@ -172,7 +170,6 @@ export default function NoticePresentation({ notice, recipient, poster, classNam
   const protectedCopy = pinned.audience === "approved-supporter";
   const ancillaryAvailable = admittedPoster !== undefined && ((admittedPoster.captionLanguages?.length ?? 0) > 0 || admittedPoster.transcriptAvailable === true);
   const omissions = omissionItemsOf({ protectedCopy, posterShown: admittedPoster !== undefined, ancillaryAvailable });
-  const accessibleName = subject.length === 0 ? undefined : `${subject} — ${audience.label}${languageTag.length === 0 ? "" : ` (${languageTag})`}`;
   const recipientName = textOf(recipient?.displayName);
   const recipientAddress = textOf(recipient?.address);
   const rendering = bodies.html.length > 0 && bodies.text.length > 0 ? "both" : bodies.html.length > 0 ? "html" : bodies.text.length > 0 ? "plain" : "none";
@@ -191,7 +188,7 @@ export default function NoticePresentation({ notice, recipient, poster, classNam
       </span>
     );
   return (
-    <article aria-label={accessibleName} dir={direction} data-slot="notice-presentation" data-notice-audience={pinned.audience} data-notice-rendering={rendering} className={cn("min-w-0", className)}>
+    <article aria-label={subject.length === 0 ? undefined : `${subject} — ${audience.label}${languageTag.length === 0 ? "" : ` (${languageTag})`}`} dir={direction} data-slot="notice-presentation" data-notice-audience={pinned.audience} data-notice-rendering={rendering} className={cn("min-w-0", className)}>
       <Card>
         <CardHeader>
           <div className="flex min-w-0 flex-col gap-1">

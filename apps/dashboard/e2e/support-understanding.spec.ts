@@ -1,5 +1,4 @@
-/** Criterion 6 — financial understanding — and criterion 7 — the goal. */
-import type { APIRequestContext, Page } from "@playwright/test";
+/** Criterion 6 — financial understanding — and criterion 7 — the goal. */ import type { APIRequestContext, Page } from "@playwright/test";
 import { actAs, clearFailurePlan, expect, numberOf, objectOf, operateDevControl, resetScopeOf, SEEDED_PERSONAS, sessionCookie, setFailurePlan, textOf, test, type PersonaName, type ResetScope } from "../playwright.config";
 const PERSONA: PersonaName = "established-worker";
 const SESSION = SEEDED_PERSONAS[PERSONA]; // That worker's seeded session, mirrored from the runner's roster rather than hard-coded.
@@ -92,21 +91,14 @@ async function statedGoalFacts(goal: ReturnType<Page["locator"]>): Promise<strin
   await expect(facts, "The goal panel states the goal it holds, so the facts it states about it can be read.").toBeVisible();
   return (await facts.innerText()).replace(/\s+/gu, " ").trim();
 }
-/** The revision the goal panel states a change must present, with the note the panel states it by. */
-function statedRevision(facts: string, subject: string): string {
+/** The revision the goal panel states a change must present, with the note the panel states it by. */ function statedRevision(facts: string, subject: string): string {
   const matched = /Revision\s+(\S+)\s+\(the revision a change must present/u.exec(facts); // The revision one statement of the goal panel's facts names, refusing a statement that names none.
   if (matched === null) throw new Error(`${subject} states no revision a change must present, so nothing is compared with it: ${JSON.stringify(facts)}.`);
   return matched[1] ?? "";
 }
 const authorisationHeader = (sessionId: string): Readonly<Record<string, string>> => ({ cookie: sessionCookie(sessionId) });
-/** One support goal as the goal read states it: its exact amount, the revision a change must present and whether it may be changed at all. */
-interface GoalRead {
-  readonly envelopeRevision: string; // The revision the goal read publishes: the token a change has to present, and `absent` when no goal is set.
-  readonly scope: ResetScope;
-  readonly goalRevision: string | null;
-  readonly minorUnits: number | null;
-  readonly canEditGoal: boolean;
-}
+/** One support goal as the goal read states it: its exact amount, the revision a change must present — `envelopeRevision` is the token a change has to present, and `absent` when no goal is set — and whether it may be changed at all. */
+type GoalRead = { readonly envelopeRevision: string; readonly scope: ResetScope; readonly goalRevision: string | null; readonly minorUnits: number | null; readonly canEditGoal: boolean };
 async function readGoal(request: APIRequestContext, sessionId: string): Promise<GoalRead> {
   const response = await request.get("/api/support/goal", { headers: authorisationHeader(sessionId) });
   const body: unknown = await response.json().catch(() => undefined);

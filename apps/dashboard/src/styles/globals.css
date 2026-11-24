@@ -204,9 +204,8 @@
   }
 }
 
-/* The composed Page and Update markup. The one static renderer emits these semantic classes from fixed maps over the
-   four admitted presentation choices, so this block is the whole of what a section's presentation can style: no value
-   read from a document becomes a class name, a colour or a length, and every declaration below is a token utility. */
+/* The composed Page and Update markup. The one static renderer emits these semantic classes from fixed maps over the four admitted presentation choices, so this block is the whole of what a section's presentation can style: no value read from a document becomes a class name, a colour or a length, and every
+ * declaration below is a token utility. */
 @layer components {
   .content-section {
     @apply flex min-w-0 flex-col gap-4;
@@ -259,8 +258,7 @@
     @apply bg-muted object-contain;
   }
 
-  /* Two columns only where the section carries media of its own, and only above the narrow breakpoint: below it the
-     layout is one column with the image above its text, which is what the two-column choice itself promises. */
+  /* Two columns only where the section carries media of its own, and only above the narrow breakpoint: below it the layout is one column with the image above its text, which is what the two-column choice itself promises. */
   .content-layout-two-column-image-text:has(> .content-section-media) > .content-section-media {
     @apply order-first;
   }
@@ -314,16 +312,14 @@
   }
 }
 
-/* Overlay scrollbars paint nothing until a scroll begins, so a table wider than its region reads as simply cut off at
-   the edge. This utility keeps the region's own horizontal scrollbar painted and reserving its space, drawn from the
-   boundary and quiet-surface tokens, so the columns beyond the edge are discoverable by a pointer before any scroll. */
+/* Overlay scrollbars paint nothing until a scroll begins, so a table wider than its region reads as simply cut off at the edge. This utility keeps the region's own horizontal scrollbar painted and reserving its space, drawn from the boundary and quiet-surface tokens, so the columns beyond the edge are discoverable by
+ * a pointer before any scroll. */
 @utility scroll-cue-x {
   scrollbar-width: thin;
   scrollbar-color: var(--input) var(--muted);
 
-  /* An engine that supports the standard properties above paints the bar from them; one that does not draws the same
-     bar from the same two tokens through these pseudo-elements. Its height comes from the spacing scale and its
-     rounding from the one declared --radius value, so no length or radius of its own is introduced. */
+  /* An engine that supports the standard properties above paints the bar from them; one that does not draws the same bar from the same two tokens through these pseudo-elements. Its height comes from the spacing scale and its rounding from the one declared --radius value, so no length or radius of its own is
+   * introduced. */
   &::-webkit-scrollbar {
     height: calc(var(--spacing) * 2.5);
   }

@@ -37,8 +37,7 @@ export interface SectionActionsProps {
   readonly disabled?: boolean;
   readonly className?: string;
 }
-/** Duplicate and remove one draft section, each reviewed before it takes effect. */
-export function SectionActions({ scope, documentId, sectionId, sectionLabel, index, count, variantId, expectedRevision, managed, disabled = false, className }: SectionActionsProps): ReactElement {
+/** Duplicate and remove one draft section, each reviewed before it takes effect. */ export function SectionActions({ scope, documentId, sectionId, sectionLabel, index, count, variantId, expectedRevision, managed, disabled = false, className }: SectionActionsProps): ReactElement {
   const duplicate = useDuplicatePageSection();
   const remove = useRemovePageSection();
   const reasonId = useId();
@@ -49,8 +48,6 @@ export function SectionActions({ scope, documentId, sectionId, sectionLabel, ind
   const liveDuplicate = useMemo<ReviewInput<DuplicateSectionPayload>>(() => ({ scope, expectedRevision, payload: { operation: "duplicateSection", variantId, sectionId } }), [scope, expectedRevision, variantId, sectionId]);
   const liveRemove = useMemo<ReviewInput<RemoveSectionPayload>>(() => ({ scope, expectedRevision, payload: { operation: "removeSection", variantId, sectionId } }), [scope, expectedRevision, variantId, sectionId]);
   const kept = holdsReceipt(settled);
-  const duplicateInput = kept && submittedDuplicate !== null ? submittedDuplicate : liveDuplicate;
-  const removeInput = kept && submittedRemove !== null ? submittedRemove : liveRemove;
   const submitDuplicate = useCallback<MutationSubmit<DuplicateSectionPayload>>(
     async (attempt) => {
       setSubmittedDuplicate(inputOf(attempt));
@@ -123,7 +120,7 @@ export function SectionActions({ scope, documentId, sectionId, sectionLabel, ind
             </div>
           }
           confirmLabel={copy.sectionActions.confirmDuplicate}
-          input={duplicateInput}
+          input={kept && submittedDuplicate !== null ? submittedDuplicate : liveDuplicate}
           submit={submitDuplicate}
           onSettled={settle}
           onCancel={close}
@@ -145,7 +142,7 @@ export function SectionActions({ scope, documentId, sectionId, sectionLabel, ind
             </div>
           }
           confirmLabel={copy.sectionActions.confirmRemove}
-          input={removeInput}
+          input={kept && submittedRemove !== null ? submittedRemove : liveRemove}
           submit={submitRemove}
           onSettled={settle}
           onCancel={close}

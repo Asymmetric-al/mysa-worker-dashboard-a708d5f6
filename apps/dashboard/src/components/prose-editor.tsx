@@ -41,10 +41,7 @@ type PendingPaste = { readonly json: unknown; readonly text: string; readonly pr
 const toEditorContent = (nodes: readonly ContentBlockNode[]): JSONContent[] => JSON.parse(JSON.stringify(nodes)) as JSONContent[];
 /** The document as the editor holds it now. The service validates it through the content profile on save, so this reports the authored document and passes no judgement on it. */
 const buildDocument = (editor: Editor, direction: ContentDirection, sections: readonly ContentSection[]): ContentDocumentJson => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: (editor.getJSON().content ?? []) as readonly ContentBlockNode[], sections });
-function headingLevelOf(value: string): (typeof ADMITTED_HEADING_LEVELS)[number] | undefined {
-  const parsed = Number(value);
-  return ADMITTED_HEADING_LEVELS.find((level) => level === parsed);
-}
+const headingLevelOf = (value: string): (typeof ADMITTED_HEADING_LEVELS)[number] | undefined => ADMITTED_HEADING_LEVELS.find((level) => level === Number(value));
 function textOfJson(value: unknown): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map((entry) => textOfJson(entry)).join("");
@@ -56,15 +53,13 @@ function textOfJson(value: unknown): string {
   return "";
 }
 function previewOf(text: string): { readonly preview: string; readonly truncated: boolean } {
-  if (text.length <= PREVIEW_LIMIT) return { preview: text, truncated: false };
-  return { preview: text.slice(0, PREVIEW_LIMIT), truncated: true };
+  return text.length <= PREVIEW_LIMIT ? { preview: text, truncated: false } : { preview: text.slice(0, PREVIEW_LIMIT), truncated: true };
 }
-function plainTextBlocks(text: string): JSONContent[] {
-  return text
+const plainTextBlocks = (text: string): JSONContent[] =>
+  text
     .replace(/\r\n?/gu, "\n")
     .split("\n")
     .map((line) => (line === "" ? { type: "paragraph" } : { type: "paragraph", content: [{ type: "text", text: line }] }));
-}
 type ToolbarControlProps = { readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly pressed?: boolean; readonly disabled?: boolean };
 function ToolbarControl({ label, icon, onSelect, pressed, disabled }: ToolbarControlProps) {
   const control = pressed === undefined ? <Button {...{ type: "button", variant: "ghost", size: "icon-sm", "aria-label": label, disabled, onClick: onSelect }}>{icon}</Button> : <Toggle {...{ type: "button", size: "sm", "aria-label": label, pressed, disabled, onPressedChange: onSelect }}>{icon}</Toggle>;
@@ -283,8 +278,7 @@ export function ProseEditor({ initialDocument, direction, label, onChange, onReq
         const converted = admittedPasteDecision("convert", { json, text });
         const blocks = converted.status === "converted" ? converted.content.content : [];
         const dropped = converted.status === "converted" ? converted.dropped : [];
-        const previewSource = text.trim() === "" ? textOfJson(blocks) : text;
-        const { preview, truncated } = previewOf(previewSource);
+        const { preview, truncated } = previewOf(text.trim() === "" ? textOfJson(blocks) : text);
         event.preventDefault();
         setPendingPaste({ json, text, preview, previewTruncated: truncated, dropped, blocks: blocks.length, from: view.state.selection.from, to: view.state.selection.to });
         return true;

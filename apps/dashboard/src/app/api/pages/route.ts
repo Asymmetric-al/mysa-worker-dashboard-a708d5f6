@@ -65,5 +65,4 @@ const WRITES = {
   createVariant: (raw, { operationId, sessionId }) => dispatch(createVariantBodySchema, raw, operationId, "operation", (input) => mutations.pages.createVariant(sessionId, input)),
   saveDraft: (raw, { operationId, sessionId }) => dispatch(saveDraftBodySchema, raw, operationId, "operation", (input) => mutations.pages.saveDraft(sessionId, input)),
 } satisfies Readonly<Record<(typeof PAGE_OPERATIONS)[number], ClaimedWrite>>;
-const changeEdition = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPages, POST: changeEdition });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPages, POST: (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES) });

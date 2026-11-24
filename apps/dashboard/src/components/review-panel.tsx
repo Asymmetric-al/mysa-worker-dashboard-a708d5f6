@@ -41,10 +41,8 @@ export type CandidateView = {
   readonly reviewedByAuthor: boolean;
 };
 export type ApprovedDecisionPayload = { readonly decision: "approved"; readonly variantId: string; readonly revisionId: string; readonly contentChecksum: string };
-/** A request for changes: the author needs to act, so a note is required and carried. */
-export type ChangesRequestedDecisionPayload = { readonly decision: "changes-requested"; readonly variantId: string; readonly revisionId: string; readonly note: string };
-/** A rejection: the candidate ends, and the reason is carried so the author is not left guessing. */
-export type RejectedDecisionPayload = { readonly decision: "rejected"; readonly variantId: string; readonly revisionId: string; readonly note: string };
+/** A request for changes: the author needs to act, so a note is required and carried. */ export type ChangesRequestedDecisionPayload = { readonly decision: "changes-requested"; readonly variantId: string; readonly revisionId: string; readonly note: string };
+/** A rejection: the candidate ends, and the reason is carried so the author is not left guessing. */ export type RejectedDecisionPayload = { readonly decision: "rejected"; readonly variantId: string; readonly revisionId: string; readonly note: string };
 export type ReviewDecisionPayload = ApprovedDecisionPayload | ChangesRequestedDecisionPayload | RejectedDecisionPayload;
 export type ReviewFamily = "update" | "page";
 export type ReviewSiblingStanding = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: VariantLocale; readonly lifecycle: ContentLifecycleState; readonly heldPriorGoodRelease?: boolean };
@@ -447,7 +445,6 @@ export function ReviewPanel({ family, candidates, activeVariantId, onSelect, pol
   const activeId = activeVariantId.trim();
   const reviewable = reviewableCandidatesOf(family, candidates);
   const active = reviewable.find((candidate) => candidate.variantId === activeId);
-  const tabs = variantTabsOf(reviewable);
   const standing = siblingStanding ?? [];
   const nothingToReview = reviewable.length === 0;
   return (
@@ -460,7 +457,7 @@ export function ReviewPanel({ family, candidates, activeVariantId, onSelect, pol
           <CardDescription className="text-pretty">{copy.introduction}</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-6">
-          {nothingToReview ? <p className="text-sm text-muted-foreground text-pretty">{COPY.noCandidateNotice}</p> : <VariantSwitcher family={switcherFamilyOf(family)} variants={tabs} activeVariantId={activeId} onSelect={onSelect} label={COPY.editionLabel} />}
+          {nothingToReview ? <p className="text-sm text-muted-foreground text-pretty">{COPY.noCandidateNotice}</p> : <VariantSwitcher family={switcherFamilyOf(family)} variants={variantTabsOf(reviewable)} activeVariantId={activeId} onSelect={onSelect} label={COPY.editionLabel} />}
           {active === undefined && !nothingToReview ? <p className="text-sm text-muted-foreground text-pretty">{COPY.noActiveNotice}</p> : null}
           {active === undefined ? null : (
             <>

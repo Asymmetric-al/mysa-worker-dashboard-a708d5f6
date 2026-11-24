@@ -28,8 +28,7 @@ export type VideoPlayerProps = {
 };
 const UNAVAILABLE_COPY = "This placement's video could not be read from its source, so the player is not shown.";
 const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line wrap-anywhere";
-/** The single video surface, in whichever of its six states the placement is in. */
-export function VideoPlayer({ title, src, poster, captions, transcript, credit, language, state, direction, reason, nextStep, onRetry, className }: VideoPlayerProps): ReactElement {
+/** The single video surface, in whichever of its six states the placement is in. */ export function VideoPlayer({ title, src, poster, captions, transcript, credit, language, state, direction, reason, nextStep, onRetry, className }: VideoPlayerProps): ReactElement {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const transcriptId = useId();
@@ -42,13 +41,11 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     setFailedSrc(null);
     if (onRetry !== undefined) onRetry();
   };
-  function renderPosterFrame(): ReactElement {
-    return (
-      <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
-        {poster === undefined ? <FilmIcon aria-hidden="true" className="size-8 text-muted-foreground" /> : <Image src={poster} alt="" aria-hidden="true" fill unoptimized sizes="(max-width: 640px) 100vw, 40rem" className="object-cover" />}
-      </div>
-    );
-  }
+  const renderPosterFrame = (): ReactElement => (
+    <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg bg-muted">
+      {poster === undefined ? <FilmIcon aria-hidden="true" className="size-8 text-muted-foreground" /> : <Image src={poster} alt="" aria-hidden="true" fill unoptimized sizes="(max-width: 640px) 100vw, 40rem" className="object-cover" />}
+    </div>
+  );
   function renderChooseAnotherFile(): ReactElement | null {
     if (onRetry === undefined) return null;
     return (
@@ -58,49 +55,41 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     );
   }
   const renderUnavailable = (description: string): ReactElement => <StateNotice kind="unavailable" title="This video is unavailable" description={description} retry={onRetry === undefined ? undefined : { label: "Try loading the video again", onClick: handleRetry }} />;
-  function renderRejected(): ReactElement {
-    return (
-      <Alert variant="destructive">
-        <TriangleAlertIcon aria-hidden="true" />
-        <AlertTitle>This file was not accepted</AlertTitle>
-        <AlertDescription>
-          <p>{reason ?? "It did not pass this application's local video profile check, so nothing was placed."}</p>
-          {nextStep === undefined ? null : <p>{nextStep}</p>}
-          {renderChooseAnotherFile()}
-        </AlertDescription>
-      </Alert>
-    );
-  }
-  function renderCancelled(): ReactElement {
-    return (
-      <Alert role={undefined}>
-        <AlertTitle>No video added</AlertTitle>
-        <AlertDescription>
-          <p>This upload was cancelled, so the placement is unchanged and nothing was prepared.</p>
-          {renderChooseAnotherFile()}
-        </AlertDescription>
-      </Alert>
-    );
-  }
-  function renderSelected(): ReactElement {
-    return (
-      <div className="flex flex-col gap-3">
-        {renderPosterFrame()}
-        <p className="text-sm text-muted-foreground">{"Chosen, and not yet prepared. This video is prepared on this device before it can be played."}</p>
-      </div>
-    );
-  }
-  function renderPreparing(): ReactElement {
-    return (
-      <div aria-busy={true} className="flex flex-col gap-3">
-        {renderPosterFrame()}
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner className="shrink-0" />
-          <span>{"Preparing this video on this device. Nothing is uploaded, and the video can be played once preparation finishes."}</span>
-        </p>
-      </div>
-    );
-  }
+  const renderRejected = (): ReactElement => (
+    <Alert variant="destructive">
+      <TriangleAlertIcon aria-hidden="true" />
+      <AlertTitle>This file was not accepted</AlertTitle>
+      <AlertDescription>
+        <p>{reason ?? "It did not pass this application's local video profile check, so nothing was placed."}</p>
+        {nextStep === undefined ? null : <p>{nextStep}</p>}
+        {renderChooseAnotherFile()}
+      </AlertDescription>
+    </Alert>
+  );
+  const renderCancelled = (): ReactElement => (
+    <Alert role={undefined}>
+      <AlertTitle>No video added</AlertTitle>
+      <AlertDescription>
+        <p>This upload was cancelled, so the placement is unchanged and nothing was prepared.</p>
+        {renderChooseAnotherFile()}
+      </AlertDescription>
+    </Alert>
+  );
+  const renderSelected = (): ReactElement => (
+    <div className="flex flex-col gap-3">
+      {renderPosterFrame()}
+      <p className="text-sm text-muted-foreground">{"Chosen, and not yet prepared. This video is prepared on this device before it can be played."}</p>
+    </div>
+  );
+  const renderPreparing = (): ReactElement => (
+    <div aria-busy={true} className="flex flex-col gap-3">
+      {renderPosterFrame()}
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner className="shrink-0" />
+        <span>{"Preparing this video on this device. Nothing is uploaded, and the video can be played once preparation finishes."}</span>
+      </p>
+    </div>
+  );
   function renderPlayable(): ReactElement {
     if (playableSrc === undefined) return renderUnavailable("No playback rendition was supplied for this placement, so there is nothing to play.");
     if (playbackFailed) return renderUnavailable("The request for this video did not complete, so it is not offered as playable. A restriction applied since this page was opened has the same effect, because every request is re-checked.");

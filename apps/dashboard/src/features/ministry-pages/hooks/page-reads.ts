@@ -13,16 +13,13 @@ import { pageKey, pageLocalesKey, pageCataloguesKey, pagePreviewKey, pagesPrefix
 import { useCallback, useRef, useSyncExternalStore } from "react";
 const PAGES_ENDPOINT = "/api/pages";
 const PAGE_TRANSPORT_GUIDANCE = "The Page read did not complete, so this builder has no document, no edition and no lock to show. Retry the same read: the builder shows the draft and the editions it was given, and an outage is never presented as an empty page.";
-/** The Page one builder works on, exactly as the read's envelope carries it: document, locked fields, sections, editions and reach values. */
-export type PageDetailData = Extract<Awaited<ReturnType<typeof reads.pages.readPage>>, { readonly kind: "envelope" }>["envelope"]["data"];
+/** The Page one builder works on, exactly as the read's envelope carries it: document, locked fields, sections, editions and reach values. */ export type PageDetailData = Extract<Awaited<ReturnType<typeof reads.pages.readPage>>, { readonly kind: "envelope" }>["envelope"]["data"];
 export type PageEnvelope = ReadEnvelope<PageDetailData>;
 export type PageReadResult = ReadResult<PageEnvelope>;
 /** Reads one Page: its document, per-edition draft/candidate/release, sections with fields and placements, managed lock reasons, and the advisory actions; returns an envelope, a denial or an outage. */
 export const usePage = (scope: Scope, documentId: string | undefined): UseQueryResult<PageReadResult, never> => useQuery<PageReadResult, never>({ queryKey: pageKey(scope, documentId ?? ""), queryFn: () => readPageAnswer(documentId ?? ""), enabled: Boolean(documentId), retry: false });
 const pageRequestPath = (documentId: string): string => `${PAGES_ENDPOINT}?view=${"page"}&documentId=${encodeURIComponent(documentId)}`;
-async function readPageAnswer(documentId: string): Promise<PageReadResult> {
-  return fetchReadOrOutage<PageDetailData, PageEnvelope["coverage"]>({ url: pageRequestPath(documentId), admits: isPageData, source: { system: "data-service", reference: PAGES_ENDPOINT }, guidance: PAGE_TRANSPORT_GUIDANCE });
-}
+const readPageAnswer = async (documentId: string): Promise<PageReadResult> => fetchReadOrOutage<PageDetailData, PageEnvelope["coverage"]>({ url: pageRequestPath(documentId), admits: isPageData, source: { system: "data-service", reference: PAGES_ENDPOINT }, guidance: PAGE_TRANSPORT_GUIDANCE });
 const ADMITTED_PRESENTATION: Readonly<Record<keyof PresentationChoice, readonly string[]>> = PRESENTATION_CHOICES;
 const admits = (admitted: readonly string[], candidate: unknown): boolean => typeof candidate === "string" && admitted.includes(candidate);
 const isAdmittedPresentation = (value: unknown): value is PresentationChoice =>
@@ -74,11 +71,9 @@ const requestPageLocales = async (documentId: string): Promise<PageLocalesReadRe
   fetchReadOrOutage<PageLocalesData, PageLocalesEnvelope["coverage"]>({ url: `${PAGES_READ_ENDPOINT}?view=${"locales"}&documentId=${encodeURIComponent(documentId)}`, admits: isPageLocalesData, source: TRANSPORT_SOURCE, guidance: LOCALES_TRANSPORT_GUIDANCE });
 /** Reads the admitted locale editions of one Page, each with its own draft/candidate/release and direction; returns an envelope or a `denied`/`unavailable` outcome. */
 export const usePageLocales = (scope: Scope, documentId: string | undefined): UseQueryResult<PageLocalesReadResult, never> => useQuery<PageLocalesReadResult, never>({ queryKey: pageLocalesKey(scope, documentId ?? ""), queryFn: () => requestPageLocales(documentId ?? ""), enabled: Boolean(documentId), retry: false });
-/** What `reads.pages.readPageCatalogues` answers, taken from the service so this hook cannot drift from it. */
-export type PageCataloguesAnswer = Awaited<ReturnType<typeof reads.pages.readPageCatalogues>>;
+/** What `reads.pages.readPageCatalogues` answers, taken from the service so this hook cannot drift from it. */ export type PageCataloguesAnswer = Awaited<ReturnType<typeof reads.pages.readPageCatalogues>>;
 export type PageCataloguesEnvelope = Extract<PageCataloguesAnswer, { readonly kind: "envelope" }>["envelope"];
-/** The catalogue payload — two family catalogues, the admitted section types and their bounded presentation choices. Mirrors the service's payload, which remains authoritative for it. */
-export type PageCataloguesData = PageCataloguesEnvelope["data"];
+/** The catalogue payload — two family catalogues, the admitted section types and their bounded presentation choices. Mirrors the service's payload, which remains authoritative for it. */ export type PageCataloguesData = PageCataloguesEnvelope["data"];
 export type PageCataloguesRead = ReadResult<ReadEnvelope<PageCataloguesData>>;
 const CATALOGUES_TRANSPORT_GUIDANCE = "The catalogue request did not reach the application, so the family catalogues are unavailable rather than empty. Reload this surface to read them again.";
 const isAdmittedValueSet = (value: unknown, admitted: readonly string[]): boolean => Array.isArray(value) && value.length > 0 && value.every((member: unknown) => typeof member === "string" && admitted.includes(member));
@@ -107,8 +102,7 @@ function isCatalogueData(value: unknown): value is PageCataloguesData {
   return Array.isArray(catalogues) && catalogues.length > 0 && catalogues.every(isCatalogue) && isPresentationChoices(value["presentation"]) && Array.isArray(structuralOperations) && structuralOperations.every((operation: unknown) => typeof operation === "string") && Array.isArray(presets);
 }
 const requestCatalogues = async (): Promise<PageCataloguesRead> => fetchReadOrOutage<PageCataloguesData>({ url: "/api/pages?view=catalogues", admits: isCatalogueData, source: { system: "data-service", reference: "/api/pages?view=catalogues" }, guidance: CATALOGUES_TRANSPORT_GUIDANCE });
-/** Reads the two guided family catalogues in the given scope. */
-export const usePageCatalogues = (scope: Scope): UseQueryResult<ReadResult<ReadEnvelope<PageCataloguesData>>, never> => useQuery<PageCataloguesRead, never>({ queryKey: pageCataloguesKey(scope), queryFn: requestCatalogues, retry: false });
+/** Reads the two guided family catalogues in the given scope. */ export const usePageCatalogues = (scope: Scope): UseQueryResult<ReadResult<ReadEnvelope<PageCataloguesData>>, never> => useQuery<PageCataloguesRead, never>({ queryKey: pageCataloguesKey(scope), queryFn: requestCatalogues, retry: false });
 /** The language the preview is read in, sent as the read's `requestedLocale`. A tag the edition does not serve is answered as a denial rather than as another edition's content. */
 export type PagePreviewParams = { readonly documentId: string; readonly variantId: string; readonly revisionId?: string; readonly candidateId?: string; readonly locale?: string };
 /** The preview payload the service's authorised decision supplies: the rendered revision, the language and direction it is read in, the admitted rendition ids, and inertness stated as a literal — `givingAction` cannot hold any value but `"none"`, so no caller can offer a give action from a preview by mistake. */
@@ -135,8 +129,7 @@ function previewKey(scope: Scope, requestable: RequestablePreview): readonly unk
   const stated = pagePreviewKey(scope, requestable);
   return requestable.candidateId === undefined ? stated : [...stated, requestable.candidateId];
 }
-/** Reads the exact, currently authorised, inert preview of one acknowledged Page revision; returns the server-produced HTML envelope or the service's `denied`/`unavailable` outcome. */
-export function usePagePreview(scope: Scope, params: PagePreviewParams | undefined): UseQueryResult<PagePreviewReadResult, never> {
+/** Reads the exact, currently authorised, inert preview of one acknowledged Page revision; returns the server-produced HTML envelope or the service's `denied`/`unavailable` outcome. */ export function usePagePreview(scope: Scope, params: PagePreviewParams | undefined): UseQueryResult<PagePreviewReadResult, never> {
   const requestable = isRequestable(params) ? params : undefined;
   return useQuery<PagePreviewReadResult, never>({
     queryKey: requestable === undefined ? [...pagesPrefix(scope), "preview", "not-requested"] : previewKey(scope, requestable),
@@ -149,13 +142,10 @@ const UNNAMED_DOCUMENT = "";
 const GIVING_BINDING_TRANSPORT_GUIDANCE = "The giving-binding read did not complete, so this placement has no giving destination to show. Reload the placement to try again; no fallback designation and no amount is shown in the meantime.";
 export type GivingBindingData = Extract<Awaited<ReturnType<typeof reads.pages.readGivingBinding>>, { readonly kind: "envelope" }>["envelope"]["data"];
 export type GivingBindingEnvelope = ReadEnvelope<GivingBindingData>;
-/** What the placement carries: the one approved Designation, or the *Giving unavailable* state with its cause. */
-export type GivingBindingState = GivingBindingData["binding"];
-/** The closed set of causes a placement can show no giving for, spelled as the service sends them. */
-export type GivingUnavailableCause = Extract<GivingBindingState, { readonly state: "unavailable" }>["cause"];
+/** What the placement carries: the one approved Designation, or the *Giving unavailable* state with its cause. */ export type GivingBindingState = GivingBindingData["binding"];
+/** The closed set of causes a placement can show no giving for, spelled as the service sends them. */ export type GivingUnavailableCause = Extract<GivingBindingState, { readonly state: "unavailable" }>["cause"];
 export type GivingBindingReadResult = ReadResult<GivingBindingEnvelope>;
-/** What the placement's query hands back: the result above, and no error, because every failure is one of its three answers. */
-export type UseGivingBindingResult = UseQueryResult<GivingBindingReadResult, never>;
+/** What the placement's query hands back: the result above, and no error, because every failure is one of its three answers. */ export type UseGivingBindingResult = UseQueryResult<GivingBindingReadResult, never>;
 const GIVING_UNAVAILABLE_CAUSES = ["missing", "revoked", "incompatible"] as const satisfies readonly GivingUnavailableCause[];
 const GIVING_UNAVAILABLE_CAUSE_SET: ReadonlySet<string> = new Set<string>(GIVING_UNAVAILABLE_CAUSES);
 const isGivingUnavailableCause = (value: unknown): value is GivingUnavailableCause => typeof value === "string" && GIVING_UNAVAILABLE_CAUSE_SET.has(value);
@@ -191,8 +181,7 @@ function statesEdition(data: Readonly<Record<string, unknown>>, variantId: strin
 function scopeAt(value: unknown): Scope | undefined {
   if (!isRecord(value)) return undefined;
   const { organizationId, ministryId, supportSubjectId, principalId } = value;
-  if (![organizationId, ministryId, supportSubjectId, principalId].every(isNonEmptyString)) return undefined;
-  return { organizationId, ministryId, supportSubjectId, principalId } as Scope;
+  return ![organizationId, ministryId, supportSubjectId, principalId].every(isNonEmptyString) ? undefined : ({ organizationId, ministryId, supportSubjectId, principalId } as Scope);
 }
 function authorityInCache(queryClient: QueryClient, variantId: string): EditionAuthority | undefined {
   for (const read of queryClient.getQueryCache().findAll({ predicate: (query) => query.queryKey.includes("pages") && query.queryKey.includes("page") })) {
@@ -209,8 +198,7 @@ function authorityInCache(queryClient: QueryClient, variantId: string): EditionA
   return undefined;
 }
 const sameAuthority = (current: EditionAuthority | undefined, next: EditionAuthority | undefined): boolean => (current === undefined || next === undefined ? current === next : current.documentId === next.documentId && sameScope(current.scope, next.scope));
-/** The scope and Page identity a section change acts under: the caller's when it states both, otherwise the ones the Page read of this edition carried. */
-export function useEditionAuthority(variantId: string, provided?: EditionAuthority): EditionAuthority | undefined {
+/** The scope and Page identity a section change acts under: the caller's when it states both, otherwise the ones the Page read of this edition carried. */ export function useEditionAuthority(variantId: string, provided?: EditionAuthority): EditionAuthority | undefined {
   const queryClient = useQueryClient();
   const held = useRef<EditionAuthority | undefined>(undefined);
   const getSnapshot = useCallback((): EditionAuthority | undefined => {
@@ -222,8 +210,7 @@ export function useEditionAuthority(variantId: string, provided?: EditionAuthori
   const subscribe = useCallback((onChange: () => void) => queryClient.getQueryCache().subscribe(onChange), [queryClient]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
-/** Re-runs the Page read a change acted on, so the surface following it shows the record as it now stands. */
-export function usePageReread(documentId: string | undefined): () => void {
+/** Re-runs the Page read a change acted on, so the surface following it shows the record as it now stands. */ export function usePageReread(documentId: string | undefined): () => void {
   const queryClient = useQueryClient();
   return useCallback((): void => {
     if (documentId === undefined) return;

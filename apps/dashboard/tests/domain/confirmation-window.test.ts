@@ -1,5 +1,4 @@
-/** Success criterion 10, at the domain and the service boundary: the proof flow's 168-hour confirmation window, and the honesty of the states around it. */
-import { Temporal } from "temporal-polyfill";
+/** Success criterion 10, at the domain and the service boundary: the proof flow's 168-hour confirmation window, and the honesty of the states around it. */ import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeEach, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { type MembershipRecord as StoredMembership, type MutationOutcome, type Scope, mutations, reads } from "@/modules/data-service";
@@ -13,6 +12,7 @@ import {
   type MembershipScope,
   type MembershipState,
   confirmAt,
+  confirmationMessageOf,
   excludedSourceMembership,
   isConfirmationOpen,
   isExcludedSourceMembership,
@@ -33,17 +33,12 @@ const SESSION_ID = "established-worker";
 const SOURCE: SessionSource = { sessionId: SESSION_ID };
 const SUBSCRIBER_SESSION_ID = "subscriber";
 const SUBSCRIBER_SOURCE: SessionSource = { sessionId: SUBSCRIBER_SESSION_ID };
-/** The instant the seeded subscriber's membership accepted the proof step, and so the deadline its 168 hours fix. */
-const SUBSCRIBER_ACCEPTED_AT = Temporal.Instant.from("2026-11-16T12:00:00Z");
-/** The window in milliseconds, derived from the module's own stated hours so the two cannot drift. */
-const WINDOW_MILLISECONDS = CONFIRMATION_WINDOW_HOURS * 60 * 60 * 1000;
+/** The instant the seeded subscriber's membership accepted the proof step, and so the deadline its 168 hours fix. */ const SUBSCRIBER_ACCEPTED_AT = Temporal.Instant.from("2026-11-16T12:00:00Z");
+/** The window in milliseconds, derived from the module's own stated hours so the two cannot drift. */ const WINDOW_MILLISECONDS = CONFIRMATION_WINDOW_HOURS * 60 * 60 * 1000;
 const SECOND_MILLISECONDS = 1_000;
-/** What a creation presents where a revision would go: there is no stored value for a stale expectation to overwrite. */
-const NO_TARGET_REVISION = "no-target";
-/** The deadline the acceptance at the seed instant opens. Derived, never written: the reset leaves the scenario clock at the seed instant, so the acceptance every service case records is exactly this instant. */
-const DEADLINE_AT_SEED = SEED_INSTANT.add({ hours: CONFIRMATION_WINDOW_HOURS });
-/** A publisher the seeded records never mention, so an unsubscribe for it addresses nothing. */
-const OTHER_PUBLISHER = "publisher-elsewhere";
+/** What a creation presents where a revision would go: there is no stored value for a stale expectation to overwrite. */ const NO_TARGET_REVISION = "no-target";
+/** The deadline the acceptance at the seed instant opens. Derived, never written: the reset leaves the scenario clock at the seed instant, so the acceptance every service case records is exactly this instant. */ const DEADLINE_AT_SEED = SEED_INSTANT.add({ hours: CONFIRMATION_WINDOW_HOURS });
+/** A publisher the seeded records never mention, so an unsubscribe for it addresses nothing. */ const OTHER_PUBLISHER = "publisher-elsewhere";
 type SignupArgs = Parameters<typeof mutations.audience.signupForPurpose>[0];
 type ConfirmArgs = Parameters<typeof mutations.audience.confirmMembership>[0];
 type SetPreferenceArgs = Parameters<typeof mutations.audience.setPreference>[0];
@@ -67,11 +62,9 @@ async function seededPublisher(): Promise<string> {
   return first.publisherId;
 }
 async function seededSubscriberRow(): Promise<StoredMembership> {
-  const sessions = await seededWorld();
-  const template = sessions.find((session) => session.sessionId === SUBSCRIBER_SESSION_ID);
-  const [row] = template?.documents.state.memberships ?? [];
-  if (row === undefined) throw new Error(`The seed lays down no membership in the "${SUBSCRIBER_SESSION_ID}" session, so no case in this file has the reader's own record to confirm.`);
-  return row;
+  // The subscriber's membership has one owner, the publisher's own audience, so the record this file confirms is read from the world the reader's page reads across to rather than from a copy in a session of its own.
+  const reader = await sessionOf(SUBSCRIBER_SOURCE);
+  return firstSaying(await seededAudience(), "membershipId", reader.principalId, `The seeded audience holds no membership keyed by "${reader.principalId}", so no case in this file has the reader's own record to confirm.`);
 }
 let seededRows: readonly StoredMembership[] = [];
 const seededRow = (membershipId: string): StoredMembership => firstSaying(seededRows, "membershipId", membershipId, `The seeded audience holds no "${membershipId}" row, so no case in this file can describe it.`);
@@ -314,6 +307,19 @@ it("confirmation is an explicit action and never a read: opens the proof step wi
   const proof = fieldOf(receipt, "proof");
   expect([proof, [booleanOf(proof, "claimsMailSent"), textOf(proof, "status")], Object.keys(proof ?? {}).sort()]).toEqual([pendingProofResult(), [false, "pending"], ["claimsMailSent", "nextStep", "status"]]);
 });
+it("the pending result names a message this application renders: states the sender it was given, the address, the subject and the 168-hour window, and carries no link or token", () => {
+  const sender = { name: "Update notices", address: "notice-sender@example.invalid" };
+  const input = { publisherLabel: "publisher-harbour", sender, to: "reader@example.org", membershipId: "principal-subscriber" };
+  const message = confirmationMessageOf(input);
+  expect([message.sender, message.to, message.confirmTarget]).toEqual([sender, "reader@example.org", { membershipId: "principal-subscriber", address: "reader@example.org" }]);
+  expect(message.subject).toContain("publisher-harbour");
+  const wording = message.wording.join(" ");
+  const stated = ["publisher-harbour", "Update-email membership", "becomes active only once the address it is set for is confirmed", "Confirm this address control", "confirms nothing", `${String(CONFIRMATION_WINDOW_HOURS)} hours`, "never extends that window"];
+  for (const fact of stated) expect(wording, `The message states ${JSON.stringify(fact)}`).toContain(fact);
+  // Nothing the message carries is a link, a URL, a query string or a token: the proof journey is deliberately local, so there is nothing in it for a reader to follow, paste or replay.
+  expect([message.subject, ...message.wording].join(" ")).not.toMatch(/https?:\/\/|www\.|[/?#&=]/u);
+  expect(message).toEqual(confirmationMessageOf(input)); // The wording is fixed: one membership composes the same message on every render, so a page load cannot vary what a reader is told to confirm from.
+});
 it("the states and the choices stay honest: keeps exactly four membership states and refuses any other word for one", () => {
   expect(MEMBERSHIP_STATES).toHaveLength(4);
   expect([...MEMBERSHIP_STATES].sort()).toEqual(["active", "awaiting-proof", "off", "restricted"]);
@@ -377,8 +383,7 @@ it.each(["held", "unqualified"] as const)("records a %s source row as excluded a
   isConfirmationOpen(excluded, now());
   withChoice(excluded, "off", now());
   const session = await sessionOf(SOURCE);
-  const grant = canReadProtected(session, { audience: "approved-supporter", reader: { recipientId: excluded.recipientId, publisherId: excluded.publisherId, purpose: excluded.purpose, memberships: [excluded] } });
-  expect(grant.allowed).toBe(false);
+  expect(canReadProtected(session, { audience: "approved-supporter", reader: { recipientId: excluded.recipientId, publisherId: excluded.publisherId, purpose: excluded.purpose, memberships: [excluded] } }).allowed).toBe(false);
   expect(excluded).toEqual(untouched);
 });
 it("the states and the choices stay honest: unsubscribes one publisher and one purpose, and leaves every other fact alone", async () => {

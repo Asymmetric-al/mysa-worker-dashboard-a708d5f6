@@ -1,5 +1,4 @@
-/** Criterion 18 — video. */
-import type { Locator, Page, Route } from "@playwright/test";
+/** Criterion 18 — video. */ import type { Locator, Page, Route } from "@playwright/test";
 import { actAs, arrayAt, chooseFile, expect, fieldAt, fixturePathOf, isRecord, jsonOf, newAttemptId, numberAt, operateDevControl, outcomeOf, renditionAddressOf, requestRendition, scopeAt, SEEDED_PERSONAS, stringAt, test, type JsonRecord, type PersonaName } from "../playwright.config";
 const CONTRIBUTOR_PERSONA: PersonaName = "established-worker"; // The contributor who composes the protected edition: the runner's own default persona, named here so the file states whose authority it acts under.
 const OUTSIDE_WORKER_PERSONA: PersonaName = "second-worker"; // A worker in another ministry, whose scope shares nothing with this one: the persona every direct rendition request is refused for.
@@ -17,14 +16,14 @@ const PROTECTED_PROSE = "the monthly costs rose in September"; // The protected 
 const PUBLIC_PROSE = "Thank you for praying with us"; // A public sentence from the same Update, so the reading view below is proved to have rendered an edition rather than nothing.
 const TYPED_PROSE = "A note for the people who support this work."; // What this file types into the editor, so "the prose is untouched" is an assertion about text only this test put there.
 const TRANSCRIPT_TEXT = "Hello and welcome from the youth group."; // What this file types into the transcript field of the video it places: the text alternative a reader who cannot play it receives.
+const CANCELLED_WORDING = /The upload was cancelled; nothing was added and the rest of the draft is unchanged\. Choose the file again when you are ready\./u; // The cancelled state's own sentence: it states that nothing was added and names the action that follows, whichever stage the wait was stopped at.
 const PLACEMENT_TEXT = { altText: "The youth group's welcome message", caption: "A short welcome for supporters", credit: "Harbour Youth", language: "en" } as const; // The credit and language the placement records, both stated by the person who placed it rather than derived from the file.
 const POSTER_FIXTURE = "poster.jpg"; // The committed poster image criterion 18 asks an uploaded video to carry.
 const CAPTIONS_FIXTURE = "sample.vtt"; // The committed WebVTT caption track criterion 18 asks an uploaded video to carry.
 const TRACK_LABEL = "English"; // The label the player's caption menu shows for the uploaded track.
 const EDITOR_NAME = "The text of this Update edition";
 const CONTAINER_REFUSAL = /which this profile does not admit/u; // The one sentence the engine reports a rejected container with, taken from the profile's own refusal rather than restated in full: the container is named and the admitted alternatives are offered.
-/** The next step the same refusal offers, which is what makes it actionable rather than merely negative. */
-const FIRST_KIB_BYTES = 1024; // The `Range` this file asks for: the first kibibyte of the rendition, which is what a browser's player starts with.
+/** The next step the same refusal offers, which is what makes it actionable rather than merely negative. */ const FIRST_KIB_BYTES = 1024; // The `Range` this file asks for: the first kibibyte of the rendition, which is what a browser's player starts with.
 const BYTE_RANGE_HEADER = `bytes=0-${String(FIRST_KIB_BYTES - 1)}`;
 const PRIVATE_MEDIA_MARKERS = ["welcome-sunday-raw.mp4", "evening-talk-raw.mp4", "media-originals", "public/fixtures", "IMG_20260814"] as const; // The addresses a media response may never carry: the opaque source reference of the seeded original, and the store's own custody paths.
 /** What a rendition address is never: a static file under the application's public directory, a blob URL, a data URL, or another origin. */
@@ -64,8 +63,7 @@ async function mutateDocument(page: Page, path: string, payload: JsonRecord, nam
   return body;
 }
 // Preparing a real MP4 is the heaviest work this application does on this device: the file is decoded, checked, re-encoded or re-muxed and
-// stored before any receipt exists, and that takes seconds rather than milliseconds on a loaded machine, so the wait for a receipt is stated
-// rather than left to the default an assertion assumes.
+// stored before any receipt exists, and that takes seconds rather than milliseconds on a loaded machine, so the wait for a receipt is stated rather than left to the default an assertion assumes.
 const PREPARATION_TIMEOUT_MS = 120_000;
 const POLLED_CLICK_TIMEOUT_MS = 2_000; // How long one attempt to switch the media pane's list may wait for the control to answer.
 const SHOW_PLACEMENTS_TIMEOUT_MS = 30_000; // How long the video list may take to be the panel on screen, which covers a reload's own hydration.
@@ -91,8 +89,7 @@ async function showVideoPlacements(page: Page): Promise<void> {
   const videoPanel = pane.getByRole("tabpanel", { name: "Videos", exact: true });
   await expect(videoTab).toBeVisible();
   // This control is clicked within moments of a full reload as well as mid-journey, and a reloaded surface answers with its server rendering
-  // before it has attached its own handlers, so a click can reach a tab that is not listening yet. The click is therefore repeated while the
-  // panel it selects is not the one on screen, and what this helper asserts is that panel rather than the click that asked for it.
+  // before it has attached its own handlers, so a click can reach a tab that is not listening yet. The click is therefore repeated while the panel it selects is not the one on screen, and what this helper asserts is that panel rather than the click that asked for it.
   await expect
     .poll(
       async () => {
@@ -105,16 +102,14 @@ async function showVideoPlacements(page: Page): Promise<void> {
     .toBe(true);
 }
 type VideoPlacementInput = { readonly file: string; readonly altText?: string; readonly caption?: string; readonly credit?: string; readonly language?: string; readonly transcript?: string; readonly poster?: string | null; readonly captions?: string | null; readonly trackLabel?: string };
-/** The placement's caption field, told apart from the caption-track file input the video picker offers beside it. */
-async function describePlacement(picker: Locator, input: VideoPlacementInput): Promise<void> {
+/** The placement's caption field, told apart from the caption-track file input the video picker offers beside it. */ async function describePlacement(picker: Locator, input: VideoPlacementInput): Promise<void> {
   await picker.getByLabel(/^Alternative text/u).fill(input.altText ?? PLACEMENT_TEXT.altText); // The labels carry a required marker or an "(optional)" suffix, so each field is addressed by the start of the label a person reads rather than by text that would have to guess which of the two it is.
   await picker.getByLabel(/^Caption(?! track)/u).fill(input.caption ?? PLACEMENT_TEXT.caption);
   await picker.getByLabel(/^Credit/u).fill(input.credit ?? PLACEMENT_TEXT.credit);
   await picker.getByLabel(/^Language/u).fill(input.language ?? PLACEMENT_TEXT.language);
   await picker.getByLabel(/^Transcript/u).fill(input.transcript ?? TRANSCRIPT_TEXT);
 }
-/** Attaches the poster image and the WebVTT caption track beside the video, which is what an uploaded video carries unless the case is about leaving one out. */
-async function attachTracks(picker: Locator, input: VideoPlacementInput): Promise<void> {
+/** Attaches the poster image and the WebVTT caption track beside the video, which is what an uploaded video carries unless the case is about leaving one out. */ async function attachTracks(picker: Locator, input: VideoPlacementInput): Promise<void> {
   const poster = input.poster === undefined ? POSTER_FIXTURE : input.poster;
   const captions = input.captions === undefined ? CAPTIONS_FIXTURE : input.captions;
   if (poster !== null) await picker.getByLabel(/^Poster image/u).setInputFiles(fixturePathOf(poster));
@@ -135,6 +130,10 @@ async function placeVideo(page: Page, input: VideoPlacementInput): Promise<void>
 async function readDraftEdition(page: Page): Promise<{ readonly revisionId: string; readonly assetId: string }> {
   const draft = await jsonOf(await page.request.get(`/api/drafts?view=draft&variantId=${encodeURIComponent(PROTECTED_VARIANT)}`), "GET /api/drafts?view=draft"); // Reads the protected edition's saved draft, which is where a placement's asset identity and the revision a review freezes are stated.
   return { revisionId: stringAt(draft, ["data", "revision", "revisionId"], "The draft edition's revision"), assetId: stringAt(draft, ["data", "placements", "0", "assetId"], "The draft's first placement's asset") };
+}
+async function readDraftState(page: Page): Promise<{ readonly revisionId: string; readonly placements: number }> {
+  const draft = await jsonOf(await page.request.get(`/api/drafts?view=draft&variantId=${encodeURIComponent(PROTECTED_VARIANT)}`), "GET /api/drafts?view=draft"); // Reads the draft itself, so what a stopped registration did or did not commit is asserted against the record rather than against the pane that draws it.
+  return { revisionId: stringAt(draft, ["data", "revision", "revisionId"], "The draft edition's revision"), placements: arrayAt(draft, ["data", "placements"], "The draft's placements").length };
 }
 async function readHeadRelease(page: Page): Promise<{ readonly releaseId: string; readonly revisionId: string }> {
   const { row } = await readEditionOverview(page);
@@ -181,12 +180,13 @@ async function holdNextRegistration(page: Page): Promise<{ readonly reached: Pro
   });
   await page.route("**/api/media", async (route: Route) => {
     if (route.request().method() !== "POST") {
-      await route.continue();
+      await route.continue().catch(() => undefined);
       return;
     }
     signalReached();
     await blocked;
-    await route.continue();
+    // A stopped registration is aborted by the browser, so the request this hold is released on may already be gone: continuing it is the honest attempt, and a request the page abandoned is not a failure of the journey this file is asserting.
+    await route.continue().catch(() => undefined);
   });
   return { reached, release: unblock };
 }
@@ -206,8 +206,7 @@ test("a chosen video is checked by its own content, prepared on this device, and
   const held = await holdNextRegistration(page);
   await chooseFile(picker, "sample-h264.mp4");
   await describePlacement(picker, { file: "sample-h264.mp4" });
-  // A video is placed with a poster image and a WebVTT caption track of its own, so both controls are offered here and the
-  // registration that follows carries what they collect: an image placement offers neither.
+  // A video is placed with a poster image and a WebVTT caption track of its own, so both controls are offered here and the registration that follows carries what they collect: an image placement offers neither.
   await expect(picker.getByLabel(/^Poster image/u), "A video placement offers its own poster image").toBeVisible();
   await expect(picker.getByLabel(/^Caption track/u), "A video placement offers its own WebVTT caption track").toBeVisible();
   await attachTracks(picker, { file: "sample-h264.mp4", trackLabel: TRACK_LABEL });
@@ -257,6 +256,7 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await expect(videos).toHaveCount(2);
   await expect(page.getByRole("textbox", { name: EDITOR_NAME, exact: true })).toContainText(TYPED_PROSE);
   const cancelling = await holdNextRegistration(page);
+  const draftBeforeStop = await readDraftState(page);
   const cancelledPicker = await openPicker(page, "video");
   await chooseFile(cancelledPicker, "sample-h264.mp4");
   await describePlacement(cancelledPicker, { file: "sample-h264.mp4", altText: "A clip the worker stops waiting for" });
@@ -265,15 +265,20 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await cancelledPicker.getByRole("button", { name: "Stop waiting", exact: true }).click();
   await expect(cancelledPicker, "Cancelled is its own state, worded as the wait it stopped rather than as a failure of the file").toHaveAttribute("data-phase", "cancelled");
   await expect(cancelledPicker.getByText("No media added", { exact: true })).toBeVisible();
-  await expect(cancelledPicker.getByText(/You stopped waiting\. The request had already been sent, so its result appears here when it arrives\. Nothing in your draft was changed\./u)).toBeVisible();
+  await expect(cancelledPicker.getByText(CANCELLED_WORDING), "The cancelled state states that nothing was added and names the action that follows, rather than promising a result that will arrive").toBeVisible();
+  await expect(cancelledPicker.locator('[data-slot="operation-result"]'), "A stopped registration presents no receipt: it registered nothing, so there is no result to report").toHaveCount(0);
   cancelling.release();
-  await expect(cancelledPicker.locator('[data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: PREPARATION_TIMEOUT_MS });
-  await cancelledPicker.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(cancelledPicker, "The cancelled state is final: the answer the aborted request leaves behind never replaces it").toHaveAttribute("data-phase", "cancelled");
+  await expect(cancelledPicker.locator('[data-slot="operation-result"]')).toHaveCount(0);
+  await expect(cancelledPicker.getByRole("alert"), "A stopped wait is not a fault, so no failed-request alert is raised over the cancelled state").toHaveCount(0);
+  const draftAfterStop = await readDraftState(page);
+  expect([draftAfterStop.revisionId, draftAfterStop.placements], "A stopped registration commits nothing: the draft stands at the same revision holding the same placements").toEqual([draftBeforeStop.revisionId, draftBeforeStop.placements]);
+  await page.keyboard.press("Escape"); // The dialog's own dismissal, which the earlier refusal case also uses: it closes the picker and returns focus to the control that opened it.
   await expect(cancelledPicker).toBeHidden();
   await page.unroute("**/api/media");
   await expect(page.getByRole("textbox", { name: EDITOR_NAME, exact: true })).toContainText(TYPED_PROSE);
   await showVideoPlacements(page);
-  await expect(videos).toHaveCount(3);
+  await expect(videos, "the draft holds the two videos it was given and no third one the author never asked for").toHaveCount(2);
   await switchScenario(page, "media-unavailable"); // --- unavailable: the source is down, and the answer says so instead of serving nothing -------- A source that is down is its own answer: not a zero-length rendition, not an empty list and not the neutral refusal an unauthorised caller receives. The record keeps the media it holds, and the prose
   const downed = await requestRendition(page, renditionAddressOf(SEEDED_VIDEO.assetId, SEEDED_VIDEO.playback), BYTE_RANGE_HEADER);
   expect(downed.status, "an asset whose source is down is not served").toBeGreaterThanOrEqual(500);
@@ -285,7 +290,7 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Update edition", exact: true })).toBeVisible();
   await showVideoPlacements(page);
-  await expect(page.locator('[data-slot="placement-row"][data-kind="video"]'), "the draft still holds every placement it held").toHaveCount(3);
+  await expect(page.locator('[data-slot="placement-row"][data-kind="video"]'), "the draft still holds every placement it held: the two videos it was given, and no placement from the stopped registration").toHaveCount(2);
   await expect(page.getByRole("textbox", { name: EDITOR_NAME, exact: true })).toContainText(TYPED_PROSE);
   await switchScenario(page, "baseline");
 });
@@ -328,18 +333,25 @@ test("a released edition plays its MP4 with a poster and a WebVTT caption track,
   expect(captionsAnswer.status, "the caption rendition is served to the contributor").toBe(200);
   expect(captionsAnswer.contentType).toContain("text/vtt");
   expect(captionsAnswer.body.trimStart().startsWith("WEBVTT"), "the caption track is WebVTT rather than any text that happened to be there").toBe(true);
-  const transcriptLink = page
+  const videoFigure = page
     .locator("figure")
     .filter({ has: page.locator("video") })
-    .first()
-    .getByRole("link", { name: /Read the transcript/u });
+    .first(); // The frame the released edition composes the video into: it holds the player, the transcript alternative and the caption stating the facts the placement carries.
+  const transcriptLink = videoFigure.getByRole("link", { name: /Read the transcript/u });
   await expect(transcriptLink, "the placement offers the transcript alternative the catalogue promises").toHaveCount(1);
   const transcriptSrc = (await transcriptLink.getAttribute("href")) ?? "";
   expect(transcriptSrc, "the transcript alternative is a rendition of this application, not a file on a public path").toMatch(MEDIA_ROUTE);
   expect(transcriptSrc).toContain(SEEDED_VIDEO.transcript);
   const transcriptAnswer = await requestRendition(page, transcriptSrc);
   expect(transcriptAnswer.status, "the transcript rendition is served to the contributor").toBe(200);
-  expect(transcriptAnswer.contentType).toContain("text/vtt");
+  expect(transcriptAnswer.contentType, "the transcript is served as plain text, because it is prose rather than the caption track").toContain("text/plain");
+  expect(transcriptAnswer.body.trimStart().startsWith("WEBVTT"), "the transcript is readable prose and not the caption file served a second time").toBe(false);
+  expect(transcriptAnswer.body, "the transcript carries no cue timings").not.toContain("-->");
+  expect((transcriptAnswer.body.match(/[.!?]/gu) ?? []).length, "the transcript reads as sentences a person can follow rather than as a label").toBeGreaterThanOrEqual(2);
+  await expect(video, "the player carries the accessible name its placement's text alternative gives it, as an image carries its alternative text").toHaveAccessibleName("A short welcome from the youth group.");
+  const placementFacts = videoFigure.locator("figcaption");
+  await expect(placementFacts, "the figure states the caption, the credit of the work and the language it is in, rather than only the words the placement typed into the caption field").toHaveCount(1);
+  for (const fact of ["A welcome from the group.", "Harbour Youth", "Language: en"] as const) await expect(placementFacts, `the figure states ${JSON.stringify(fact)}`).toContainText(fact);
   await expect(page.getByText("simulated publication; reach is demonstrated in the receiving preview", { exact: true }).first(), "The surface states that its reach is demonstrated rather than pushed to a real audience").toBeVisible();
 });
 test("every rendition is served by the application's own scoped route, and a byte range returns a partial response", async ({ page }) => {

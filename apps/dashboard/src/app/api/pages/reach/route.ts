@@ -15,5 +15,4 @@ const WRITES = {
   setReach: (raw, { operationId, sessionId }) => dispatch(setReachBodySchema, raw, operationId, "operation", (input) => mutations.pages.setReach(sessionId, input)),
   stopShowingPublicly: (raw, { operationId, sessionId }) => dispatch(stopShowingPubliclyBodySchema, raw, operationId, "operation", (input) => mutations.pages.stopShowingPublicly(sessionId, input)),
 } satisfies Readonly<Record<(typeof REACH_OPERATIONS)[number], ClaimedWrite>>;
-const setPageReach = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: setPageReach });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES) });

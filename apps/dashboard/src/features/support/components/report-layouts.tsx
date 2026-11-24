@@ -222,20 +222,15 @@ function currencyPartitions(series: readonly SeriesPoint[]): readonly HistoryPar
 }
 const chartPoints = (points: readonly SeriesPoint[], locale: string): readonly ChartPoint[] => points.map((point) => ({ bucket: monthLabel(point.bucketStart, locale), value: point.value.minorUnits, state: point.value.valueState, gap: point.gap }));
 const chartSeries = (partition: HistoryPartition, locale: string): ChartSeries => ({ key: `${partition.currency}-received`, label: SERIES_LABEL, currency: partition.currency, points: chartPoints(partition.points, locale) });
-function amountCell(value: SeriesPoint["value"], currency: string, gap: boolean, locale: string): string {
-  if (gap && value.minorUnits === null) return "No recorded value";
-  return formatMinor({ currency, minorUnits: value.minorUnits ?? minorUnitsOf(0) }, value.valueState, locale).text;
-}
-function chartTable(partition: HistoryPartition, year: number, locale: string): ChartTable {
-  return {
-    caption: fillTemplate(`${REPORT_COPY.history.title} for {year}, amounts in {currency}: one row per month of the year, ` + "and a month the source recorded nothing in states that rather than a zero.", { year: String(year), currency: partition.currency }),
-    columns: [
-      { key: MONTH_COLUMN_KEY, label: "Month" },
-      { key: AMOUNT_COLUMN_KEY, label: SERIES_LABEL },
-    ],
-    rows: partition.points.map((point) => ({ [MONTH_COLUMN_KEY]: monthLabel(point.bucketStart, locale), [AMOUNT_COLUMN_KEY]: amountCell(point.value, partition.currency, point.gap, locale) })),
-  };
-}
+const amountCell = (value: SeriesPoint["value"], currency: string, gap: boolean, locale: string): string => (gap && value.minorUnits === null ? "No recorded value" : formatMinor({ currency, minorUnits: value.minorUnits ?? minorUnitsOf(0) }, value.valueState, locale).text);
+const chartTable = (partition: HistoryPartition, year: number, locale: string): ChartTable => ({
+  caption: fillTemplate(`${REPORT_COPY.history.title} for {year}, amounts in {currency}: one row per month of the year, ` + "and a month the source recorded nothing in states that rather than a zero.", { year: String(year), currency: partition.currency }),
+  columns: [
+    { key: MONTH_COLUMN_KEY, label: "Month" },
+    { key: AMOUNT_COLUMN_KEY, label: SERIES_LABEL },
+  ],
+  rows: partition.points.map((point) => ({ [MONTH_COLUMN_KEY]: monthLabel(point.bucketStart, locale), [AMOUNT_COLUMN_KEY]: amountCell(point.value, partition.currency, point.gap, locale) })),
+});
 function CurrencyHistoryFigure({ partition, year, coverage, asOf, locale }: { readonly partition: HistoryPartition; readonly year: number; readonly coverage: ReportResult["snapshot"]["coverage"]; readonly asOf: string; readonly locale: string }): ReactElement {
   const yearText = String(year);
   const currency = partition.currency;

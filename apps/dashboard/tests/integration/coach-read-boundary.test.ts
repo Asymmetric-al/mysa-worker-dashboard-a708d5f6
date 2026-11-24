@@ -1,5 +1,4 @@
-/** Success criteria 16 and 19 at the store boundary: a coach's read authorises before it enumerates, and a read from another scope retrieves nothing. */
-import { Temporal } from "temporal-polyfill";
+/** Success criteria 16 and 19 at the store boundary: a coach's read authorises before it enumerates, and a read from another scope retrieves nothing. */ import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { DENIAL_VALUE_KEYS } from "@/lib/redaction";
@@ -59,8 +58,7 @@ function contextOf(state: SessionStateDocument, sessionId: string, meta: Session
     revision: state.context.revision,
   };
 }
-/** Lays one seat's documents down under this file's own session id: the records of the seeded session it starts from, and the meta that states which world its coaching records live in. */
-async function layDownSession(sessionId: string, meta: SessionMetaDocument, seedId: string): Promise<void> {
+/** Lays one seat's documents down under this file's own session id: the records of the seeded session it starts from, and the meta that states which world its coaching records live in. */ async function layDownSession(sessionId: string, meta: SessionMetaDocument, seedId: string): Promise<void> {
   const template = await seededDocuments(seedId);
   const state = structuredClone(template.state);
   await resetSession(sessionId, { state: { ...state, context: contextOf(state, sessionId, meta) }, operations: structuredClone(template.operations), meta });
@@ -74,8 +72,7 @@ type MetaOverrides = { readonly scenarioId?: ScenarioId; readonly failurePlan?: 
 const workerMeta = (overrides: MetaOverrides = {}): SessionMetaDocument => buildSessionMeta({ principalId: WORKER_ROW.principalId, admittedMemberships: WORKER_ROW.admittedMemberships, selectedContext: WORKER_ROW.selectedContext, sessionState: "signed-in", ...overrides });
 const coachMeta = (overrides: MetaOverrides = {}): SessionMetaDocument => buildSessionMeta({ principalId: COACH_PRINCIPAL, admittedMemberships: [], selectedContext: null, sessionState: "signed-in", coachingRecordsSessionId: WORKER_SESSION, ...overrides });
 const secondWorkerMeta = (): SessionMetaDocument => buildSessionMeta({ principalId: SECOND_WORKER_ROW.principalId, admittedMemberships: SECOND_WORKER_ROW.admittedMemberships, selectedContext: SECOND_WORKER_ROW.selectedContext, sessionState: "signed-in" });
-/** The one armed failure that names the read this file is about (AAP 0.12.5). */
-function armedScopeDenial(): FailurePlanDocument {
+/** The one armed failure that names the read this file is about (AAP 0.12.5). */ function armedScopeDenial(): FailurePlanDocument {
   const plan = setFailurePlan(null, { mode: "denied", target: { kind: "read", name: "readCoachSubject" }, armedAt: SEED_INSTANT.toString() });
   if (!plan.ok) throw new Error(`The scope-denial plan the criterion 19 case arms was refused: ${plan.error.code}.`);
   return plan.value;
@@ -111,8 +108,7 @@ async function sourceWorkOf(
   return { tasks: state.tasks, partners: state.partners, privateNotes: state.privateNotes, coachingTargets: state.coachingTargets, coachingCheckIns: state.coachingCheckIns };
 }
 const serialised = (value: unknown): string => JSON.stringify(value);
-/** Every key name a value carries at any depth, so a denial is inspected as a whole rather than one field at a time. */
-function keysOf(value: unknown): readonly string[] {
+/** Every key name a value carries at any depth, so a denial is inspected as a whole rather than one field at a time. */ function keysOf(value: unknown): readonly string[] {
   const collected = new Set<string>();
   const walk = (node: unknown): void => {
     if (Array.isArray(node)) {
@@ -128,8 +124,7 @@ function keysOf(value: unknown): readonly string[] {
   walk(value);
   return [...collected];
 }
-/** The value an envelope's `valueStates` path names, so a state is judged against the datum it belongs to. */
-function valueAtPath(value: unknown, path: string): unknown {
+/** The value an envelope's `valueStates` path names, so a state is judged against the datum it belongs to. */ function valueAtPath(value: unknown, path: string): unknown {
   let current: unknown = value;
   for (const segment of path.split(".")) {
     if (Array.isArray(current)) {
@@ -150,8 +145,7 @@ function expectDenialWithholds(result: ReadResult<unknown>, forbidden: readonly 
   const text = serialised(result);
   for (const value of forbidden) expect(text).not.toContain(value);
 }
-/** Returns every session's scenario clock to the seed instant, so the next case starts where the last one began. */
-async function restoreClocks(): Promise<void> {
+/** Returns every session's scenario clock to the seed instant, so the next case starts where the last one began. */ async function restoreClocks(): Promise<void> {
   for (const sessionId of [WORKER_SESSION, COACH_SESSION, SECOND_WORKER_SESSION]) {
     const restored = await setClock(sessionId, 0);
     if (!restored.ok) throw new Error(`The scenario clock of ${JSON.stringify(sessionId)} could not be returned to the seed instant: ${restored.error.code}.`);

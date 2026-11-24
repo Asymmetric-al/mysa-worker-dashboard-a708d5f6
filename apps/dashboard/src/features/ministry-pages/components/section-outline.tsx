@@ -18,8 +18,7 @@ const labelOf = (section: PageBuilderSection): string => section.sectionTypeLabe
 const positionOf = (section: PageBuilderSection, listIndex: number, count: number): number => (section.index !== undefined && Number.isInteger(section.index) && section.index >= 0 && section.index < count ? section.index : listIndex);
 const MANAGED_REASON_BY_TYPE: Partial<Readonly<Record<PageSectionType, ManagedFieldKey>>> = { giving: "giving-binding", progress: "support-progress" };
 const managedReasonKeyOf = (section: PageBuilderSection): ManagedFieldKey => section.managedReasonKey ?? MANAGED_REASON_BY_TYPE[section.sectionType] ?? "source-supplied-section";
-/** The controls a move can start from, so a settled move returns focus to the one the person used. */
-type MoveControlKind = "up" | "down" | "to-position";
+/** The controls a move can start from, so a settled move returns focus to the one the person used. */ type MoveControlKind = "up" | "down" | "to-position";
 /** One submitted move, held with the identity it was minted under: a retry replays this exactly, and a move with a changed intent mints its own. */
 type HeldMove = { readonly identity: ReviewedAttempt; readonly variables: Parameters<ReturnType<typeof useMovePageSection>["mutateAsync"]>[0]; readonly label: string; readonly kind: MoveControlKind };
 const controlIdOf = (base: string, kind: MoveControlKind, position: number): string => `${base}-${kind}-${String(position)}`;
@@ -39,8 +38,7 @@ const NO_AUTHORITY_REASON = "Open this edition again and change its order from t
 const NOTE_CLASS = "text-sm text-pretty text-muted-foreground";
 type MoveControlProps = { readonly direction: "up" | "down"; readonly sectionLabel: string; readonly position: number; readonly controlId: string; readonly describedBy: string | undefined; readonly ariaDisabled: boolean; readonly onActivate: () => void };
 // A blocked move control states why with `aria-disabled` and stays focusable: the native `disabled` attribute would take the
-// person's focus off the control they pressed the moment a request in flight blocks it, so a keyboard user would restart
-// their traversal of the outline for every move. The press itself is answered by the row's own guard below.
+// person's focus off the control they pressed the moment a request in flight blocks it, so a keyboard user would restart their traversal of the outline for every move. The press itself is answered by the row's own guard below.
 const MoveControl = ({ direction, sectionLabel, position, controlId, describedBy, ariaDisabled, onActivate }: MoveControlProps): ReactElement => (
   <Button type="button" variant="outline" size="sm" id={controlId} aria-disabled={ariaDisabled ? true : undefined} aria-describedby={describedBy} onClick={onActivate}>
     {direction === "up" ? copy.builder.moveUp : copy.builder.moveDown}
@@ -53,8 +51,7 @@ const MoveControl = ({ direction, sectionLabel, position, controlId, describedBy
 );
 /** Whether the caller withholds every structural change, for a reason of its own. */
 export type SectionOutlineProps = { readonly sections: readonly PageBuilderSection[]; readonly selectedSectionId: string | null; readonly onSelect: (sectionId: string) => void; readonly variantId: string; readonly expectedRevision: string; readonly disabled?: boolean; readonly className?: string };
-/** The ordered outline of one draft edition, with the four structural changes a section can be given. */
-export function SectionOutline({ sections, selectedSectionId, onSelect, variantId, expectedRevision, disabled = false, className }: SectionOutlineProps): ReactElement {
+/** The ordered outline of one draft edition, with the four structural changes a section can be given. */ export function SectionOutline({ sections, selectedSectionId, onSelect, variantId, expectedRevision, disabled = false, className }: SectionOutlineProps): ReactElement {
   const move = useMovePageSection();
   const authority = useEditionAuthority(variantId);
   const rereadPage = usePageReread(authority?.documentId);
@@ -72,8 +69,7 @@ export function SectionOutline({ sections, selectedSectionId, onSelect, variantI
   const pending = move.isPending;
   const transientlyBlocked = disabled || pending;
   const announce = (label: string, sentence: string): void => setAnnouncement({ label, sentence });
-  // A settled move returns focus to the control the person used, found by the position the section now occupies: the rows are
-  // keyed and addressed by position, so that control is the one the re-read lands the moved section in, and it stays mounted.
+  // A settled move returns focus to the control the person used, found by the position the section now occupies: the rows are keyed and addressed by position, so that control is the one the re-read lands the moved section in, and it stays mounted.
   useEffect(() => {
     const target = focusTarget.current;
     if (target === null) return;
@@ -95,8 +91,7 @@ export function SectionOutline({ sections, selectedSectionId, onSelect, variantI
     setSettled(outcome);
     announce(target.label, outcomeSentence(outcome, targetIndex));
   }
-  // A changed intent — another section, another position, or a revision read since the held attempt — mints its own identity,
-  // so a second move is an operation of its own rather than a replay of the first.
+  // A changed intent — another section, another position, or a revision read since the held attempt — mints its own identity, so a second move is an operation of its own rather than a replay of the first.
   function startMove(kind: MoveControlKind, section: PageBuilderSection, targetIndex: number): void {
     const label = labelOf(section);
     if (authority === undefined) {
@@ -137,7 +132,6 @@ export function SectionOutline({ sections, selectedSectionId, onSelect, variantI
             const label = labelOf(section);
             const managed = section.managed === true;
             const selected = section.sectionId === selectedSectionId;
-            const namedSection = `${label}, ${copy.builder.positionOption(position + 1)}`;
             const upReasonId = `${reasonIdBase}-${String(listIndex)}-up`;
             const downReasonId = `${reasonIdBase}-${String(listIndex)}-down`;
             const rowReason = managed ? copy.lockReasons.reasons[managedReasonKeyOf(section)] : authority === undefined ? NO_AUTHORITY_REASON : null;
@@ -179,7 +173,7 @@ export function SectionOutline({ sections, selectedSectionId, onSelect, variantI
                   <MoveToPosition
                     controlId={controlIdOf(controlIdBase, "to-position", position)}
                     sectionId={section.sectionId}
-                    sectionLabel={namedSection}
+                    sectionLabel={`${label}, ${copy.builder.positionOption(position + 1)}`}
                     index={position}
                     count={count}
                     disabled={disabled || rowReason !== null}

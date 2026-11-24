@@ -102,15 +102,14 @@ function statedRefsWith(placements: readonly PlacementView[], added: DraftPlacem
 }
 const samePlacements = (left: readonly DraftPlacementRef[], right: readonly DraftPlacementRef[]): boolean => left.length === right.length && left.every((ref, index) => ref.assetId === right[index]?.assetId && ref.purpose === right[index]?.purpose);
 const holdsStatedPlacements = (outcome: MediaPickerOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged" || outcome.outcome === "unknown";
-function tabsOf(overview: VariantOverviewData): readonly VariantTab[] {
-  return overview.editions.map((edition) => ({
+const tabsOf = (overview: VariantOverviewData): readonly VariantTab[] =>
+  overview.editions.map((edition) => ({
     variantId: edition.variantId,
     audience: edition.audience,
     locale: edition.locale,
     lifecycle: lifecycleOf(variantRecordOf(overview.document.documentId, edition), edition.headRelease ?? undefined, { reviewDecision: edition.candidate?.decision ?? null }),
     ...(edition.translation.status === "stale" ? { staleSince: edition.translation.sourceUpdatedAt } : {}),
   }));
-}
 const localesOfAudience = (overview: VariantOverviewData, audience: VariantOverviewData["editions"][number]["audience"]): readonly LocaleEdition[] =>
   [...new Map(overview.editions.filter((edition) => edition.audience === audience).map((edition) => [edition.locale.tag, edition])).values()].map((edition) => ({ tag: edition.locale.tag, direction: edition.locale.direction, endonym: endonymOf(edition.locale.tag) }));
 const editionInLocale = (overview: VariantOverviewData, audience: VariantOverviewData["editions"][number]["audience"], tag: string): VariantOverviewData["editions"][number] | undefined =>
@@ -122,7 +121,6 @@ function Heading({ level, id, className, children }: { readonly level: EditorHea
 const KIND_WORDS = { image: "Image", video: "Video" } as const;
 function PlacementRow({ placement, onManage }: { readonly placement: PlacementView; readonly onManage: () => void }): ReactElement {
   const purposes = placement.renditions.map((rendition) => rendition.purpose);
-  const placeable = placementRefOf(placement) !== null;
   const facts: readonly { readonly label: string; readonly value: ReactNode }[] = [
     { label: PLACEMENT_LABELS.kind, value: KIND_WORDS[placement.kind] },
     { label: PLACEMENT_LABELS.purpose, value: purposes.length === 0 ? ABSENT : <bdi>{purposes.join(", ")}</bdi> },
@@ -154,7 +152,7 @@ function PlacementRow({ placement, onManage }: { readonly placement: PlacementVi
       {placement.state === "ready" ? null : (
         <div className="flex min-w-0 flex-col gap-1">
           {placement.reason?.action === undefined ? null : <p className="type-supporting text-pretty wrap-anywhere">{placement.reason.action}</p>}
-          {placeable ? null : <p className="type-supporting text-pretty wrap-anywhere">{"This session cannot place this file, so saving this draft removes the placement. Everything the record holds about the rest of the draft is unchanged."}</p>}
+          {placementRefOf(placement) !== null ? null : <p className="type-supporting text-pretty wrap-anywhere">{"This session cannot place this file, so saving this draft removes the placement. Everything the record holds about the rest of the draft is unchanged."}</p>}
         </div>
       )}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -193,7 +191,10 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   };
   const placeMedia = async (input: MediaRegisterInput, swappedPlacementId: string | null): Promise<MediaPickerOutcome> => {
     setMediaRefusal(null);
-    const registered = await register.submit({ scope, expectedRevision: recordRevision, payload: input });
+    const { signal, ...media } = input; // The stop signal is transport state: the payload the registration's own schema judges carries the media alone.
+    const registered = await register.submit({ scope, expectedRevision: recordRevision, payload: media, ...(signal === undefined ? {} : { signal }) });
+    // Stopping the wait after the asset was already registered leaves the draft as it was: the placement is the author's own act, so a cancelled attempt writes none, and the registered asset simply stands unplaced.
+    if (signal?.aborted === true) return registered;
     const assetId = registered.outcome === "accepted" || registered.outcome === "alreadyAccepted" ? (registered.created?.[0] ?? "") : "";
     if (assetId === "") return registered;
     const added: DraftPlacementRef = { assetId, purpose: input.kind === "image" ? "display" : "playback" };
@@ -245,8 +246,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
       {/* Direction is a property of the content, applied to the editing block and never to the interface around it. */}
       <DirectionProvider direction={direction}>
         <div dir={direction} lang={localeTag} className="min-w-0">
-          {/* The editor reports every change here and holds no save state of its own: the recovery hook is the one owner of
-              the draft, so it carries the revision each save states and the one place that says whether the text is saved. */}
+          {/* The editor reports every change here and holds no save state of its own: the recovery hook is the one owner of the draft, so it carries the revision each save states and the one place that says whether the text is saved. */}
           <ProseEditor key={`draft-${String(editorInstance)}`} initialDocument={adoptedBody ?? initialBody} direction={direction} label="The text of this Update edition" onChange={reportChange} onRequestMedia={requestMedia} />
         </div>
       </DirectionProvider>
@@ -394,7 +394,6 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
     if (target !== undefined) openEdition(target.variantId);
   };
   const submitAction = envelope.actions.find((action) => action.name === "submit-for-review");
-  const submissionOffered = draftRevisionId !== undefined && (submitAction === undefined || submitAction.available);
   const submitPayload: SubmitForReviewPayload | null = draftRevisionId === undefined ? null : { variantId, revisionId: draftRevisionId, notifyMode: releaseMode };
   let comparison: ReactElement;
   const releaseResult = release.result;
@@ -454,7 +453,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
       )}
       <DraftEditor scope={scope} variantId={variantId} recordRevision={envelope.revision} asOf={envelope.asOf} data={data} direction={direction} localeTag={data.locale.tag} headingLevel={NESTED_HEADING_LEVEL[headingLevel]} />
       {comparison}
-      {submissionOffered && submitPayload !== null ? (
+      {draftRevisionId !== undefined && (submitAction === undefined || submitAction.available) && submitPayload !== null ? (
         <ActionReview<SubmitForReviewPayload>
           title="Submit this edition for review"
           description={

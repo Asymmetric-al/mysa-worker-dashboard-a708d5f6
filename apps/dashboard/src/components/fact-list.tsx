@@ -5,14 +5,12 @@ import { cn } from "@/lib/cn";
 export type FactProps = { readonly term: string; readonly value?: ReactNode; readonly children?: ReactNode };
 export type FactListProps = FactFrame & { readonly facts: readonly FactSpec[]; readonly className?: string; readonly valueClassName?: string };
 const frameOf = (frame: FactFrame): Required<FactFrame> => ({ rowClassName: frame.rowClassName ?? "flex min-w-0 flex-wrap items-baseline gap-x-2", termClassName: frame.termClassName ?? "text-muted-foreground", valueClassName: frame.valueClassName ?? "min-w-0" });
-function rowOf({ term, value, children }: FactProps, frame: Required<FactFrame>, valueClassName: string): ReactElement {
-  return (
-    <div className={frame.rowClassName}>
-      <dt className={frame.termClassName}>{term}</dt>
-      <dd className={valueClassName}>{value ?? children}</dd>
-    </div>
-  );
-}
+const rowOf = ({ term, value, children }: FactProps, frame: Required<FactFrame>, valueClassName: string): ReactElement => (
+  <div className={frame.rowClassName}>
+    <dt className={frame.termClassName}>{term}</dt>
+    <dd className={valueClassName}>{value ?? children}</dd>
+  </div>
+);
 /** One fact stated as a term and a value inside the description list the caller owns. */ export function Fact(props: FactProps): ReactElement {
   const frame = frameOf({});
   return rowOf(props, frame, frame.valueClassName);
@@ -23,8 +21,7 @@ function rowOf({ term, value, children }: FactProps, frame: Required<FactFrame>,
     return rowOf(props, bound, bound.valueClassName);
   };
 }
-/** A group of facts, so a set that differs only in its data is one list of rows rather than a block of markup per fact. */
-export function FactList({ facts, className, rowClassName, termClassName, valueClassName }: FactListProps): ReactElement {
+/** A group of facts, so a set that differs only in its data is one list of rows rather than a block of markup per fact. */ export function FactList({ facts, className, rowClassName, termClassName, valueClassName }: FactListProps): ReactElement {
   const frame = frameOf({ rowClassName, termClassName, valueClassName });
   return (
     <dl className={cn(className)}>

@@ -58,8 +58,7 @@ const PublisherSentence = ({ template, value }: { readonly template: string; rea
   );
 };
 /** The confirmation and receipt for turning off one publisher's Update email for this reader and this purpose. */ export function UnsubscribeConfirm({ scope, target, open, onOpenChange, disabled = false, disabledReason, onCheckResult, className }: UnsubscribeConfirmProps): ReactElement {
-  const titleId = useId();
-  const reasonId = useId();
+  const [titleId, reasonId] = [useId(), useId()];
   const [dialogOpenHere, setDialogOpenHere] = useState(false);
   const setDialogOpen = onOpenChange ?? setDialogOpenHere;
   const resultRef = useRef<HTMLDivElement | null>(null);

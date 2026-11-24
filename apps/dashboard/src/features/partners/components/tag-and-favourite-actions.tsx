@@ -20,15 +20,7 @@ import { useSetFavourite, useSetTag } from "../hooks/use-partner-mutations";
 import type { SetFavouritePayload, SetTagPayload } from "../schemas/tag";
 export type PartnerFilingRef = { readonly partnerId: string; readonly expectedRevision: string; readonly displayName?: string; readonly tags?: readonly string[]; readonly favourite?: boolean };
 export type TagAndFavouriteTarget = { readonly partnerRef: PartnerFilingRef } | { readonly partnerRefs: readonly PartnerFilingRef[] };
-export interface TagAndFavouriteActionsProps {
-  readonly scope: Scope;
-  readonly target: TagAndFavouriteTarget;
-  readonly tagSuggestions?: readonly string[];
-  readonly onSettled?: (outcome: MutationOutcome) => void;
-  readonly onCheckResult?: () => void;
-  readonly headingLevel?: ReviewHeadingLevel;
-  readonly className?: string;
-}
+export type TagAndFavouriteActionsProps = { readonly scope: Scope; readonly target: TagAndFavouriteTarget; readonly tagSuggestions?: readonly string[]; readonly onSettled?: (outcome: MutationOutcome) => void; readonly onCheckResult?: () => void; readonly headingLevel?: ReviewHeadingLevel; readonly className?: string };
 type BatchInstruction = { readonly kind: "tag"; readonly tag: string; readonly present: boolean } | { readonly kind: "favourite"; readonly favourite: boolean };
 type BatchRecordInput = { readonly partnerId: string; readonly expectedRevision: string };
 type BatchTagPayload = { readonly records: readonly BatchRecordInput[]; readonly tag: string; readonly present: boolean };
@@ -39,8 +31,7 @@ type FavouriteSubmit = (input: Omit<MutationInput<SetFavouritePayload>, "operati
 type RecordSubmits = { readonly setTag: TagSubmit; readonly setFavourite: FavouriteSubmit };
 const PANEL_CLASS = "flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3";
 const SENTENCE_CLASS = "type-supporting text-pretty";
-/** The one type scale's heading utility per level, so this surface states the level it lands at with the same measure on every route. */
-const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The one type scale's heading utility per level, so this surface states the level it lands at with the same measure on every route. */ const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const CONTROL_ROW_CLASS = "flex min-w-0 flex-wrap items-center gap-2";
 const ROW_COLUMNS: readonly PerItemColumn[] = [{ key: "revision", label: "Revision" }];
 const recordsNoun = (count: number): string => (count === 1 ? "record" : "records");
@@ -104,9 +95,7 @@ function TagSuggestions({ suggestions, disabled, onChoose }: { readonly suggesti
   if (suggestions.length === 0) return <p className={SENTENCE_CLASS}>No tag has been used in this ministry yet, so there is nothing to reuse. The first label you type is the first one recorded.</p>;
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" />} disabled={disabled}>
-        Your tags
-      </DropdownMenuTrigger>
+      <DropdownMenuTrigger {...{ render: <Button type="button" variant="outline" size="sm" />, disabled: disabled }}>Your tags</DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
         <DropdownMenuLabel>Tags you already use</DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -162,20 +151,16 @@ type SingleRecordFilingProps = { readonly scope: Scope; readonly record: Partner
 function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckResult }: SingleRecordFilingProps): ReactElement {
   const tag = useSetTag(record.partnerId);
   const favourite = useSetFavourite(record.partnerId);
-  const submitTagRequest = tag.submit;
-  const submitFavouriteRequest = favourite.submit;
-  const tagsHeadingId = useId();
-  const favouriteHintId = useId();
-  const favouriteLabelId = useId();
+  const [tagsHeadingId, favouriteHintId, favouriteLabelId] = [useId(), useId(), useId()];
   const [tagText, setTagText] = useState("");
   const tagAttempt = useAttemptedMutation<SetTagPayload>(
-    (input) => submitTagRequest(input),
+    (input) => tag.submit(input),
     (outcome: MutationOutcome): void => {
       if (standsAsChanged(outcome)) setTagText("");
       onSettled?.(outcome);
     },
   );
-  const favouriteAttempt = useAttemptedMutation<SetFavouritePayload>((input) => submitFavouriteRequest(input), onSettled);
+  const favouriteAttempt = useAttemptedMutation<SetFavouritePayload>((input) => favourite.submit(input), onSettled);
   const currentTags = record.tags ?? [];
   const favouriteState = record.favourite;
   const fileTag = (value: string, present: boolean): void => {
@@ -187,9 +172,7 @@ function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckR
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <section aria-labelledby={tagsHeadingId} data-slot="record-tags" className={PANEL_CLASS}>
-        <p id={tagsHeadingId} className="type-group-title">
-          Tags on this record
-        </p>
+        <p {...{ id: tagsHeadingId, className: "type-group-title" }}>Tags on this record</p>
         {currentTags.length === 0 ? (
           <p className={SENTENCE_CLASS}>No tag is on this record yet.</p>
         ) : (
@@ -300,9 +283,7 @@ function SelectionFiling({ scope, records, tagSuggestions, onSettled, onCheckRes
     setSettledOutcome(null);
     setInstruction(next);
   };
-  const clearInstruction = (): void => {
-    setInstruction(null);
-  };
+  const clearInstruction = (): void => setInstruction(null);
   const handleSettled = useCallback(
     (outcome: MutationOutcome): void => {
       setSettledOutcome(outcome);
@@ -389,26 +370,21 @@ function invalidFieldsOf(entries: readonly BatchEntry[]): FieldErrorLookup | nul
   for (const entry of entries) if (entry.outcome !== null && entry.outcome.outcome === "invalid") return fieldErrorsFromInvalid(entry.outcome);
   return null;
 }
-function TagValue({ label, tag }: { readonly label: string; readonly tag: string }): ReactElement {
-  return (
-    <span className="flex min-w-0 flex-wrap items-baseline gap-x-1">
-      <span>{label}</span>
-      <bdi className="min-w-0 font-medium wrap-anywhere">{tag}</bdi>
-    </span>
-  );
-}
-function reviewDescription(value: ReactNode, records: readonly PartnerFilingRef[]): ReactElement {
-  return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <p>{FILING_COPY.selectionIntro(records.length)}</p>
-      <p>{value}</p>
-      <p>Only the records listed here are affected. This selection is not an audience, a consent or a campaign, and the change never reaches a record you did not select.</p>
-      <SelectedRecordList records={records} />
-    </div>
-  );
-}
-/** Files one record, or exactly the records the caller selected, under the worker's own tag or favourite mark. */
-export function TagAndFavouriteActions({ scope, target, tagSuggestions = [], onSettled, onCheckResult, headingLevel = 2, className }: TagAndFavouriteActionsProps): ReactElement {
+const TagValue = ({ label, tag }: { readonly label: string; readonly tag: string }): ReactElement => (
+  <span className="flex min-w-0 flex-wrap items-baseline gap-x-1">
+    <span>{label}</span>
+    <bdi className="min-w-0 font-medium wrap-anywhere">{tag}</bdi>
+  </span>
+);
+const reviewDescription = (value: ReactNode, records: readonly PartnerFilingRef[]): ReactElement => (
+  <div className="flex min-w-0 flex-col gap-2">
+    <p>{FILING_COPY.selectionIntro(records.length)}</p>
+    <p>{value}</p>
+    <p>Only the records listed here are affected. This selection is not an audience, a consent or a campaign, and the change never reaches a record you did not select.</p>
+    <SelectedRecordList records={records} />
+  </div>
+);
+/** Files one record, or exactly the records the caller selected, under the worker's own tag or favourite mark. */ export function TagAndFavouriteActions({ scope, target, tagSuggestions = [], onSettled, onCheckResult, headingLevel = 2, className }: TagAndFavouriteActionsProps): ReactElement {
   const headingId = useId();
   const records = useMemo(() => filingRecordsOf(target), [target]);
   const Heading = HEADING_TAG[headingLevel];
@@ -416,9 +392,7 @@ export function TagAndFavouriteActions({ scope, target, tagSuggestions = [], onS
   return (
     <section aria-labelledby={headingId} data-slot="tag-and-favourite-actions" data-mode={onlyRecord === undefined ? "selection" : "record"} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
-          Tags and favourite
-        </Heading>
+        <Heading {...{ id: headingId, className: HEADING_SCALE[headingLevel] }}>Tags and favourite</Heading>
         <p className={SENTENCE_CLASS}>A tag is your own filing label on this record. It is not an audience, a consent, a stage or a segment, and filing the record changes nothing else about it: no notice is sent, no gift is recorded and no task is created.</p>
         <p className={SENTENCE_CLASS}>{FILING_COPY.notPrivateText}</p>
       </div>

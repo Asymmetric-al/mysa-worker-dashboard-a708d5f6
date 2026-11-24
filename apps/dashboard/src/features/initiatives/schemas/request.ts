@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { boundedTextSchema, civilDateSchema } from "./initiative";
-/** The versioned terms one ask carries: exact requested money, or a non-financial ask, never both. */
-export const requestedTermsSchema = z
+/** The versioned terms one ask carries: exact requested money, or a non-financial ask, never both. */ export const requestedTermsSchema = z
   .object({
     version: z.number({ error: "Record which terms version this ask carries." }).int("Record which terms version this ask carries."),
     currency: z.string({ error: "Choose the currency for the requested amount." }).trim().min(1, "Choose the currency for the requested amount.").optional(),

@@ -38,8 +38,7 @@ type ReadState<T> =
   | { readonly kind: "unavailable"; readonly request: ReadRequest; readonly source: SourceReference; readonly guidance: string };
 type ProposalRead = ReadState<ImportProposalView>;
 type ResultsRead = ReadState<ImportResultsView>;
-/** The refusal arms one read answer states, so both reads of this journey build them the same way instead of each restating the vocabulary the transport answers with. */
-type ReadRefusal = Extract<ReadState<never>, { readonly kind: "denied" | "refused" | "unavailable" }>;
+/** The refusal arms one read answer states, so both reads of this journey build them the same way instead of each restating the vocabulary the transport answers with. */ type ReadRefusal = Extract<ReadState<never>, { readonly kind: "denied" | "refused" | "unavailable" }>;
 const refusalStateOf = (answer: ReadResult<ReadEnvelope<ImportReadEnvelope>>, request: ReadRequest): ReadRefusal | null =>
   answer.kind === "denied"
     ? { kind: "denied", request, reasonCode: answer.denied.reasonCode }

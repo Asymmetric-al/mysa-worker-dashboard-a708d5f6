@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
+import { factFrame } from "@/components/fact-list";
 import FormField, { fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -44,12 +45,7 @@ const LIFECYCLE_NOTE: Readonly<Record<InitiativeDetail["initiative"]["lifecycle"
   open: "The read states this initiative is already open, so reopening it has nothing to apply and the attempt will answer so.",
 };
 const exclusionInstantOf = (entry: WorkingListEntry): string | null => entry.history.reduce<string | null>((at, step) => (step.state === "excluded" ? step.at : at), null);
-const EvidenceFact = ({ term, children }: { readonly term: string; readonly children: ReactElement }): ReactElement => (
-  <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-    <dt className="text-muted-foreground">{term}</dt>
-    <dd className="min-w-0 wrap-anywhere">{children}</dd>
-  </div>
-);
+const EvidenceFact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-1.5", termClassName: "text-muted-foreground", valueClassName: "min-w-0 wrap-anywhere" });
 function PreservedExclusion({ entry }: { readonly entry: WorkingListEntry }): ReactElement {
   const instant = exclusionInstantOf(entry);
   return (

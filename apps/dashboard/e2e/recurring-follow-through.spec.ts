@@ -1,5 +1,4 @@
-/** Criterion 13 — recurring follow-through. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 13 — recurring follow-through. */ import type { Locator, Page } from "@playwright/test";
 import { arrayAt, expect, fieldAt, jsonOf, newAttemptId, numberAt, outcomeOf, recordAt, recordsAt, setClock, stringAt, test, type JsonRecord } from "../playwright.config"; // The runner's own `test` carries the automatic `seedReset` fixture, which admits this file's seeded identity and restores the deterministic seed before every case: without it a case would assert against the world the one before it left. `expect` and the JSON helpers come from the same module, so one import states the runner this file uses.
 const MONTH_END_SERIES = "series-month-end-support-review";
 const MONTH_END_TITLE = "Month-end support review";
@@ -44,8 +43,7 @@ const previewSection = (page: Page): Locator => page.locator('[data-slot="series
 const nextDates = (page: Page): Locator => previewSection(page).getByRole("list", { name: "Next three dates" });
 const datesWithStatus = (page: Page, status: "Actionable" | "Preview"): Locator => nextDates(page).getByRole("listitem").filter({ hasText: status });
 const commandReceipt = (page: Page, command: string): Locator => page.locator(`[data-slot="occurrence-command"][data-command="${command}"]`).locator('[data-slot="occurrence-command-result"]');
-/** The identifier in a plan's own address, taken from the address the browser is on rather than typed here. */
-function seriesIdOf(url: string): string {
+/** The identifier in a plan's own address, taken from the address the browser is on rather than typed here. */ function seriesIdOf(url: string): string {
   const last = new URL(url).pathname
     .split("/")
     .filter((segment) => segment !== "")

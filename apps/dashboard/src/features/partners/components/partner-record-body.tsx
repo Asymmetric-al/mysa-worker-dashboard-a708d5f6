@@ -11,8 +11,7 @@ import PrivateNoteComposer from "./private-note-composer";
 type SurfaceHeadingLevels = { readonly note: 3 | 4; readonly filing: ReviewHeadingLevel };
 /** The level each surface the body adds lands at: the record's route titles the record at the page's h1 and its sections at h2, where the panel and the sheet state the record name at h2 and the sections at h3, so a surface added here takes the same step below the sections in each presentation. */
 const SURFACE_HEADINGS: Readonly<Record<RecordDetailLayout, SurfaceHeadingLevels>> = { page: { note: 3, filing: 2 }, panel: { note: 4, filing: 3 }, sheet: { note: 4, filing: 3 } };
-/** The record the action surfaces act on: the revision and scope a change states, the advisory actions the read published, the fields its filing surface names, the labels its ministry already files under, and whether the worker's own preparation is archived. */
-export type PartnerRecordFacts = {
+/** The record the action surfaces act on: the revision and scope a change states, the advisory actions the read published, the fields its filing surface names, the labels its ministry already files under, and whether the worker's own preparation is archived. */ export type PartnerRecordFacts = {
   readonly scope: Scope;
   readonly revision: string;
   readonly actions: readonly ReadAction[];
@@ -32,8 +31,7 @@ export type PartnerRecordBodyProps = {
   readonly layout: RecordDetailLayout;
   readonly locale: string;
   readonly breadcrumb?: readonly RecordDetailBreadcrumbEntry[];
-  /** The facts the record's own actions are derived from: a record whose read has not answered states none, so no action is offered against a revision this body has not read. */
-  readonly facts?: PartnerRecordFacts;
+  /** The facts the record's own actions are derived from: a record whose read has not answered states none, so no action is offered against a revision this body has not read. */ readonly facts?: PartnerRecordFacts;
   /** The record-introduction section, composed by the app layer because the feature that renders it sits beside this one rather than below it: this body mounts it against the facts the read published, so the record's route, the panel beside the list and the phone sheet all offer the same job. */
   readonly introduction?: ReactNode;
 };
@@ -52,7 +50,7 @@ function surfacesOf(facts: PartnerRecordFacts | undefined, headings: SurfaceHead
     // The record files under the worker's own labels in the body it already opens, so the roster's tag and favourite facets filter values a control on the record can set.
     ...(filingAdmitted ? { filing: <PartnerFilingSurface scope={facts.scope} target={{ partnerRef: { partnerId, expectedRevision: facts.revision, displayName, tags, favourite } }} tagSuggestions={facts.tagSuggestions} headingLevel={headings.filing} /> } : {}),
     // The preparation lifecycle is handed the revision and the advisory actions the record's read published, so a change presents the revision it was read at and the service still re-checks the record on submit. Archive and restore are the worker's own preparation's lifecycle, so they appear only where the private read answered with that record.
-    ...(preparationArchived === undefined ? {} : { preparation: <PartnerPreparationSurface partnerId={partnerId} kind={kind} archived={preparationArchived} expectedRevision={facts.revision} scope={facts.scope} availableActions={facts.actions} /> }),
+    ...(preparationArchived === undefined ? {} : { preparation: <PartnerPreparationSurface partnerId={partnerId} kind={kind} archived={preparationArchived} expectedRevision={facts.revision} scope={facts.scope} availableActions={facts.actions} headingLevel={headings.note} /> }),
   };
   const links: PartnerDetailLinks = { ...(logInteractionAdmitted ? { logInteraction: PARTNER_RECORD_PATHS.newInteraction(partnerId) } : {}), ...(createTaskAdmitted ? { createTask: PARTNER_RECORD_PATHS.work(partnerId) } : {}), addPreparation: PARTNER_RECORD_PATHS.roster };
   return { actions, links };

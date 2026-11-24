@@ -1,13 +1,11 @@
-/** Measures the repository's tracked line count with the request's own pipeline — `git ls-files`, with `bun.lock` as its only exclusion, piped through `xargs wc -l` — and exits by the 100,000-line limit. */
-import path from "node:path";
+/** Measures the repository's tracked line count with the request's own pipeline — `git ls-files`, with `bun.lock` as its only exclusion, piped through `xargs wc -l` — and exits by the 100,000-line limit. */ import path from "node:path";
 const MEASURE_COMMAND = "git ls-files | grep -v -e '^bun.lock$' | xargs wc -l";
 const LIMIT = 100000;
 const USAGE = "usage: bun scripts/count-lines.ts\n";
 const ROOT = path.join(import.meta.dir, "..");
 class UsageError extends Error {}
 type WcReport = { tracked: number; totals: number[] };
-/** The command line takes no arguments: what this command runs is the request's verbatim pipeline and the 100,000-line limit is fixed, so there is no option to accept — `--help` included. */
-function parseArguments(argv: readonly string[]): void {
+/** The command line takes no arguments: what this command runs is the request's verbatim pipeline and the 100,000-line limit is fixed, so there is no option to accept — `--help` included. */ function parseArguments(argv: readonly string[]): void {
   if (argv.length > 0) throw new UsageError(`count-lines takes no arguments, and received: ${argv.join(" ")}`);
 }
 function readWcReport(stdout: string): WcReport {

@@ -1,5 +1,4 @@
-/** The cold-start warm-up the browser suite runs once, before its first test. */
-import { readdirSync } from "node:fs";
+/** The cold-start warm-up the browser suite runs once, before its first test. */ import { readdirSync } from "node:fs";
 import { connect } from "node:net";
 import { dirname, join } from "node:path";
 import type { FullConfig } from "@playwright/test";
@@ -32,8 +31,7 @@ const SEEDED_SEGMENT_VALUES: Readonly<Record<string, string>> = {
   operationId: "operation-warm-up",
 };
 const UNNAMED_SEGMENT = "warm-up"; // The value a dynamic segment the seed table does not name is warmed with: any value the route can parse.
-/** Warms every route once, so no route's first compile can land inside a test. */
-export default async function warmUpRoutes(config: FullConfig): Promise<void> {
+/** Warms every route once, so no route's first compile can land inside a test. */ export default async function warmUpRoutes(config: FullConfig): Promise<void> {
   const origin = originFrom(config);
   const addresses = routeAddressesUnder(applicationDirectoryFrom(config));
   process.stdout.write(
@@ -44,8 +42,7 @@ export default async function warmUpRoutes(config: FullConfig): Promise<void> {
   const warmed = await warmEach(addresses, origin);
   process.stdout.write(`[route warm-up] ${String(warmed.length)} address(es) compiled in ${((Date.now() - startedAt) / 1000).toFixed(1)} s, answered ${answersByClass(warmed)}\n`);
 }
-/** The origin the journeys drive, taken from the runner's own `baseURL` so the warm-up asks the server the specs drive. */
-function originFrom(config: FullConfig): URL {
+/** The origin the journeys drive, taken from the runner's own `baseURL` so the warm-up asks the server the specs drive. */ function originFrom(config: FullConfig): URL {
   const baseURL = config.projects[0]?.use.baseURL ?? `http://127.0.0.1:${process.env.PORT ?? DEFAULT_PORT}`;
   return new URL(baseURL);
 }
@@ -67,8 +64,7 @@ function routeDirectoriesUnder(directory: string, segments: readonly string[]): 
   const nested = entries.filter((entry) => entry.isDirectory() && !UNROUTED_SEGMENT.test(entry.name)).flatMap((entry) => routeDirectoriesUnder(join(directory, entry.name), [...segments, entry.name]));
   return [here, ...nested];
 }
-/** The address a route's segments name, with each dynamic segment replaced by the value the warm-up asks it for. */
-function addressOf(segments: readonly string[]): string {
+/** The address a route's segments name, with each dynamic segment replaced by the value the warm-up asks it for. */ function addressOf(segments: readonly string[]): string {
   const path = segments.map((segment) => {
     const dynamic = DYNAMIC_SEGMENT.exec(segment);
     if (dynamic === null) return segment;
@@ -88,9 +84,8 @@ async function waitForServer(origin: URL): Promise<void> {
     await delay(READY_POLL_INTERVAL_MS);
   }
 }
-/** Whether the server's port accepts a connection, probed at the socket rather than by a request, so the probe compiles nothing. */
-function acceptsConnection(origin: URL): Promise<boolean> {
-  return new Promise((resolve) => {
+/** Whether the server's port accepts a connection, probed at the socket rather than by a request, so the probe compiles nothing. */ const acceptsConnection = (origin: URL): Promise<boolean> =>
+  new Promise((resolve) => {
     const socket = connect({ host: origin.hostname, port: portOf(origin) });
     const settle = (answer: boolean): void => {
       socket.destroy();
@@ -100,7 +95,6 @@ function acceptsConnection(origin: URL): Promise<boolean> {
     socket.once("error", () => settle(false));
     socket.setTimeout(READY_PROBE_TIMEOUT_MS, () => settle(false));
   });
-}
 const portOf = (origin: URL): number => (origin.port.length > 0 ? Number(origin.port) : origin.protocol === "https:" ? 443 : 80);
 async function warmEach(addresses: readonly WarmUpAddress[], origin: URL): Promise<readonly WarmedAddress[]> {
   const warmed: WarmedAddress[] = []; // Warms every address in turn, retrying one that could not be reached at all once, and failing loudly if it still cannot be.
@@ -136,8 +130,7 @@ function answersByClass(warmed: readonly WarmedAddress[]): string {
   const summary = [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([statusClass, count]) => `${statusClass} ${String(count)}`);
   return summary.length === 0 ? "no status" : summary.join(", ");
 }
-/** Pauses for the stated time, so the readiness poll and the single retry are spaced rather than spun. */
-const delay = (milliseconds: number): Promise<void> =>
+/** Pauses for the stated time, so the readiness poll and the single retry are spaced rather than spun. */ const delay = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });

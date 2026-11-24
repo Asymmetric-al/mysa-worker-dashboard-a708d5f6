@@ -21,8 +21,11 @@ export interface ResolvedSession {
   readonly clockOffsetMs: number;
   /** The session whose documents hold this seat's coaching records, or null when they are its own. */ readonly coachingRecordsSessionId: string | null;
 }
-/** A seat's coaching records may live in the world it is seated in, so the session to address is that world when one is named and the seat itself otherwise. */
-export const coachingRecordsSessionIdOf = (session: ResolvedSession): string => session.coachingRecordsSessionId ?? session.sessionId;
+/** A seat's coaching records may live in the world it is seated in, so the session to address is that world when one is named and the seat itself otherwise. */ export const coachingRecordsSessionIdOf = (session: ResolvedSession): string => session.coachingRecordsSessionId ?? session.sessionId;
+// The publisher whose world a development preview crosses into for the memberships it holds for its readers.
+const PREVIEW_PUBLISHER_SESSION_ID = "established-worker";
+/** The world a session's membership rows live in — that publisher's own world for the seat that reaches across to it, the seat itself otherwise — which is the one world the reader's own page and the publisher's audience both read from. */
+export const audienceRecordsSessionIdOf = (session: ResolvedSession): string => (isDevelopment() && session.admittedMemberships.length === 0 && session.sessionId !== PREVIEW_PUBLISHER_SESSION_ID ? PREVIEW_PUBLISHER_SESSION_ID : session.sessionId);
 export type SessionResolution = { readonly ok: true; readonly session: ResolvedSession } | { readonly ok: false; readonly refusal: SessionRefusal };
 export type SessionRefusal = { readonly kind: "denied"; readonly denied: DeniedOutcome } | { readonly kind: "unavailable"; readonly unavailable: UnavailableOutcome };
 export type SessionSource = { readonly sessionId: string };
@@ -32,8 +35,7 @@ export const sessionDenial = (reason: DenialReason): SessionRefusal => ({ kind: 
 const refusedSession = (reason: DenialReason): SessionResolution => ({ ok: false, refusal: sessionDenial(reason) });
 export const readResultOfRefusal = <T>(refusal: SessionRefusal): ReadResult<T> => (refusal.kind === "denied" ? { kind: "denied", denied: refusal.denied } : { kind: "unavailable", unavailable: refusal.unavailable });
 export const outcomeOfRefusal = (refusal: SessionRefusal, operationId: string): DeniedOutcome | UnavailableOutcome => (refusal.kind === "denied" ? denied({ operationId, reasonCode: refusal.denied.reasonCode }) : unavailable({ operationId, source: refusal.unavailable.source, guidance: refusal.unavailable.guidance }));
-/** States the source an outage could not be read from when the session resolution refused the job before it could read its own document, so every `unavailable` names its source; a fault the job maps itself is reported by that job. */
-export function recordRefusalOutage(job: string, refusal: SessionRefusal): void {
+/** States the source an outage could not be read from when the session resolution refused the job before it could read its own document, so every `unavailable` names its source; a fault the job maps itself is reported by that job. */ export function recordRefusalOutage(job: string, refusal: SessionRefusal): void {
   if (refusal.kind === "unavailable") logger.sourceUnavailable({ job, source: refusal.unavailable.source });
 }
 const SESSION_GATE_REASONS: Readonly<Record<Exclude<SessionState, "signed-in">, DenialReason>> = { unavailable: "session-unavailable", expired: "session-expired", denied: "not-admitted", "no-access": "not-admitted" };
@@ -41,8 +43,7 @@ function sessionGate(session: ResolvedSession): DeniedOutcome | undefined {
   const { sessionState } = session;
   return sessionState === "signed-in" ? undefined : refuse(SESSION_GATE_REASONS[sessionState]);
 }
-/** The refusal a session's own state answers with before any scope is consulted: `expired`, `unavailable`, `denied` and no access each by their own reason, and nothing at all for a signed-in session. */
-export const sessionStateRefusal = (session: ResolvedSession): DeniedOutcome | undefined => sessionGate(session);
+/** The refusal a session's own state answers with before any scope is consulted: `expired`, `unavailable`, `denied` and no access each by their own reason, and nothing at all for a signed-in session. */ export const sessionStateRefusal = (session: ResolvedSession): DeniedOutcome | undefined => sessionGate(session);
 const storedSessionMetaSchema = z.object({
   scenarioId: z.string().min(1),
   clockOffsetMs: z.int(),
@@ -89,11 +90,9 @@ async function requestSessionId(): Promise<string | undefined> {
   return !parsed.success ? refusedSession("session-unavailable") : { ok: true, session: resolvedSession(sessionId, parsed.data) };
 }
 export type ScopeDecision = { readonly ok: true } | { readonly ok: false; readonly denial: DeniedOutcome };
-/** The authority an attempt is admitted under, together with the scope that admission establishes and a durable entry for the attempt records. */
-export type AdmittedScope = { readonly ok: true; readonly scope: Scope } | { readonly ok: false; readonly denial: DeniedOutcome };
-function admittedMembershipOf(session: ResolvedSession, scope: Pick<Scope, "organizationId" | "ministryId" | "supportSubjectId">): AdmittedMembership | undefined {
-  return session.admittedMemberships.find((membership) => membership.organizationId === scope.organizationId && membership.ministryId === scope.ministryId && membership.supportSubjectId === scope.supportSubjectId);
-}
+/** The authority an attempt is admitted under, together with the scope that admission establishes and a durable entry for the attempt records. */ export type AdmittedScope = { readonly ok: true; readonly scope: Scope } | { readonly ok: false; readonly denial: DeniedOutcome };
+const admittedMembershipOf = (session: ResolvedSession, scope: Pick<Scope, "organizationId" | "ministryId" | "supportSubjectId">): AdmittedMembership | undefined =>
+  session.admittedMemberships.find((membership) => membership.organizationId === scope.organizationId && membership.ministryId === scope.ministryId && membership.supportSubjectId === scope.supportSubjectId);
 const admitsContext = (session: ResolvedSession, organizationId: string, ministryId: string): boolean => session.admittedMemberships.some((membership) => membership.organizationId === organizationId && membership.ministryId === ministryId);
 export type ScopeAuthority = "membership" | "grant" | "owner";
 // A membership authority always requires an admitted membership. The grant and owner authorities exist for a seat that holds no membership in the record's context at all — a coach acting under a grant, a reader acting on the record it owns — so they exempt it only from a membership it does not hold: a caller that does hold admitted memberships is still held to them, and the context it claims has to be one of theirs.
@@ -107,8 +106,7 @@ export function assertScopeAdmitted(session: ResolvedSession, claimed: Scope, au
   const admitted = admittedMembershipOf(session, claimed);
   return admitted === undefined ? { ok: false, denial: refuse("no-membership") } : { ok: true, scope: { organizationId: admitted.organizationId, ministryId: admitted.ministryId, supportSubjectId: admitted.supportSubjectId, principalId: session.principalId } };
 }
-/** Admits one attempt's scope under the authority it holds, for a caller that needs only the answer; the scope the admission established comes from `assertScopeAdmitted`. */
-export function assertScopeUnder(session: ResolvedSession, scope: Scope, authority: ScopeAuthority): ScopeDecision {
+/** Admits one attempt's scope under the authority it holds, for a caller that needs only the answer; the scope the admission established comes from `assertScopeAdmitted`. */ export function assertScopeUnder(session: ResolvedSession, scope: Scope, authority: ScopeAuthority): ScopeDecision {
   const decision = assertScopeAdmitted(session, scope, authority);
   return decision.ok ? { ok: true } : decision;
 }
@@ -223,6 +221,4 @@ export type ProtectedReadGrant = { readonly audience: ContentAudience; readonly 
   return addressed === undefined ? refused("no-protected-grant") : holdsReadingGrant(addressed) ? permitted() : refused("no-protected-grant");
 }
 const READING_GRANT_STATES: Readonly<Record<MembershipRecord["state"], boolean>> = { active: true, off: false, "awaiting-proof": false, restricted: false };
-function holdsReadingGrant(membership: MembershipRecord): boolean {
-  return isExcludedSourceMembership(membership) ? false : membership.state === "off" ? membership.acceptedAt !== undefined : READING_GRANT_STATES[membership.state];
-}
+const holdsReadingGrant = (membership: MembershipRecord): boolean => (isExcludedSourceMembership(membership) ? false : membership.state === "off" ? membership.acceptedAt !== undefined : READING_GRANT_STATES[membership.state]);

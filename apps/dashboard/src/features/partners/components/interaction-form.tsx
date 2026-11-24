@@ -100,19 +100,9 @@ function RoleField({ name, error, value, onChange }: { readonly name: string; re
     </FormField>
   );
 }
-export interface InteractionFormProps {
-  readonly scope: Scope;
-  readonly partnerId: string;
-  readonly expectedRevision: string;
-  readonly subject?: PartnerSelection | null;
-  readonly onSettled?: (outcome: MutationOutcome) => void;
-  readonly dir?: "ltr" | "rtl";
-  readonly className?: string;
-}
-/** Logs one interaction that actually happened, and optionally saves the next task as a second, independent change. */
-export default function InteractionForm({ scope, partnerId, expectedRevision, subject = null, onSettled, dir, className }: InteractionFormProps): ReactElement {
-  const headingId = useId();
-  const optionIdPrefix = useId();
+export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: string; readonly expectedRevision: string; readonly subject?: PartnerSelection | null; readonly onSettled?: (outcome: MutationOutcome) => void; readonly dir?: "ltr" | "rtl"; readonly className?: string };
+/** Logs one interaction that actually happened, and optionally saves the next task as a second, independent change. */ export default function InteractionForm({ scope, partnerId, expectedRevision, subject = null, onSettled, dir, className }: InteractionFormProps): ReactElement {
+  const [headingId, optionIdPrefix] = [useId(), useId()];
   const log = useLogInteraction(partnerId);
   const form = useForm({ defaultValues: { ...INITIAL_VALUES } });
   const [participants, setParticipants] = useState<readonly PartnerSelection[]>([]);
@@ -204,9 +194,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
   return (
     <section data-slot="interaction-form" dir={dir} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="type-section-title text-pretty">
-          Log an interaction
-        </h2>
+        <h2 {...{ id: headingId, className: "type-section-title text-pretty" }}>Log an interaction</h2>
         <p className="type-supporting text-pretty">An interaction records something that actually happened, so this entry states a contact the worker made rather than something the application inferred.</p>
       </div>
       <Alert data-slot="interaction-scope" className="min-w-0">

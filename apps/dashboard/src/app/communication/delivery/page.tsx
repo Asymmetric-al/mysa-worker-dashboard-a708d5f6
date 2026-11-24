@@ -33,8 +33,7 @@ function addressOf(intentId: string, searchParams: SearchParams): string {
   return `${"/communication/delivery"}?${query.toString()}`;
 }
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: PAGE_HEADING_LEVEL, denied: { title: PAGE_COPY.denied.title, body: PAGE_COPY.denied.description }, unavailable: { title: PAGE_COPY.unavailable.title }, refused: { title: PAGE_COPY.refused.title } };
-/** The delivery results of one submitted notice: the outcomes the application recorded, per recipient. */
-export default async function CommunicationDeliveryPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
+/** The delivery results of one submitted notice: the outcomes the application recorded, per recipient. */ export default async function CommunicationDeliveryPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   const stated = await searchParams;
   const intentId = paramOf(stated, PARAM.intentId);
   if (intentId === undefined) {

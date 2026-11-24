@@ -1,5 +1,4 @@
-/** Criterion 19 — context and access. */
-import type { APIResponse, Page } from "@playwright/test";
+/** Criterion 19 — context and access. */ import type { APIResponse, Page } from "@playwright/test";
 import { test, expect, actAs, fieldAt, isRecord, newAttemptId, parseJson, scopeAt, stringAt } from "../playwright.config"; // The development session cookie is the whole of the identity this application authorises a request as — `src/proxy.ts` mints it and `data-service/authorize.ts` resolves it — so a spec acts as a seeded identity by naming that identity's session in the jar, which is exactly what the runner's own `seedReset` fixture does. Reading the cookie's name from the runner rather than repeating the literal is what keeps this file from silently acting as the default identity if the name ever changes.
 const OWNER_SESSION = "established-worker";
 const UNAUTHORISED_READER_SESSION = "reader-unauthorized"; // A seeded reader holding no grant of any kind: the persona whose refusal must disclose nothing.
@@ -17,8 +16,7 @@ const OWNER_SUPPORT_SUBJECT = "sup-harbour-youth"; // The owner's finance subjec
 const OWNER_PRINCIPAL = "principal-established-worker";
 const EXPORT_QUERY = { reportId: "received-period-and-year-to-date" } as const;
 type Probe = { /** The job the call performs, in words a failure message can use. */ readonly label: string; readonly response: APIResponse; readonly body: string }; // One response this file judges: what asked for it, what came back, and the body as text.
-/** The values only the owner is entitled to, captured from the owner's own surfaces. */
-interface OwnerValues {
+/** The values only the owner is entitled to, captured from the owner's own surfaces. */ interface OwnerValues {
   readonly privateNote: string; // The body of the owner's private note, read from the record's own private-notes card.
   readonly giftId: string; // The gift identifier the ledger's row links to, read from that row's own address.
   readonly giftRowId: string; // The gift row's identifier, as the owner's ledger read reports it.
@@ -35,8 +33,7 @@ interface OutsideCall {
   readonly searchesFor?: (values: OwnerValues) => string; // The text this call searches its roster for, where it is a search: the read states what it applied,
   readonly secondWorker: "refused" | "own-scope" | "own-scope-empty-roster"; // What the second worker receives.
 }
-/** The `<p>`-level lines of a rendered edition, with tags removed and whitespace collapsed. */
-const paragraphsOf = (renderedHtml: string): readonly string[] =>
+/** The `<p>`-level lines of a rendered edition, with tags removed and whitespace collapsed. */ const paragraphsOf = (renderedHtml: string): readonly string[] =>
   renderedHtml
     .split(/<\/(?:p|h1|h2|h3|h4|li)>/u)
     .map((chunk) =>
@@ -46,8 +43,7 @@ const paragraphsOf = (renderedHtml: string): readonly string[] =>
         .trim(),
     )
     .filter((line) => line.length > 0);
-/** Makes one GET and states the answer with its body as text, labelled with the job the call performs. */
-async function get(page: Page, label: string, path: string): Promise<Probe> {
+/** Makes one GET and states the answer with its body as text, labelled with the job the call performs. */ async function get(page: Page, label: string, path: string): Promise<Probe> {
   const response = await page.request.get(path); // One GET through the browser's own request context, so it carries the cookie jar this test set.
   return { label, response, body: await response.text() };
 }
@@ -55,8 +51,7 @@ async function post(page: Page, label: string, path: string, body: unknown): Pro
   const response = await page.request.post(path, { data: body });
   return { label, response, body: await response.text() };
 }
-/** Asserts a response carries none of the values only the owner may see, apart from what the caller itself supplied. */
-function expectNoOwnerValue(probe: Probe, ownerOnly: readonly string[], supplied: readonly string[] = []): void {
+/** Asserts a response carries none of the values only the owner may see, apart from what the caller itself supplied. */ function expectNoOwnerValue(probe: Probe, ownerOnly: readonly string[], supplied: readonly string[] = []): void {
   for (const value of ownerOnly) {
     if (supplied.includes(value)) continue; // A caller's own search term comes back in the read's own statement of what it applied. That echo is the request's text returning to the request, not a record disclosing itself, so a value this caller supplied is judged by the rows the read answers with instead.
     expect(probe.body, `${probe.label} answered with a value only the owner may see: ${JSON.stringify(value)}`).not.toContain(value);
@@ -149,8 +144,7 @@ async function expectSurfaceWithoutOwnerValue(page: Page, label: string, ownerOn
   const text = await page.locator("main").innerText();
   for (const value of ownerOnly) expect(text, `${label} rendered a value only the owner may see: ${JSON.stringify(value)}`).not.toContain(value);
 }
-/** Asserts the two receiving addresses carry none of the owner's values, and are not server faults. */
-async function expectReceivingAddressesSealed(page: Page, ownerOnly: readonly string[]): Promise<void> {
+/** Asserts the two receiving addresses carry none of the owner's values, and are not server faults. */ async function expectReceivingAddressesSealed(page: Page, ownerOnly: readonly string[]): Promise<void> {
   const judged = ownerOnly.filter((value) => value !== READING_SCOPE_IDENTIFIER); // The scope a served edition states is the authority its own read ran under, not a record of the owner's.
   for (const address of RECEIVING_ADDRESSES) {
     const probe = await get(page, address.label, address.path);
@@ -269,7 +263,7 @@ test.describe("criterion 19 — context and access", () => {
     await page.getByRole("menuitem").filter({ hasText: "Students Ministry" }).first().click();
     const guard = page.getByRole("alertdialog", { name: "Switch context?" });
     await expect(guard).toBeVisible();
-    await expect(guard.getByRole("button", { name: "Stay here" })).toBeEnabled(); // The guard is the one place a change of context is decided, and staying is always offered and never disabled. No save is offered on this surface: the workspace never saves on the worker's behalf, so the only decision it can put here is whether to discard what is on screen.
+    await expect(guard.getByRole("button", { name: "Stay here" })).toBeEnabled(); // The guard is the one place a change of context is decided, and staying is always offered and never disabled. The gifts ledger holds no unsaved work of its own, so this guard offers Stay and Discard alone: a save is offered only for work the surface behind the dialog reports as unsaved, which the edit surface's own case below exercises.
     await guard.getByRole("button", { name: "Discard and switch" }).click();
     await expect(page.getByRole("button", { name: /Active context: .*Students Ministry/u })).toBeVisible(); // The new context is stated by the shell, and the surface behind it is that context's own reading: an unavailable finance source, stated as unavailable, rather than the previous context's rows.
     await expect(page.getByRole("heading", { name: "The gifts ledger could not be read" })).toBeVisible();
@@ -287,6 +281,25 @@ test.describe("criterion 19 — context and access", () => {
     await expect(page.getByRole("button", { name: /Active context: .*Youth Ministry/u })).toBeVisible();
     await expect(youthGift).toHaveCount(1);
     await expect.poll(() => reads.length, { message: "the first context is read again rather than restored from a cached envelope" }).toBeGreaterThan(readsBeforeReturn);
+  });
+  test("the guard offers to save an unsaved edit or discard it, and discarding clears what was typed", async ({ page }) => {
+    await actAs(page, OWNER_SESSION);
+    await page.goto(`/partners/${OWNER_PARTNER_ID}/edit`);
+    const displayName = page.getByLabel("Display name"); // The one control the record's own edit surface offers for its display name, which is the value this case edits.
+    await expect(displayName).toHaveValue(OWNER_PARTNER_NAME); // The form opens on the value the record holds, so the suffix typed below is the whole of the difference the guard is asked about.
+    const typedSuffix = " (draft)";
+    await displayName.fill(`${OWNER_PARTNER_NAME}${typedSuffix}`);
+    await page.getByRole("button", { name: /Change context/u }).click(); // A context change requested from the header, while the edit above is unsaved: the decision the guard must put to the worker.
+    await page.getByRole("menuitem").filter({ hasText: "Students Ministry" }).first().click();
+    const guard = page.getByRole("alertdialog", { name: "Switch context?" });
+    await expect(guard).toBeVisible();
+    await expect(guard.getByText(/permitted fields have been edited on this screen and not saved yet/u)).toBeVisible(); // The guard names the work it is asking about in the owning surface's words, so the worker is not deciding about a general warning.
+    await expect(guard.getByRole("button", { name: "Save and switch" })).toBeEnabled(); // Saving is offered because the edit surface reported the unsaved edit, and it is the surface's own save that runs rather than one this workspace invents.
+    await expect(guard.getByRole("button", { name: "Discard and switch" })).toBeEnabled(); // Discarding is offered beside it, so the choice is the worker's rather than a default applied for them.
+    await expect(guard.getByRole("button", { name: "Stay here" })).toBeEnabled(); // Staying is always offered, so the three answers the specification names are all on the dialog at once.
+    await guard.getByRole("button", { name: "Discard and switch" }).click();
+    await expect(page.getByRole("button", { name: /Active context: .*Students Ministry/u })).toBeVisible(); // The switch itself completes and the shell states the context now in force.
+    await expect(displayName).toHaveValue(OWNER_PARTNER_NAME); // Discarding is the worker's answer that nothing from the old context is carried over: the typed suffix is gone and the field reads the record's own value again.
   });
   test("a state-changing request another site caused is refused before it reaches the store", async ({ page }) => {
     await actAs(page, OWNER_SESSION);

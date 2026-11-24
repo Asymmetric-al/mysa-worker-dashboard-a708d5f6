@@ -25,8 +25,7 @@ export type ImportResultsRow = { readonly rowNumber: number; readonly decisionLa
   readonly rowWindow: ImportRowWindow;
   readonly stoppableRows: number;
   readonly stateCounts: Readonly<Record<ImportRowState, number>> | null;
-  /** The stop this import's receipt records, exactly as the read states it, or `null` while the import has not been stopped. */
-  readonly cancellation: ImportReceiptCancellationView | null;
+  /** The stop this import's receipt records, exactly as the read states it, or `null` while the import has not been stopped. */ readonly cancellation: ImportReceiptCancellationView | null;
 }
 /** Props of {@link StepResults}. */ export interface StepResultsProps {
   readonly results: ImportResultsView;

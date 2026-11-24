@@ -269,8 +269,7 @@ export function canonicalJson(value: unknown): string {
   }
   return "null";
 }
-/** Reads the receipt stored under one import operation, validating it with `RECEIPT_SCHEMA` and then checking that its numbers agree with each other. */
-export function readStoredReceipt(stored: unknown, importOperationId: string): ImportReceiptRead {
+/** Reads the receipt stored under one import operation, validating it with `RECEIPT_SCHEMA` and then checking that its numbers agree with each other. */ export function readStoredReceipt(stored: unknown, importOperationId: string): ImportReceiptRead {
   if (stored === null || stored === undefined) return { kind: "not-found", importOperationId, message: NOT_FOUND_MESSAGE };
   const parsed = RECEIPT_SCHEMA.safeParse(stored);
   if (!parsed.success) return { kind: "unavailable", importOperationId, reasonCode: "receipt-unreadable", reason: `The receipt stored under this import operation cannot be read (${describeFirstIssue(parsed.error)}). ${UNTRUSTWORTHY_TRAILER}` };

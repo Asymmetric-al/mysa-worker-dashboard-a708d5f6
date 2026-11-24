@@ -17,8 +17,8 @@ const REFERRAL_NEW_WINDOW_DAYS = 14;
 const REFERRAL_CONTINUATION_DAYS = 30;
 const MAX_SELECTED_PARTNERS = 200;
 const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
-function boundedTextSchema(maxCodePoints: number, messages: { readonly required: string; readonly tooLong: string }): z.ZodString {
-  return z
+const boundedTextSchema = (maxCodePoints: number, messages: { readonly required: string; readonly tooLong: string }): z.ZodString =>
+  z
     .string()
     .trim()
     .superRefine((value, context) => {
@@ -27,7 +27,6 @@ function boundedTextSchema(maxCodePoints: number, messages: { readonly required:
         context.addIssue({ code: "custom", message: messages.required });
       } else if (length > maxCodePoints) context.addIssue({ code: "custom", message: messages.tooLong });
     });
-}
 const identifierFieldSchema = (message: string): z.ZodString => z.string().trim().min(1, message);
 const civilDateSchema: z.ZodType<CivilDate> = z
   .string()
@@ -64,9 +63,7 @@ function readState(documents: StoredDocuments): OutreachState {
   if (!parsed.success) throw new StoredRecordsUnreadable();
   return parsed.data;
 }
-function writeState(documents: StoredDocuments, state: OutreachState, changed: Partial<OutreachState>): void {
-  documents.state = { ...state, ...changed, context: { ...state.context, revision: nextRevision(state.context.revision) } };
-}
+const writeState = (documents: StoredDocuments, state: OutreachState, changed: Partial<OutreachState>): void => void (documents.state = { ...state, ...changed, context: { ...state.context, revision: nextRevision(state.context.revision) } });
 function nextRevision(revision: string): string {
   const parsed = REVISION_COUNTER.exec(revision);
   const counter = parsed?.groups?.counter;
@@ -247,8 +244,7 @@ const removeMemberPayloadSchema = z.strictObject({
   reason: boundedTextSchema(500, { required: "Enter a reason or leave the reason empty.", tooLong: "Keep the reason to 500 characters or fewer." }).optional(),
 });
 type RemoveMemberPayload = z.infer<typeof removeMemberPayloadSchema>;
-/** Removes one partner from an initiative's reviewed working list. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const removeMember = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Removes one partner from an initiative's reviewed working list. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const removeMember = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
   runOutreachMutation<RemoveMemberPayload, MutationResult>(input, source, { schema: removeMemberPayloadSchema, name: "removeMember", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applyRemoveMember });
 function applyRemoveMember(context: MutationContext, payload: RemoveMemberPayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
@@ -270,8 +266,7 @@ function applyRemoveMember(context: MutationContext, payload: RemoveMemberPayloa
 }
 const returnMemberPayloadSchema = z.strictObject({ initiativeId: identifierFieldSchema("This change is missing the initiative it belongs to; reopen the initiative and try again."), memberId: identifierFieldSchema("This change is missing the working-list member it belongs to; reload the working list and try again.") });
 type ReturnMemberPayload = z.infer<typeof returnMemberPayloadSchema>;
-/** Returns one removed partner to an initiative's reviewed working list. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const returnMember = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Returns one removed partner to an initiative's reviewed working list. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const returnMember = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
   runOutreachMutation<ReturnMemberPayload, MutationResult>(input, source, { schema: returnMemberPayloadSchema, name: "returnMember", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applyReturnMember });
 function applyReturnMember(context: MutationContext, payload: ReturnMemberPayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
@@ -297,8 +292,7 @@ const setStagePayloadSchema = z.strictObject({
   stage: z.enum(INITIATIVE_STAGES, { error: "Choose a stage from the approved list, or clear the stage." }).nullable(),
 });
 type SetStagePayload = z.infer<typeof setStagePayloadSchema>;
-/** Records one human assessment of where a working-list member stands. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const setStage = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Records one human assessment of where a working-list member stands. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const setStage = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
   runOutreachMutation<SetStagePayload, MutationResult>(input, source, { schema: setStagePayloadSchema, name: "setStage", readCurrent: (documents, payload, scope) => memberTargetOf(documents, payload.initiativeId, payload.memberId, scope), apply: applySetStage });
 function applySetStage(context: MutationContext, payload: SetStagePayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
@@ -390,8 +384,7 @@ export const presentRequestPayloadSchema = z.strictObject({
   versionRef: identifierFieldSchema("Record which terms version was presented."),
 });
 type PresentRequestPayload = z.infer<typeof presentRequestPayloadSchema>;
-/** Records the actual presentation of a named terms version. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const presentRequest = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Records the actual presentation of a named terms version. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const presentRequest = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
   runOutreachMutation<PresentRequestPayload, MutationResult>(input, source, { schema: presentRequestPayloadSchema, name: "presentRequest", readCurrent: (documents, payload, scope) => requestTargetOf(documents, payload.requestId, scope), apply: applyPresentRequest });
 function applyPresentRequest(context: MutationContext, payload: PresentRequestPayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
@@ -494,8 +487,7 @@ export const reopenInitiativePayloadSchema = z.strictObject({
   reason: boundedTextSchema(500, { required: "Enter a reason or leave the reason empty.", tooLong: "Keep the reason to 500 characters or fewer." }).optional(),
 });
 type ReopenInitiativePayload = z.infer<typeof reopenInitiativePayloadSchema>;
-/** Reopens a closed initiative for further solicitation. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const reopenInitiative = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Reopens a closed initiative for further solicitation. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const reopenInitiative = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
   runOutreachMutation<ReopenInitiativePayload, MutationResult>(input, source, { schema: reopenInitiativePayloadSchema, name: "reopenInitiative", readCurrent: (documents, payload, scope) => initiativeTargetOf(documents, payload.initiativeId, scope), apply: applyReopenInitiative });
 function applyReopenInitiative(context: MutationContext, payload: ReopenInitiativePayload, scope: Scope): ApplyResult<MutationResult> {
   const state = readState(context.docs);
@@ -563,15 +555,14 @@ function referralTargetOf(documents: StoredDocuments, referralId: string): Curre
   return cycle === undefined ? { kind: "absent" } : recordTarget(cycle.revision, cycle);
 }
 /** Continues one ordinarily expired referral cycle, producing at most one successor. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function continueReferral(input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> {
-  return runOutreachMutation<ContinueReferralPayload, MutationResult>(input, source, {
+export const continueReferral = async (input: MutationInput<unknown>, source?: SessionSource): Promise<MutationOutcome> =>
+  runOutreachMutation<ContinueReferralPayload, MutationResult>(input, source, {
     schema: continueReferralPayloadSchema,
     name: "continueReferral",
     authorize: (session) => continuationAuthority(session, input),
     readCurrent: (documents, payload) => referralTargetOf(documents, payload.referralId),
     apply: applyContinueReferral,
   });
-}
 function applyContinueReferral(context: MutationContext, payload: ContinueReferralPayload): ApplyResult<MutationResult> {
   const state = readState(context.docs);
   const cycle = state.referrals.find((row) => row.referralId === payload.referralId);

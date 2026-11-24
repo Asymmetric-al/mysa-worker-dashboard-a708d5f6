@@ -63,24 +63,21 @@ function urlOf(job: UpdatesReadJob, params: Readonly<Record<string, JsonParam>>)
 }
 const statedId = (value: string | undefined): string => value?.trim() ?? "";
 function seedOf<T>(options: UpdatesQueryOptions<T>): UpdatesQueryOptions<T> {
-  if (options.initialData === undefined) return {};
-  return options.initialDataUpdatedAt === undefined ? { initialData: options.initialData } : { initialData: options.initialData, initialDataUpdatedAt: options.initialDataUpdatedAt };
+  return options.initialData === undefined ? {} : options.initialDataUpdatedAt === undefined ? { initialData: options.initialData } : { initialData: options.initialData, initialDataUpdatedAt: options.initialDataUpdatedAt };
 }
-function queryStateOf<T>(query: UseQueryResult<ReadResult<ReadEnvelope<T>>, never>, scope: Scope): UpdatesQueryState<T> {
-  return {
-    result: query.data,
-    isPending: query.isPending,
-    isFetching: query.isFetching,
-    isStale: (result) => result.kind === "envelope" && !sameScope(result.envelope.scope, scope),
-    refetch: () => {
-      void query.refetch();
-    },
-    readNow: async () => {
-      const answered = await query.refetch();
-      return answered.data ?? query.data;
-    },
-  };
-}
+const queryStateOf = <T>(query: UseQueryResult<ReadResult<ReadEnvelope<T>>, never>, scope: Scope): UpdatesQueryState<T> => ({
+  result: query.data,
+  isPending: query.isPending,
+  isFetching: query.isFetching,
+  isStale: (result) => result.kind === "envelope" && !sameScope(result.envelope.scope, scope),
+  refetch: () => {
+    void query.refetch();
+  },
+  readNow: async () => {
+    const answered = await query.refetch();
+    return answered.data ?? query.data;
+  },
+});
 function useUpdatesRead<T>(options: UpdatesQueryOptions<T>, scope: Scope, job: UpdatesReadJob, asked: Readonly<Record<string, JsonParam | undefined>>, staleTime: number = 30_000): UpdatesQueryState<T> {
   const params = statedParams(asked);
   const enabled = Object.values(params).every((value) => value !== "");

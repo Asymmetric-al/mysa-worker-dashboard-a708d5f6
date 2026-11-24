@@ -141,8 +141,7 @@ function refusalSummary(fields: Readonly<Record<string, readonly string[]>>): st
   const messages = Object.values(fields).flat();
   return messages.length === 0 ? undefined : messages.join(" ");
 }
-/** The one referral detail body. */
-export function ReferralDetail({ scope, referralId, layout, dir, breadcrumb, className }: ReferralDetailProps): ReactElement {
+/** The one referral detail body. */ export function ReferralDetail({ scope, referralId, layout, dir, breadcrumb, className }: ReferralDetailProps): ReactElement {
   const requestedId = referralId.trim();
   const referral = useReferral({ scope, referralId: requestedId });
   const { refetch } = referral;
@@ -167,7 +166,7 @@ export function ReferralDetail({ scope, referralId, layout, dir, breadcrumb, cla
     case "envelope": {
       const { envelope } = read;
       const data = envelope.data;
-      // The one continuation an eligible cycle can hold is offered beside that card and never inside it: the card states a read-only permission over facts a continuation leaves exactly as it carries them, and a cycle that has not ended, one already continued and a setting that is off all render the history alone. A continuation this visit has already taken stands beside that card too, because the reread that follows it no longer offers the action it took and the receipt is the only record of what it produced.
+      // The one continuation an ended cycle can hold is offered beside that card and never inside it: the card states a read-only permission over facts a continuation leaves exactly as it carries them, so a cycle whose continuation the read withholds states that reason on the card itself, and this action is composed beside it only when the action is offered or a receipt stands. A cycle that has not ended is not permitted history at all: it keeps the full record body, whose Continue panel states its own reason. A continuation this visit has already taken stands beside that card too, because the reread that follows it no longer offers the action it took and the receipt is the only record of what it produced.
       if (data.view === "expired-history") {
         const cycleId = data.referral.referralId;
         const keepReceipt = (outcome: MutationOutcome): void => {

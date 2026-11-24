@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type ReactElement } from "react";
 import ActionReview, { type MutationSubmit } from "@/components/action-review";
+import { factFrame } from "@/components/fact-list";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,34 +36,19 @@ type StageIntent = { readonly stage: string | null; readonly expectedRevision: s
 type RecordedStage = { readonly memberId: string; readonly stage: string | null; readonly revision: string };
 const carriedForward = (recorded: RecordedStage | null, member: StageSelectorMember): RecordedStage | null => (recorded === null || recorded.memberId !== member.memberId || recorded.revision === member.revision ? null : recorded);
 type PendingAttempt = { readonly operationId: string; readonly resolve: (outcome: MutationOutcome) => void };
-function stageStateOf(stage: string | null, admittedStages: readonly string[], sourceState: StageSourceState | undefined): StageState | null {
-  if (sourceState !== undefined) return sourceState;
-  if (stage === null) return null;
-  return isAdmittedStage(admittedStages, stage) ? "recorded" : "retired";
-}
+const stageStateOf = (stage: string | null, admittedStages: readonly string[], sourceState: StageSourceState | undefined): StageState | null => (sourceState !== undefined ? sourceState : stage === null ? null : isAdmittedStage(admittedStages, stage) ? "recorded" : "retired");
 const presentationOf = (state: StageState | null): StagePresentation => (state === null ? { variant: "outline", offersControls: true } : STAGE_PRESENTATION[state]);
 const stageTextOf = (stage: string | null): string => (stage === null ? REQUESTED_TERMS_COPY.notStated : stage);
+const StageFact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-2", termClassName: "font-medium", valueClassName: "min-w-0 wrap-anywhere" });
 const StageComparison = ({ recorded, intended }: { readonly recorded: string | null; readonly intended: string | null }): ReactElement => (
   <dl className="flex min-w-0 flex-col gap-1.5">
-    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-      <dt className="font-medium">{"Recorded stage"}</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        <bdi>{stageTextOf(recorded)}</bdi>
-      </dd>
-    </div>
-    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-      <dt className="font-medium">{"Stage after this change"}</dt>
-      <dd className="min-w-0 wrap-anywhere">
-        <bdi>{stageTextOf(intended)}</bdi>
-      </dd>
-    </div>
+    <StageFact term={"Recorded stage"} value={<bdi>{stageTextOf(recorded)}</bdi>} />
+    <StageFact term={"Stage after this change"} value={<bdi>{stageTextOf(intended)}</bdi>} />
   </dl>
 );
 const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", memberId: "Working-list member", stage: STAGE_SELECTOR_COPY.label };
 function changeRefusalOf(member: StageSelectorMember, stageAction: ReadAction | undefined): string | null {
-  if (member.state !== undefined && member.state !== "included") return MEMBERSHIP_STATE_COPY[member.state].description;
-  if (stageAction !== undefined && !stageAction.available) return stageAction.reason ?? "The stage of this working-list member cannot be changed in the current session.";
-  return null;
+  return member.state !== undefined && member.state !== "included" ? MEMBERSHIP_STATE_COPY[member.state].description : stageAction !== undefined && !stageAction.available ? (stageAction.reason ?? "The stage of this working-list member cannot be changed in the current session.") : null;
 }
 /** One working-list member's stage: the closed choice, the state it stands in, the two explicit actions, and the review-then-receipt every real change goes through. */
 export default function StageSelector({ initiativeId, member, admittedStages, scope, expectedRevision, stageAction, stageSourceState, onOutcome, onReturn, onCheckResult, className }: StageSelectorProps): ReactElement {
@@ -143,7 +129,6 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
   const offersClear = offersStageChoice && recordedStage !== null;
   const offersReturn = onReturn !== undefined && member.state === "removed";
   const shownValue: string | null = intent === null ? recordedStage : intent.stage;
-  const showsRetiredOption = recordedStage !== null && !isAdmittedStage(admittedStages, recordedStage);
   const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>): void => beginChange(event.target.value === ABSENT_OPTION_VALUE ? null : event.target.value);
   return (
     <div data-slot="stage-selector" data-member-id={member.memberId} data-stage-state={stageState ?? undefined} className={cn("flex min-w-0 flex-col gap-2", className)}>
@@ -164,7 +149,7 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <NativeSelect id={selectId} value={shownValue ?? ABSENT_OPTION_VALUE} disabled={!offersStageChoice} aria-describedby={refusedReason === null ? helpId : `${helpId} ${reasonId}`} onChange={handleSelectChange} className="max-w-full">
               {shownValue === null ? <NativeSelectOption value={ABSENT_OPTION_VALUE}>{stageTextOf(null)}</NativeSelectOption> : null}
-              {showsRetiredOption ? <NativeSelectOption value={recordedStage ?? ABSENT_OPTION_VALUE}>{`${stageTextOf(recordedStage)} — ${STAGE_STATE_COPY.retired.label}`}</NativeSelectOption> : null}
+              {recordedStage !== null && !isAdmittedStage(admittedStages, recordedStage) ? <NativeSelectOption value={recordedStage ?? ABSENT_OPTION_VALUE}>{`${stageTextOf(recordedStage)} — ${STAGE_STATE_COPY.retired.label}`}</NativeSelectOption> : null}
               {admittedStages.map((stage) => (
                 <NativeSelectOption key={stage} value={stage}>
                   {stage}

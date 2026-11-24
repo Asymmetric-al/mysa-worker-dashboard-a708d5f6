@@ -57,8 +57,7 @@ function resolveCustomPeriod(period: Extract<TargetPeriod, { readonly kind: "cus
   if (compareCivil(period.end, period.start) < 0) return err("invalid-period");
   return compareCivil(date, period.start) < 0 || compareCivil(date, period.end) > 0 ? err("no-period") : ok({ period, start: period.start, endInclusive: period.end, exclusiveEnd: nextDay(period.end), startResolution: "aligned", exclusiveEndResolution: "aligned" });
 }
-/** The period of `anchor`'s calendar that contains `date`, or `"invalid-period"` for an inverted custom range and `"no-period"` for a date outside a one-off custom range. */
-export const resolvePeriodContaining = (anchor: PeriodAnchor, date: CivilDate): Result<ResolvedPeriod, TargetRefusalReason> =>
+/** The period of `anchor`'s calendar that contains `date`, or `"invalid-period"` for an inverted custom range and `"no-period"` for a date outside a one-off custom range. */ export const resolvePeriodContaining = (anchor: PeriodAnchor, date: CivilDate): Result<ResolvedPeriod, TargetRefusalReason> =>
   anchor.period.kind === "weekly" ? ok(resolveWeeklyPeriod(anchor, date)) : anchor.period.kind === "monthly" ? ok(resolveMonthlyPeriod(anchor, date)) : anchor.period.kind === "custom" ? resolveCustomPeriod(anchor.period, date) : assertNever(anchor.period, "Unhandled target period");
 /** The period that `now` falls in, read as a civil date in the declared zone before the calendar is resolved — so a monthly or weekly boundary is a civil-date boundary and never an elapsed-hour one. */
 export function resolveCurrentPeriod(anchor: PeriodAnchor, zone: string, now: Temporal.Instant): Result<ResolvedPeriod, TargetRefusalReason> {
@@ -95,8 +94,7 @@ function findLatestVersion(versions: readonly TargetVersion[]): Result<TargetVer
 }
 const sortedByEffectiveFrom = (versions: readonly TargetVersion[]): readonly TargetVersion[] => versions.toSorted((one, two) => compareCivil(one.effectiveFrom, two.effectiveFrom));
 const repeatsPlan = (version: TargetVersion, change: TargetVersionChange): boolean => version.quantity === change.quantity && version.measure === change.measure && version.calendarStart.equals(change.calendarStart);
-/** The history with one prospective version appended, the version it follows closed the day before that boundary — `"invalid-quantity"`, `"no-version"`, `"overlapping-versions"`. */
-export function startProspectiveVersion(input: TargetVersionPlanInput): Result<readonly TargetVersion[], TargetRefusalReason> {
+/** The history with one prospective version appended, the version it follows closed the day before that boundary — `"invalid-quantity"`, `"no-version"`, `"overlapping-versions"`. */ export function startProspectiveVersion(input: TargetVersionPlanInput): Result<readonly TargetVersion[], TargetRefusalReason> {
   if (!Number.isSafeInteger(input.change.quantity) || input.change.quantity <= 0) return err("invalid-quantity");
   const latest = findLatestVersion(input.versions);
   if (!latest.ok) return latest;
@@ -131,12 +129,10 @@ export const resolveTargetState = (input: TargetStateInput): TargetState => (inp
 export type TargetProgressInput = { readonly target: TargetRecord; readonly version: TargetVersion; readonly period: ResolvedPeriod; readonly count: number | null };
 export type WorkerTargetProgress = { readonly revisionId: string; readonly privateLabel: string; readonly measure: TargetMeasure; readonly quantity: number; readonly period: ResolvedPeriod; readonly count: number | null; readonly state: TargetState; readonly homePlacement: TargetHomePlacement };
 export type CoachTargetProgress = { readonly revisionId: string; readonly measure: TargetMeasure; readonly quantity: number; readonly period: ResolvedPeriod; readonly count: number | null; readonly state: TargetState };
-/** The worker's progress for one period of one target, resolved against the version that period was measured under and disclosing placement to the worker's own surface. */
-export function workerTargetProgress({ target, version, period, count }: TargetProgressInput): WorkerTargetProgress {
+/** The worker's progress for one period of one target, resolved against the version that period was measured under and disclosing placement to the worker's own surface. */ export function workerTargetProgress({ target, version, period, count }: TargetProgressInput): WorkerTargetProgress {
   return { revisionId: version.revisionId, privateLabel: target.privateLabel, measure: version.measure, quantity: version.quantity, period, count, state: resolveTargetState({ target, recorded: count, placement: target.homePlacement }), homePlacement: target.homePlacement };
 }
-/** The coach's progress for one period of one target, resolved without consulting Home placement so a coach can neither read it nor learn that it exists. */
-export const coachTargetProgress = (input: TargetProgressInput): CoachTargetProgress => ({
+/** The coach's progress for one period of one target, resolved without consulting Home placement so a coach can neither read it nor learn that it exists. */ export const coachTargetProgress = (input: TargetProgressInput): CoachTargetProgress => ({
   revisionId: input.version.revisionId,
   measure: input.version.measure,
   quantity: input.version.quantity,

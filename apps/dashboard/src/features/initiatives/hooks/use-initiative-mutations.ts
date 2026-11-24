@@ -12,10 +12,8 @@ import { createInitiativePayloadSchema, type CreateInitiativePayload } from "../
 import { addMembersPayloadSchema, removeMemberPayloadSchema, returnMemberPayloadSchema, type AddMembersPayload, type MemberAction, type RemoveMemberPayload, type ReturnMemberPayload } from "../schemas/member";
 import { setStagePayloadSchema, type StagePayload } from "../schemas/stage";
 const INVALIDATED_JOBS = ["initiatives", "initiative", "initiative-results"] as const;
-/** The one invalidation policy for this family's reads: let the reads answer with what the service now holds, rather than writing the outcome's record into the cache by hand. */
-export async function invalidateInitiativeReads(queryClient: QueryClient, scope: Scope): Promise<void> {
-  const prefix = scopeKey(scope);
-  await Promise.all(INVALIDATED_JOBS.map((job) => queryClient.invalidateQueries({ queryKey: [...prefix, job] })));
+/** The one invalidation policy for this family's reads: let the reads answer with what the service now holds, rather than writing the outcome's record into the cache by hand. */ export async function invalidateInitiativeReads(queryClient: QueryClient, scope: Scope): Promise<void> {
+  await Promise.all(INVALIDATED_JOBS.map((job) => queryClient.invalidateQueries({ queryKey: [...scopeKey(scope), job] })));
 }
 const ACCEPTING_OUTCOMES: ReadonlySet<MutationOutcome["outcome"]> = new Set<MutationOutcome["outcome"]>(["accepted", "alreadyAccepted", "unchanged"]);
 export type InitiativeMutationState = { status: "idle" } | { status: "submitting" } | { status: "settled"; outcome: MutationOutcome };
@@ -23,14 +21,12 @@ export type NamedChange<P> = { readonly operationId: string; readonly expectedRe
 type InitiativeMutationHandle<Variables> = { readonly submit: (variables: Variables) => void; readonly state: InitiativeMutationState };
 type WireBody<P, W> = (payload: P) => W;
 type MembersWire<P, Action extends MemberAction> = P & { readonly action: Action };
-/** The one browser mutation this family submits: one named change, its schema, and the body the route reads. */
-export function useInitiativeMutation<P, W>(path: InitiativeApiPath, schema: ZodType<P>, toWire: WireBody<P, W>, scope: Scope): InitiativeMutationHandle<NamedChange<P>> {
+/** The one browser mutation this family submits: one named change, its schema, and the body the route reads. */ export function useInitiativeMutation<P, W>(path: InitiativeApiPath, schema: ZodType<P>, toWire: WireBody<P, W>, scope: Scope): InitiativeMutationHandle<NamedChange<P>> {
   const queryClient = useQueryClient();
   const mutation = useMutation<MutationOutcome, never, NamedChange<P>>({
     mutationFn: async (change: NamedChange<P>): Promise<MutationOutcome> => {
       const parsed = schema.safeParse(change.payload);
-      if (!parsed.success) return invalid({ operationId: change.operationId, fields: parsed.error });
-      return postMutation(path, { operationId: change.operationId, scope, expectedRevision: change.expectedRevision, payload: toWire(parsed.data) });
+      return !parsed.success ? invalid({ operationId: change.operationId, fields: parsed.error }) : postMutation(path, { operationId: change.operationId, scope, expectedRevision: change.expectedRevision, payload: toWire(parsed.data) });
     },
     retry: false,
     onSuccess: async (outcome: MutationOutcome): Promise<void> => {

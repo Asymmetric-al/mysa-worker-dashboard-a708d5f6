@@ -10,8 +10,7 @@ export const PERSONA_SESSION_STATE_LABELS: Readonly<Record<PersonaSessionState, 
   expired: { label: "Session expired", tone: "caution" },
   "no-access": { label: "No account access", tone: "caution" },
 };
-/** What each session state produces, stated beside the state so the scenario is legible without running it (AAP 0.10.1 shell row, criterion 19). */
-export const PERSONA_SESSION_STATE_OUTCOMES: Readonly<Record<PersonaSessionState, string>> = {
+/** What each session state produces, stated beside the state so the scenario is legible without running it (AAP 0.10.1 shell row, criterion 19). */ export const PERSONA_SESSION_STATE_OUTCOMES: Readonly<Record<PersonaSessionState, string>> = {
   "signed-in": "The workspace renders for the selected persona.",
   unavailable: "The session cannot be read, so the surface offers its recovery path instead of any data.",
   denied: "The persona is refused, and no count, title, size or existence of a hidden record is revealed.",

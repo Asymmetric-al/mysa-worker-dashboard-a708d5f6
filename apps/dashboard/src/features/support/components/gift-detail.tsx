@@ -170,7 +170,6 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
   const trimmed = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
   const reviewed = { title: trimmed(payload.title), category: trimmed(payload.category) || undefined, dueOn: trimmed(payload.dueOn) || undefined, partnerId: trimmed(payload.partnerId) || undefined };
   const submit: MutationSubmit<FollowUpTaskInput> = (request) => followUp.mutateAsync({ scope: request.scope, expectedRevision: request.expectedRevision, payload: request.payload });
-  const settledSuccess = lastOutcome !== null && (lastOutcome.outcome === "accepted" || lastOutcome.outcome === "alreadyAccepted");
   return (
     <Frame dir={dir} className={className} returnHref={returnHref}>
       <header className="flex min-w-0 flex-col gap-3">
@@ -333,7 +332,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
           fieldLabels={FIELD_LABELS}
           headingLevel={3}
         />
-        {settledSuccess ? (
+        {lastOutcome !== null && (lastOutcome.outcome === "accepted" || lastOutcome.outcome === "alreadyAccepted") ? (
           <div className="flex min-w-0 flex-col gap-2">
             <p className="type-supporting min-w-0 text-pretty">{GIVING_FOLLOW_UP.resultNote}</p>
             <div className="flex min-w-0 flex-wrap items-center gap-2">

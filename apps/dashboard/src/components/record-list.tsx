@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, Columns3Icon } from "lucide-react";
 import {
@@ -54,15 +54,12 @@ export type RecordListProps<TRow extends RowData> = {
   rowActions?: (row: TRow) => ReactNode;
   rowLabel?: (row: TRow) => string;
   itemNoun?: string;
-  /** The interface locale this list formats its counts in, stated by the route that composes it; left off, the application default interface locale applies. */
-  locale?: string;
+  /** The interface locale this list formats its counts in, stated by the route that composes it; left off, the application default interface locale applies. */ locale?: string;
   pageSizeOptions?: readonly number[];
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
-  /** Whether the surface around this list already offers the one column-visibility control for the same column state: the list then renders no control of its own, so one list never states two controls for one concern. Left off, the list shows its own control. */
-  suppressColumnVisibilityMenu?: boolean;
-  /** A surface's own notice for a result no filter narrows and an empty collection, replacing this list's generic one where the surface knows what an empty collection means for its own records; the first action it offers belongs inside it. */
-  emptyState?: ReactNode;
+  /** Whether the surface around this list already offers the one column-visibility control for the same column state: the list then renders no control of its own, so one list never states two controls for one concern. Left off, the list shows its own control. */ suppressColumnVisibilityMenu?: boolean;
+  /** A surface's own notice for a result no filter narrows and an empty collection, replacing this list's generic one where the surface knows what an empty collection means for its own records; the first action it offers belongs inside it. */ emptyState?: ReactNode;
   stickyOffset?: string;
   maxHeight?: string;
   className?: string;
@@ -80,12 +77,6 @@ const MIXED_CHECKBOX_CLASS = cn(
   "data-[indeterminate]:before:h-[2px] data-[indeterminate]:before:w-2 data-[indeterminate]:before:rounded-full",
   "data-[indeterminate]:before:bg-primary-foreground data-[indeterminate]:before:content-['']",
 );
-/** The identifier of the region a list gives its rows' actions to render a settled result into, so the result is read at the list's full width below the table instead of inside a row's actions cell; `null` where no list provides one, and the result then renders where it is produced. The identifier travels rather than the element, because the region is part of the list's own markup: no row needs to hold a copy of it in state, and no row's render has to wait for one. */
-const RowResultsIdContext = createContext<string | null>(null);
-/** The identifier of the list's row-result region, or `null` for a surface that renders outside a list and places its own result. */
-export function useRecordListRowResultsId(): string | null {
-  return useContext(RowResultsIdContext);
-}
 type ColumnVisibilityItem = { readonly id: string; readonly label: string; readonly visible: boolean; readonly canHide: boolean };
 function querySignature(queryState: RecordListQueryState): string {
   const sorting = queryState.sort.map((entry) => `${entry.id}:${entry.desc ? "desc" : "asc"}`).join(",");
@@ -98,8 +89,7 @@ function querySignature(queryState: RecordListQueryState): string {
 const SCROLL_PLACE_TOLERANCE_PX = 2; // How far a re-applied place may stand from the one the reader left: a settled layout can move a row by a pixel between the two readings, while a wider gap is a different place on the list.
 const SCROLL_PLACE_FRAME_BUDGET = 90; // How many frames a return re-applies the reader's place for, about a second and a half at 60 fps: long enough for a re-read to land, and short enough that a place the document cannot reach settles instead of fighting the reader's own scrolling.
 const SCROLL_PLACE_STALLED_FRAMES = 60; // How many frames a document whose reachable height has stopped growing is given before the stored place counts as unreachable, so a list re-read shorter than it was left restores as far as it can and then lets go.
-/** The place a reader left one list at, read back from this tab's own session storage: the place is the reader's own and is never sent anywhere, and a browser that refuses session storage simply holds none. */
-function storedScrollPlace(key: string): number | undefined {
+/** The place a reader left one list at, read back from this tab's own session storage: the place is the reader's own and is never sent anywhere, and a browser that refuses session storage simply holds none. */ function storedScrollPlace(key: string): number | undefined {
   try {
     const stated = window.sessionStorage.getItem(key);
     const place = stated === null ? 0 : Number(stated);
@@ -108,8 +98,7 @@ function storedScrollPlace(key: string): number | undefined {
     return undefined; // A refused session storage is a browser that cannot keep a place, so the list is read without one rather than failing on the store that keeps it.
   }
 }
-/** Keeps the place a reader stands at for the list they are reading, so a return to the same list, filters, page window and ordering finds it. */
-function storeScrollPlace(key: string, place: number): void {
+/** Keeps the place a reader stands at for the list they are reading, so a return to the same list, filters, page window and ordering finds it. */ function storeScrollPlace(key: string, place: number): void {
   try {
     window.sessionStorage.setItem(key, String(place));
   } catch {
@@ -167,8 +156,7 @@ function normalisePageSize(pageSize: number): number {
   const whole = Math.trunc(stated);
   return whole >= FIRST_PAGE ? whole : current;
 }
-/** One address parameter's own number, or `undefined` when it states none a window can use: a repeated parameter is read once, and text that is not a whole number at or above the first page is not a window. */
-function statedWindowNumber(search: ReadonlyURLSearchParams, name: string): number | undefined {
+/** One address parameter's own number, or `undefined` when it states none a window can use: a repeated parameter is read once, and text that is not a whole number at or above the first page is not a window. */ function statedWindowNumber(search: ReadonlyURLSearchParams, name: string): number | undefined {
   const stated = search.get(name);
   if (stated === null) return undefined;
   const parsed = Number(stated);
@@ -227,7 +215,6 @@ export function useRecordListWindow(opening: RecordListWindow): RecordListWindow
   className,
 }: RecordListProps<TRow>): ReactElement {
   const cellIdBase = useId();
-  const rowResultsId = useId();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const selectionEnabled = onSelectionChange !== undefined;
@@ -495,7 +482,7 @@ export function useRecordListWindow(opening: RecordListWindow): RecordListWindow
                           if (cell.column.id === ACTIONS_COLUMN_ID) {
                             return (
                               <TableCell key={cell.id} className="w-10 text-end">
-                                <RowResultsIdContext.Provider value={rowResultsId}>{rowActions === undefined ? null : rowActions(row.original)}</RowResultsIdContext.Provider>
+                                {rowActions === undefined ? null : rowActions(row.original)}
                               </TableCell>
                             );
                           }
@@ -510,8 +497,6 @@ export function useRecordListWindow(opening: RecordListWindow): RecordListWindow
               </TableBody>
             </Table>
           </ScrollRegion>
-          {/* A row's settled result renders here, at the list's full width: inside the row's actions cell it widened the table past a phone's viewport and scrolled the table region onto the cell it sat in. `empty:hidden` keeps the region out of the layout while no row has a result, so it adds no gap above the pager. */}
-          <div id={rowResultsId} data-slot="record-list-row-results" className="flex min-w-0 flex-col gap-2 text-pretty wrap-anywhere empty:hidden" />
           {pager}
         </>
       ) : (

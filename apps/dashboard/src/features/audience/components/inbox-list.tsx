@@ -49,9 +49,7 @@ function usableSeed(seed: ReadResult<InboxEnvelope> | undefined, scope: Scope, p
   return stated.page === paging.page && stated.pageSize === paging.pageSize ? seed : undefined;
 }
 export function InboxList({ scope, locale, initialEnvelope, className }: InboxListProps): ReactElement {
-  const headingId = useId();
-  const readerHeadingId = useId();
-  const readerRegionId = useId();
+  const [headingId, readerHeadingId, readerRegionId] = [useId(), useId(), useId()];
   const readerRef = useRef<HTMLElement | null>(null);
   const openTriggerRef = useRef<HTMLButtonElement | null>(null);
   // The window the route's read answered with is the window this surface opens on, and the address owns it from then on: opening a message, reloading or returning from another screen reopens the page the reader left. The columns a worker shows are presentation only and stay in this component.

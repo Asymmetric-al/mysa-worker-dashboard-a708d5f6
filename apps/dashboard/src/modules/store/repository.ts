@@ -7,14 +7,12 @@ const WRITE_ORDER = ["workload", "meta", "operations", "state"] as const satisfi
 const DELETE_ORDER = ["state", "operations", "meta", "workload"] as const satisfies readonly SessionDocumentKey[];
 const DOCUMENT_KEYS = ["state", "operations", "meta", "workload"] as const satisfies readonly SessionDocumentKey[];
 const DOCUMENT_KEY_NAMES: readonly string[] = DOCUMENT_KEYS;
-/** Source bytes the memo may hold across every session: four times the generated workload's own size, so the session the published measurement reads stays resident while a handful of others share the memo. */
-export const MEMO_BYTE_BUDGET = 4 * 67_229_868;
+/** Source bytes the memo may hold across every session: four times the generated workload's own size, so the session the published measurement reads stays resident while a handful of others share the memo. */ export const MEMO_BYTE_BUDGET = 4 * 67_229_868;
 /** How long the memo keeps an entry nothing has read: long enough that the reads behind one screen never re-parse, short enough that a session nobody is visiting gives its dataset back. */ export const MEMO_IDLE_MS = 10 * 60 * 1000;
 /** One document as the memo holds it: the signature of the file it was parsed from, the value it parsed to and the source bytes that cost. An entry holds all four of a session's documents, an absent one as an absent value, so a session that has no workload document is not looked for one on every read. */
 type HeldDocument = { readonly signature: string; readonly value: unknown; readonly sourceBytes: number };
 /** One session's memo entry: the documents it holds, the set the last read answered with, and the bookkeeping the byte budget and the idle window are kept from. */ interface MemoizedSession {
-  /** The set the last read answered with, kept while every document in it is still the document on disk; `undefined` once a transaction has dropped a document it declared, so the next read builds a fresh set around the documents it still holds. */
-  readonly container: SessionDocuments | undefined;
+  /** The set the last read answered with, kept while every document in it is still the document on disk; `undefined` once a transaction has dropped a document it declared, so the next read builds a fresh set around the documents it still holds. */ readonly container: SessionDocuments | undefined;
   readonly held: ReadonlyMap<SessionDocumentKey, HeldDocument>;
   readonly sourceBytes: number;
   readonly readAtMs: number;
@@ -90,8 +88,7 @@ async function readRequiredDocument(file: string): Promise<unknown> {
     this.root = root;
   }
 }
-/** Reads a session's documents, or `undefined` when the store holds no such session; a corrupt document throws rather than reading as empty, an absent store root throws {@link. */
-export async function readSession(sessionId: string): Promise<SessionDocuments | undefined> {
+/** Reads a session's documents, or `undefined` when the store holds no such session; a corrupt document throws rather than reading as empty, an absent store root throws {@link. */ export async function readSession(sessionId: string): Promise<SessionDocuments | undefined> {
   const paths = sessionPaths(sessionId);
   const nowMs = Date.now();
   dropIdle(nowMs);
@@ -138,8 +135,7 @@ export async function readSession(sessionId: string): Promise<SessionDocuments |
     this.sessionId = sessionId;
   }
 }
-/** Reads a transaction's write set, refusing a name that is not a document of this store and a document named twice; a store primitive never quietly ignores what its caller declared. */
-function writeSetOf(writes: readonly SessionDocumentKey[]): ReadonlySet<SessionDocumentKey> {
+/** Reads a transaction's write set, refusing a name that is not a document of this store and a document named twice; a store primitive never quietly ignores what its caller declared. */ function writeSetOf(writes: readonly SessionDocumentKey[]): ReadonlySet<SessionDocumentKey> {
   const declared = new Set<SessionDocumentKey>();
   for (const key of writes) {
     if (!DOCUMENT_KEY_NAMES.includes(key)) throw new TypeError(`A transaction's write set names ${JSON.stringify(key)}, which is not a document of this store: the documents are ${DOCUMENT_KEYS.join(", ")}.`);
@@ -176,8 +172,7 @@ export async function transact<T>(sessionId: string, writes: readonly SessionDoc
     }
   });
 }
-/** Makes a session's on-disk documents exactly the given set, or discards them all when no set is given; it is the store's only creating path, and repeating it leaves identical bytes. */
-export async function resetSession(sessionId: string, documents?: SessionDocuments): Promise<void> {
+/** Makes a session's on-disk documents exactly the given set, or discards them all when no set is given; it is the store's only creating path, and repeating it leaves identical bytes. */ export async function resetSession(sessionId: string, documents?: SessionDocuments): Promise<void> {
   await withSessionLock(sessionId, async () => {
     const paths = sessionPaths(sessionId);
     if (documents === undefined) {

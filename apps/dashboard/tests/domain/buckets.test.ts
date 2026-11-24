@@ -1,5 +1,4 @@
-/** Proves the recurring-outcome bucket model: exactly five outcomes, the first-class `outside-partition` value that keeps evidence which is unknown or stale out of them, and the structural rules a sixth bucket cannot satisfy. */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+/** Proves the recurring-outcome bucket model: exactly five outcomes, the first-class `outside-partition` value that keeps evidence which is unknown or stale out of them, and the structural rules a sixth bucket cannot satisfy. */ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { reads } from "@/modules/data-service";
 import type { SessionSource } from "@/modules/data-service/authorize";
 import type { Money } from "@/modules/money/amount";
@@ -9,18 +8,15 @@ import { expectEnvelope } from "../helpers/answers";
 import { layDownSeededSession } from "../helpers/fixtures";
 const ALL_BUCKETS: readonly buckets.RecurringBucket[] = [...buckets.PARTITION_BUCKETS, buckets.OUTSIDE_PARTITION];
 const ALL_EVIDENCE: readonly buckets.RecurringEvidence["observed"][] = ["settled", "pending", "scheduled", "needs-attention", "not-received", "unknown", "stale"];
-/** The words that would state an action this application never performs — a retry — or a fact it never claims — that an unreceived occurrence is a debt being collected. */
-const AFFORDANCE_OR_DEBT = /retry|owed|debt|dunning|collect/i;
+/** The words that would state an action this application never performs — a retry — or a fact it never claims — that an unreceived occurrence is a debt being collected. */ const AFFORDANCE_OR_DEBT = /retry|owed|debt|dunning|collect/i;
 const usd = (minorUnits: number): Money => ({ currency: "USD", minorUnits: minorUnits as Money["minorUnits"] });
 const commitmentRow = (overrides: Partial<buckets.CommitmentRow> = {}): buckets.CommitmentRow => ({ commitmentRowId: "commitment-row-1", kind: "automatic-recurring", cadence: "monthly", perOccurrence: usd(2500), bucketState: "received", pause: { state: "active" }, ...overrides });
 const keysDeep = (value: object): readonly string[] => Object.entries(value).flatMap(([key, child]) => (child !== null && typeof child === "object" ? [key, ...keysDeep(child)] : [key]));
-/** The private session the read-path case acts in: a shared seeded id would put this file's fixtures in a sibling suite's world. */
-const SESSION_ID = "domain-buckets-shape";
+/** The private session the read-path case acts in: a shared seeded id would put this file's fixtures in a sibling suite's world. */ const SESSION_ID = "domain-buckets-shape";
 const SOURCE: SessionSource = { sessionId: SESSION_ID };
 type CommitmentsRead = Awaited<ReturnType<typeof reads.support.readCommitments>>;
 type CommitmentRowFigure = Extract<CommitmentsRead, { readonly kind: "envelope" }>["envelope"]["data"]["commitments"][number];
-/** Lays the seeded harbour workspace down under this file's own session id, from the documents the seed publishes rather than from a literal written here. */
-beforeAll(() => layDownSeededSession(SESSION_ID, "established-worker"), 120_000);
+/** Lays the seeded harbour workspace down under this file's own session id, from the documents the seed publishes rather than from a literal written here. */ beforeAll(() => layDownSeededSession(SESSION_ID, "established-worker"), 120_000);
 afterAll(async () => {
   await resetSession(SESSION_ID); // The session is this file's own, so the store is left holding none of its fixtures.
 });
@@ -113,8 +109,7 @@ it("the five measures stay five: groups outside-partition apart from the five ou
   expect(inPartition).toHaveLength(5); // The grouping covers all six values with no overlap, so no surface can imply a sixth in-partition badge by grouping an unplaced row together with the five.
   expect([[...inPartition], [...outsidePartition]]).toEqual([[...buckets.PARTITION_BUCKETS], [buckets.OUTSIDE_PARTITION]]);
 });
-/** The words that would state a measure taken from gifts — a donation, or an average of receipts — which no commitment row may carry. */
-it("the row the read path builds: states a bucket the module names, and no retry affordance, debt shape, gift measure or monthly equivalent", async () => {
+/** The words that would state a measure taken from gifts — a donation, or an average of receipts — which no commitment row may carry. */ it("the row the read path builds: states a bucket the module names, and no retry affordance, debt shape, gift measure or monthly equivalent", async () => {
   const rows = await seededCommitmentRows();
   expect(new Set(rows.map((row) => row.bucket))).toEqual(new Set(buckets.RECURRING_BUCKETS)); // The seeded commitments cover every value, so the scans below reach a row in each state rather than whichever rows the seed happens to list first.
   for (const row of rows) {

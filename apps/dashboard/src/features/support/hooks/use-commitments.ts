@@ -48,12 +48,11 @@ const statedInstantOf = (asOf: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 }; /** Reads the commitments in one scope: wraps `readCommitments` through `GET /api/support/commitments`, which answers with an envelope, a denial or an unavailable source. */
 export function useCommitments({ scope, query, initialEnvelope }: UseCommitmentsInput): CommitmentsQueryState {
-  const seeded: CommitmentsSeed | undefined = initialEnvelope === undefined ? undefined : { initialData: { kind: "envelope", envelope: initialEnvelope }, initialDataUpdatedAt: statedInstantOf(initialEnvelope.asOf) };
   const queryString = toCommitmentsParams(query).toString();
   return useQuery<CommitmentsReadResult, Error>({
     queryKey: [...scopeKey(scope), "commitments", query],
     queryFn: () => fetchRead<CommitmentsEnvelope["data"], CommitmentsEnvelope["coverage"]>({ url: queryString.length === 0 ? "/api/support/commitments" : `${"/api/support/commitments"}?${queryString}`, admits: isCommitmentsData }),
     staleTime: 30_000,
-    ...seeded,
+    ...(initialEnvelope === undefined ? undefined : { initialData: { kind: "envelope", envelope: initialEnvelope }, initialDataUpdatedAt: statedInstantOf(initialEnvelope.asOf) }),
   });
 }

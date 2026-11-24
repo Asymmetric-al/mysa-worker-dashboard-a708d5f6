@@ -1,10 +1,8 @@
-/** Development-boundary diagnostics: the repository's only diagnostics surface. */
-import { isDevelopment } from "@/lib/guards";
+/** Development-boundary diagnostics: the repository's only diagnostics surface. */ import { isDevelopment } from "@/lib/guards";
 export type LogScope = { readonly organizationId: string; readonly ministryId: string; readonly supportSubjectId: string; readonly principalId: string };
 /** One mutation attempt as a diagnostic line: the operation id that names the attempt, the scope it ran in, the outcome's discriminant name and the elapsed milliseconds the caller measured. */
 export type MutationLogEntry = { readonly operationId: string; readonly scope: LogScope; readonly outcome: string; readonly elapsedMs: number };
-/** One read whose source could not answer: the job that was attempted and the opaque identity of the source, which is all a reader needs to find the owner. */
-export type SourceUnavailableLogEntry = { readonly job: string; readonly source: { readonly system: string; readonly reference: string } };
+/** One read whose source could not answer: the job that was attempted and the opaque identity of the source, which is all a reader needs to find the owner. */ export type SourceUnavailableLogEntry = { readonly job: string; readonly source: { readonly system: string; readonly reference: string } };
 const MAX_OPERATION_ID_LENGTH = 64;
 const MAX_SCOPE_ID_LENGTH = 128;
 const MAX_OUTCOME_LENGTH = 40;

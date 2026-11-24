@@ -1,5 +1,4 @@
-/** The closed repeat rule behind recurring tasks: the domain half of success criterion 13. */
-import { afterEach, beforeAll, beforeEach, expect, it } from "vitest";
+/** The closed repeat rule behind recurring tasks: the domain half of success criterion 13. */ import { afterEach, beforeAll, beforeEach, expect, it } from "vitest";
 import { Temporal } from "temporal-polyfill";
 import { newOperationId } from "@/lib/ids";
 import { type MutationInput, type ReadAction, type Scope, mutations, reads } from "@/modules/data-service";
@@ -16,6 +15,7 @@ const PLANNING_ZONE = "Europe/London";
 const SEED_DAY = "2026-11-20";
 const WEEK_AFTER_SEED_DAY = "2026-11-27";
 const THREE_WEEKS_MS = 21 * 24 * 60 * 60 * 1000;
+const ELEVEN_DAYS_MS = 11 * 24 * 60 * 60 * 1000;
 const NO_STORED_REVISION = "nothing-stored-yet";
 type SeriesEnvelope = Extract<Awaited<ReturnType<typeof reads.series.readSeries>>, { kind: "envelope" }>["envelope"];
 type SeriesReading = SeriesEnvelope["data"];
@@ -36,8 +36,7 @@ async function restoreSeedInstant(): Promise<void> {
   if (!restored.ok) throw new Error(`Restoring the scenario clock to the seed instant failed: ${restored.error.message}`);
 }
 beforeAll(async () => {
-  const established = firstSaying(await seed(), "sessionId", DEFAULT_SESSION_ID, `The seed lays down no session ${JSON.stringify(DEFAULT_SESSION_ID)}, so no recurrence case has a world to start from.`);
-  seededDocuments = established.documents;
+  seededDocuments = firstSaying(await seed(), "sessionId", DEFAULT_SESSION_ID, `The seed lays down no session ${JSON.stringify(DEFAULT_SESSION_ID)}, so no recurrence case has a world to start from.`).documents;
   await laySeededDocuments();
   seededScope = await scopeOf({ sessionId: SESSION_ID });
 });
@@ -77,8 +76,7 @@ async function createMonthlyOnDaySeries(title: string, firstDueOn: string, dayOf
   const outcome = acceptedOf(await mutations.series.createSeries(inputOf({ title, profile: "monthlyOnDay", dayOfMonth, firstDueOn, planningTimeZone, ongoingPolicy: true }, NO_STORED_REVISION), source()), `createSeries ${JSON.stringify(title)}`);
   return createdSeriesOf(outcome);
 }
-/** A weekly series whose actionable occurrence is completed, read back with the successor that completion admitted. */
-async function completedWeeklyRound(): Promise<{ readonly created: CreatedSeries; readonly completed: AcceptedOutcome; readonly before: SeriesEnvelope; readonly successor: TaskListRow }> {
+/** A weekly series whose actionable occurrence is completed, read back with the successor that completion admitted. */ async function completedWeeklyRound(): Promise<{ readonly created: CreatedSeries; readonly completed: AcceptedOutcome; readonly before: SeriesEnvelope; readonly successor: TaskListRow }> {
   const created = await createWeeklySeries("Weekly call round", SEED_DAY);
   const firstOccurrence = occurrenceOf(await seriesReadingOf(created.seriesId));
   const completed = acceptedOf(await mutations.work.completeTask(inputOf({ taskId: firstOccurrence.taskId }, firstOccurrence.revision), source()), "completeTask");
@@ -233,8 +231,7 @@ it("exactly one occurrence is actionable, and the dates after it are previews: a
   const answered = rows.find((row) => row.taskId === occurrence.taskId);
   expect(answered?.status).toBe("cancelled");
   expect(answered?.status).not.toBe("completed");
-  const again = outcomeOf(await mutations.series.skipOccurrence(inputOf({ occurrenceId: occurrence.taskId }, skipped.revision), source()));
-  expect(again.outcome).toBe("unchanged");
+  expect(outcomeOf(await mutations.series.skipOccurrence(inputOf({ occurrenceId: occurrence.taskId }, skipped.revision), source())).outcome).toBe("unchanged");
   const rowsAfter = await rowsOfSeries(created.seriesId);
   expect(rowsAfter).toHaveLength(2);
   expect(rowsAfter.filter((row) => row.status === "open")).toHaveLength(1);
@@ -267,8 +264,11 @@ it("several missed dates produce a plan that needs review, not an overdue stack:
   expect(Object.keys(fourth.fields)).toEqual(["resolution"]);
   const resolved = acceptedOf(await mutations.series.resolveMissedPlan(inputOf({ occurrenceId: occurrence.taskId, resolution: "keep-this-occurrence" }, occurrence.revision), source()), "resolveMissedPlan");
   expect(resolved.changed).toContain(created.seriesId);
-  const after = await seriesReadingOf(created.seriesId);
+  const settled = await seriesEnvelopeOf(created.seriesId);
+  const after = settled.data;
   expect([after.planReview.recordedPlanNeedsReview, occurrenceOf(after).status]).toEqual([false, "open"]);
+  expect([after.planReview.state, after.planReview.missedDateCount, after.planReview.missedDates]).toEqual(["on-track", 0, []]);
+  expect(actionOf(settled.actions, "resolveMissedPlan").available).toBe(false);
   expect(await rowsOfSeries(created.seriesId)).toHaveLength(1);
   expect(await interactionTotal()).toBe(interactionsBefore);
 });
@@ -323,8 +323,7 @@ it("pausing, resuming and stopping a series: pauses future admission while the o
   expect([paused.data.state, paused.data.admitsFurtherOccurrences]).toEqual(["paused", false]);
   expect(paused.data.actionableOccurrenceId).toBeNull();
   expect([paused.data.currentOccurrence?.taskId, paused.data.currentOccurrence?.status, paused.data.currentOccurrence?.dueOn, paused.data.planReview.state, actionOf(paused.actions, "skipOccurrence").available]).toEqual([occurrence.taskId, "open", occurrence.dueOn, "not-admitting", false]);
-  const skippedWhilePaused = outcomeOf(await mutations.series.skipOccurrence(inputOf({ occurrenceId: occurrence.taskId }, occurrence.revision), source()));
-  expect(skippedWhilePaused.outcome).toBe("unchanged");
+  expect(outcomeOf(await mutations.series.skipOccurrence(inputOf({ occurrenceId: occurrence.taskId }, occurrence.revision), source())).outcome).toBe("unchanged");
   expect(await rowsOfSeries(created.seriesId)).toHaveLength(1);
   acceptedOf(await mutations.series.resumeSeries(inputOf({ seriesId: created.seriesId }, paused.revision), source()), "resumeSeries");
   const resumed = await seriesEnvelopeOf(created.seriesId);
@@ -385,4 +384,41 @@ it("pausing, resuming and stopping a series: keeps paused and stopped distinct: 
   const resumed = outcomeOf(await mutations.series.resumeSeries(inputOf({ seriesId: "series-fortnightly-newsletter" }, paused.revision), source()));
   expect([resumed.outcome, (await seriesReadingOf("series-fortnightly-newsletter")).state]).toEqual(["accepted", "active"]);
   expect([outcomeOf(await mutations.series.resumeSeries(inputOf({ seriesId: "series-visit-round" }, stopped.revision), source())).outcome, (await seriesReadingOf("series-visit-round")).state]).toEqual(["unchanged", "stopped"]);
+});
+it("a preview never precedes the date the plan is waiting for: starts the next dates at that date and holds the month-day resolution the rule discloses for it", async () => {
+  const seriesId = "series-month-end-support-review";
+  const seeded = await seriesEnvelopeOf(seriesId);
+  const occurrence = occurrenceOf(seeded.data);
+  expect(occurrence.dueOn).toBe("2026-11-30");
+  expect(seeded.data.preview.status).toBe("preview");
+  if (seeded.data.preview.status !== "preview") return;
+  expect([seeded.data.preview.dates[0], seeded.data.preview.dates[1]]).toEqual([occurrence.dueOn, "2026-12-31"]);
+  expect(seeded.data.preview.monthDayResolutions).toEqual([{ dueOn: occurrence.dueOn, requestedDay: 31, resolvedDay: 30 }]);
+  acceptedOf(await mutations.work.completeTask(inputOf({ taskId: occurrence.taskId }, occurrence.revision), source()), "completeTask");
+  const before = await seriesEnvelopeOf(seriesId);
+  const successor = occurrenceOf(before.data);
+  expect([successor.dueOn, successor.status]).toEqual(["2026-12-31", "open"]);
+  expect((await advanceClock(SESSION_ID, ELEVEN_DAYS_MS)).ok).toBe(true);
+  expect(todayInPlanningZone()).toBe("2026-12-01");
+  acceptedOf(await mutations.series.editThisAndFuture(inputOf({ seriesId, effectiveFrom: "2026-12-01", profile: "everyNMonths", interval: 2, dayOfMonth: 15 }, before.revision), source()), "editThisAndFuture");
+  const after = await seriesReadingOf(seriesId);
+  const current = occurrenceOf(after);
+  const currentDueOn = required(current.dueOn, "the due date of the date the plan is waiting for");
+  expect([currentDueOn, current.status]).toEqual(["2026-12-31", "open"]);
+  expect(after.preview.status).toBe("preview");
+  if (after.preview.status !== "preview") return;
+  expect(after.preview.dates[0]).toBe(currentDueOn);
+  expect(after.preview.dates.filter((date) => date < currentDueOn)).toEqual([]);
+  expect([after.preview.dates, after.preview.dateCount]).toEqual([["2026-12-31", "2027-02-15", "2027-04-15"], 3]);
+});
+it("a stored rule keeps only the fields its profile reads: a revision that switches to a profile with no interval stores the neutral one", async () => {
+  const created = await createMonthlyOnDaySeries("Every other month, then weekly", SEED_DAY, 15);
+  const before = await seriesEnvelopeOf(created.seriesId);
+  expect([before.data.rule.profile, before.data.rule.interval]).toEqual(["monthlyOnDay", 1]);
+  acceptedOf(await mutations.series.editThisAndFuture(inputOf({ seriesId: created.seriesId, effectiveFrom: WEEK_AFTER_SEED_DAY, profile: "everyNMonths", interval: 2, dayOfMonth: 15 }, before.revision), source()), "editThisAndFuture onto a profile that reads an interval");
+  const stated = await seriesEnvelopeOf(created.seriesId);
+  expect([stated.data.rule.profile, stated.data.rule.interval, stated.data.rule.dayOfMonth]).toEqual(["everyNMonths", 2, 15]);
+  acceptedOf(await mutations.series.editThisAndFuture(inputOf({ seriesId: created.seriesId, effectiveFrom: "2026-12-04", profile: "weekly" }, stated.revision), source()), "editThisAndFuture onto the weekly profile");
+  const weekly = await seriesReadingOf(created.seriesId);
+  expect([weekly.rule.profile, weekly.rule.interval, weekly.rule.dayOfMonth]).toEqual(["weekly", 1, null]);
 });

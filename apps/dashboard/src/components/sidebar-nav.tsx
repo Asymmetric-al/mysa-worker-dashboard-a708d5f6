@@ -64,8 +64,7 @@ export type NavItem = { readonly href: string; readonly label: string; readonly 
 }
 type CurrentDestination = { readonly href: string; readonly sectionHref?: string };
 export type SidebarNavProps = { readonly items?: readonly NavItem[]; readonly currentPath: string; readonly onNavigate?: (href: string) => void; readonly className?: string };
-/** The primary navigation: a labelled `nav` landmark holding the everyday destinations and, below a separator, the quiet ones — Settings and, always last, Help. */
-export function SidebarNav({ items = PRIMARY_NAV, currentPath, onNavigate, className }: SidebarNavProps) {
+/** The primary navigation: a labelled `nav` landmark holding the everyday destinations and, below a separator, the quiet ones — Settings and, always last, Help. */ export function SidebarNav({ items = PRIMARY_NAV, currentPath, onNavigate, className }: SidebarNavProps) {
   const [sectionOverrides, setSectionOverrides] = useState<Readonly<Record<string, boolean>>>({});
   const current = resolveCurrent(items, currentPath);
   const primaryItems = items.filter((item) => (item.section ?? "primary") === "primary");
@@ -108,10 +107,9 @@ function NavEntry({ item, current, sectionOverrides, onToggleSection, onNavigate
   const isPage = current?.href === item.href;
   const isSection = isPage || current?.sectionHref === item.href;
   const isExpanded = sectionOverrides[item.href] ?? current?.sectionHref === item.href;
-  const ariaCurrent: "page" | "true" | undefined = isPage ? "page" : isSection ? "true" : undefined;
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton render={<Link href={item.href} onClick={(event) => notifyNavigation(event, item.href, onNavigate)} />} isActive={isSection} aria-current={ariaCurrent} tooltip={item.label}>
+      <SidebarMenuButton render={<Link href={item.href} onClick={(event) => notifyNavigation(event, item.href, onNavigate)} />} isActive={isSection} aria-current={isPage ? "page" : isSection ? "true" : undefined} tooltip={item.label}>
         {Icon === undefined ? null : <Icon aria-hidden="true" data-icon="inline-start" />}
         <span>{item.label}</span>
       </SidebarMenuButton>
@@ -150,13 +148,10 @@ function resolveCurrent(items: readonly NavItem[], currentPath: string): Current
   }
   return found;
 }
-function isMoreSpecific(href: string, matched: string | undefined): boolean {
-  return matched === undefined || normalisePath(href).length > normalisePath(matched).length;
-}
+const isMoreSpecific = (href: string, matched: string | undefined): boolean => matched === undefined || normalisePath(href).length > normalisePath(matched).length;
 function normalisePath(value: string): string {
   const path = value.split(/[?#]/)[0]?.trim() ?? "";
   if (path === "") return "/";
-  const absolute = path.startsWith("/") ? path : `/${path}`;
-  const trimmed = absolute.replace(/\/+$/, "");
+  const trimmed = (path.startsWith("/") ? path : `/${path}`).replace(/\/+$/, "");
   return trimmed === "" ? "/" : trimmed;
 }

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { now } from "@/modules/time/clock";
-import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
-import { REPEAT_PROFILES, admitSuccessor, applyThisAndFuture, missedPlan, nextOccurrences, validateSeriesRule, type RepeatProfile, type RuleRevision, type SeriesEnd, type SeriesOccurrence, type SeriesRule, type SeriesRulePatch, type SeriesState } from "@/modules/time/recurrence";
+import { isResolvableTimeZone, parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
+import { REPEAT_PROFILES, admitSuccessor, applyThisAndFuture, missedPlan, nextOccurrences, planPreview, validateSeriesRule, type RepeatProfile, type RuleRevision, type SeriesEnd, type SeriesOccurrence, type SeriesRule, type SeriesRulePatch, type SeriesState } from "@/modules/time/recurrence";
 import { canEdit, type ResolvedSession, type ScopeDecision } from "../authorize";
 import { principalIdSchema, recordRevisionSchema, taskRecordSchema, taskSeriesRecordSchema, type MutationInput, type PrincipalId, type Scope, type SeriesEndRecord, type SeriesRuleRecord, type SeriesRuleRevisionRecord, type TaskKind, type TaskRecord, type TaskRecordStatus, type TaskSeriesRecord } from "../envelope";
 import { openMutation, refuseDenied, refuseInvalid, runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
@@ -155,11 +155,16 @@ function taskView(task: TaskRecord): TaskView {
   return { taskId: task.taskId, title: task.title, category: task.category, dueOn: task.dueOn, plannedTime: task.plannedTime, timeZone: task.timeZone, kind: task.kind, status: task.status, partnerId: task.partnerId, initiativeId: task.initiativeId, seriesId: task.seriesId, note: task.note, revision: task.revision };
 }
 const seriesView = (series: TaskSeriesRecord): SeriesView => ({ seriesId: series.seriesId, title: series.title, state: series.state, planNeedsReview: series.planNeedsReview, currentOccurrenceId: series.currentOccurrenceId, revision: series.revision, rule: series.currentRule });
-function previewView(series: TaskSeriesRecord, rule: SeriesRule): SeriesPreviewView {
+/** The date the plan is waiting for an answer on, absent when the plan names no current date, that date has already been answered, or its due date cannot be read: a date that is no longer awaiting an answer is not one the plan is waiting for. */
+const awaitingAnswerOf = (work: WorkDocument, series: TaskSeriesRecord): CivilDate | null => {
+  const current = series.currentOccurrenceId === null ? undefined : taskOf(work, series.currentOccurrenceId);
+  return current === undefined || !isAwaitingAction(current.status) ? null : (civilDateOf(current.dueOn) ?? null);
+};
+function previewView(series: TaskSeriesRecord, rule: SeriesRule, awaitingAnswer: CivilDate | null): SeriesPreviewView {
   if (series.state === "stopped") return { status: "not-admitted", reason: series.state };
   const today = todayFor(rule);
   if (today === undefined) return { status: "unreadable", reason: "planning-time-zone-unresolved" };
-  const preview = nextOccurrences(rule, today, PREVIEW_DATE_COUNT);
+  const preview = planPreview({ rule, today, awaitingAnswer, count: PREVIEW_DATE_COUNT });
   if (preview.status === "refused") return preview.reason === "end-reached" ? { status: "ended" } : { status: "unreadable", reason: preview.reason };
   return { status: "preview", dates: preview.dates.map(serialiseCivilDate), monthDayResolutions: preview.monthDayResolutions.map((resolution) => ({ dueOn: serialiseCivilDate(resolution.dueOn), requestedDay: resolution.requestedDay, resolvedDay: resolution.resolvedDay })) };
 }
@@ -177,7 +182,8 @@ function planNeedsReviewNow(series: TaskSeriesRecord, occurrences: readonly Task
   }
   const ahead = nextOccurrences(rule, latest ?? rule.firstDueOn, PLAN_WALK_COUNT);
   if (ahead.status === "preview") for (const date of ahead.dates) if (serialiseCivilDate(date) < serialiseCivilDate(today)) planned.push({ dueOn: date, status: "open" });
-  return missedPlan({ rule, occurrences: planned, now: now() }).state === "planNeedsReview";
+  const answeredThrough = civilDateOf(series.planReviewAnsweredOn);
+  return missedPlan({ rule, occurrences: planned, now: now(), ...(answeredThrough === undefined ? {} : { acknowledgedThrough: answeredThrough }) }).state === "planNeedsReview";
 }
 function collectionWitness(family: string, members: readonly { readonly revision: string }[]): string {
   const revisions = members.map((member) => member.revision).toSorted((left, right) => (left < right ? -1 : left > right ? 1 : 0));
@@ -190,8 +196,7 @@ function collectionWitness(family: string, members: readonly { readonly revision
   const digest = (hash >>> 0).toString(16).padStart(8, "0");
   return `${family}/${String(members.length)}/${digest}`;
 }
-/** The current value one work mutation states for the record it names, absent where the document holds no such record. */
-function workTarget<T extends { readonly revision: string }>(docs: MutationContext["docs"], find: (work: WorkDocument) => T | undefined, view: (record: T) => unknown): CurrentTarget {
+/** The current value one work mutation states for the record it names, absent where the document holds no such record. */ function workTarget<T extends { readonly revision: string }>(docs: MutationContext["docs"], find: (work: WorkDocument) => T | undefined, view: (record: T) => unknown): CurrentTarget {
   const record = find(readWorkDocument(docs.state));
   return record === undefined ? { kind: "absent" } : { kind: "record", revision: record.revision, value: view(record) };
 }
@@ -227,8 +232,7 @@ async function runWorkMutation<P, R extends MutationResult>(input: MutationInput
     apply: (context) => hooks.apply(context, parsed()),
   });
 }
-/** The one record of this caller's own work a mutation names, refused rather than disclosed where the caller does not own it. */
-function requireOwned<T extends { readonly ownerPrincipalId: string }>(record: T | undefined, session: ResolvedSession, operationId: string): T {
+/** The one record of this caller's own work a mutation names, refused rather than disclosed where the caller does not own it. */ function requireOwned<T extends { readonly ownerPrincipalId: string }>(record: T | undefined, session: ResolvedSession, operationId: string): T {
   if (record === undefined || record.ownerPrincipalId !== session.principalId) return refuseDenied(operationId);
   return record;
 }
@@ -238,8 +242,7 @@ function requireOccurrenceSeries(work: WorkDocument, occurrence: TaskRecord, sta
   const series = occurrence.seriesId === null ? undefined : seriesOf(work, occurrence.seriesId);
   return series === undefined || (statedSeriesId !== undefined && statedSeriesId !== series.seriesId) ? undefined : series;
 }
-/** A trimmed text field that refuses a missing value where one is required and an over-long value at the stated bound, both with the message the field states. */
-const boundedText = (missing: string | undefined, tooLong: string, max: number) => {
+/** A trimmed text field that refuses a missing value where one is required and an over-long value at the stated bound, both with the message the field states. */ const boundedText = (missing: string | undefined, tooLong: string, max: number) => {
   const base = missing === undefined ? z.string() : z.string({ error: missing });
   return base.trim().superRefine((value, ctx) => {
     const length = codePointLength(value);
@@ -278,14 +281,6 @@ const plannedTimeText = z
   });
 const plannedTimeFieldOf = (value: string | undefined): PlannedTimeValue | undefined => (value === undefined ? undefined : !PLANNED_CLOCK_FORM.test(value) && PLANNED_DATE_TIME_FORM.exec(value) === null ? undefined : plannedTimeOf(value));
 const blankToNull = (value: string | null | undefined): string | null => (value === null || value === undefined ? null : value.trim().length === 0 ? null : value);
-function isResolvableTimeZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
 const timeZoneText = z.string({ error: WORDS.timeZoneInvalid }).trim().min(1, WORDS.timeZoneInvalid).refine(isResolvableTimeZone, WORDS.timeZoneInvalid);
 const TASK_KIND_VALUES = ["default", "meeting"] as const satisfies readonly TaskKind[];
 const taskKindValue = z.enum(TASK_KIND_VALUES, { error: WORDS.kindInvalid }),
@@ -587,8 +582,7 @@ function applyEditTask({ docs, session, operationId }: MutationContext, payload:
   return { changed: true, revision: next.revision, result: { task: taskView(next) }, changedIds: [next.taskId] };
 }
 export type CompleteTaskResult = { readonly task: TaskView; readonly series: SeriesView | null; readonly successorTaskId: string | null };
-/** Marks one task complete. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const completeTask = async (input: MutationInput<CompleteTaskPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
+/** Marks one task complete. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const completeTask = async (input: MutationInput<CompleteTaskPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
   runWorkMutation<CompleteTaskPayload, CompleteTaskResult>(input, options, completeTaskSchema, "completeTask", "task", { readCurrent: (documents, payload) => taskTarget(documents, payload.taskId), apply: applyCompleteTask });
 function applyCompleteTask({ docs, session, operationId }: MutationContext, payload: CompleteTaskPayload): ApplyResult<CompleteTaskResult> {
   const work = readWorkDocument(docs.state);
@@ -600,8 +594,7 @@ function applyCompleteTask({ docs, session, operationId }: MutationContext, payl
   return { changed: true, revision: effect.ended.revision, result, changedIds: [effect.ended.taskId], ...(effect.successor === null ? {} : { created: [effect.successor.taskId] }) };
 }
 export type ReopenTaskResult = { readonly task: TaskView };
-/** Reopens a completed or cancelled task. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const reopenTask = async (input: MutationInput<ReopenTaskPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
+/** Reopens a completed or cancelled task. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const reopenTask = async (input: MutationInput<ReopenTaskPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
   runWorkMutation<ReopenTaskPayload, ReopenTaskResult>(input, options, reopenTaskSchema, "reopenTask", "task", { readCurrent: (documents, payload) => taskTarget(documents, payload.taskId), apply: (context, payload) => applyTaskStatusChange(context, payload, "reopened") });
 function applyTaskStatusChange(context: MutationContext, payload: ReopenTaskPayload, status: Extract<TaskRecordStatus, "reopened" | "cancelled">): ApplyResult<ReopenTaskResult> {
   const work = readWorkDocument(context.docs.state);
@@ -612,8 +605,7 @@ function applyTaskStatusChange(context: MutationContext, payload: ReopenTaskPayl
   return { changed: true, revision: next.revision, result: { task: taskView(next) }, changedIds: [next.taskId] };
 }
 export type CancelTaskResult = { readonly task: TaskView };
-/** Cancels one open task. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const cancelTask = async (input: MutationInput<CancelTaskPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
+/** Cancels one open task. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const cancelTask = async (input: MutationInput<CancelTaskPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
   runWorkMutation<CancelTaskPayload, CancelTaskResult>(input, options, cancelTaskSchema, "cancelTask", "task", { readCurrent: (documents, payload) => taskTarget(documents, payload.taskId), apply: (context, payload) => applyTaskStatusChange(context, payload, "cancelled") });
 /** Applies one private tag to each selected task. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const bulkApplyTag = async (input: MutationInput<BulkApplyTagPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> => runWorkMutation<BulkApplyTagPayload, BulkResultView>(input, options, bulkApplyTagSchema, "bulkApplyTag", "task", { apply: applyBulkApplyTag });
@@ -748,11 +740,16 @@ function applyCreateSeries({ docs, session }: MutationContext, payload: CreateSe
   const partnerId = payload.partnerId ?? null;
   const occurrence: TaskRecord = { taskId: newRecordId("task"), title: payload.title, category, dueOn, plannedTime: null, timeZone: null, kind: "default", status: "open", partnerId, initiativeId: null, seriesId, ownerPrincipalId: session.principalId, note: blankToNull(payload.note), revision: "rev-1" };
   const effectiveRevisions = [{ revisionId: newRecordId("series-revision"), effectiveFrom: serialiseCivilDate(rule.firstDueOn), rule: storedRule }];
-  const drafted: TaskSeriesRecord = { seriesId, ownerPrincipalId: session.principalId, title: payload.title, currentRule: storedRule, effectiveRevisions, currentOccurrenceId: occurrence.taskId, state: "active", planNeedsReview: false, revision: "rev-1" };
+  const drafted: TaskSeriesRecord = { seriesId, ownerPrincipalId: session.principalId, title: payload.title, currentRule: storedRule, effectiveRevisions, currentOccurrenceId: occurrence.taskId, state: "active", planNeedsReview: false, planReviewAnsweredOn: null, revision: "rev-1" };
   const series: TaskSeriesRecord = { ...drafted, planNeedsReview: planNeedsReviewNow(drafted, [occurrence], rule) };
   const nextWork: WorkDocument = { tasks: [...work.tasks, occurrence], series: [...work.series, series], taskTags: work.taskTags };
   writeWorkDocument(docs, nextWork);
-  const result = { series: seriesView(series), occurrence: taskView(occurrence), preview: previewView(series, rule), firstOccurrence: firstResolution === undefined ? null : { dueOn: serialiseCivilDate(firstResolution.dueOn), requestedDay: firstResolution.requestedDay, resolvedDay: firstResolution.resolvedDay } };
+  const result = {
+    series: seriesView(series),
+    occurrence: taskView(occurrence),
+    preview: previewView(series, rule, firstDate),
+    firstOccurrence: firstResolution === undefined ? null : { dueOn: serialiseCivilDate(firstResolution.dueOn), requestedDay: firstResolution.requestedDay, resolvedDay: firstResolution.resolvedDay },
+  };
   return { changed: true, revision: series.revision, result, created: [series.seriesId, occurrence.taskId] };
 }
 export type EditOccurrenceResult = { readonly series: SeriesView; readonly occurrence: TaskView };
@@ -771,8 +768,7 @@ function applyEditOccurrence({ docs, session, operationId }: MutationContext, pa
   return { changed: true, revision: next.revision, result: { series: seriesView(series), occurrence: taskView(next) }, changedIds: [next.taskId] };
 }
 export type EditThisAndFutureResult = { readonly series: SeriesView; readonly occurrence: TaskView | null; readonly effectiveFrom: string; readonly revisionId: string; readonly preview: SeriesPreviewView | null };
-/** The domain's own per-field messages, carried into a refusal keyed by field path rather than restated at this boundary. */
-const fieldMessagesOf = (fields: Readonly<Record<string, string>>): FieldMessages => Object.fromEntries(Object.entries(fields).map(([field, message]) => [field, [message]]));
+/** The domain's own per-field messages, carried into a refusal keyed by field path rather than restated at this boundary. */ const fieldMessagesOf = (fields: Readonly<Record<string, string>>): FieldMessages => Object.fromEntries(Object.entries(fields).map(([field, message]) => [field, [message]]));
 /** Revises the plan from an explicit boundary onward, leaving everything before it untouched. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const editThisAndFuture = async (input: MutationInput<EditThisAndFuturePayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
   runWorkMutation<EditThisAndFuturePayload, EditThisAndFutureResult>(input, options, editThisAndFutureSchema, "editThisAndFuture", "series", { readCurrent: (documents, payload) => seriesTarget(documents, payload.seriesId), apply: applyEditThisAndFuture });
@@ -816,12 +812,11 @@ function applyEditThisAndFuture({ docs, session, operationId }: MutationContext,
   }
   const nextSeries: TaskSeriesRecord = { ...drafted, planNeedsReview: planNeedsReviewNow(drafted, occurrences, merged), revision: nextRevision(series.revision) };
   writeWorkDocument(docs, withSeries(movedOccurrence === null ? work : withTask(work, movedOccurrence), nextSeries));
-  const result = { series: seriesView(nextSeries), occurrence: movedOccurrence === null ? null : taskView(movedOccurrence), effectiveFrom: revisionRecord.effectiveFrom, revisionId: revisionRecord.revisionId, preview: previewView(nextSeries, merged) };
+  const result = { series: seriesView(nextSeries), occurrence: movedOccurrence === null ? null : taskView(movedOccurrence), effectiveFrom: revisionRecord.effectiveFrom, revisionId: revisionRecord.revisionId, preview: previewView(nextSeries, merged, awaitingAnswerOf(work, nextSeries)) };
   return { changed: true, revision: nextSeries.revision, result, created: [revisionRecord.revisionId], changedIds: movedOccurrence === null ? [nextSeries.seriesId] : [nextSeries.seriesId, movedOccurrence.taskId] };
 }
 export type SkipOccurrenceResult = { readonly series: SeriesView; readonly occurrence: TaskView; readonly successorTaskId: string | null };
-/** Answers one date without performing it. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const skipOccurrence = async (input: MutationInput<SkipOccurrencePayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
+/** Answers one date without performing it. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const skipOccurrence = async (input: MutationInput<SkipOccurrencePayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
   runWorkMutation<SkipOccurrencePayload, SkipOccurrenceResult>(input, options, skipOccurrenceSchema, "skipOccurrence", "series", { readCurrent: (documents, payload) => taskTarget(documents, payload.occurrenceId), apply: applySkipOccurrence });
 function applySkipOccurrence({ docs, session, operationId }: MutationContext, payload: SkipOccurrencePayload): ApplyResult<SkipOccurrenceResult> {
   const work = readWorkDocument(docs.state);
@@ -835,12 +830,11 @@ function applySkipOccurrence({ docs, session, operationId }: MutationContext, pa
   return { changed: true, revision: effect.ended.revision, result, changedIds: [effect.ended.taskId], ...(effect.successor === null ? {} : { created: [effect.successor.taskId] }) };
 }
 export type SeriesStateResult = { readonly series: SeriesView; readonly preview: SeriesPreviewView | null };
-function previewFor(series: TaskSeriesRecord): SeriesPreviewView | null {
+function previewFor(work: WorkDocument, series: TaskSeriesRecord): SeriesPreviewView | null {
   const rule = toEngineRule(series.currentRule);
-  return rule === undefined ? null : previewView(series, rule);
+  return rule === undefined ? null : previewView(series, rule, awaitingAnswerOf(work, series));
 }
-/** Pauses a series. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const pauseSeries = async (input: MutationInput<PauseSeriesPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
+/** Pauses a series. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const pauseSeries = async (input: MutationInput<PauseSeriesPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
   runWorkMutation<PauseSeriesPayload, SeriesStateResult>(input, options, pauseSeriesSchema, "pauseSeries", "series", { readCurrent: (documents, payload) => seriesTarget(documents, payload.seriesId), apply: applyPauseSeries });
 function applyPauseSeries({ docs, session, operationId }: MutationContext, payload: PauseSeriesPayload): ApplyResult<SeriesStateResult> {
   const work = readWorkDocument(docs.state);
@@ -848,10 +842,9 @@ function applyPauseSeries({ docs, session, operationId }: MutationContext, paylo
   if (series.state !== "active") return { changed: false };
   const paused: TaskSeriesRecord = { ...series, state: "paused", planNeedsReview: false, revision: nextRevision(series.revision) };
   writeWorkDocument(docs, withSeries(work, paused));
-  return { changed: true, revision: paused.revision, result: { series: seriesView(paused), preview: previewFor(paused) }, changedIds: [paused.seriesId] };
+  return { changed: true, revision: paused.revision, result: { series: seriesView(paused), preview: previewFor(work, paused) }, changedIds: [paused.seriesId] };
 }
-/** Resumes a paused series. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const resumeSeries = async (input: MutationInput<ResumeSeriesPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
+/** Resumes a paused series. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const resumeSeries = async (input: MutationInput<ResumeSeriesPayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
   runWorkMutation<ResumeSeriesPayload, SeriesStateResult>(input, options, resumeSeriesSchema, "resumeSeries", "series", { readCurrent: (documents, payload) => seriesTarget(documents, payload.seriesId), apply: applyResumeSeries });
 function applyResumeSeries({ docs, session, operationId }: MutationContext, payload: ResumeSeriesPayload): ApplyResult<SeriesStateResult> {
   const work = readWorkDocument(docs.state);
@@ -862,7 +855,7 @@ function applyResumeSeries({ docs, session, operationId }: MutationContext, payl
   const resumed: TaskSeriesRecord = { ...series, state: "active" };
   const next: TaskSeriesRecord = { ...resumed, planNeedsReview: planNeedsReviewNow(resumed, occurrencesOf(work, series.seriesId), rule), revision: nextRevision(series.revision) };
   writeWorkDocument(docs, withSeries(work, next));
-  return { changed: true, revision: next.revision, result: { series: seriesView(next), preview: previewView(next, rule) }, changedIds: [next.seriesId] };
+  return { changed: true, revision: next.revision, result: { series: seriesView(next), preview: previewView(next, rule, awaitingAnswerOf(work, next)) }, changedIds: [next.seriesId] };
 }
 export type StopSeriesResult = { readonly series: SeriesView; readonly unfinishedWork: "keep" | "cancel"; readonly keptTaskIds: readonly string[]; readonly cancelledTaskIds: readonly string[] };
 /** Stops a series and states what happens to its unfinished work. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
@@ -901,25 +894,27 @@ function applyResolveMissedPlan({ docs, session, operationId }: MutationContext,
   const rule = toEngineRule(series.currentRule);
   if (rule === undefined) return { changed: false };
   const resolution = canonicalResolution(payload.resolution);
+  // Every resolution answers the plan as it stood when it was answered, so the watermark is that day in the series' own planning zone: keep, move and stop all record the same answered fact beside the flag Home already reads.
+  const today = todayFor(rule);
+  if (today === undefined) return { changed: false };
+  const answeredOn = serialiseCivilDate(today);
   if (resolution === "stop-series") {
-    const stopped: TaskSeriesRecord = { ...series, state: "stopped", planNeedsReview: false, revision: nextRevision(series.revision) };
+    const stopped: TaskSeriesRecord = { ...series, state: "stopped", planNeedsReview: false, planReviewAnsweredOn: answeredOn, revision: nextRevision(series.revision) };
     writeWorkDocument(docs, withSeries(work, stopped));
     return { changed: true, revision: stopped.revision, result: { series: seriesView(stopped), occurrence: taskView(occurrence), resolution, preview: null }, changedIds: [stopped.seriesId] };
   }
   if (resolution === "move-next-date-forward") {
-    const today = todayFor(rule);
-    if (today === undefined) return { changed: false };
     const ahead = nextOccurrences(rule, today, 1);
     const nextDate = ahead.status === "preview" ? ahead.dates[0] : undefined;
     if (nextDate === undefined) return { changed: false };
     const moved: TaskRecord = { ...occurrence, dueOn: serialiseCivilDate(nextDate), revision: nextRevision(occurrence.revision) };
     const movedWork = withTask(work, moved);
-    const drafted: TaskSeriesRecord = { ...series, currentOccurrenceId: moved.taskId };
+    const drafted: TaskSeriesRecord = { ...series, currentOccurrenceId: moved.taskId, planReviewAnsweredOn: answeredOn };
     const next: TaskSeriesRecord = { ...drafted, planNeedsReview: planNeedsReviewNow(drafted, occurrencesOf(movedWork, series.seriesId), rule), revision: nextRevision(series.revision) };
     writeWorkDocument(docs, withSeries(movedWork, next));
-    return { changed: true, revision: next.revision, result: { series: seriesView(next), occurrence: taskView(moved), resolution, preview: previewView(next, rule) }, changedIds: [next.seriesId, moved.taskId] };
+    return { changed: true, revision: next.revision, result: { series: seriesView(next), occurrence: taskView(moved), resolution, preview: previewView(next, rule, awaitingAnswerOf(movedWork, next)) }, changedIds: [next.seriesId, moved.taskId] };
   }
-  const kept: TaskSeriesRecord = { ...series, planNeedsReview: false, revision: nextRevision(series.revision) };
+  const kept: TaskSeriesRecord = { ...series, planNeedsReview: false, planReviewAnsweredOn: answeredOn, revision: nextRevision(series.revision) };
   writeWorkDocument(docs, withSeries(work, kept));
-  return { changed: true, revision: kept.revision, result: { series: seriesView(kept), occurrence: taskView(occurrence), resolution, preview: previewView(kept, rule) }, changedIds: [kept.seriesId] };
+  return { changed: true, revision: kept.revision, result: { series: seriesView(kept), occurrence: taskView(occurrence), resolution, preview: previewView(kept, rule, awaitingAnswerOf(work, kept)) }, changedIds: [kept.seriesId] };
 }

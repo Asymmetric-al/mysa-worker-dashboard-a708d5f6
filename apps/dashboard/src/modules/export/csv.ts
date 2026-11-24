@@ -80,8 +80,7 @@ const COLUMN_TABLE = [
 const CSV_COLUMNS: AuditedColumnTable<typeof COLUMN_TABLE> = COLUMN_TABLE;
 export const CSV_COLUMN_HEADERS: readonly string[] = CSV_COLUMNS.flatMap((column) => column.cells.map(([header]) => header));
 const record = (fields: readonly string[]): string => `${fields.map((field) => neutralizeCell(field)).join(",")}${CSV_RECORD_SEPARATOR}`;
-/** The facts that identify the snapshot the file holds: its grain, basis, currency partition, period and period state, coverage, as-of instant, exact query, whole-result count, amount unit. */
-export function snapshotMetadata(result: ReportResult): readonly SnapshotFact[] {
+/** The facts that identify the snapshot the file holds: its grain, basis, currency partition, period and period state, coverage, as-of instant, exact query, whole-result count, amount unit. */ export function snapshotMetadata(result: ReportResult): readonly SnapshotFact[] {
   const { snapshot } = result;
   return [
     { field: "grain", label: "Grain", value: EXPORT_ROW_GRAIN[snapshot.query.reportId] },

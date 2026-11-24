@@ -40,8 +40,7 @@ import type { ContentDocumentRecord, ContentVariantRecord, MembershipRecord as S
     createdAt: Temporal.Instant.from(record.createdAt),
   };
 }
-/** The domain membership one stored membership states, with the choice it implies and the revision ordinal it carries. */
-export function membershipOf(record: StoredMembership, scope: Pick<Scope, "organizationId" | "ministryId">): DomainMembership {
+/** The domain membership one stored membership states, with the choice it implies and the revision ordinal it carries. */ export function membershipOf(record: StoredMembership, scope: Pick<Scope, "organizationId" | "ministryId">): DomainMembership {
   const acceptedAt = storedInstantOf(record.acceptedAt);
   const confirmation = storedInstantOf(record.confirmationDeadline);
   const choice: MemberChoice = record.state === "off" || record.state === "restricted" ? "off" : "immediate";

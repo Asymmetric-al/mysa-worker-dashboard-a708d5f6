@@ -1,5 +1,4 @@
-/** Criterion 14 — outreach and Requests. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 14 — outreach and Requests. */ import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../playwright.config"; // The runner's own entry points: `test` carries the seeded-persona fixture and `expect` the web-first matchers, and `resetSeed` restores the deterministic world through the application's own control.
 const INITIATIVES_PATH = "/partners/initiatives";
 const SEEDED_INITIATIVE = { initiativeId: "initiative-autumn-appeal", name: "Autumn appeal" } as const; // The seeded initiative: the one whose working list carries all three states and whose Request has moved on a version.
@@ -253,8 +252,11 @@ async function presentRequest(page: Page, purpose: string, manner: string): Prom
   await section.getByRole("textbox", { name: "How it was presented" }).fill(manner);
   await section.getByRole("button", { name: "Review this presentation" }).click();
   await section.getByRole("button", { name: "Record this presentation" }).last().click();
-  await expect(section.getByText(PRESENTED_ON, { exact: true })).toBeVisible();
-  await expect(section.getByText(manner, { exact: true })).toBeVisible();
+  await expect(section.locator('[data-slot="action-review-result"][data-outcome="accepted"]'), "The accepted attempt keeps its own receipt on the section: the step that recorded the presentation settles rather than re-arming").toBeVisible();
+  await expect(section.getByRole("button", { name: "Record this presentation" }), "A Request that already records a presentation offers no recording control, because a recorded presentation is never overwritten").toHaveCount(0);
+  const recordedFacts = section.locator('dd:not([data-slot="action-review"] dd)'); // The review step states the day and the manner a second time as the settled attempt's own record, so the recorded facts are read from the cells outside it: the Request's own statement of the presentation.
+  await expect(recordedFacts.getByText(PRESENTED_ON, { exact: true })).toBeVisible();
+  await expect(recordedFacts.getByText(manner, { exact: true })).toBeVisible();
   await expect(section.getByText("A recorded presentation is never overwritten, so no recording control is offered once one exists.")).toBeVisible();
 }
 async function recordAnswer(page: Page, purpose: string, kind: string, evidence: string): Promise<void> {

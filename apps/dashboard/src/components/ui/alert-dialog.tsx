@@ -5,9 +5,7 @@ import type { VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/cn";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useDirection } from "@/components/ui/direction";
-function AlertDialog({ ...props }: AlertDialogPrimitive.Root.Props) {
-  return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
-}
+const AlertDialog = ({ ...props }: AlertDialogPrimitive.Root.Props) => <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />;
 const AlertDialogTrigger = ({ ...props }: AlertDialogPrimitive.Trigger.Props) => <AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props} />;
 const AlertDialogPortal = ({ ...props }: AlertDialogPrimitive.Portal.Props) => <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />;
 const AlertDialogOverlay = ({ className, ...props }: AlertDialogPrimitive.Backdrop.Props) => (

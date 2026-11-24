@@ -17,10 +17,8 @@ const PERMITTED_FACT: Readonly<Record<"on" | "off", string>> = { on: PERMITTED_L
 const CONTACT_KIND_LABELS: Readonly<Record<ContactMethodKind, string>> = { email: "Email address", phone: "Phone number", postal: "Postal address" };
 const CONTACT_KIND_INPUT_MODES: Readonly<Record<ContactMethodKind, "email" | "tel" | "text">> = { email: "email", phone: "tel", postal: "text" };
 export const CONTACT_KIND_DEFAULT: ContactMethodKind = CONTACT_METHOD_KINDS[0] ?? "email";
-/** The method-kind a typed value names, or `null` when it names none the vocabulary holds. */
-export const contactKindOf = (value: string): ContactMethodKind | null => CONTACT_METHOD_KINDS.find((kind) => kind === value) ?? null;
-/** Adds one entry per contact-method row to a refusal's field labels, in the convention both record forms read. */
-export function contactMethodFieldLabels(labels: Record<string, string | undefined>, rowCount: number): Record<string, string | undefined> {
+/** The method-kind a typed value names, or `null` when it names none the vocabulary holds. */ export const contactKindOf = (value: string): ContactMethodKind | null => CONTACT_METHOD_KINDS.find((kind) => kind === value) ?? null;
+/** Adds one entry per contact-method row to a refusal's field labels, in the convention both record forms read. */ export function contactMethodFieldLabels(labels: Record<string, string | undefined>, rowCount: number): Record<string, string | undefined> {
   for (let index = 0; index < rowCount; index += 1) {
     const rowPath = `${CONTACT_METHODS_FIELD}.${String(index)}`;
     const legend = `${CONTACT_METHOD_ROW_PREFIX} ${String(index + 1)}`;
@@ -95,8 +93,7 @@ export interface ContactMethodListProps {
   readonly onRowsChange: (next: readonly ContactMethodRow[]) => void;
   readonly onAdd: () => void;
 }
-/** The contact-method rows one form holds, in the order the worker wrote them, with the one control that adds another. */
-export const ContactMethodList = ({ rows, headingId, errors, valueDescription, emptyNote, addNote, showPermittedFact = false, onRowsChange, onAdd }: ContactMethodListProps): ReactElement => (
+/** The contact-method rows one form holds, in the order the worker wrote them, with the one control that adds another. */ export const ContactMethodList = ({ rows, headingId, errors, valueDescription, emptyNote, addNote, showPermittedFact = false, onRowsChange, onAdd }: ContactMethodListProps): ReactElement => (
   <div className="flex min-w-0 flex-col gap-4">
     {rows.length === 0 ? (
       <p className="text-sm text-pretty text-muted-foreground">{emptyNote}</p>
@@ -118,9 +115,7 @@ export const ContactMethodList = ({ rows, headingId, errors, valueDescription, e
       </ul>
     )}
     <div className="flex min-w-0 flex-col gap-1">
-      <Button type="button" variant="outline" className="min-h-target w-fit max-w-full whitespace-normal" onClick={onAdd}>
-        Add a contact method
-      </Button>
+      <Button {...{ type: "button", variant: "outline", className: "min-h-target w-fit max-w-full whitespace-normal", onClick: onAdd }}>Add a contact method</Button>
       <p className="text-xs text-pretty text-muted-foreground">{addNote}</p>
     </div>
   </div>

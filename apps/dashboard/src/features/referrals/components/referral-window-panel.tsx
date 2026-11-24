@@ -1,4 +1,5 @@
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
+import { factFrame } from "@/components/fact-list";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,12 +19,7 @@ const EnvelopeValue = ({ value }: { readonly value: string }): ReactElement => (
     <time {...{ className: "tabular-figures", dateTime: value }}>{value}</time>
   </bdi>
 );
-const Fact = ({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement => (
-  <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-    <dt className="shrink-0 text-muted-foreground">{term}</dt>
-    <dd className="flex min-w-0 flex-col gap-1 break-words">{children}</dd>
-  </div>
-);
+const Fact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-1.5", termClassName: "shrink-0 text-muted-foreground", valueClassName: "flex min-w-0 flex-col gap-1 break-words" });
 const NominalAndResolved = ({ headingId, nominal, nominalUnavailableReason, end, sourceZone }: { readonly headingId: string; readonly nominal: ReferralNominalWindow | null; readonly nominalUnavailableReason: string | null; readonly end: string; readonly sourceZone: string }): ReactElement => (
   <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
     <h4 {...{ id: headingId, className: "type-group-title text-pretty" }}>{NOMINAL_VS_RESOLVED.heading}</h4>

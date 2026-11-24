@@ -8,5 +8,4 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const saveGoalRequestSchema = mutationInputSchema(z.custom<Parameters<typeof mutations.support.saveGoal>[0]["payload"]>());
 const readSupportGoal = readRoute(readJudgement(supportQueryFromSearch), (query) => reads.support.readGoal(query));
-const saveSupportGoal = (request: Request): Promise<Response> => writeRoute(request, saveGoalRequestSchema, mutations.support.saveGoal);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readSupportGoal, POST: saveSupportGoal });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readSupportGoal, POST: (request: Request): Promise<Response> => writeRoute(request, saveGoalRequestSchema, mutations.support.saveGoal) });

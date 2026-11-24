@@ -1,5 +1,4 @@
-/** Proves the image and video profiles that guard every upload (success criteria 9 and 18): a file's kind is established by its content and never by its name, every limit is exact at its boundary and enforced before decode. */
-import { readFileSync } from "node:fs";
+/** Proves the image and video profiles that guard every upload (success criteria 9 and 18): a file's kind is established by its content and never by its name, every limit is exact at its boundary and enforced before decode. */ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
@@ -249,8 +248,8 @@ it("the image limits are exact at their boundaries: admits a still frame only: a
   expect(animated.action).toBeDefined();
 });
 const ALT_TEXT = "A single flower opening against a dark background";
-async function offerSeededImage(overrides: { readonly bytes?: Uint8Array; readonly sourceName?: string; readonly altText?: string; readonly caption?: string }): Promise<MediaAcceptanceResult<MediaAssetScope>> {
-  return acceptImage({
+const offerSeededImage = async (overrides: { readonly bytes?: Uint8Array; readonly sourceName?: string; readonly altText?: string; readonly caption?: string }): Promise<MediaAcceptanceResult<MediaAssetScope>> =>
+  acceptImage({
     assetId: SEEDED_IMAGE.assetId,
     scope: SCOPE,
     sourceOriginalRef: PRIVATE_ORIGINAL,
@@ -259,7 +258,6 @@ async function offerSeededImage(overrides: { readonly bytes?: Uint8Array; readon
     altText: overrides.altText ?? ALT_TEXT,
     ...(overrides.caption === undefined ? {} : { caption: overrides.caption }),
   });
-}
 it("the produced image rendition is safe to serve: re-encodes the image without the descriptive metadata it arrived with", async () => {
   const tagged = withDescriptiveMetadata(fixture("poster.jpg"));
   expect([containsText(tagged, EXIF_SIGNATURE), containsText(tagged, XMP_NAMESPACE), containsText(tagged, SPLICED_DESCRIPTION)]).toEqual([true, true, true]); // The input must really carry the metadata, or an assertion about the output would prove nothing.
@@ -403,10 +401,8 @@ it("the video profile is decided by the content of the container: prepares the p
   expect(captionText.startsWith("WEBVTT")).toBe(true);
   expect(captionText).toContain("-->");
   expect(captionText.trim().length).toBeGreaterThan("WEBVTT".length);
-  const transcriptOfCaptions = renditionSuccess(await prepareRendition({ assetId: accepted.assetId, purpose: "transcript", bytes: fixture("sample.vtt") }));
-  expect(transcriptOfCaptions.rendition.mimeType).toBe(WEBVTT_MIME_TYPE);
-  const plainTranscript = renditionSuccess(await prepareRendition({ assetId: accepted.assetId, purpose: "transcript", bytes: utf8("A single flower opens against a dark background.") }));
-  expect(plainTranscript.rendition.mimeType).toBe(PLAIN_TEXT_MIME_TYPE);
+  expect(renditionSuccess(await prepareRendition({ assetId: accepted.assetId, purpose: "transcript", bytes: fixture("sample.vtt") })).rendition.mimeType).toBe(WEBVTT_MIME_TYPE);
+  expect(renditionSuccess(await prepareRendition({ assetId: accepted.assetId, purpose: "transcript", bytes: utf8("A single flower opens against a dark background.") })).rendition.mimeType).toBe(PLAIN_TEXT_MIME_TYPE);
   expect(renditionRefusal(await prepareRendition({ assetId: accepted.assetId, purpose: "poster", bytes: fixture("poster.jpg") })).code).toBe("alt-text-required");
 });
 it("the video profile is decided by the content of the container: refuses a caption track that is not UTF-8 WebVTT, and refuses display or playback here", async () => {

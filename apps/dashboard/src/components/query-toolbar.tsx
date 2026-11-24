@@ -16,8 +16,7 @@ import { countFormatOf } from "@/lib/count-format";
 import { useRovingFocus, useTypeahead } from "@/lib/ui-sdk";
 import type { ValueState } from "@/modules/data-service/envelope";
 /** One value a facet offers. */ export type FacetValueSpec = { readonly id: string; readonly label: string; readonly count?: number; readonly countState?: ValueState; readonly tone?: StatusTone };
-/** One filter the read envelope offers, with the values it admits in the caller's scope. */
-export type FacetSpec = { readonly id: string; readonly label: string; readonly values: readonly FacetValueSpec[]; readonly multi: boolean; readonly disabledReason?: string };
+/** One filter the read envelope offers, with the values it admits in the caller's scope. */ export type FacetSpec = { readonly id: string; readonly label: string; readonly values: readonly FacetValueSpec[]; readonly multi: boolean; readonly disabledReason?: string };
 /** Which facet is the amount range and which is the currency it is scoped to. */ export type AmountRangeScope = { readonly facetId?: string; readonly currencyFacetId?: string };
 /** The search field, controlled by the owner and debounced here. */ export type QueryToolbarSearch = { readonly value: string; readonly onChange: (value: string) => void; readonly placeholder: string; readonly debounceMs?: number };
 /** Props of {@link QueryToolbar}. */ export type QueryToolbarProps = {
@@ -94,9 +93,7 @@ function countViewOf(value: FacetValueSpec, locale?: string): FacetCountView {
     const word = valueStateWord(state);
     if (word !== undefined) return state === "incomplete-subtotal" && counted !== undefined ? { kind: "number-with-state", text: counted, label: word.label, tone: word.tone } : { kind: "word", label: word.label, tone: word.tone };
   }
-  if (counted !== undefined) return { kind: "number", text: counted };
-  if (state === "zero") return { kind: "number", text: formatCount.format(0) };
-  return { kind: "none" };
+  return counted !== undefined ? { kind: "number", text: counted } : state === "zero" ? { kind: "number", text: formatCount.format(0) } : { kind: "none" };
 }
 function FacetCount({ value, locale }: { readonly value: FacetValueSpec; readonly locale?: string }): ReactNode {
   const view = countViewOf(value, locale);
@@ -109,8 +106,7 @@ function FacetCount({ value, locale }: { readonly value: FacetValueSpec; readonl
       </span>
     );
   }
-  if (view.kind === "word") return <StatusBadge label={view.label} tone={view.tone} srPrefix="Matches" className="ms-auto shrink-0" />;
-  return null;
+  return view.kind === "word" ? <StatusBadge label={view.label} tone={view.tone} srPrefix="Matches" className="ms-auto shrink-0" /> : null;
 }
 function FacetLoading(): ReactNode {
   const rows = Array.from({ length: LOADING_PLACEHOLDER_ROWS }, (_, index) => index);
@@ -191,10 +187,9 @@ function MultiFacetControl({ facet, selected, onSelectionChange, pending, open, 
         <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto overscroll-contain">
           {values.map((value, index) => {
             const optionId = `${optionBaseId}-${index}`;
-            const isSelected = selected.includes(value.id);
             return (
               <div key={value.id} className="flex items-start gap-2.5 rounded-xl px-2 py-1.5">
-                <Checkbox {...roving.getItemProps(value.id, { id: optionId, checked: isSelected, onCheckedChange: (checked: boolean) => setValue(value.id, checked), onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => typeahead.onKeyDown(event), className: "mt-0.5" })} />
+                <Checkbox {...roving.getItemProps(value.id, { id: optionId, checked: selected.includes(value.id), onCheckedChange: (checked: boolean) => setValue(value.id, checked), onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => typeahead.onKeyDown(event), className: "mt-0.5" })} />
                 <Label htmlFor={optionId} className="min-w-0 flex-1 cursor-pointer items-start font-normal leading-snug">
                   <bdi className="min-w-0 break-words">{value.label}</bdi>
                 </Label>
@@ -216,12 +211,11 @@ function SingleFacetControl({ facet, selected, onSelectionChange, pending, local
   const valueIds = useMemo(() => facet.values.map((value) => value.id), [facet.values]);
   const candidate = selected.length === 1 ? selected[0] : undefined;
   const current = candidate !== undefined && facetValueById(facet, candidate) !== undefined ? candidate : null;
-  const loading = pending && facet.values.length === 0;
   return (
     <Combobox items={valueIds} value={current} itemToStringLabel={(valueId: string) => labelOfValue(facet, valueId)} onValueChange={(next: string | null) => onSelectionChange(next === null ? [] : [next])}>
       <ComboboxInput aria-label={facet.label} placeholder={facet.label} showClear={current !== null} className="w-44 max-w-full" />
       <ComboboxContent className="w-80 max-w-[calc(100vw-2rem)]">
-        {loading ? (
+        {pending && facet.values.length === 0 ? (
           <div className="p-3" aria-busy="true">
             <span className="sr-only">{TOOLBAR_COPY.facetLoading}</span>
             <FacetLoading />
@@ -245,9 +239,7 @@ function SingleFacetControl({ facet, selected, onSelectionChange, pending, local
 }
 function FacetControl(props: FacetControlProps & { readonly reason: string | null }): ReactNode {
   const { reason, ...rest } = props;
-  if (reason !== null) return <UnavailableFacetControl {...rest} reason={reason} />;
-  if (rest.facet.multi) return <MultiFacetControl {...rest} />;
-  return <SingleFacetControl {...rest} />;
+  return reason !== null ? <UnavailableFacetControl {...rest} reason={reason} /> : rest.facet.multi ? <MultiFacetControl {...rest} /> : <SingleFacetControl {...rest} />;
 }
 function FilterChip({ chip, onRemove }: { readonly chip: AppliedChip; readonly onRemove: () => void }): ReactNode {
   const text = `${chip.facetLabel}: ${chip.valueLabel}`;
@@ -320,8 +312,7 @@ type FacetControlEntry = { readonly facet: FacetSpec; readonly reason: string | 
   const setFacetValues = (facetId: string, values: readonly string[]): void => onAppliedChange(withFacetValues(applied, facetId, values));
   const reasonFor = (facet: FacetSpec): string | null => {
     const declared = facet.disabledReason;
-    if (declared !== undefined && declared.trim() !== "") return declared.trim();
-    return facet.id === rangeFacetId && singleCurrency === null ? TOOLBAR_COPY.currencyScopeReason : null;
+    return declared !== undefined && declared.trim() !== "" ? declared.trim() : facet.id === rangeFacetId && singleCurrency === null ? TOOLBAR_COPY.currencyScopeReason : null;
   };
   const notesBaseId = useId();
   const facetControls: readonly FacetControlEntry[] = facets.map((facet, index) => ({ facet, reason: reasonFor(facet), reasonId: `${notesBaseId}-filter-${index}` }));

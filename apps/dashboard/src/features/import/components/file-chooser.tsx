@@ -9,8 +9,8 @@ import { CHOOSE_FILE_COPY, IMPORT_SIMULATION_EFFECT, LIMIT_ROWS, chosenFileSize 
 import type { ImportFileSelection } from "../hooks/use-import-journey";
 import FactRow from "./fact-row";
 /** The committed example file, served from this application's own public directory: a plain download rather than a route, so a worker with no file in hand can read what this step accepts and choosing the downloaded copy opens the same review any other file does. */
-function readContentBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
+const readContentBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("The browser could not read the chosen file."));
     reader.onload = () => {
@@ -24,7 +24,6 @@ function readContentBase64(file: File): Promise<string> {
     };
     reader.readAsDataURL(file);
   });
-}
 export type FileChooserProps = { readonly selection: ImportFileSelection | undefined; readonly onChoose: (selection: ImportFileSelection) => void; readonly onContinue: () => void };
 export default function FileChooser({ selection, onChoose, onContinue }: FileChooserProps): ReactElement {
   const [reading, setReading] = useState(false);

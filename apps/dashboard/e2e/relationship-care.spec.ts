@@ -1,5 +1,4 @@
-/** Criterion 3 — relationship care: find a person and a church, read what their records honestly say, log an interaction, then create a separate task. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 3 — relationship care: find a person and a church, read what their records honestly say, log an interaction, then create a separate task. */ import type { Locator, Page } from "@playwright/test";
 import { armLostAcknowledgement, clearFailurePlan, expect, expectDevelopmentData, test } from "../playwright.config";
 const HREF = { roster: "/partners", work: "/work" } as const;
 const ROSTER = { search: "Search", label: "Partner roster", facet: "Contact type", facetValue: "Person" } as const;

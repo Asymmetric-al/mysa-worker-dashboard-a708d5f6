@@ -15,8 +15,7 @@ import { NOTICE_HEADING_TAG, nestedNoticeHeadingLevel, type NoticeHeadingLevel }
 
 export { NOTICE_HEADING_TAG, nestedNoticeHeadingLevel };
 export type { NoticeHeadingLevel };
-/** Every state this component renders, listed once so the closed set has a runtime form as well as a type. */
-export const NOTICE_KINDS = ["empty", "loading", "unavailable", "unknown", "denied", "refused", "partial-coverage", "language-unavailable"] as const;
+/** Every state this component renders, listed once so the closed set has a runtime form as well as a type. */ export const NOTICE_KINDS = ["empty", "loading", "unavailable", "unknown", "denied", "refused", "partial-coverage", "language-unavailable"] as const;
 /** One state a surface can be in instead of showing a result. */ export type NoticeKind = (typeof NOTICE_KINDS)[number];
 /** An in-page command a notice may run. */ export type NoticeHandler = () => void | Promise<void>;
 /** The one call to action a notice offers. */ export type NoticeAction = { readonly label: string; readonly href?: string; readonly onClick?: NoticeHandler };
@@ -244,7 +243,6 @@ export function StateNotice({ kind, title, description, action, source, retry, o
     );
   }
   if (kind === "loading") {
-    const lines = Math.min(Math.max(Math.trunc(loadingLines), 1), MAX_LOADING_LINES);
     return (
       <div ref={regionRef} aria-busy={true} tabIndex={-1} className={cn("flex w-full flex-col gap-3 rounded-lg border border-dashed border-border p-6", className)}>
         <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -253,7 +251,7 @@ export function StateNotice({ kind, title, description, action, source, retry, o
         </p>
         {description === undefined ? null : <p className="type-supporting">{description}</p>}
         <div aria-hidden="true" className="flex flex-col gap-2">
-          {Array.from({ length: lines }, (_, line) => (
+          {Array.from({ length: Math.min(Math.max(Math.trunc(loadingLines), 1), MAX_LOADING_LINES) }, (_, line) => (
             <Skeleton key={line} className={cn("h-4 rounded-md", LOADING_LINE_WIDTHS[line % LOADING_LINE_WIDTHS.length])} />
           ))}
         </div>

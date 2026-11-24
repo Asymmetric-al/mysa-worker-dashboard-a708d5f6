@@ -1,5 +1,4 @@
-/** Store persistence, atomic writes, session isolation and the deterministic reset: success criteria 2 and 21. */
-import { createHash } from "node:crypto";
+/** Store persistence, atomic writes, session isolation and the deterministic reset: success criteria 2 and 21. */ import { createHash } from "node:crypto";
 import { readdir, readFile, utimes, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,18 +19,16 @@ function documentsFor(sessionId: string): SessionDocuments {
   const state = documents.state as SessionStateDocument;
   return { ...documents, state: { ...state, context: { ...state.context, sessionId } } };
 }
-/** Lays one session down through the store's creating path, so its files are the seed's own bytes. */
-const layDownSession = async (sessionId: string): Promise<void> => resetSession(sessionId, documentsFor(sessionId));
+/** Lays one session down through the store's creating path, so its files are the seed's own bytes. */ const layDownSession = async (sessionId: string): Promise<void> => resetSession(sessionId, documentsFor(sessionId));
 const stateOnDisk = async (sessionId: string): Promise<SessionStateDocument> => requiredSaying(await readJson<SessionStateDocument>(sessionPaths(sessionId).state), `The session ${JSON.stringify(sessionId)} holds no state document on disk.`);
 async function partnerIdsOnDisk(sessionId: string): Promise<string[]> {
   const state = await stateOnDisk(sessionId);
   return state.partners.map((record) => record.partnerId);
 }
-async function sha256Of(file: string): Promise<string> {
-  return createHash("sha256")
+const sha256Of = async (file: string): Promise<string> =>
+  createHash("sha256")
     .update(await readFile(file))
     .digest("hex");
-}
 async function documentDigests(sessionId: string): Promise<{ state: string; operations: string; meta: string }> {
   const paths = sessionPaths(sessionId);
   return { state: await sha256Of(paths.state), operations: await sha256Of(paths.operations), meta: await sha256Of(paths.meta) };
@@ -40,8 +37,7 @@ async function ledgerOperationIds(sessionId: string): Promise<string[]> {
   const document = await readJson<{ readonly entries?: readonly { readonly operationId: string }[]; readonly records?: Readonly<Record<string, { readonly operationId: string }>> }>(sessionPaths(sessionId).operations);
   if (document === undefined) return [];
   const fromEntries = (document.entries ?? []).map((entry) => entry.operationId);
-  const fromRecords = Object.values(document.records ?? {}).map((entry) => entry.operationId);
-  return [...fromEntries, ...fromRecords].sort();
+  return [...fromEntries, ...Object.values(document.records ?? {}).map((entry) => entry.operationId)].sort();
 }
 async function seededStateDigests(): Promise<Record<string, string>> {
   const digests: Record<string, string> = {};
@@ -53,10 +49,8 @@ async function filesEndingWith(suffix: string): Promise<string[]> {
   return entries.filter((name) => name.endsWith(suffix));
 }
 type PreparationInput = Parameters<typeof mutations.partnerPreparation.createPrivatePreparation>[0];
-/** One accepted private preparation, with the input that produced it so the same attempt can be replayed. */
-type PreparationWrite = { readonly input: PreparationInput; readonly operationId: string; readonly revision: string; readonly created: readonly string[]; readonly addedPartnerIds: readonly string[] };
-/** The context a session acts in, taken from the one resolver rather than assembled by this file. */
-async function scopeOf(sessionId: string): Promise<Scope> {
+/** One accepted private preparation, with the input that produced it so the same attempt can be replayed. */ type PreparationWrite = { readonly input: PreparationInput; readonly operationId: string; readonly revision: string; readonly created: readonly string[]; readonly addedPartnerIds: readonly string[] };
+/** The context a session acts in, taken from the one resolver rather than assembled by this file. */ async function scopeOf(sessionId: string): Promise<Scope> {
   const resolution = await resolveSession({ sessionId });
   if (!resolution.ok) throw new Error(`The store session ${JSON.stringify(sessionId)} was refused (${resolution.refusal.kind}), so no change can be applied in it.`);
   if (resolution.session.selected === null) throw new Error(`The store session ${JSON.stringify(sessionId)} has selected no context, so no change can be applied in it.`);
@@ -76,8 +70,7 @@ async function createPreparation(sessionId: string, displayName: string): Promis
   const addedPartnerIds = (await partnerIdsOnDisk(sessionId)).filter((partnerId) => !before.includes(partnerId));
   return { input, operationId, revision: accepted.revision, created: accepted.created, addedPartnerIds };
 }
-/** A display name no seeded record already carries, so a roster search can only match the record this case created. */
-const probeName = (subject: string): string => `Store probe ${subject} ${newOperationId().slice(0, 8)}`;
+/** A display name no seeded record already carries, so a roster search can only match the record this case created. */ const probeName = (subject: string): string => `Store probe ${subject} ${newOperationId().slice(0, 8)}`;
 describe("the file-backed store", () => {
   // Every case starts from the seed's own bytes written under this file's session ids, so no case depends on what an earlier one wrote and no other suite can hand this file a session.
   beforeEach(async () => {
@@ -253,7 +246,6 @@ describe("the deterministic reset", () => {
   it("discards every stored session before re-seeding the root, and lays down identical bytes on every run", async () => {
     // This case runs the global reset, because `resetSeed()` discards every session the store root holds rather than one session; each case here lays its own sessions down first, so a session is recreated on demand.
     // The root is shared with the other suites, so this case asserts what the reset owns: the seeded documents are present and byte-identical afterwards, and the stray document and this file's own session are gone.
-    //
     // The probe is a session document with no session behind it: a file directly under the root that `listSessionIds()` reports and nothing can read. The reset discards every such document and every media byte under the root, so a document it did not lay down cannot survive it.
     const straySession = `${PRIMARY_SESSION}-stray`;
     const strayStatePath = sessionPaths(straySession).state;

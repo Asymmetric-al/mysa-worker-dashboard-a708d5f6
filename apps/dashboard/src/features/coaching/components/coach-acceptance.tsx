@@ -77,8 +77,7 @@ function revisionOrdinal(revision: string): number {
   const parsed = digits === null ? Number.NaN : Number.parseInt(digits[1] ?? "", 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
 }
-/** The ministries one invitation names, each beside its own identifier: a label alone would be a name this page matched across records, and an identifier alone names nothing a person can read. */
-const MinistryFacts = ({ ministries }: { readonly ministries: InvitationSummary["ministries"] }): ReactElement =>
+/** The ministries one invitation names, each beside its own identifier: a label alone would be a name this page matched across records, and an identifier alone names nothing a person can read. */ const MinistryFacts = ({ ministries }: { readonly ministries: InvitationSummary["ministries"] }): ReactElement =>
   ministries.length === 0 ? (
     <span className={MUTED_TEXT_CLASS}>{"This invitation's record names no ministry, so none is shown here."}</span>
   ) : (
@@ -92,8 +91,7 @@ const MinistryFacts = ({ ministries }: { readonly ministries: InvitationSummary[
     </span>
   );
 function InvitationFacts({ invitation, lifecycle }: { readonly invitation: InvitationSummary; readonly lifecycle: GrantLifecycleState }): ReactElement {
-  const headingId = useId();
-  const modulesId = useId();
+  const [headingId, modulesId] = [useId(), useId()];
   const namedModules = MODULE_KEYS.filter((key) => invitation.modules.includes(key));
   const lifecycleCopy = GRANT_STATE_COPY[lifecycle];
   const { organizationId, organizationLabel } = invitation;
@@ -164,13 +162,14 @@ function OutcomeStanding({ outcomes }: { readonly outcomes: SharingOutcomeSet })
       <ul className="flex min-w-0 flex-col gap-4">
         {SHARING_OUTCOME_COPY.map((entry) => {
           const state = outcomes[OUTCOME_STATE_FIELD[entry.id]];
+          // The copy's description states the outcome as done, so it is printed only where this row's own word states the stage was reached: a row that states otherwise carries only its own sentence, and never the fact its badge denies.
           return (
             <li key={entry.id} data-slot="coach-acceptance-outcome" data-outcome={entry.id} data-state={state} className="flex min-w-0 flex-col gap-1.5">
               <p className="flex min-w-0 flex-wrap items-baseline gap-2 type-body">
                 <span className="font-medium">{OUTCOME_STAGE_NAME[entry.id]}</span>
                 <StatusBadge label={outcomeWord(entry, state)} tone={OUTCOME_TONE[state]} />
               </p>
-              <p className={MUTED_TEXT_CLASS}>{entry.description}</p>
+              {state === "reached" ? <p className={MUTED_TEXT_CLASS}>{entry.description}</p> : null}
               <p className="type-body text-pretty">{OUTCOME_STATE_SENTENCE[entry.id][state]}</p>
             </li>
           );
@@ -179,8 +178,7 @@ function OutcomeStanding({ outcomes }: { readonly outcomes: SharingOutcomeSet })
     </section>
   );
 }
-/** The statement a coach who holds relationships but has no invitation awaiting acceptance reads: a plain region rather than an empty state, because an empty state over a non-empty portfolio would misstate what the read returned. */
-function NoAcceptanceStatement(): ReactElement {
+/** The statement a coach who holds relationships but has no invitation awaiting acceptance reads: a plain region rather than an empty state, because an empty state over a non-empty portfolio would misstate what the read returned. */ function NoAcceptanceStatement(): ReactElement {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} data-slot="coach-acceptance-no-invitation" className="min-w-0">

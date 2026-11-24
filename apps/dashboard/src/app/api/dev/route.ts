@@ -20,11 +20,8 @@ const ACTION_MESSAGE = `A development request names the action it asks for: ${DE
 const AMBIGUOUS_ACTION_MESSAGE = `A development request carries exactly one action, and ${DEV_ACTIONS.join(", ")} are six distinct names.`;
 type SetFailurePlanPayloadWire = Parameters<typeof mutations.dev.setFailurePlan>[0]["payload"];
 type ArmingFailurePlanPayloadWire = Exclude<SetFailurePlanPayloadWire, { plan: null }>;
-/** What a persona switch reports once it has settled: the outcome it answers with, and the authority the caller's own read established, which is what its diagnostic line states. */
-type PersonaSwitch = { readonly outcome: MutationOutcome; readonly authority: LogScope };
-function serviceWord<Word extends string>(): z.ZodType<Word> {
-  return z.custom<Word>((value) => typeof value === "string" && value.trim().length > 0 && value.length <= WIRE_TEXT_LIMIT, `This field is a non-empty name of at most ${String(WIRE_TEXT_LIMIT)} characters.`);
-}
+/** What a persona switch reports once it has settled: the outcome it answers with, and the authority the caller's own read established, which is what its diagnostic line states. */ type PersonaSwitch = { readonly outcome: MutationOutcome; readonly authority: LogScope };
+const serviceWord = <Word extends string>(): z.ZodType<Word> => z.custom<Word>((value) => typeof value === "string" && value.trim().length > 0 && value.length <= WIRE_TEXT_LIMIT, `This field is a non-empty name of at most ${String(WIRE_TEXT_LIMIT)} characters.`);
 const setScenarioPayload = z.strictObject({ scenarioId: serviceWord<Parameters<typeof mutations.dev.setScenario>[0]["payload"]["scenarioId"]>() });
 const setClockPayload = z.strictObject({ offsetIso: z.string().min(1).max(WIRE_TEXT_LIMIT) });
 const advanceClockPayload = z.strictObject({
@@ -42,14 +39,13 @@ const PERSONA_ID_REQUIRED_MESSAGE = "A persona switch names the seeded persona t
 const PERSONA_NOT_LISTED_MESSAGE = "A persona switch names one of the identities this session's development read lists, so send an identifier from that roster rather than one this session does not hold.";
 const PERSONA_UNSEEDED_MESSAGE = "This session's roster lists the persona, but this build seeds no session for it, so the switch would hand this browser a session the store cannot resolve. A deterministic reset lays every seeded session down again.";
 const selectPersonaPayload = z.strictObject({ personaId: z.string({ error: PERSONA_ID_REQUIRED_MESSAGE }).min(1, PERSONA_ID_REQUIRED_MESSAGE).max(WIRE_TEXT_LIMIT) });
-function requestSchema<P>(action: DevAction, payload: z.ZodType<P>): z.ZodType<MutationInput<P>> {
-  return z.preprocess((raw: unknown) => {
+const requestSchema = <P>(action: DevAction, payload: z.ZodType<P>): z.ZodType<MutationInput<P>> =>
+  z.preprocess((raw: unknown) => {
     if (!isRecord(raw) || raw.action !== action) return undefined;
     const projection: Record<string, unknown> = { ...raw };
     delete projection.action;
     return projection;
   }, mutationInputSchema(payload));
-}
 const setScenarioRequest = requestSchema("setScenario", setScenarioPayload);
 const setClockRequest = requestSchema("setClock", setClockPayload);
 const advanceClockRequest = requestSchema("advanceClock", advanceClockPayload);
@@ -62,8 +58,7 @@ const devActionOf = (body: unknown): DevAction | null => (isRecord(body) && isDe
 const developmentDenial = (): MutationOutcome => denied({ operationId: UNREACHED_ATTEMPT, reasonCode: "capability-absent" });
 const refusalOnAction = (operationId: string, message: string): MutationOutcome => invalid({ operationId, fields: { action: [message] } });
 const isPersonaId = (value: string): value is PersonaId => Object.hasOwn(SEEDED_PERSONAS, value);
-/** Re-bases a read's refusal onto the attempt this request carries: the attempt identity is the caller's own, never the identity a read files its own answer under. */
-function refusalOverRead(read: Exclude<ReadResult<unknown>, { readonly kind: "envelope" }>, operationId: string): MutationOutcome {
+/** Re-bases a read's refusal onto the attempt this request carries: the attempt identity is the caller's own, never the identity a read files its own answer under. */ function refusalOverRead(read: Exclude<ReadResult<unknown>, { readonly kind: "envelope" }>, operationId: string): MutationOutcome {
   switch (read.kind) {
     case "denied":
       return denied({ operationId, reasonCode: read.denied.reasonCode });

@@ -61,8 +61,7 @@ export type ImportProposalRowView = { readonly rowNumber: number; readonly decis
 export type ImportProposalRowReview = { readonly rowNumber: number; readonly verdict: ImportRowVerdict } & { readonly issues: readonly ImportFieldIssue[]; readonly mappedCells: readonly ImportMappedCell[]; readonly preservedCells: readonly ImportPreservedCell[] } & {
   readonly restrictions: readonly ImportRestriction[];
   readonly suggestions: readonly ImportMatchSuggestion[];
-  /** The other rows of this same file this row looks like, or `null` when nothing in the file resembles it: a look-alike signal derived once for the whole file, and neither a verdict nor a decision. */
-  readonly duplicateLooking: ImportDuplicateLooking | null;
+  /** The other rows of this same file this row looks like, or `null` when nothing in the file resembles it: a look-alike signal derived once for the whole file, and neither a verdict nor a decision. */ readonly duplicateLooking: ImportDuplicateLooking | null;
 };
 /** What the review step reads: the file's fingerprint, the mapping suggestion, the validation counts and one entry per returned row. */
 export type ImportProposalReviewView = { readonly fileFingerprint: string; readonly suggestion: ImportSuggestedMapping } & { readonly counts: ImportValidationCounts | null; readonly problems: readonly ImportValidationProblem[] } & { readonly rows: readonly ImportProposalRowReview[] };
@@ -158,8 +157,7 @@ function foundImportIdOf(entry: OperationRecord | undefined, scope: Scope): stri
   const importOperationId = entry.result["importOperationId"];
   return typeof importOperationId === "string" && importOperationId.length > 0 ? importOperationId : null;
 }
-/** The proposal a requested identity names: the proposal recorded under it, or the import an attempt that answered `unchanged` recorded finding. */
-function proposalNamedBy(owned: readonly OwnedProposal[], requested: string, found: string | null): ImportProposalRecord | undefined {
+/** The proposal a requested identity names: the proposal recorded under it, or the import an attempt that answered `unchanged` recorded finding. */ function proposalNamedBy(owned: readonly OwnedProposal[], requested: string, found: string | null): ImportProposalRecord | undefined {
   let throughAttempt: ImportProposalRecord | undefined;
   for (const proposal of owned) {
     if (proposal.record.importOperationId === requested) return proposal.record;
@@ -191,9 +189,8 @@ function indexProposal(record: ImportProposalRecord): ProposalIndex {
   return { decisions, results };
 }
 const isReportedRow = (rowNumber: number, rowCount: number): boolean => Number.isInteger(rowNumber) && rowNumber >= 1 && rowNumber <= rowCount;
-function limitViewsOf(fileMeta: ImportFileMetaRecord): readonly ImportLimitView[] {
-  return IMPORT_LIMIT_DESCRIPTORS.map((descriptor) => ({ id: descriptor.id, label: descriptor.label, value: descriptor.value, unit: descriptor.unit, refusesWholeFile: descriptor.refusesWholeFile, boundary: descriptor.boundary, measured: measuredValueOf(descriptor.id, fileMeta) }));
-}
+const limitViewsOf = (fileMeta: ImportFileMetaRecord): readonly ImportLimitView[] =>
+  IMPORT_LIMIT_DESCRIPTORS.map((descriptor) => ({ id: descriptor.id, label: descriptor.label, value: descriptor.value, unit: descriptor.unit, refusesWholeFile: descriptor.refusesWholeFile, boundary: descriptor.boundary, measured: measuredValueOf(descriptor.id, fileMeta) }));
 const MEASURED_LIMIT_VALUES: Readonly<Record<ImportLimitId, (fileMeta: ImportFileMetaRecord) => number | null>> = { "file-bytes": (fileMeta) => fileMeta.bytes, "data-rows": (fileMeta) => fileMeta.rowCount, columns: (fileMeta) => fileMeta.columnCount, "cell-code-points": () => null };
 const measuredValueOf = (limitId: ImportLimitId, fileMeta: ImportFileMetaRecord): number | null => MEASURED_LIMIT_VALUES[limitId](fileMeta);
 type ProposalColumns = { readonly columns: readonly ImportProposalColumnView[]; readonly ignoredColumnIndexes: readonly number[]; readonly repeatedHeaders: readonly ImportRepeatedHeaderView[] };
@@ -286,11 +283,10 @@ async function proposalReviewOf(stored: ImportReviewRecord | undefined, window: 
 const DECISION_KINDS: Readonly<Record<ImportRowDecision, ImportDecisionKind>> = { "new-private-entry": "create", "reuse-authorized-identity": "reuse", skip: "skip", unresolved: "unresolved" };
 const decisionKindOf = (decision: ImportRowDecision): ImportDecisionKind => DECISION_KINDS[decision];
 const storedCandidateOf = (decision: ImportRowDecisionRecord): ImportMatchReference | null => (decision.candidate !== null ? { ...decision.candidate } : decision.decision !== "reuse-authorized-identity" || decision.targetPartnerId === null ? null : { system: LOCAL_STORE_SYSTEM, reference: decision.targetPartnerId });
-function recordedDecisionInputsOf(decisions: ReadonlyMap<number, ImportRowDecisionRecord>): readonly ImportDecisionInput[] {
-  return [...decisions.values()]
+const recordedDecisionInputsOf = (decisions: ReadonlyMap<number, ImportRowDecisionRecord>): readonly ImportDecisionInput[] =>
+  [...decisions.values()]
     .sort((left, right) => left.rowNumber - right.rowNumber)
     .map((decision) => decisionInputOf({ kind: decisionKindOf(decision.decision), rowNumber: decision.rowNumber, corrections: decision.corrections.map((correction) => ({ columnNumber: correction.columnNumber, value: correction.value })), candidate: storedCandidateOf(decision), reason: decision.reason ?? "" }));
-}
 function proposalValueStates(record: ImportProposalRecord, summary: ImportProposalSummaryView, limits: readonly ImportLimitView[], window: ImportRowWindow): Readonly<Record<string, RecordedValueState>> {
   const states: Record<string, RecordedValueState> = {
     "file.bytes": measuredState(record.fileMeta.bytes),
@@ -308,13 +304,11 @@ function proposalValueStates(record: ImportProposalRecord, summary: ImportPropos
   for (const limit of limits) states[`limits.${limit.id}.measured`] = measuredState(limit.measured);
   return states;
 }
-function proposalActions(summary: ImportProposalSummaryView): readonly ReadAction[] {
-  return [
-    { name: "setRowDecision", available: true },
-    summary.create + summary.reuse > 0 ? { name: "acceptImportRows", available: true } : { name: "acceptImportRows", available: false, reason: "No row is decided for a new entry or a reuse yet, so there is nothing to accept. Decide about a row, or skip it, before importing." },
-    { name: "cancelImport", available: true },
-  ];
-}
+const proposalActions = (summary: ImportProposalSummaryView): readonly ReadAction[] => [
+  { name: "setRowDecision", available: true },
+  summary.create + summary.reuse > 0 ? { name: "acceptImportRows", available: true } : { name: "acceptImportRows", available: false, reason: "No row is decided for a new entry or a reuse yet, so there is nothing to accept. Decide about a row, or skip it, before importing." },
+  { name: "cancelImport", available: true },
+];
 const RECEIPT_SUMMARY_KEYS = ["counts", "totalRowCount", "blockedRowCount", "blockedReasons", "corrections", "correctionCount", "restrictionsPreserved", "restrictionsCarried"] as const satisfies readonly (keyof ImportDecisionSummary)[];
 function receiptSummaryOf(receipt: ImportReceipt): ImportReceiptSummaryView {
   const summary = project(receipt.summary, RECEIPT_SUMMARY_KEYS);
@@ -332,16 +326,14 @@ function receiptSummaryOf(receipt: ImportReceipt): ImportReceiptSummaryView {
     restrictionsCarried: summary.restrictionsCarried,
   };
 }
-function receiptMappingOf(receipt: ImportReceipt): ImportReceiptMappingView {
-  return {
-    columnCount: receipt.mapping.columnCount,
-    assignments: receipt.mapping.assignments.map((assignment) => ({ columnIndex: assignment.columnIndex, fieldId: assignment.fieldId, fieldLabel: fieldLabelOf(assignment.fieldId) ?? assignment.fieldId })),
-    fields: [...receipt.mapping.fields],
-    declined: [...receipt.mapping.declined],
-    unmapped: [...receipt.mapping.unmapped],
-    ignored: receipt.mapping.ignored.map((column) => ({ columnIndex: column.index, header: column.header, occurrence: column.occurrence, reason: column.reason, message: column.message })),
-  };
-}
+const receiptMappingOf = (receipt: ImportReceipt): ImportReceiptMappingView => ({
+  columnCount: receipt.mapping.columnCount,
+  assignments: receipt.mapping.assignments.map((assignment) => ({ columnIndex: assignment.columnIndex, fieldId: assignment.fieldId, fieldLabel: fieldLabelOf(assignment.fieldId) ?? assignment.fieldId })),
+  fields: [...receipt.mapping.fields],
+  declined: [...receipt.mapping.declined],
+  unmapped: [...receipt.mapping.unmapped],
+  ignored: receipt.mapping.ignored.map((column) => ({ columnIndex: column.index, header: column.header, occurrence: column.occurrence, reason: column.reason, message: column.message })),
+});
 function receiptRowsOf(receipt: ImportReceipt): readonly ImportReceiptRowView[] {
   const decisions = new Map<number, ImportDecisionKind>();
   for (const decision of receipt.rowDecisions.decisions) if (!decisions.has(decision.rowNumber)) decisions.set(decision.rowNumber, decision.kind);

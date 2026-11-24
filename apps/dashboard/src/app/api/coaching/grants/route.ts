@@ -29,8 +29,7 @@ function refusalIdentityOf(raw: unknown): string {
   return stated.length > MAX_ECHOED_OPERATION_ID_LENGTH ? UNIDENTIFIED_ATTEMPT : stated;
 }
 const refusal = (operationId: string, error: z.ZodError): Response => toResponse(invalid({ operationId, fields: error }));
-/** Applies exactly one named coaching-grant change and answers with one of the eight outcomes: `accepted`, `alreadyAccepted` for a replay of the same operationId, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-async function changeGrant(request: Request): Promise<Response> {
+/** Applies exactly one named coaching-grant change and answers with one of the eight outcomes: `accepted`, `alreadyAccepted` for a replay of the same operationId, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ async function changeGrant(request: Request): Promise<Response> {
   const raw = await jsonBodyOf(request);
   const operationId = refusalIdentityOf(raw);
   const verb = verbRead.safeParse(raw);

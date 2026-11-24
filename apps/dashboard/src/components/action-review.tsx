@@ -17,8 +17,7 @@ const SETTLED_SENTENCE = "This step is complete for this attempt, and the result
 const NOTHING_SELECTED_SENTENCE = "Nothing is selected, so this step has nothing to apply. Select at least one row in the list, then " + "return here.";
 const COUNT_CLASS = "tabular-figures font-medium text-foreground";
 const STEP_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-/** The one type scale's utility per level, so a review step and its receipt state the level they sit at with the same measure on every surface. */
-const STEP_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
+/** The one type scale's utility per level, so a review step and its receipt state the level they sit at with the same measure on every surface. */ const STEP_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
 /** The heading level a step renders at when the caller states none. */ export type ReviewHeadingLevel = keyof typeof STEP_HEADING_TAG;
 export type ActionReviewSelection = { readonly count: number; readonly noun: string; readonly excluded?: number };
 export type ActionReviewProps<P = unknown> = {
@@ -37,8 +36,7 @@ export type ActionReviewProps<P = unknown> = {
   readonly onSettled?: (outcome: MutationOutcome) => void;
   readonly fieldLabels?: Readonly<Record<string, string | undefined>>;
   readonly headingLevel?: ReviewHeadingLevel;
-  /** A choice this step's own input carries, rendered with the step rather than in a second surface beside it: the control belongs to the reviewed intent, so changing it changes the intent and begins a new attempt's identity. */
-  readonly children?: ReactNode;
+  /** A choice this step's own input carries, rendered with the step rather than in a second surface beside it: the control belongs to the reviewed intent, so changing it changes the intent and begins a new attempt's identity. */ readonly children?: ReactNode;
   readonly className?: string;
 };
 const receiptHeadingLevel = (level: ReviewHeadingLevel): 2 | 3 | 4 => (level === 2 ? 3 : 4);

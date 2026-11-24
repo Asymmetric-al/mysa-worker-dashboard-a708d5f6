@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { reads } from "@/modules/data-service";
-import { EXPIRED_HISTORY_COPY, EXPIRY_VS_CLOSURE, FORBIDDEN_FIELDS, LIST_COPY, PRECISION_COPY, STATUS_COPY, WINDOW_COPY, type ReferralStatusWord } from "../copy";
+import { CONTINUE_COPY, EXPIRED_HISTORY_COPY, EXPIRY_VS_CLOSURE, FORBIDDEN_FIELDS, LIST_COPY, PRECISION_COPY, STATUS_COPY, WINDOW_COPY, type ReferralStatusWord } from "../copy";
 type ReferralDetailEnvelope = Extract<Awaited<ReturnType<typeof reads.referrals.readReferral>>, { readonly kind: "envelope" }>["envelope"];
 type ExpiredHistoryRow = Extract<ReferralDetailEnvelope["data"], { readonly view: "expired-history" }>["referral"];
 const STATUS_TONE: Readonly<Record<ReferralStatusWord, StatusTone>> = { active: "positive", expired: "neutral", "no-deadline": "caution", refused: "caution", withdrawn: "danger", revoked: "danger", erased: "danger", departed: "danger" };
@@ -84,7 +84,20 @@ export default function ExpiredReferralHistory({ referral, status, searchEmpty =
           <AlertTitle>{EXPIRED_HISTORY_COPY.permissionStatement}</AlertTitle>
           <AlertDescription>{EXPIRED_HISTORY_COPY.readOnlyNote}</AlertDescription>
         </Alert>
-        {referral === null || searchEmpty ? emptyNotice : <PermittedFacts referral={referral} status={status ?? referral.status.status} />}
+        {referral === null || searchEmpty ? (
+          emptyNotice
+        ) : (
+          <>
+            <PermittedFacts referral={referral} status={status ?? referral.status.status} />
+            {/* The read this card renders already publishes why no Continue action stands for the cycle, and the panel that states that reason is not composed when the setting withholds the action, so the reason is disclosed here instead: this card is the one expired presentation the list and the detail both render, and the reason the read published belongs on both. */}
+            {referral.continuation.reason === null ? null : (
+              <div className="flex min-w-0 flex-col gap-2" data-slot="continue-referral-unavailable">
+                <SectionTag className={HEADING_SCALE[headings.section]}>{CONTINUE_COPY.unavailableHeading}</SectionTag>
+                <p className="min-w-0 text-pretty wrap-anywhere text-muted-foreground">{referral.continuation.reason}</p>
+              </div>
+            )}
+          </>
+        )}
         <Separator />
         <div className="flex min-w-0 flex-col gap-2">
           <SectionTag className={HEADING_SCALE[headings.section]}>{EXPIRED_HISTORY_COPY.absentHeading}</SectionTag>

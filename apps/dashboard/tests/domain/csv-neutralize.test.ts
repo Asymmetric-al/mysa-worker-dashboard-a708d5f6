@@ -1,5 +1,4 @@
-/** Proves the owned CSV writer's spreadsheet-formula neutralisation: every cell a spreadsheet would evaluate as a formula is written inert, and every other character of the value survives exactly. */
-import { readdirSync, readFileSync } from "node:fs";
+/** Proves the owned CSV writer's spreadsheet-formula neutralisation: every cell a spreadsheet would evaluate as a formula is written inert, and every other character of the value survives exactly. */ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Temporal } from "temporal-polyfill";
@@ -32,9 +31,7 @@ describe("every ASCII character a spreadsheet reads as a formula trigger", () =>
     expect([emitted, emitted.startsWith(`"`), emitted.endsWith(`"`), fieldText(emitted), neutralizer.requiresNeutralisation(value)]).toEqual([expected, true, true, `\t${value}`, true]);
   });
   it("fixes the trigger set at the eleven characters the export contract names", () => {
-    const ascii = ASCII_TRIGGER_CASES.map(({ trigger }) => trigger);
-    const fullWidth = FULL_WIDTH_TRIGGER_CASES.map(({ trigger }) => trigger);
-    expect([...neutralizer.DANGEROUS_LEADING_CHARS]).toEqual([...ascii, ...fullWidth]);
+    expect([...neutralizer.DANGEROUS_LEADING_CHARS]).toEqual([...ASCII_TRIGGER_CASES.map(({ trigger }) => trigger), ...FULL_WIDTH_TRIGGER_CASES.map(({ trigger }) => trigger)]);
   });
 });
 describe("the full-width forms a CJK input method produces", () => {
@@ -136,8 +133,12 @@ it("the writer neutralises every cell of a real result: leaves no field in the d
 });
 it("the writer neutralises every cell of a real result: writes no byte-order mark", async () => {
   const document = await toCsv(receivedSupportReport());
-  const bytes = Buffer.from(document, "utf8");
-  expect([bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), document.codePointAt(0)]).toEqual([false, 0x22]);
+  expect([
+    Buffer.from(document, "utf8")
+      .subarray(0, 3)
+      .equals(Buffer.from([0xef, 0xbb, 0xbf])),
+    document.codePointAt(0),
+  ]).toEqual([false, 0x22]);
 });
 it("the writer neutralises every cell of a real result: keeps the neutralising tab in the data, the residual A8 discloses", async () => {
   const document = await toCsv(receivedSupportReport());

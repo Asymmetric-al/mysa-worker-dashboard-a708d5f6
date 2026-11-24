@@ -26,8 +26,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   refused: { title: PAGE_COPY.refused.title, body: PAGE_COPY.refused.description },
 };
 const RosterNotice = ({ result }: { readonly result: Exclude<Awaited<ReturnType<RosterRead>>, { readonly kind: "envelope" }> }): ReactElement => <ReadNotices failure={result} copy={NOTICE_COPY} />;
-/** The first page of the roster, stated rather than left out because the read answers a page only where one is named: without it the answer would be the whole collection, and the surface would be handed every row of it — the client-side window this route exists to remove. */
-const FIRST_PAGE = 1;
+/** The first page of the roster, stated rather than left out because the read answers a page only where one is named: without it the answer would be the whole collection, and the surface would be handed every row of it — the client-side window this route exists to remove. */ const FIRST_PAGE = 1;
 /** The two parameters this route forwards: the paging window the read declares, and nothing besides them. */ const PARAM = { page: "page", pageSize: "pageSize" } as const;
 /** The query the roster read accepts, in the read's own vocabulary. The surface keeps its page window in the address, so the window read here is the one the surface opens on: the page and row size the address states are what the server paints, and no second request replaces them. Nothing is defaulted, clamped, validated or dropped here — the service derives the window (a page below the first is the first page; the size is the documented 50 with its 200 cap) and owns the whole-result counts beside these rows. */
 function rosterQueryOf(searchParams: SearchParams): NonNullable<Parameters<RosterRead>[0]> {

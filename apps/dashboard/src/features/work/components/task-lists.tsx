@@ -19,7 +19,7 @@ import { BULK_SELECTION_SCOPE_NOTE } from "../copy/bulk-actions";
 import { CATEGORY_LABEL, CATEGORY_STATE_LABELS, DUE_DATE_LABEL, PLANNED_MEETING_LABEL, PLANNED_VERSUS_HELD_NOTE, TASK_KIND_LABELS, TASK_LIST_KEYS, TASK_LIST_LABELS, TASK_STATUS_LABELS, UNDATED_LABEL, type TaskListKey } from "../copy/task-status";
 import { useTaskLists, type TaskListsQuery, type TaskListsResult } from "../hooks/use-task-lists";
 import BulkActionBar, { type BulkSelectionRow } from "./bulk-action-bar";
-import TaskActions, { TASK_STATUS_TONES } from "./task-actions";
+import TaskActions, { TaskActionResult, TASK_STATUS_TONES, type TaskActionReceipt } from "./task-actions";
 import TaskComposer, { type TaskComposerInitialValues, type TaskLinkChoices } from "./task-composer";
 type TaskListRow = Extract<TaskListsResult, { readonly kind: "envelope" }>["envelope"]["data"]["tasks"][number];
 function editableTaskRecord(row: TaskListRow, scope: Scope): TaskRecord | null {
@@ -143,88 +143,86 @@ function linkedRecordOf(row: TaskListRow, partnerLabels: Readonly<Record<string,
   return <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">{records}</span>;
 }
 type TaskListColumnOptions = { readonly partnerLabels: Readonly<Record<string, string>> }; /** The columns of one task list, exported so the dated agenda renders the same facts rather than restating a status word, a date or a link. */
-export function taskListColumns({ partnerLabels }: TaskListColumnOptions): ReadonlyArray<RecordListColumnDef<TaskListRow>> {
-  return [
-    {
-      id: "title",
-      header: "Task",
-      enableHiding: false,
-      accessorFn: (row) => row.title,
-      cell: (context) => {
-        const { title, taskId } = context.row.original;
-        return title.trim() === "" ? <bdi className={IDENTIFIER_CLASS}>{taskId}</bdi> : <bdi className="block min-w-48 break-words font-medium text-pretty">{title}</bdi>;
-      },
+export const taskListColumns = ({ partnerLabels }: TaskListColumnOptions): ReadonlyArray<RecordListColumnDef<TaskListRow>> => [
+  {
+    id: "title",
+    header: "Task",
+    enableHiding: false,
+    accessorFn: (row) => row.title,
+    cell: (context) => {
+      const { title, taskId } = context.row.original;
+      return title.trim() === "" ? <bdi className={IDENTIFIER_CLASS}>{taskId}</bdi> : <bdi className="block min-w-48 break-words font-medium text-pretty">{title}</bdi>;
     },
-    { id: "status", header: "Status", accessorFn: (row) => row.status, cell: (context) => <StatusBadge label={TASK_STATUS_LABELS[context.row.original.status]} tone={TASK_STATUS_TONES[context.row.original.status]} srPrefix="Task status" /> },
-    {
-      id: "dueOn",
-      header: DUE_DATE_LABEL,
-      accessorFn: (row) => row.dueOn ?? "",
-      cell: (context) => {
-        const { dueOn } = context.row.original;
-        return dueOn === null ? <span className={MUTED_TEXT_CLASS}>{UNDATED_LABEL}</span> : <bdi className={IDENTIFIER_CLASS}>{civilDateTextOf(dueOn)}</bdi>;
-      },
+  },
+  { id: "status", header: "Status", accessorFn: (row) => row.status, cell: (context) => <StatusBadge label={TASK_STATUS_LABELS[context.row.original.status]} tone={TASK_STATUS_TONES[context.row.original.status]} srPrefix="Task status" /> },
+  {
+    id: "dueOn",
+    header: DUE_DATE_LABEL,
+    accessorFn: (row) => row.dueOn ?? "",
+    cell: (context) => {
+      const { dueOn } = context.row.original;
+      return dueOn === null ? <span className={MUTED_TEXT_CLASS}>{UNDATED_LABEL}</span> : <bdi className={IDENTIFIER_CLASS}>{civilDateTextOf(dueOn)}</bdi>;
     },
-    {
-      id: "category",
-      header: CATEGORY_LABEL,
-      accessorFn: (row) => row.category ?? "",
-      cell: (context) => {
-        const { category } = context.row.original;
-        return category === null ? <span className={MUTED_TEXT_CLASS}>{CATEGORY_STATE_LABELS.uncategorised}</span> : <bdi>{category}</bdi>;
-      },
+  },
+  {
+    id: "category",
+    header: CATEGORY_LABEL,
+    accessorFn: (row) => row.category ?? "",
+    cell: (context) => {
+      const { category } = context.row.original;
+      return category === null ? <span className={MUTED_TEXT_CLASS}>{CATEGORY_STATE_LABELS.uncategorised}</span> : <bdi>{category}</bdi>;
     },
-    {
-      id: "tags",
-      header: "Private tags",
-      enableSorting: false, // The read orders by a task's own fields, so this column states the labels a row carries and offers no order.
-      cell: (context) => {
-        const { tags } = context.row.original;
-        // A private tag is stated only to the principal who applied it, and the read has already kept the ones this session may see; no tag is a fact of its own, never an empty cell.
-        return tags.length === 0 ? (
-          <span className={MUTED_TEXT_CLASS}>{"No private tag"}</span>
-        ) : (
-          <span className={TAG_CHIP_GROUP_CLASS}>
-            {tags.map((tag) => (
-              <Badge key={tag} variant="outline">
-                <bdi className={TAG_CHIP_TEXT_CLASS}>{tag}</bdi>
-              </Badge>
-            ))}
-          </span>
-        );
-      },
+  },
+  {
+    id: "tags",
+    header: "Private tags",
+    enableSorting: false, // The read orders by a task's own fields, so this column states the labels a row carries and offers no order.
+    cell: (context) => {
+      const { tags } = context.row.original;
+      // A private tag is stated only to the principal who applied it, and the read has already kept the ones this session may see; no tag is a fact of its own, never an empty cell.
+      return tags.length === 0 ? (
+        <span className={MUTED_TEXT_CLASS}>{"No private tag"}</span>
+      ) : (
+        <span className={TAG_CHIP_GROUP_CLASS}>
+          {tags.map((tag) => (
+            <Badge key={tag} variant="outline">
+              <bdi className={TAG_CHIP_TEXT_CLASS}>{tag}</bdi>
+            </Badge>
+          ))}
+        </span>
+      );
     },
-    {
-      id: "kind",
-      header: "Kind",
-      enableSorting: false,
-      cell: (context) => {
-        const { kind, plannedTime, timeZone } = context.row.original;
-        return (
-          <div className="flex min-w-0 flex-col gap-1">
-            <span>{TASK_KIND_LABELS[kind]}</span>
-            {plannedTime === null || timeZone === null ? null : (
-              <span className={cn("flex min-w-0 flex-wrap items-center gap-x-1 text-xs", MUTED_TEXT_CLASS)}>
-                <span>{PLANNED_MEETING_LABEL}</span>
-                <bdi className={IDENTIFIER_CLASS}>{plannedTime}</bdi>
-                <bdi>{timeZone}</bdi>
-              </span>
-            )}
-          </div>
-        );
-      },
+  },
+  {
+    id: "kind",
+    header: "Kind",
+    enableSorting: false,
+    cell: (context) => {
+      const { kind, plannedTime, timeZone } = context.row.original;
+      return (
+        <div className="flex min-w-0 flex-col gap-1">
+          <span>{TASK_KIND_LABELS[kind]}</span>
+          {plannedTime === null || timeZone === null ? null : (
+            <span className={cn("flex min-w-0 flex-wrap items-center gap-x-1 text-xs", MUTED_TEXT_CLASS)}>
+              <span>{PLANNED_MEETING_LABEL}</span>
+              <bdi className={IDENTIFIER_CLASS}>{plannedTime}</bdi>
+              <bdi>{timeZone}</bdi>
+            </span>
+          )}
+        </div>
+      );
     },
-    { id: "linked", header: "Linked record", enableSorting: false, cell: (context) => linkedRecordOf(context.row.original, partnerLabels) },
-  ];
-}
+  },
+  { id: "linked", header: "Linked record", enableSorting: false, cell: (context) => linkedRecordOf(context.row.original, partnerLabels) },
+];
 const taskRowId = (row: TaskListRow): string => row.taskId;
 const taskRowLabel = (row: TaskListRow): string => row.title;
 const PAGE_SIZE_OPTIONS: readonly number[] = [PAGE_SIZE_DEFAULT, PAGE_SIZE_CAP];
-interface TaskListsProps {
+export interface TaskListsProps {
   readonly scope: Scope;
   readonly expectedRevision: string;
   readonly lists: Readonly<Record<TaskListKey, TaskListsResult>>;
-  readonly displayTimeZone: string;
+  /** The display time zone the browser chose in Settings, handed down by the route: the one zone every list on this surface asks its read to judge a date in, so the zone the worker chose is the zone the lists are read in rather than one this surface assumes. */ readonly displayTimeZone: string;
   readonly partnerLabels: Readonly<Record<string, string>>;
   readonly linkChoices?: TaskLinkChoices;
   readonly timeZoneChoices: readonly string[];
@@ -243,6 +241,8 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>({});
   const [selection, setSelection] = useState<SelectionState>(NO_SELECTION);
   const [editor, setEditor] = useState<{ readonly mode: "create" } | { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] } | null>(null);
+  // The one receipt a row action publishes, held by the list rather than by the row: completing a task takes its row out of every list that reads only open work, so a result the row owned would leave with it, and a list left empty would state nothing at all about the accepted change.
+  const [receipt, setReceipt] = useState<TaskActionReceipt | null>(null);
   const query = ((parameters: SearchParameters): ListQueryState => ({ list: listNameOf(parameters.get(PARAM.list)), sort: sortInstructionsOf(parameters.getAll(PARAM.sort)), page: wholeNumberOf(parameters.get(PARAM.page)) ?? FIRST_PAGE, pageSize: pageSizeOf(parameters.get(PARAM.pageSize)) }))(searchParameters);
   const listQueries = overLists((list) => ((list: TaskListKey, state: ListQueryState, displayTimeZone: string): TaskListsQuery => ({ list, displayTimeZone, page: state.page, pageSize: state.pageSize, ...(state.sort.length === 0 ? {} : { sort: state.sort }) }))(list, query, displayTimeZone));
   const seeds = overLists((list) => seedOf(lists[list], listQueries[list]));
@@ -256,6 +256,8 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
   const readings = overLists((list) => reads[list].data ?? seeds[list]);
   const active = reads[query.list];
   const reading = readings[query.list];
+  // The zone the list on screen was judged in: the reading's own, which is the zone the read resolved its today in, and the queried zone only until that reading exists.
+  const judgedZone = reading !== undefined && reading.kind === "envelope" ? reading.envelope.data.displayTimeZone : displayTimeZone;
   const signature = selectionSignatureOf(scope, query.list);
   const selectedIds = selection.signature === signature ? selection.ids : NO_IDS;
   const rowsById = new Map<string, TaskListRow>();
@@ -300,10 +302,11 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
     if (reading.kind === "refused")
       return <StateNotice kind="refused" headingLevel={3} title={`The request for the ${name} list was refused`} description="This surface states only the list, the display time zone and a page size the read admits, so a request it refuses is answered here in its own words. The source behind it did not fail." />;
     const { tasks, total } = reading.envelope.data;
-    if (total === 0) return <StateNotice kind="empty" headingLevel={3} title={EMPTY_LIST_COPY[query.list].title} description={EMPTY_LIST_COPY[query.list].description} action={{ label: NEW_TASK_LABEL, onClick: openCreate }} />;
-    const rowActionsOf = (row: TaskListRow) => <TaskActions taskId={row.taskId} title={row.title} status={row.status} revision={row.revision} scope={scope} actions={row.actions} presentation="row" onEdit={() => openEdit(row)} onCheckResult={refreshAll} headingLevel={4} />;
+    // This list's own notice for a result holding no task is handed to the one table pattern rather than returned in the list's place, so a list that holds nothing still states its total and its page size as every list holding rows does.
+    const emptyState = <StateNotice kind="empty" headingLevel={3} title={EMPTY_LIST_COPY[query.list].title} description={EMPTY_LIST_COPY[query.list].description} action={{ label: NEW_TASK_LABEL, onClick: openCreate }} />;
+    const rowActionsOf = (row: TaskListRow) => <TaskActions taskId={row.taskId} title={row.title} status={row.status} revision={row.revision} scope={scope} actions={row.actions} presentation="row" onEdit={() => openEdit(row)} onReceiptChange={setReceipt} onCheckResult={refreshAll} />;
     const listQuery = { queryState: listState, onQueryStateChange: handleQueryStateChange };
-    return <RecordList {...{ label: `${name} ${TASK_NOUN}`, columns, rows: tasks, rowCount: total, getRowId: taskRowId, rowLabel: taskRowLabel, ...listQuery, selectedIds, onSelectionChange: handleSelectionChange, rowActions: rowActionsOf, itemNoun: TASK_NOUN, pageSizeOptions: PAGE_SIZE_OPTIONS }} />;
+    return <RecordList {...{ label: `${name} ${TASK_NOUN}`, columns, rows: tasks, rowCount: total, getRowId: taskRowId, rowLabel: taskRowLabel, ...listQuery, selectedIds, onSelectionChange: handleSelectionChange, rowActions: rowActionsOf, itemNoun: TASK_NOUN, pageSizeOptions: PAGE_SIZE_OPTIONS, emptyState }} />;
   }
   const body = listContent();
   const listRegion = isNarrow ? (
@@ -352,8 +355,12 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
       <div className={SECTION_CLASS}>
         <div className="flex min-w-0 flex-col gap-2">
           <h2 className="type-section-title text-pretty">{"Task lists"}</h2>
+          {/* Stated once above the list switcher, so the zone the dates on screen were judged in is read before any list is, and it is the zone the read itself reports having judged them in. */}
+          <p className={cn(QUIET_CLASS, "max-w-prose")}>{`Every due date in these lists is judged in ${judgedZone}, the display time zone this browser chose in Settings, and the lists read in that same zone, so no date here is judged in two; a planned meeting still states the zone it is planned in.`}</p>
           <p className={cn(QUIET_CLASS, "max-w-prose")}>{BULK_SELECTION_SCOPE_NOTE}</p>
         </div>
+        {/* Above the list, so the receipt a row action published is read in this list's own context whether or not the row that produced it is still part of the result. */}
+        <TaskActionResult receipt={receipt} headingLevel={3} />
         {listRegion}
       </div>
       {hasPlannedTime ? <p className={cn(QUIET_CLASS, "max-w-prose")}>{PLANNED_VERSUS_HELD_NOTE}</p> : null}

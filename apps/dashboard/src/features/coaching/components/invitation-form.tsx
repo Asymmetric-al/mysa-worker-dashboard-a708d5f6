@@ -24,8 +24,7 @@ type DurationKind = (typeof DURATION_KINDS)[number];
 type DurationValue = { readonly kind: "ongoing" } | { readonly kind: "through-date"; readonly throughDate: CivilDate | null };
 type FrozenDurationCutoff = { readonly instant: string; readonly zone: string; readonly sourceLimitWins: boolean; readonly sourceLimit?: string | null };
 type DurationControlProps = { readonly value: DurationValue | null; readonly onChange: (next: DurationValue | null) => void; readonly error?: string | null; readonly frozenCutoff?: FrozenDurationCutoff | null; readonly disabledReason?: string | null; readonly locale: string };
-/** The wording the duration control states, in the two kinds a share can take; the object is its own type, so no second shape restates its keys. */
-const DURATION_WORDING = {
+/** The wording the duration control states, in the two kinds a share can take; the object is its own type, so no second shape restates its keys. */ const DURATION_WORDING = {
   legend: "How long sharing runs",
   fieldLead: "A duration is required. Modules start switched off, and nothing is readable by a coach until the person accepts, so the choice below sets the most this invitation can ever cover.",
   missingIsNotPermission: "No duration is chosen yet, and a missing duration is not permission to share: the invitation cannot be submitted until one is chosen.",
@@ -88,8 +87,7 @@ function DurationControl({ value, onChange, error = null, frozenCutoff = null, d
     </div>
   );
 }
-/** The two facts a fixed cutoff states beside its own rule: the instant and the zone it was resolved in, written once and read by the one list below. */
-const CUTOFF_FACTS: readonly { readonly label: string; readonly className: string; readonly value: (cutoff: FrozenDurationCutoff) => string }[] = [
+/** The two facts a fixed cutoff states beside its own rule: the instant and the zone it was resolved in, written once and read by the one list below. */ const CUTOFF_FACTS: readonly { readonly label: string; readonly className: string; readonly value: (cutoff: FrozenDurationCutoff) => string }[] = [
   { label: DURATION_WORDING.cutoffInstantLabel, className: "tabular-figures text-sm wrap-anywhere", value: (cutoff) => cutoff.instant },
   { label: DURATION_WORDING.cutoffZoneLabel, className: "text-sm wrap-anywhere", value: (cutoff) => cutoff.zone },
 ];
@@ -221,14 +219,12 @@ const INITIAL_VALUES: InvitationFormValues = { coachPrincipalId: "", organizatio
 const UNSELECTED_MODULES = { "support-goal": false, "support-results": false, targets: false, "check-ins": false, "task-summaries": false } satisfies InvitationPayload["modules"];
 const isoDateOf = (date: CivilDate | null): string => (date === null ? "" : serialiseCivilDate(date));
 const durationOf = (value: DurationValue | null): InvitationPayload["duration"] => (value === null ? { kind: "through-date", shareThroughDate: "" } : value.kind === "ongoing" ? { kind: "ongoing" } : { kind: "through-date", shareThroughDate: isoDateOf(value.throughDate) });
-/** Whether the worker is stating a range at all: a currency on its own shares nothing, so only the dates decide it. */
-const statesRange = (value: RangeValue | null): boolean => value !== null && (value.fromDate.trim() !== "" || value.toDate.trim() !== "");
+/** Whether the worker is stating a range at all: a currency on its own shares nothing, so only the dates decide it. */ const statesRange = (value: RangeValue | null): boolean => value !== null && (value.fromDate.trim() !== "" || value.toDate.trim() !== "");
 const currencyOf = (value: RangeValue | null, rangeCurrencies: readonly string[]): string => {
   const chosen = value?.currency.trim() ?? "";
   return chosen !== "" ? chosen : rangeCurrencies.length === 1 ? (rangeCurrencies[0] ?? "") : "";
 };
-/** Whether two stated dates describe no period at all: such a pair is never sent, because no figure could be read for it. */
-const rangeReversedOf = (value: RangeValue | null): boolean => value !== null && value.fromDate.trim() !== "" && value.toDate.trim() !== "" && value.toDate.trim() < value.fromDate.trim();
+/** Whether two stated dates describe no period at all: such a pair is never sent, because no figure could be read for it. */ const rangeReversedOf = (value: RangeValue | null): boolean => value !== null && value.fromDate.trim() !== "" && value.toDate.trim() !== "" && value.toDate.trim() < value.fromDate.trim();
 /** The range as the payload states it, or nothing at all when the worker states no range. A stated range keeps its dates exactly as the fields hold them — including one not chosen yet — so the schema names what is missing rather than this form inviting a coach over a shorter period than the one being reviewed. */
 function rangeOf(value: RangeValue | null, rangeCurrencies: readonly string[]): InvitationPayload["financialRange"] {
   if (value === null || !statesRange(value)) return undefined;
@@ -375,12 +371,7 @@ const ReviewedInvitation = ({ values, recipientOptions, organizationOptions, min
   </dl>
 );
 export default function InvitationForm({ candidates, rangeCurrencies, scope, expectedRevision, locale, onInvited, className }: InvitationFormProps): ReactElement {
-  const headingId = useId();
-  const stagesId = useId();
-  const modulesId = useId();
-  const rangeId = useId();
-  const gapId = useId();
-  const rangeBlockedId = useId();
+  const [headingId, stagesId, modulesId, rangeId, gapId, rangeBlockedId] = [useId(), useId(), useId(), useId(), useId(), useId()];
   const form = useForm({ defaultValues: INITIAL_VALUES });
   const [settledOutcome, setSettledOutcome] = useState<MutationOutcome | null>(null);
   const { mutateAsync } = useInviteCoach();

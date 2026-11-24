@@ -14,12 +14,28 @@ import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import { canonicalJson } from "@/modules/import/receipt";
 import { uploadedMediaReference, writeMediaBytes } from "@/modules/store/media";
 import { RENDITION_PURPOSES, acceptImage, acceptVideo, mediaStateReason, prepareRendition, type MediaAcceptanceSuccess, type MediaAssetScope, type MediaProfileCheck, type MediaRefusal, type MediaRendition, type MediaTagVerification } from "@/modules/media/asset";
+import { altTextRequired } from "@/modules/media/profile";
 import { instantAt } from "@/modules/time/clock";
 import { notificationDeadline } from "@/modules/time/window";
 import { canEdit, type ResolvedSession, type ScopeDecision } from "../authorize";
-import { PAGE_PRESET_IDS, PAGE_SECTION_TYPES_BY_FAMILY, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetRecordSchema, membershipRecordSchema, notificationIntentRecordSchema, notificationSendResultRecordSchema, principalIdSchema } from "../envelope";
+import { PAGE_PRESET_IDS, PAGE_SECTION_TYPES_BY_FAMILY, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetDescriptorRecordSchema, mediaAssetRecordSchema, membershipRecordSchema, notificationIntentRecordSchema, notificationSendResultRecordSchema, principalIdSchema } from "../envelope";
 import { recordRevisionSchema, releaseRecordSchema, storedContentRevisionRecordSchema, releaseReachSchema, storedInstantSchema } from "../envelope";
-import type { ContentCaptionTrackRecord, ContentDocumentRecord, ContentFamily, ContentVariantRecord, MediaAssetRecord, MediaAssetRenditionPurpose, MediaPlacementRecord, MembershipRecord as StoredMembership, MutationInput, PagePresetId, PageSectionType, PrincipalId, NotificationIntentRecord } from "../envelope";
+import type {
+  ContentCaptionTrackRecord,
+  ContentDocumentRecord,
+  ContentFamily,
+  ContentVariantRecord,
+  MediaAssetDescriptorRecord,
+  MediaAssetRecord,
+  MediaAssetRenditionPurpose,
+  MediaPlacementRecord,
+  MembershipRecord as StoredMembership,
+  MutationInput,
+  PagePresetId,
+  PageSectionType,
+  PrincipalId,
+  NotificationIntentRecord,
+} from "../envelope";
 import type { NotificationRecipientOutcomeRecord, NotificationSendResultRecord, NotificationUnservedRecipientRecord, ReleaseReach, ReleaseRecord, Scope, SharePresentationRecord, StoredContentRevisionRecord, StoredRecord } from "../envelope";
 import { unknown, type MutationOutcome, type MutationResult, type PerItemResult } from "../outcome";
 import { runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
@@ -51,16 +67,6 @@ const contentReviewRecordSchema = z.object({
   revision: recordRevisionSchema,
 });
 type ContentReviewRecord = StoredRecord<z.infer<typeof contentReviewRecordSchema>>;
-const mediaAssetDescriptorRecordSchema = z.object({
-  assetId: z.string().min(1),
-  altText: z.string().min(1).nullable(),
-  caption: z.string().min(1).nullable(),
-  credit: z.string().min(1).nullable(),
-  language: z.string().min(1).nullable(),
-  captionLabel: z.string().min(1).max(120).nullable().optional(),
-  revision: recordRevisionSchema,
-});
-type MediaAssetDescriptorRecord = StoredRecord<z.infer<typeof mediaAssetDescriptorRecordSchema>>;
 const contentMutationStateSchema = z.object({
   contentDocuments: z.array(contentDocumentRecordSchema),
   contentVariants: z.array(contentVariantRecordSchema),
@@ -94,6 +100,8 @@ function nextRevision(current: string): string {
   const ordinal = Number.parseInt(digits[2] ?? "", 10);
   return `${stem}${Number.isFinite(ordinal) ? ordinal + 1 : 1}`;
 }
+// A document's revision states the state of the document and all of its editions, so a read of the document can publish it as the revision a change from that read must present, and any change to the document or to one of its editions advances it.
+const advanceDocumentRevision = (documents: readonly ContentDocumentRecord[], documentId: string): readonly ContentDocumentRecord[] => documents.map((candidate) => (candidate.documentId === documentId ? { ...candidate, revision: nextRevision(candidate.revision) } : candidate));
 const scenarioInstant = (session: ResolvedSession): Temporal.Instant => instantAt(session.clockOffsetMs);
 const invalidAt = (issues: readonly DocumentIssue[]): z.ZodError => new z.ZodError(issues.map((issue) => ({ code: "custom" as const, path: issue.path.split("."), message: issue.message })));
 const invalidField = (path: string, message: string): z.ZodError => invalidAt([{ path, message }]);
@@ -130,7 +138,7 @@ function runEditorial<P, R extends MutationResult>(sessionId: string, input: Mut
 }
 const UNRESOLVED_TARGET_REVISION = "no-such-record";
 const unresolvedTarget = (): CurrentTarget => ({ kind: "record", revision: UNRESOLVED_TARGET_REVISION, value: null });
-const recordTarget = (revision: string, value: unknown): CurrentTarget => ({ kind: "record", revision, value });
+const recordTarget = (revision: string, value: unknown, holdingRevision?: string): CurrentTarget => ({ kind: "record", revision, value, ...(holdingRevision === undefined || holdingRevision === revision ? {} : { alsoStated: [holdingRevision] }) });
 class ContentStateReadError extends Error {
   constructor() {
     super("The content records in this session's state document cannot be read, so nothing was written and no record was guessed at.");
@@ -145,11 +153,8 @@ function openState(docs: { readonly state: unknown }): OpenedState {
   if (!parsed.success) throw new ContentStateReadError();
   return { raw: docs.state, state: { ...parsed.data, contentReviews: parsed.data.contentReviews ?? [], mediaAssetDescriptors: parsed.data.mediaAssetDescriptors ?? [] } };
 }
-function writeState(docs: { state: unknown }, raw: Record<string, unknown>, next: Partial<ContentMutationState>): void {
-  docs.state = { ...raw, ...next };
-}
-/** The one record of a stored family this action names, refused against the field it named when the context holds no such record. */
-function requireRecord<T>(records: readonly T[], matches: (record: T) => boolean, field: string, message: string): T {
+const writeState = (docs: { state: unknown }, raw: Record<string, unknown>, next: Partial<ContentMutationState>): void => void (docs.state = { ...raw, ...next });
+/** The one record of a stored family this action names, refused against the field it named when the context holds no such record. */ function requireRecord<T>(records: readonly T[], matches: (record: T) => boolean, field: string, message: string): T {
   const record = records.find(matches);
   if (record === undefined) throw invalidField(field, message);
   return record;
@@ -277,14 +282,13 @@ function resolvePlacements(input: { readonly state: ContentMutationState; readon
   });
   return { placements, altText, captions, tracks, domain };
 }
-function resolveCaptionTracks(input: { readonly state: ContentMutationState; readonly requested: readonly z.infer<typeof captionTrackPayloadSchema>[] }): readonly ContentCaptionTrackRecord[] {
-  return input.requested.map((requested, index) => {
+const resolveCaptionTracks = (input: { readonly state: ContentMutationState; readonly requested: readonly z.infer<typeof captionTrackPayloadSchema>[] }): readonly ContentCaptionTrackRecord[] =>
+  input.requested.map((requested, index) => {
     const asset = input.state.mediaAssets.find((candidate) => candidate.assetId === requested.assetId);
     const rendition = asset?.renditions.find((entry) => entry.purpose === "captions");
     if (asset === undefined || rendition === undefined) throw invalidField(`captions.${String(index)}.assetId`, "A caption track belongs to an admitted video that carries a caption rendition.");
     return { assetId: asset.assetId, renditionId: rendition.renditionId, language: requested.language, label: requested.label ?? requested.language, isDefault: requested.isDefault ?? index === 0 };
   });
-}
 const principalIdOf = (value: string): PrincipalId => principalIdSchema.parse(value);
 function storedRevisionOf(input: { readonly revision: ContentRevision; readonly placements: readonly MediaPlacementRecord[]; readonly tracks: readonly ContentCaptionTrackRecord[]; readonly statedShare: StatedShare; readonly previousShare: SharePresentationRecord | undefined }): StoredContentRevision {
   const sharePresentation = storedShareOf(input.statedShare, input.previousShare);
@@ -304,13 +308,20 @@ function contentStateOrUndefined(docs: { readonly state: unknown }): OpenedState
     return undefined;
   }
 }
-const recordTargetOf = <T extends { readonly revision: string }>(record: T | undefined): CurrentTarget => (record === undefined ? unresolvedTarget() : recordTarget(record.revision, record));
+// The revision of the document holding one edition, or nothing when the state holds no such edition: a read of that document states it, so a change to the edition admits it as the revision the caller saw.
+const holdingDocumentRevisionOf = (state: ContentMutationState | undefined, variant: ContentVariantRecord | undefined): string | undefined => (state === undefined || variant === undefined ? undefined : state.contentDocuments.find((candidate) => candidate.documentId === variant.documentId)?.revision);
+const recordTargetOf = <T extends { readonly revision: string }>(record: T | undefined, holdingRevision?: string): CurrentTarget => (record === undefined ? unresolvedTarget() : recordTarget(record.revision, record, holdingRevision));
 const currentDocumentTarget = (documents: { readonly state: unknown }, documentId: string | undefined): CurrentTarget => recordTargetOf(contentStateOrUndefined(documents)?.state.contentDocuments.find((candidate) => candidate.documentId === documentId));
-const currentVariantTarget = (documents: { readonly state: unknown }, variantId: string | undefined): CurrentTarget => recordTargetOf(contentStateOrUndefined(documents)?.state.contentVariants.find((candidate) => candidate.variantId === variantId));
+const currentVariantTarget = (documents: { readonly state: unknown }, variantId: string | undefined): CurrentTarget => {
+  const state = contentStateOrUndefined(documents)?.state;
+  const variant = state?.contentVariants.find((candidate) => candidate.variantId === variantId);
+  return recordTargetOf(variant, holdingDocumentRevisionOf(state, variant));
+};
 function currentRevisionTarget(documents: { readonly state: unknown }, revisionId: string | undefined): CurrentTarget {
   const state = contentStateOrUndefined(documents)?.state;
   const revision = revisionId === undefined ? undefined : state?.contentRevisions.find((candidate) => candidate.revisionId === revisionId);
-  return recordTargetOf(revision === undefined ? undefined : state?.contentVariants.find((candidate) => candidate.variantId === revision.variantId));
+  const variant = revision === undefined ? undefined : state?.contentVariants.find((candidate) => candidate.variantId === revision.variantId);
+  return recordTargetOf(variant, holdingDocumentRevisionOf(state, variant));
 }
 function currentVariantDocumentTarget(documents: { readonly state: unknown }, variantId: string | undefined): CurrentTarget {
   const opened = contentStateOrUndefined(documents);
@@ -320,7 +331,8 @@ function currentVariantDocumentTarget(documents: { readonly state: unknown }, va
 function currentDraftTarget(documents: { readonly state: unknown }, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): CurrentTarget {
   const opened = contentStateOrUndefined(documents);
   const variantId = payload.variantId ?? opened?.state.contentRevisions.find((candidate) => candidate.revisionId === payload.draftRevisionId)?.variantId;
-  return recordTargetOf(variantId === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === variantId));
+  const variant = variantId === undefined ? undefined : opened?.state.contentVariants.find((candidate) => candidate.variantId === variantId);
+  return recordTargetOf(variant, holdingDocumentRevisionOf(opened?.state, variant));
 }
 type EditorialDocuments = MutationContext["docs"];
 const documentTarget = (documents: EditorialDocuments, payload: { readonly documentId: string }): CurrentTarget => currentDocumentTarget(documents, payload.documentId);
@@ -425,7 +437,7 @@ function applySaveDraft(context: MutationContext, payload: SaveDraftPayload): Ap
   if (draftRevision !== undefined && storedContentEquals(draftRevision, nextRecord)) return { changed: false };
   const pointed = applyDraftRevision(contentVariantOf(variant), written.revision);
   if (pointed.status === "invalid") throw invalidAt(pointed.issues);
-  writeState(context.docs, raw, { contentRevisions: [...state.contentRevisions, nextRecord], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))) });
+  writeState(context.docs, raw, { contentRevisions: [...state.contentRevisions, nextRecord], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))), contentDocuments: advanceDocumentRevision(state.contentDocuments, variant.documentId) });
   const result = { variantId: variant.variantId, revisionId: written.revision.revisionId, contentChecksum: written.revision.contentChecksum };
   return { changed: true, revision: nextRevision(variant.revision), result, created: [written.revision.revisionId], changedIds: [variant.variantId] } satisfies ApplyResult<typeof result>;
 }
@@ -446,7 +458,7 @@ function applySubmitForReview(context: MutationContext, payload: SubmitForReview
   if (frozen.status === "invalid") throw invalidAt(frozen.issues);
   const notifyMode = payload.notifyMode ?? "publish-only";
   const review: ContentReviewRecord = { candidateId: frozen.candidate.candidateId, variantId: variant.variantId, revisionId: revision.revisionId, notifyMode, decision: "submitted", note: null, submittedAt: at.toString(), decidedAt: null, decidedByPrincipalId: null, revision: INITIAL_REVISION_TOKEN };
-  writeState(context.docs, raw, { contentVariants: replaceVariant(state.contentVariants, storedVariantOf(frozen.variant, nextRevision(variant.revision))), contentReviews: [...state.contentReviews, review] });
+  writeState(context.docs, raw, { contentVariants: replaceVariant(state.contentVariants, storedVariantOf(frozen.variant, nextRevision(variant.revision))), contentReviews: [...state.contentReviews, review], contentDocuments: advanceDocumentRevision(state.contentDocuments, variant.documentId) });
   const result = { candidateId: frozen.candidate.candidateId, variantId: variant.variantId, revisionId: revision.revisionId, notifyMode: review.notifyMode };
   return { changed: true, revision: nextRevision(variant.revision), result, created: [frozen.candidate.candidateId], changedIds: [variant.variantId] } satisfies ApplyResult<typeof result>;
 }
@@ -457,8 +469,8 @@ function requireReview(state: ContentMutationState, candidateId: string, field: 
   if (review === undefined) throw invalidField(field, "No submission is open for review under this identity, so reopen the edition and submit it again.");
   return review;
 }
-async function answerReview(input: { readonly sessionId: string; readonly mutation: MutationInput<ReviewAnswerPayload>; readonly name: string; readonly decision: Exclude<ReviewDecision, "submitted"> }): Promise<MutationOutcome> {
-  return runMutation({
+const answerReview = async (input: { readonly sessionId: string; readonly mutation: MutationInput<ReviewAnswerPayload>; readonly name: string; readonly decision: Exclude<ReviewDecision, "submitted"> }): Promise<MutationOutcome> =>
+  runMutation({
     sessionId: input.sessionId,
     input: input.mutation,
     schema: reviewAnswerPayloadSchema,
@@ -476,12 +488,15 @@ async function answerReview(input: { readonly sessionId: string; readonly mutati
       const decided = applyReviewDecision(contentVariantOf(variant), input.decision);
       if (decided.status === "invalid") throw invalidAt(decided.issues);
       const answered: ContentReviewRecord = { ...review, decision: input.decision, note: input.mutation.payload.note ?? input.mutation.payload.reason ?? null, decidedAt: scenarioInstant(context.session).toString(), decidedByPrincipalId: context.session.principalId, revision: nextRevision(review.revision) };
-      writeState(context.docs, raw, { contentVariants: replaceVariant(state.contentVariants, storedVariantOf(decided.variant, nextRevision(variant.revision))), contentReviews: state.contentReviews.map((candidate) => (candidate.candidateId === answered.candidateId ? answered : candidate)) });
+      writeState(context.docs, raw, {
+        contentVariants: replaceVariant(state.contentVariants, storedVariantOf(decided.variant, nextRevision(variant.revision))),
+        contentReviews: state.contentReviews.map((candidate) => (candidate.candidateId === answered.candidateId ? answered : candidate)),
+        contentDocuments: advanceDocumentRevision(state.contentDocuments, variant.documentId),
+      });
       const result = { candidateId: review.candidateId, variantId: review.variantId, revisionId: review.revisionId, decision: input.decision, notifyMode: review.notifyMode };
       return { changed: true, revision: nextRevision(variant.revision), result, changedIds: [review.variantId] } satisfies ApplyResult<typeof result>;
     },
   });
-}
 /** Approves one frozen candidate in a single step and keeps its recorded release mode. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const approveCandidate = async (sessionId: string, input: MutationInput<ReviewAnswerPayload>): Promise<MutationOutcome> => answerReview({ sessionId, mutation: input, name: "approveCandidate", decision: "approved" });
 /** Asks for changes on one frozen candidate, which clears the variant's submission so a second round is a new revision rather than a silent re-review. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
@@ -518,22 +533,18 @@ function noticeRenditionOf(state: ContentMutationState, revision: StoredContentR
 /** Publishes one revision of each selected edition, and reports what each edition's attempt produced. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const publishVariants = async (sessionId: string, input: MutationInput<PublishVariantsPayload>): Promise<MutationOutcome> => runEditorial(sessionId, input, publishVariantsPayloadSchema, "publishVariants", { apply: applyPublishVariants });
 /** What a later edition of one simulated partial release answers: no release is recorded for it, the release head it already held stays the published revision, and the release a sibling recorded in the same call stands. */
-function simulatedSiblingAttempt(variant: ContentVariantRecord, head: ReleaseRecord | undefined): ReleaseAttempt {
-  return {
-    variantId: variant.variantId,
-    state: head === undefined ? "needs-attention" : "failed-prior-good-head",
-    ...(head === undefined ? {} : { releaseId: head.releaseId }),
-    reasonCode: "simulated-partial-release",
-    reason:
-      head === undefined
-        ? "This scenario simulates a partial release, so no release was recorded for this edition and it still needs attention; the sibling edition's release stands rather than being rolled back."
-        : "This scenario simulates a partial release, so no release was recorded for this edition and the revision it already published stays the head; the sibling edition's release stands rather than being rolled back.",
-  };
-}
+const simulatedSiblingAttempt = (variant: ContentVariantRecord, head: ReleaseRecord | undefined): ReleaseAttempt => ({
+  variantId: variant.variantId,
+  state: head === undefined ? "needs-attention" : "failed-prior-good-head",
+  ...(head === undefined ? {} : { releaseId: head.releaseId }),
+  reasonCode: "simulated-partial-release",
+  reason:
+    head === undefined
+      ? "This scenario simulates a partial release, so no release was recorded for this edition and it still needs attention; the sibling edition's release stands rather than being rolled back."
+      : "This scenario simulates a partial release, so no release was recorded for this edition and the revision it already published stays the head; the sibling edition's release stands rather than being rolled back.",
+});
 // The reach a family's first release starts at, because a first release has no head to inherit one from. A Page's builder carries the owner's own reach control, so a first Page edition stays Not public until they choose otherwise. An Update has no reach control on any surface, so its first edition starts Shared by link: public — readable at its own address, unlisted and noindex — because an edition reported Published that no reader can open is a publication only its author can see.
-function firstReleaseReach(family: ContentFamily): ReleaseReach {
-  return family === "update" ? "link-public" : "not-public";
-}
+const firstReleaseReach = (family: ContentFamily): ReleaseReach => (family === "update" ? "link-public" : "not-public");
 function applyPublishVariants(context: MutationContext, payload: PublishVariantsPayload): ApplyResult<MutationResult> {
   const { raw, state } = openState(context.docs);
   const selections = releaseSelectionsOf(state, payload);
@@ -814,8 +825,8 @@ export type WithdrawalView = { readonly documentId: string; readonly withdrawnRe
 export const withdrawUpdate = async (sessionId: string, input: MutationInput<DocumentPayload>): Promise<MutationOutcome> => withdrawDocumentFamily(sessionId, input, "withdrawUpdate", (family) => family === "update");
 /** Withdraws every release one document's Worker or Project Page editions hold, with the same guarantees as {@link withdrawUpdate} and the page families only. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const withdrawPage = async (sessionId: string, input: MutationInput<DocumentPayload>): Promise<MutationOutcome> => withdrawDocumentFamily(sessionId, input, "withdrawPage", (family) => family !== "update");
-async function withdrawDocumentFamily(sessionId: string, input: MutationInput<DocumentPayload>, name: string, admits: (family: ContentFamily) => boolean): Promise<MutationOutcome> {
-  return runMutation({
+const withdrawDocumentFamily = async (sessionId: string, input: MutationInput<DocumentPayload>, name: string, admits: (family: ContentFamily) => boolean): Promise<MutationOutcome> =>
+  runMutation({
     sessionId,
     input,
     schema: documentPayloadSchema,
@@ -845,7 +856,6 @@ async function withdrawDocumentFamily(sessionId: string, input: MutationInput<Do
       return { changed: true, revision: nextRevision(document.revision), result, changedIds: withdrawnIds } satisfies ApplyResult<typeof result>;
     },
   });
-}
 const localeWithdrawalPayloadSchema = z.strictObject({ variantId: recordIdSchema });
 export type LocaleWithdrawalPayload = z.infer<typeof localeWithdrawalPayloadSchema>;
 /** Withdraws one locale edition and leaves every sibling released. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
@@ -930,7 +940,7 @@ function applyRestoreRevisionAsDraft(context: MutationContext, payload: RestoreR
   const record: StoredContentRevision = { ...source, revisionId: restored.revisionId, authorPrincipalId: principalIdOf(restored.authorPrincipalId), createdAt: restored.createdAt.toString(), revision: INITIAL_REVISION_TOKEN };
   const pointed = applyDraftRevision(contentVariantOf(variant), restored);
   if (pointed.status === "invalid") throw invalidAt(pointed.issues);
-  writeState(context.docs, raw, { contentRevisions: [...state.contentRevisions, record], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))) });
+  writeState(context.docs, raw, { contentRevisions: [...state.contentRevisions, record], contentVariants: replaceVariant(state.contentVariants, storedVariantOf(pointed.variant, nextRevision(variant.revision))), contentDocuments: advanceDocumentRevision(state.contentDocuments, document.documentId) });
   const result = { revisionId: restored.revisionId, variantId: variant.variantId, documentId: document.documentId };
   return { changed: true, revision: nextRevision(variant.revision), result, created: [restored.revisionId], changedIds: [variant.variantId] } satisfies ApplyResult<typeof result>;
 }
@@ -973,6 +983,7 @@ function sectionIndexOf(sections: readonly ContentSection[], sectionId: string):
   return byElement;
 }
 const MANAGED_SECTION_REFUSAL = "This section is supplied by the source, so it is read-only here and cannot be added, moved, duplicated or removed.";
+const MANAGED_SECTION_PRESET_REFUSAL = "This edition's draft holds a section supplied by the source, which a preset cannot remove, so this edition cannot start from a preset.";
 function emptyFieldsFor(type: PageSectionType): Readonly<Record<string, string>> {
   const fields: Record<string, string> = {};
   for (const key of SECTION_FIELD_KEYS[type]) fields[key] = "";
@@ -1004,15 +1015,19 @@ function writeDraftEdit(input: {
   const pointed = applyDraftRevision(contentVariantOf(target.variant), contentRevisionOf(edited, body));
   if (pointed.status === "invalid") throw invalidAt(pointed.issues);
   const nextVariants = replaceVariant(input.opened.state.contentVariants, storedVariantOf(pointed.variant, nextRevision(target.variant.revision)));
-  writeState(input.context.docs, input.opened.raw, { contentRevisions: forked ? [...input.opened.state.contentRevisions, edited] : replaceRevision(input.opened.state.contentRevisions, edited), contentVariants: nextVariants });
+  writeState(input.context.docs, input.opened.raw, {
+    contentRevisions: forked ? [...input.opened.state.contentRevisions, edited] : replaceRevision(input.opened.state.contentRevisions, edited),
+    contentVariants: nextVariants,
+    contentDocuments: advanceDocumentRevision(input.opened.state.contentDocuments, target.document.documentId),
+  });
   return { changed: true, revisionId: edited.revisionId, revision: edited.revision, documentId: target.document.documentId, variantId: target.variant.variantId };
 }
 const replaceRevision = (revisions: readonly StoredContentRevision[], next: StoredContentRevision): readonly StoredContentRevision[] => revisions.map((revision) => (revision.revisionId === next.revisionId ? next : revision));
 export type SectionEditView = { readonly documentId: string; readonly variantId: string; readonly revisionId: string; readonly revision: string; readonly sectionCount: number };
 type DraftTargetSelector = { readonly draftRevisionId?: string; readonly variantId?: string };
 type SectionChange<P> = (target: DraftTarget, payload: P) => readonly ContentSection[];
-async function editDraftSections<P extends DraftTargetSelector>(sessionId: string, mutation: MutationInput<P>, schema: z.ZodType<P>, name: string, change: SectionChange<P>): Promise<MutationOutcome> {
-  return runEditorial(sessionId, mutation, schema, name, {
+const editDraftSections = async <P extends DraftTargetSelector>(sessionId: string, mutation: MutationInput<P>, schema: z.ZodType<P>, name: string, change: SectionChange<P>): Promise<MutationOutcome> =>
+  runEditorial(sessionId, mutation, schema, name, {
     readCurrent: draftTarget,
     apply: (context) => {
       const opened = openState(context.docs);
@@ -1024,70 +1039,61 @@ async function editDraftSections<P extends DraftTargetSelector>(sessionId: strin
       return { changed: true, revision: written.revision, result, changedIds: [written.revisionId] } satisfies ApplyResult<typeof result>;
     },
   });
-}
 const addSectionPayloadSchema = z.strictObject({ ...draftTargetShape, sectionType: z.string().trim().min(1, "Choose the section to add."), afterSectionId: recordIdSchema.optional() }).superRefine(refuseUnnamedDraftTarget);
 export type AddSectionPayload = z.infer<typeof addSectionPayloadSchema>;
 /** Adds one section of a type the addressed Page family's catalogue admits to that family's draft, after a named section or at the end. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function addSection(sessionId: string, input: MutationInput<AddSectionPayload>): Promise<MutationOutcome> {
-  return editDraftSections(sessionId, input, addSectionPayloadSchema, "addSection", (target, payload) => {
+export const addSection = async (sessionId: string, input: MutationInput<AddSectionPayload>): Promise<MutationOutcome> =>
+  editDraftSections(sessionId, input, addSectionPayloadSchema, "addSection", (target, payload) => {
     const type = requireSectionType(target.document.family, payload.sectionType);
     if (MANAGED_SECTION_TYPES.has(type)) throw invalidField("sectionType", MANAGED_SECTION_REFUSAL);
     const sections = target.body.sections;
     const after = payload.afterSectionId === undefined ? sections.length : sectionIndexOf(sections, payload.afterSectionId) + 1;
-    const added: ContentSection = { element: type, fields: emptyFieldsFor(type), presentation: DEFAULT_PRESENTATION };
-    return [...sections.slice(0, after), added, ...sections.slice(after)];
+    return [...sections.slice(0, after), { element: type, fields: emptyFieldsFor(type), presentation: DEFAULT_PRESENTATION }, ...sections.slice(after)];
   });
-}
 const moveSectionPayloadSchema = z.strictObject({ ...draftTargetShape, sectionId: recordIdSchema, targetIndex: z.int({ error: "State the position this section moves to as a whole number." }).nonnegative("A position is zero or more, counting from the first section.") }).superRefine(refuseUnnamedDraftTarget);
 export type MoveSectionPayload = z.infer<typeof moveSectionPayloadSchema>;
-/** Moves one section to an explicit position. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function moveSection(sessionId: string, input: MutationInput<MoveSectionPayload>): Promise<MutationOutcome> {
-  return editDraftSections(sessionId, input, moveSectionPayloadSchema, "moveSection", (target, payload) => {
+/** Moves one section to an explicit position. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const moveSection = async (sessionId: string, input: MutationInput<MoveSectionPayload>): Promise<MutationOutcome> =>
+  editDraftSections(sessionId, input, moveSectionPayloadSchema, "moveSection", (target, payload) => {
     const { sections, index: from, section: moved } = requireEditableSection(target.body.sections, payload.sectionId);
     const destination = Math.min(payload.targetIndex, sections.length - 1);
     if (destination === from) return sections;
     const rest = sections.filter((_section, index) => index !== from);
     return [...rest.slice(0, destination), moved, ...rest.slice(destination)];
   });
-}
 const sectionReferencePayloadSchema = z.strictObject({ ...draftTargetShape, sectionId: recordIdSchema }).superRefine(refuseUnnamedDraftTarget);
 export type SectionReferencePayload = z.infer<typeof sectionReferencePayloadSchema>;
 /** Copies one section, structure and content, immediately after itself. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function duplicateSection(sessionId: string, input: MutationInput<SectionReferencePayload>): Promise<MutationOutcome> {
-  return editDraftSections(sessionId, input, sectionReferencePayloadSchema, "duplicateSection", (target, payload) => {
+export const duplicateSection = async (sessionId: string, input: MutationInput<SectionReferencePayload>): Promise<MutationOutcome> =>
+  editDraftSections(sessionId, input, sectionReferencePayloadSchema, "duplicateSection", (target, payload) => {
     const { sections, index, section: source } = requireEditableSection(target.body.sections, payload.sectionId);
-    const copy: ContentSection = { element: source.element, fields: { ...source.fields }, presentation: { ...source.presentation }, ...(source.direction === undefined ? {} : { direction: source.direction }) };
-    return [...sections.slice(0, index + 1), copy, ...sections.slice(index + 1)];
+    return [...sections.slice(0, index + 1), { element: source.element, fields: { ...source.fields }, presentation: { ...source.presentation }, ...(source.direction === undefined ? {} : { direction: source.direction }) }, ...sections.slice(index + 1)];
   });
-}
-/** Removes one section from a page draft. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function removeSection(sessionId: string, input: MutationInput<SectionReferencePayload>): Promise<MutationOutcome> {
-  return editDraftSections(sessionId, input, sectionReferencePayloadSchema, "removeSection", (target, payload) => {
+/** Removes one section from a page draft. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export const removeSection = async (sessionId: string, input: MutationInput<SectionReferencePayload>): Promise<MutationOutcome> =>
+  editDraftSections(sessionId, input, sectionReferencePayloadSchema, "removeSection", (target, payload) => {
     const { sections, index } = requireEditableSection(target.body.sections, payload.sectionId);
     return sections.filter((_value, position) => position !== index);
   });
-}
 const saveSectionFieldsPayloadSchema = z.strictObject({ ...draftTargetShape, sectionId: recordIdSchema, fields: sectionFieldsSchema.optional(), presentation: presentationChoiceSchema.optional() }).superRefine((payload, ctx) => {
   if (!namesDraftTarget(payload)) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: NO_DRAFT_TARGET_MESSAGE });
   if (payload.fields === undefined && payload.presentation === undefined) ctx.addIssue({ code: "custom", path: ["fields"], message: "State the fields this section changes, or the presentation it uses." });
 });
 export type SaveSectionFieldsPayload = z.infer<typeof saveSectionFieldsPayloadSchema>;
 /** Saves one section's fields and its bounded presentation choices. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function saveSectionFields(sessionId: string, input: MutationInput<SaveSectionFieldsPayload>): Promise<MutationOutcome> {
-  return editDraftSections(sessionId, input, saveSectionFieldsPayloadSchema, "saveSectionFields", (target, payload) => {
+export const saveSectionFields = async (sessionId: string, input: MutationInput<SaveSectionFieldsPayload>): Promise<MutationOutcome> =>
+  editDraftSections(sessionId, input, saveSectionFieldsPayloadSchema, "saveSectionFields", (target, payload) => {
     const { sections, index, section } = requireEditableSection(target.body.sections, payload.sectionId);
     const admitted = SECTION_FIELD_KEYS[section.element as PageSectionType] ?? [];
     for (const key of Object.keys(payload.fields ?? {})) if (!admitted.includes(key)) throw invalidField(`fields.${key}`, `This section type edits ${admitted.length === 0 ? "no field" : admitted.join(", ")}, so "${key}" is not one of them.`);
     return sections.map((current, position) => (position === index ? { ...current, fields: { ...current.fields, ...payload.fields }, presentation: payload.presentation ?? current.presentation } : current));
   });
-}
 const applyPresetPayloadSchema = z.strictObject({ ...draftTargetShape, presetId: z.enum(PAGE_PRESET_IDS, { error: "Choose one of the presets this page catalogue proposes." }) }).superRefine(refuseUnnamedDraftTarget);
 export type ApplyPresetPayload = z.infer<typeof applyPresetPayloadSchema>;
-/** Applies one catalogue preset: the sections it proposes are composed into the draft and nothing is published. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
+/** Composes the draft edition from the sections one catalogue preset proposes, replacing the sections the draft held, and publishes nothing. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function applyPreset(sessionId: string, input: MutationInput<ApplyPresetPayload>): Promise<MutationOutcome> {
   return editDraftSections(sessionId, input, applyPresetPayloadSchema, "applyPreset", (target, payload) => {
-    const added: ContentSection[] = (PAGE_PRESETS[payload.presetId] ?? []).map((type) => ({ element: type, fields: emptyFieldsFor(type), presentation: DEFAULT_PRESENTATION }));
-    return [...target.body.sections, ...added];
+    // A preset composes the draft from its own sections, so it would otherwise drop a section the application states cannot be removed: every other section change refuses a source-supplied section, and a preset refuses a draft that holds one.
+    if (target.body.sections.some((section) => MANAGED_SECTION_TYPES.has(section.element))) throw invalidField("variantId", MANAGED_SECTION_PRESET_REFUSAL);
+    return (PAGE_PRESETS[payload.presetId] ?? []).map((type) => ({ element: type, fields: emptyFieldsFor(type), presentation: DEFAULT_PRESENTATION }));
   });
 }
 function decodeBase64Bytes(value: string, field: string): Uint8Array {
@@ -1105,9 +1111,8 @@ function refusalText(refusal: MediaRefusal): string {
   return reason.action === undefined ? reason.label : `${reason.label} ${reason.action}`;
 }
 const storedRenditionOf = (rendition: MediaRendition, bytesRef: string): { readonly renditionId: string; readonly purpose: MediaAssetRenditionPurpose; readonly bytesRef: string; readonly mimeType: string } => ({ renditionId: rendition.renditionId, purpose: rendition.purpose, bytesRef, mimeType: rendition.mimeType });
-function storedProfileOf(check: MediaProfileCheck): { readonly container: string; readonly codec: string; readonly durationSeconds: number | null; readonly width: number; readonly height: number } {
-  return check.kind === "image" ? { container: check.format, codec: check.format, durationSeconds: null, width: check.width, height: check.height } : { container: check.container, codec: check.codec, durationSeconds: check.durationS, width: check.width, height: check.height };
-}
+const storedProfileOf = (check: MediaProfileCheck): { readonly container: string; readonly codec: string; readonly durationSeconds: number | null; readonly width: number; readonly height: number } =>
+  check.kind === "image" ? { container: check.format, codec: check.format, durationSeconds: null, width: check.width, height: check.height } : { container: check.container, codec: check.codec, durationSeconds: check.durationS, width: check.width, height: check.height };
 const storedVerificationOf = (verification: MediaTagVerification): { readonly checked: boolean; readonly residualTags: readonly string[] } => ({ checked: verification.checked, residualTags: [...verification.residualTags] });
 const uploadBytesSchema = z.strictObject({ bytesBase64: z.string().min(1, "Choose a file to upload."), name: z.string().min(1).max(255).optional() });
 // The section one registration places its asset into: a Page composes media into a section, so an attempt that binds states the draft edition it composes and the catalogue element the page read keys that section's placements by.
@@ -1119,23 +1124,25 @@ const sectionPlacementPayloadSchema = z
     position: z.int({ error: "State the position this placement takes as a whole number." }).nonnegative("A position is zero or more, counting from the first placement.").optional(),
   })
   .superRefine(refuseUnnamedDraftTarget);
+// Alternative text is required of an image and of a video alike, because it is the description a reader meets in place of the media; a stated null states none, so it is judged exactly as an absent value and refused in words that name the medium.
+const requiredAltTextSchema = z.string({ error: "State the alternative text as text, so it can be read in place of the media." }).trim().max(PLACEMENT_TEXT_MAX_CHARS, "Shorten the alternative text for this placement.").nullable().optional();
 const registerMediaAssetPayloadSchema = z
   .strictObject({
     kind: z.enum(["image", "video"], { error: "Choose whether this file is an image or a video." }),
     source: uploadBytesSchema,
-    altText: z.string().trim().min(1).max(PLACEMENT_TEXT_MAX_CHARS).optional(),
+    altText: requiredAltTextSchema,
     caption: optionalPlacementTextSchema,
     credit: optionalPlacementTextSchema,
     language: localeTagSchema.optional(),
-    placement: z.strictObject({ altText: z.string().trim().min(1).max(PLACEMENT_TEXT_MAX_CHARS).optional(), caption: optionalPlacementTextSchema, credit: optionalPlacementTextSchema, language: localeTagSchema.optional() }).optional(),
+    placement: z.strictObject({ altText: requiredAltTextSchema, caption: optionalPlacementTextSchema, credit: optionalPlacementTextSchema, language: localeTagSchema.optional() }).optional(),
     poster: z.strictObject({ bytesBase64: z.string().min(1), name: z.string().min(1).max(255).optional(), altText: z.string().trim().min(1).max(PLACEMENT_TEXT_MAX_CHARS).optional() }).optional(),
     captions: z.strictObject({ vtt: z.string().min(1, "Choose a WebVTT caption file."), language: localeTagSchema, label: z.string().trim().min(1).max(120).optional() }).optional(),
     transcript: z.strictObject({ text: z.string().min(1, "State the transcript, or leave it out.") }).optional(),
     sectionPlacement: sectionPlacementPayloadSchema.optional(),
   })
   .superRefine((payload, ctx) => {
-    const altText = payload.altText ?? payload.placement?.altText;
-    if (payload.kind === "image" && altText === undefined) ctx.addIssue({ code: "custom", path: ["altText"], message: "An image needs alternative text describing what it shows before it can be placed, so describe it and choose the file again." });
+    const altText = payload.altText ?? payload.placement?.altText ?? "";
+    if (altText === "") ctx.addIssue({ code: "custom", path: ["altText"], message: altTextRequired(payload.kind) });
     if (payload.kind === "image" && payload.captions !== undefined) ctx.addIssue({ code: "custom", path: ["captions"], message: "A caption track belongs to a video, so an image carries none." });
     if (payload.poster !== undefined && payload.kind !== "video") ctx.addIssue({ code: "custom", path: ["poster"], message: "A poster belongs to a video, so an image carries none." });
   });
@@ -1221,10 +1228,13 @@ function placeRegisteredAsset(input: {
   writeState(context.docs, placed.raw, { mediaAssets, mediaAssetDescriptors });
   return asset.revision;
 }
-/** Registers one uploaded image or video as a scoped asset with prepared renditions, and places it in the section a Page registration names. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export async function registerMediaAsset(sessionId: string, input: MutationInput<RegisterMediaAssetPayload>): Promise<MutationOutcome> {
+/** Registers one uploaded image or video as a scoped asset with prepared renditions, and places it in the section a Page registration names. A carried stop signal ends the attempt at its next boundary, and an attempt ended before anything was written answers `unchanged` with nothing created. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
+export async function registerMediaAsset(sessionId: string, input: MutationInput<RegisterMediaAssetPayload>, control?: { readonly signal?: AbortSignal }): Promise<MutationOutcome> {
   const scope: MediaAssetScope = { organizationId: input.scope.organizationId, ministryId: input.scope.ministryId };
   const pending: PendingRenditionBytes[] = [];
+  const signal = control?.signal;
+  // Read through a call rather than once: the caller can stop waiting at any point while this attempt runs, so the flag is judged again at each boundary instead of being fixed at the moment the handler started.
+  const stopped = (): boolean => signal?.aborted === true;
   const outcome = await runMutation({
     sessionId,
     input,
@@ -1233,10 +1243,14 @@ export async function registerMediaAsset(sessionId: string, input: MutationInput
     authorize: (session) => editorialDecision(session, input.scope),
     readCurrent: (documents) => registrationTargetOf(documents, input.payload.sectionPlacement),
     apply: async (context) => {
+      // A stopped registration creates nothing: the caller stopped waiting before anything was written, so no bytes are stored, no placement is written and no revision advances — the draft the author cancelled on stays as it was.
+      if (stopped()) return { changed: false };
       const { raw, state } = openState(context.docs);
       const payload = input.payload;
       const assetId = newRecordId("asset");
       const { accepted, renditions: preparedRenditions, altText, caption } = await prepareRegisteredRenditions(payload, assetId, scope);
+      // Preparation is the last work a stopped attempt can be spared: the signal is judged again here, before the first write, so a request that was still being prepared when the caller left leaves the store exactly as it found it.
+      if (stopped()) return { changed: false };
       const credit = payload.credit ?? payload.placement?.credit ?? null;
       const language = payload.language ?? payload.placement?.language ?? null;
       const renditions = preparedRenditions.map((rendition) => {

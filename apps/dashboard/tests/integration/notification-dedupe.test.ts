@@ -1,5 +1,4 @@
-/** Success criterion 11: one notification intent is submitted once, and what happened to it is never guessed. */
-import { Temporal } from "temporal-polyfill";
+/** Success criterion 11: one notification intent is submitted once, and what happened to it is never guessed. */ import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { isRecord } from "@/lib/guards";
 import { newOperationId } from "@/lib/ids";
@@ -15,7 +14,7 @@ import { readSession, resetSession } from "@/modules/store/repository";
 import { SEED_INSTANT } from "@/modules/time/clock";
 import { notificationDeadline } from "@/modules/time/window";
 import { expectEnvelope, throwing } from "../helpers/answers";
-import { scopeOf } from "../helpers/fixtures";
+import { layDownSeededSession, scopeOf } from "../helpers/fixtures";
 const PUBLISHER_SESSION_ID = "it-notification-dedupe";
 const READER_SESSION_ID = "it-notification-dedupe-reader";
 const PUBLISHER_SOURCE: SessionSource = { sessionId: PUBLISHER_SESSION_ID };
@@ -31,6 +30,11 @@ const UNSUBSCRIBED_MEMBERSHIP_ID = "membership-unsubscribed";
 const RESTRICTED_MEMBERSHIP_ID = "membership-restricted";
 const AWAITING_PROOF_MEMBERSHIP_ID = "membership-awaiting-proof";
 const SUBSCRIBED_COLUMN_MEMBERSHIP_ID = "membership-subscribed-column";
+/** The seat the seed lays the publisher's own audience under: the world a previewing reader's page reads across to, and the one its consent changes are written to. */ const PUBLISHED_SESSION_ID = DEFAULT_SESSION_ID;
+const PUBLISHED_SOURCE: SessionSource = { sessionId: PUBLISHED_SESSION_ID };
+/** The approved-supporter reader, holding no admitted membership of any ministry: its one membership row is the publisher's own. */ const SUPPORTER_READER_SESSION_ID = "reader-approved-supporter";
+const SUPPORTER_SOURCE: SessionSource = { sessionId: SUPPORTER_READER_SESSION_ID };
+const SUPPORTER_MEMBERSHIP_ID = "principal-reader-approved-supporter";
 const SEEDED_INTENDED_AT = Temporal.Instant.from("2026-11-10T09:05:00Z");
 const USEFULNESS_ENDS = notificationDeadline({ intendedAt: SEEDED_INTENDED_AT, now: SEEDED_INTENDED_AT }).deadlineInstant;
 let scope: Scope;
@@ -50,6 +54,9 @@ async function layDownSessions(): Promise<void> {
   const template = seedSessionDocuments(DEFAULT_SESSION_ID); // The seed builds its documents in memory, so laying two of this file's own sessions down writes nothing another suite reads and starts every case from the same bytes.
   await resetSession(PUBLISHER_SESSION_ID, documentsFor(template, PUBLISHER_SESSION_ID, principalOf(template)));
   await resetSession(READER_SESSION_ID, documentsFor(template, READER_SESSION_ID, RECIPIENT_ID));
+  // The two seats the cross-world case acts as are the seed's own, laid down under the ids it gives them: a reader's page and the publisher's audience read one world only where the seed puts it.
+  await layDownSeededSession(PUBLISHED_SESSION_ID, PUBLISHED_SESSION_ID);
+  await layDownSeededSession(SUPPORTER_READER_SESSION_ID, SUPPORTER_READER_SESSION_ID);
 }
 async function mirrorPublisherWorld(recipientId: string): Promise<void> {
   const documents = (await readSession(PUBLISHER_SESSION_ID)) ?? throwing(`The store holds no publisher session "${PUBLISHER_SESSION_ID}", so there is no world for the recipient to read.`);
@@ -71,21 +78,21 @@ function ledgerRecordsFor(operations: unknown, operationId: string): readonly un
   const listed = Array.isArray(operations.entries) ? operations.entries.filter((entry) => isRecord(entry) && entry.operationId === operationId) : [];
   return [...keyed, ...listed];
 }
-function renditionCandidatesOf(state: SessionStateDocument, releaseIds: readonly string[]): readonly RenditionCandidate[] {
-  return releaseIds.map((releaseId) => {
+const renditionCandidatesOf = (state: SessionStateDocument, releaseIds: readonly string[]): readonly RenditionCandidate[] =>
+  releaseIds.map((releaseId) => {
     const release = state.releases.find((row) => row.releaseId === releaseId);
     const variant = release === undefined ? undefined : state.contentVariants.find((row) => row.variantId === release.variantId);
     const revision = release === undefined ? undefined : state.contentRevisions.find((row) => row.revisionId === release.revisionId);
     if (release === undefined || variant === undefined || revision === undefined) throw new Error(`The seeded publication holds no complete edition "${releaseId}", so this case has no candidate to pin.`);
     return { variantId: release.variantId, releaseId: release.releaseId, revisionId: release.revisionId, audience: release.audience, locale: { tag: release.locale, direction: variant.direction }, publishedAt: Temporal.Instant.from(release.publishedAt), contentChecksum: revision.contentChecksum };
   });
-}
-/** The envelope a read answers with, or the failure it reported instead. */
-const envelopeOf = async <T>(read: () => Promise<ReadResult<T>>, what: string): Promise<T> => expectEnvelope(await read(), what);
+/** The envelope a read answers with, or the failure it reported instead. */ const envelopeOf = async <T>(read: () => Promise<ReadResult<T>>, what: string): Promise<T> => expectEnvelope(await read(), what);
 const audienceOf = () => envelopeOf(() => reads.audience.readAudience({}, PUBLISHER_SOURCE), "readAudience");
 const sendResultOf = (intentId: string) => envelopeOf(() => reads.audience.readSendResult({ intentId }, PUBLISHER_SOURCE), `readSendResult(${intentId})`);
 const inboxOf = (source: SessionSource) => envelopeOf(() => reads.audience.readInbox({}, source), `readInbox as ${source.sessionId}`);
 const preferencesOf = (source: SessionSource) => envelopeOf(() => reads.audience.readPreferences(source), `readPreferences as ${source.sessionId}`);
+const publishedAudienceOf = () => envelopeOf(() => reads.audience.readAudience({}, PUBLISHED_SOURCE), "readAudience as the established worker");
+const supporterPreferencesOf = () => envelopeOf(() => reads.audience.readPreferences(SUPPORTER_SOURCE), "readPreferences as the approved-supporter reader");
 type NotificationPayload = { readonly documentId: string; readonly releaseId: string; readonly intendedAt?: string };
 type NotificationAttempt = { readonly operationId: string; readonly input: { readonly operationId: string; readonly scope: Scope; readonly expectedRevision: string; readonly payload: NotificationPayload } };
 function notificationAttempt(payload: NotificationPayload): NotificationAttempt {
@@ -117,8 +124,7 @@ function intentIdOfStoredResult(outcome: MutationOutcome, what: string): string 
   return intentId;
 }
 const refusedFieldNames = (outcome: MutationOutcome, what: string): readonly string[] => (outcome.outcome !== "invalid" ? throwing(`${what} answered "${outcome.outcome}" instead of a validation refusal.`) : Object.keys(outcome.fields));
-/** A second purpose, which this release's membership type does not admit because it keeps memberships for one purpose only. */
-const secondPurpose = (): AudiencePurpose => "prayer-email" as unknown as AudiencePurpose;
+/** A second purpose, which this release's membership type does not admit because it keeps memberships for one purpose only. */ const secondPurpose = (): AudiencePurpose => "prayer-email" as unknown as AudiencePurpose;
 beforeAll(() => {
   vi.stubEnv("NODE_ENV", "development"); // The development controls are gated on the build, never on a caller's claim, so the gate is set here and restored rather than bypassed.
 });
@@ -131,7 +137,7 @@ afterEach(async () => {
   await moveClockTo(SEED_INSTANT);
 });
 afterAll(async () => {
-  for (const sessionId of [PUBLISHER_SESSION_ID, READER_SESSION_ID]) await resetSession(sessionId);
+  for (const sessionId of [PUBLISHER_SESSION_ID, READER_SESSION_ID, PUBLISHED_SESSION_ID, SUPPORTER_READER_SESSION_ID]) await resetSession(sessionId);
   vi.unstubAllEnvs();
 });
 it("1. the dedupe identity is exactly four facts: returns one key for one publisher, purpose, recipient and intent, and a different key when any one of the four moves", () => {
@@ -254,8 +260,7 @@ it("6. a definite failure comes from real input and retries only while the notic
   expect([member(UNSUBSCRIBED_MEMBERSHIP_ID)?.eligible, member(UNSUBSCRIBED_MEMBERSHIP_ID)?.exclusionReason, member(RESTRICTED_MEMBERSHIP_ID)?.eligible, member(RESTRICTED_MEMBERSHIP_ID)?.exclusionReason]).toEqual([false, "unsubscribed", false, "restricted"]);
   expect([member(AWAITING_PROOF_MEMBERSHIP_ID)?.exclusionReason, member(SUBSCRIBED_COLUMN_MEMBERSHIP_ID)?.state, member(SUBSCRIBED_COLUMN_MEMBERSHIP_ID)?.exclusionReason]).toEqual(["awaiting-proof", "off", "off"]);
   for (const value of [audience.data.excludedByReason.unsubscribed, audience.data.counts.eligible]) expect(value).toBeGreaterThan(0);
-  const attempt = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
-  expect((await notify(attempt)).outcome).toBe("accepted");
+  expect((await notify(notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE }))).outcome).toBe("accepted");
   const { state } = await storedDocuments();
   const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
   if (intent === undefined) throw new Error("The submission recorded no intent, so the copies it produced cannot be read.");
@@ -290,8 +295,7 @@ it("6. a definite failure comes from real input and retries only while the notic
 });
 it("7. a second edition accounts for every eligible recipient: names each recipient the earlier intent already covered, and issues no second copy", async () => {
   // The seeded notice of this Update recorded a copy for all four eligible recipients, so the protected edition of the same Update owes a copy only to the one whose copy failed. The others are eligible all the same, and the ceiling the intent is accepted for counts them.
-  const supporter = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: SUPPORTER_ENGLISH_RELEASE });
-  expect((await notify(supporter)).outcome).toBe("accepted");
+  expect((await notify(notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: SUPPORTER_ENGLISH_RELEASE }))).outcome).toBe("accepted");
   const { state } = await storedDocuments();
   const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, SUPPORTER_ENGLISH_RELEASE);
   if (intent === undefined) throw new Error("The protected edition's notice recorded no intent, so what it recorded cannot be accounted for.");
@@ -321,4 +325,17 @@ it("7. a second edition accounts for every eligible recipient: names each recipi
   const inbox = await inboxOf(READER_SOURCE);
   expect(inbox.data.messages).toHaveLength(1);
   expect(inbox.data.messages[0]?.intentId).toBe(SEEDED_INTENT_ID);
+});
+it("8. an unsubscribe reaches the publisher's own audience: the membership a reader turns off is the one the publisher's audience read reports off, ineligible and unsubscribed", async () => {
+  const before = await publishedAudienceOf(); // The publisher's own audience, read by the seat whose world holds it, before the reader acts on its copy of the fact.
+  const preferences = await supporterPreferencesOf(); // The reader's own page holds no rows of its own, so the membership it states is read across from that same publisher world.
+  expect([preferences.data.membershipId, preferences.data.state]).toEqual([SUPPORTER_MEMBERSHIP_ID, "active"]);
+  const unsubscribe = await mutations.audience.unsubscribe({ operationId: newOperationId(), scope: preferences.scope, expectedRevision: preferences.revision, payload: { publisherId: "publisher-harbour", purpose: UPDATE_EMAIL_PURPOSE } }, SUPPORTER_SOURCE);
+  expect(unsubscribe.outcome).toBe("accepted");
+  expect((await supporterPreferencesOf()).data.state).toBe("off"); // The reader's own page states the choice its own act made.
+  const after = await publishedAudienceOf();
+  const row = after.data.members.find((member) => member.recipientId === SUPPORTER_MEMBERSHIP_ID) ?? throwing(`The publisher's audience holds no row for ${SUPPORTER_MEMBERSHIP_ID}, so the membership the reader turned off is not the one this read reports.`);
+  expect([row.state, row.eligible, row.exclusionReason]).toEqual(["off", false, "unsubscribed"]); // One row with one owner: the publisher reports the fact the reader's page states, never the opposite of it.
+  expect([after.data.counts.eligible, after.data.excludedByReason.unsubscribed]).toEqual([before.data.counts.eligible - 1, before.data.excludedByReason.unsubscribed + 1]);
+  expect([after.data.memberStates.active, after.data.memberStates.off]).toEqual([before.data.memberStates.active - 1, before.data.memberStates.off + 1]);
 });

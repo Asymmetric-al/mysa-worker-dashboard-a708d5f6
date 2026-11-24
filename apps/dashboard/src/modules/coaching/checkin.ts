@@ -93,15 +93,12 @@ function sharedRevisionOf(checkIn: CheckIn): Result<CheckInSharedRevision, Check
 const revisionsOf = (checkIn: CheckIn): CheckInRevisions => ({ privateDraftRevisionId: checkIn.privateDraft?.revisionId, sharedRevisionId: checkIn.shared?.revisionId, sharedRevisionWithdrawnAt: checkIn.shared?.withdrawnAt });
 const accepted = (checkIn: CheckIn, changed: boolean, message: string): CheckInMutationAccepted => ({ checkIn, revisions: revisionsOf(checkIn), state: checkInReadState(checkIn, AVAILABLE_SOURCE), revision: checkIn.revision, changed, message });
 const freezeAnswers = (answers: readonly CheckInAnswer[]): readonly CheckInAnswer[] => Object.freeze(answers.map((answer) => Object.freeze({ questionOrder: answer.questionOrder, text: answer.text })));
-function sameSequence<Item>(left: readonly Item[], right: readonly Item[], same: (left: Item, right: Item) => boolean): boolean {
-  return (
-    left.length === right.length &&
-    left.every((entry, index) => {
-      const other = right[index];
-      return other !== undefined && same(entry, other);
-    })
-  );
-}
+const sameSequence = <Item>(left: readonly Item[], right: readonly Item[], same: (left: Item, right: Item) => boolean): boolean =>
+  left.length === right.length &&
+  left.every((entry, index) => {
+    const other = right[index];
+    return other !== undefined && same(entry, other);
+  });
 const sameQuestions = (left: readonly CheckInQuestion[], right: readonly CheckInQuestion[]): boolean => sameSequence(left, right, (a, b) => a.order === b.order && a.wording === b.wording);
 const sameAnswers = (left: readonly CheckInAnswer[], right: readonly CheckInAnswer[]): boolean => sameSequence(left, right, (a, b) => a.questionOrder === b.questionOrder && a.text === b.text);
 const namedRecipients = (recipients: readonly string[]): readonly string[] => Object.freeze([...new Set(recipients.filter((recipient) => recipient.trim().length > 0))]);
@@ -115,8 +112,7 @@ export function captureQuestions(questions: readonly CheckInQuestion[], captured
   const captured: readonly CheckInQuestion[] = Object.freeze(questions.map((question) => Object.freeze({ wording: question.wording, order: question.order })));
   return ok(Object.freeze({ questions: captured, capturedAt }));
 }
-/** The one limit check for a check-in request: question count, each question's scalars, at most one answer per captured question, each answer's scalars, and the serialised request's bytes. */
-export function validateCheckInRequest(payload: CheckInPayload): readonly CheckInViolation[] {
+/** The one limit check for a check-in request: question count, each question's scalars, at most one answer per captured question, each answer's scalars, and the serialised request's bytes. */ export function validateCheckInRequest(payload: CheckInPayload): readonly CheckInViolation[] {
   const violations: CheckInViolation[] = [];
   const requestBytes = requestByteLength(payload);
   if (requestBytes > CHECKIN_MAX_REQUEST_BYTES) violations.push(violation("request", "request-too-large", requestBytes, CHECKIN_MAX_REQUEST_BYTES, `This check-in request is ${requestBytes} of ${CHECKIN_MAX_REQUEST_BYTES} bytes; it is refused rather than shortened.`));
@@ -175,8 +171,7 @@ export function updateSharedCheckIn(checkIn: CheckIn, payload: CheckInPayload, e
   const next: CheckIn = { ...checkIn, revision, shared: { ...current, answers, updatedAt: now } };
   return ok(accepted(next, true, "The shared check-in now holds these answers, so a coach reading it sees the updated revision."));
 }
-/** Withdraws the shared revision, so a coach can no longer read it; returns the withdrawn record, or the refusal (a stale revision, or nothing shared to withdraw). */
-export function withdrawSharedCheckIn(checkIn: CheckIn, expectedRevision: number, now: CheckInInstant): CheckInMutation {
+/** Withdraws the shared revision, so a coach can no longer read it; returns the withdrawn record, or the refusal (a stale revision, or nothing shared to withdraw). */ export function withdrawSharedCheckIn(checkIn: CheckIn, expectedRevision: number, now: CheckInInstant): CheckInMutation {
   const stale = staleRevisionRefusal(checkIn, expectedRevision);
   if (stale !== null) return err(stale);
   if (checkInReadState(checkIn, AVAILABLE_SOURCE) === "withdrawn") return ok(accepted(checkIn, false, "This check-in is already withdrawn, so nothing changed."));

@@ -1,11 +1,9 @@
-/** Criterion 17 — Variants and localization. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 17 — Variants and localization. */ import type { Locator, Page } from "@playwright/test";
 import { test, expect, actAs, armLostAcknowledgement, clearFailurePlan, devStateOf, fieldAt, jsonOf, stringAt } from "../playwright.config";
 const UPDATE = "doc-update-autumn";
 const EDITION = { enPublic: "variant-update-autumn-en-public", enSupporters: "variant-update-autumn-en-approved-supporter", frPublic: "variant-update-autumn-fr-public", arPublic: "variant-update-autumn-ar-public" } as const;
 const ARABIC = "ar";
-/** The revisions, releases and instants the deterministic seed states, quoted so a comparison names what it expected. */
-const SEEDED = {
+/** The revisions, releases and instants the deterministic seed states, quoted so a comparison names what it expected. */ const SEEDED = {
   enPublicRelease: "rev-update-en-1",
   enPublicReleaseRecord: "release-update-en-1",
   enPublicPublishedAt: "2026-11-10T09:00:00Z",
@@ -23,10 +21,8 @@ const SEEDED = {
 const PROTECTED_COPY = { title: "Autumn at Harbour Youth — for supporters", sentence: "the monthly costs rose in September" } as const;
 const ARABIC_COPY = {
   title: "الخريف في هاربر يوث",
-  /** The frozen candidate's closing sentence, which only a publication of that candidate serves. */
-  candidateOnly: "يجعل هذا العمل ممكناً",
-  /** The earlier publication's second paragraph, which the retained prior-good head still serves. */
-  priorGoodOnly: "وتشاركنا وجبة.",
+  /** The frozen candidate's closing sentence, which only a publication of that candidate serves. */ candidateOnly: "يجعل هذا العمل ممكناً",
+  /** The earlier publication's second paragraph, which the retained prior-good head still serves. */ priorGoodOnly: "وتشاركنا وجبة.",
 } as const;
 const COPY = {
   overviewHeading: "Editions, candidates and releases",
@@ -150,8 +146,7 @@ async function releaseNotifyingEdition(page: Page, variantId: string, localeName
 }
 const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 const editionCell = (page: Page, variantId: string): Locator => page.locator(`[data-slot="edition-cell"][data-variant-id="${variantId}"]`);
-/** The value of one fact in a definition list, matched by the label the cell states for it. */
-const factValueOf = (scope: Locator, label: string): Locator =>
+/** The value of one fact in a definition list, matched by the label the cell states for it. */ const factValueOf = (scope: Locator, label: string): Locator =>
   scope
     .locator("dt")
     .filter({ hasText: new RegExp(`^${escaped(label)}$`, "u") })
@@ -367,7 +362,7 @@ test("a release whose acknowledgement was lost is recovered by replaying the sam
   await expect(factValueOf(editionCell(page, EDITION.arPublic), "Published revision")).toHaveText(COPY.noRelease);
   await clearFailurePlan(page.request);
 });
-test("a requested language is answered with the language actually served, or with Language unavailable", async ({ page }) => {
+test("a requested language is answered with the language actually served: the edition asked for, that language's edition, or this document's most recent admitted one, and Language unavailable only when nothing stands in", async ({ page }) => {
   await page.goto(receivingPath("fr"));
   await expect(page.locator('[data-slot="receiving-post-surface"]')).toHaveAttribute("data-surface", "rendered");
   await expect(page.locator('[data-slot="receiving-post"]')).toHaveAttribute("data-fallback", "false");
@@ -378,14 +373,12 @@ test("a requested language is answered with the language actually served, or wit
   await expect(fallbackPost).toHaveAttribute("data-fallback", "true");
   for (const value of ["Language served: fr", "Language requested: fr-CA", "You asked to read this in fr-CA, and it is shown in fr.", "Audience: Public"]) await expect(fallbackPost).toContainText(value);
   await expect(fallbackPost.locator('div[lang="fr"]')).toHaveCount(1);
-  await page.goto(receivingPath("de"));
-  await expect(page.locator('[data-slot="receiving-post-surface"]')).toHaveAttribute("data-surface", "language-unavailable");
-  const unavailable = page.locator('[data-slot="receiving-post-language-unavailable"]');
-  await expect(unavailable.getByRole("heading", { name: COPY.languageUnavailable, exact: true })).toBeVisible();
-  await expect(unavailable).toContainText("Language requested: de");
-  await expect(page.locator('[data-slot="receiving-post"]')).toHaveCount(0);
-  await expect(page.getByText("L'automne à Harbour Youth", { exact: false })).toHaveCount(0);
-  await expect(page.getByText("You asked to read this in de", { exact: false })).toHaveCount(0);
+  await page.goto(receivingPath("de")); // A language this Update publishes nothing in. No Site declares a default, so the substitute is this document's most recently published admitted public edition — the French one — in the same audience, and the surface names the language actually served beside the one asked for.
+  const substitutedPost = page.locator('[data-slot="receiving-post"]');
+  await expect(page.locator('[data-slot="receiving-post-surface"]')).toHaveAttribute("data-surface", "rendered");
+  await expect(substitutedPost).toHaveAttribute("data-fallback", "true");
+  for (const value of ["Language served: fr", "Language requested: de", "You asked to read this in de, and it is shown in fr.", "Audience: Public"]) await expect(substitutedPost).toContainText(value);
+  await expect(page.locator('[data-slot="receiving-post-language-unavailable"]')).toHaveCount(0);
   await actAs(page, "reader-unauthorized");
   await page.goto(receivingPath("en"));
   const publicPost = page.locator('[data-slot="receiving-post"]');
@@ -496,6 +489,13 @@ test("the Arabic edition is authored and read right to left, with mixed-directio
   expect(renderedText.indexOf(secondItem)).toBeLessThan(renderedText.indexOf(mixed));
   expect(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/u.test(renderedText), "No direction control character reached the record: logical order is stored, and the direction comes from the document. This is the only place in this file where those characters are named").toBe(false);
   await expect(rendered).not.toHaveAttribute("style", /direction|text-align/u);
+  const mixedValues = ["+44 7700 900123", "https://example.org/youth", "2026-11-20"] as const; // The three weak or neutral values the mixed line carries — a telephone number, an address and a civil date — which right-to-left prose cannot place on its own.
+  const isolatedValue = (value: string): Locator => rendered.locator("bdi").filter({ hasText: new RegExp(`^${escaped(value)}$`, "u") });
+  for (const value of mixedValues) await expect(isolatedValue(value).first(), `the value ${value} sits in an isolation element of its own, so it keeps its direction inside the Arabic prose around it`).toBeVisible();
+  expect(await rendered.locator("bdi").count(), "every value the author typed is isolated, not only the first one the renderer met").toBeGreaterThanOrEqual(mixedValues.length);
+  const article = rendered.locator("article");
+  await expect(article).toHaveAttribute("dir", "rtl");
+  await expect(article, "The block that declares the direction of the writing declares the language of the writing too, so assistive technology reading the article alone is told both").toHaveAttribute("lang", ARABIC);
 });
 test("withdrawing the French edition stops that edition being served and leaves English and Arabic standing", async ({ page }) => {
   await openOverview(page);

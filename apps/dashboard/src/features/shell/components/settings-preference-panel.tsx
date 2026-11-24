@@ -45,9 +45,7 @@ function languageLabel(tag: string): string {
   }
   const languageName = intlNames("language")?.of(locale.language);
   if (languageName === undefined || languageName.length === 0) return tag;
-  const scriptName = locale.script === undefined ? undefined : intlNames("script")?.of(locale.script);
-  const regionName = locale.region === undefined ? undefined : intlNames("region")?.of(locale.region);
-  const qualifiers = [scriptName, regionName].filter((name): name is string => name !== undefined && name.length > 0);
+  const qualifiers = [locale.script === undefined ? undefined : intlNames("script")?.of(locale.script), locale.region === undefined ? undefined : intlNames("region")?.of(locale.region)].filter((name): name is string => name !== undefined && name.length > 0);
   return qualifiers.length === 0 ? languageName : `${languageName} (${qualifiers.join(", ")})`;
 }
 function languageChoices(current: string): readonly string[] {
@@ -135,10 +133,6 @@ export function SettingsPreferencePanel() {
   const platformReady = usePlatformReady();
   const [announcement, setAnnouncement] = useState("");
   const idPrefix = useId();
-  const appearanceLegendId = `${idPrefix}-appearance-legend`;
-  const appearanceHintId = `${idPrefix}-appearance-hint`;
-  const publishingLegendId = `${idPrefix}-publishing-legend`;
-  const publishingHintId = `${idPrefix}-publishing-hint`;
   const languageId = `${idPrefix}-language`;
   const languageHintId = `${idPrefix}-language-hint`;
   const timeZoneId = `${idPrefix}-time-zone`;
@@ -167,7 +161,7 @@ export function SettingsPreferencePanel() {
   return (
     <>
       <SectionCard title="Appearance, language and time zone" description={APPEARANCE_CARD_DESCRIPTION} contentClassName="flex min-w-0 flex-col gap-6">
-        <ChoiceRadios legend="Appearance" legendId={appearanceLegendId} hint={APPEARANCE_HINT} hintId={appearanceHintId} value={appearance} choices={VIEWER_APPEARANCES} copy={APPEARANCE_COPY} onChoose={chooseAppearance} />
+        <ChoiceRadios legend="Appearance" legendId={`${idPrefix}-appearance-legend`} hint={APPEARANCE_HINT} hintId={`${idPrefix}-appearance-hint`} value={appearance} choices={VIEWER_APPEARANCES} copy={APPEARANCE_COPY} onChoose={chooseAppearance} />
         <Separator />
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex min-w-0 flex-col gap-2">
@@ -206,7 +200,7 @@ export function SettingsPreferencePanel() {
         </div>
       </SectionCard>
       <SectionCard title="Publishing" description="The release mode a new submission of an edition asks for. Nothing on this screen publishes, notifies or sends anything." contentClassName="flex min-w-0 flex-col gap-6">
-        <ChoiceRadios legend="Publishing preferences" legendId={publishingLegendId} hint={PUBLISHING_HINT} hintId={publishingHintId} value={publishing} choices={PUBLISHING_PREFERENCES} copy={PUBLISHING_COPY} onChoose={choosePublishing} />
+        <ChoiceRadios legend="Publishing preferences" legendId={`${idPrefix}-publishing-legend`} hint={PUBLISHING_HINT} hintId={`${idPrefix}-publishing-hint`} value={publishing} choices={PUBLISHING_PREFERENCES} copy={PUBLISHING_COPY} onChoose={choosePublishing} />
       </SectionCard>
       {/* One polite region for all four controls, placed after both cards: every change is announced once, in words. */}
       <output className="sr-only">{announcement}</output>

@@ -53,8 +53,7 @@ function NarrowingStatement({ actions }: { readonly actions: readonly ReadAction
   );
 }
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: 1, denied: { title: COMMITMENTS_PAGE_COPY.title, body: COMMITMENTS_PAGE_COPY.denied }, unavailable: { title: COMMITMENTS_PAGE_COPY.unavailableTitle }, refused: { title: COMMITMENTS_PAGE_COPY.refusedTitle } };
-/** The commitments list: a refusal replaces the list before anything is composed, so no count, no commitment title and no empty list stands in for a read that never answered. */
-export default function CommitmentsPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
+/** The commitments list: a refusal replaces the list before anything is composed, so no count, no commitment title and no empty list stands in for a read that never answered. */ export default function CommitmentsPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   return readPageOf(
     async () => reads.support.readCommitments(pageQueryOf(await searchParams)),
     { notice: NOTICE_COPY, heading: { title: COMMITMENTS_PAGE_COPY.title, paragraphs: [COMMITMENTS_PAGE_COPY.lead] } },

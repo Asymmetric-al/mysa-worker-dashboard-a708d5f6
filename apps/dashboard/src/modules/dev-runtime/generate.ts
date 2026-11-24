@@ -231,8 +231,7 @@ async function persistWorkload(sessionId: string, workload: WorkloadDocument): P
   if (existing === undefined) return void (await resetSession(sessionId, { ...seedSessionDocuments(sessionId), workload }));
   await transact(sessionId, ["workload"], (draft) => (draft.workload = workload));
 }
-/** Generates the published workload into a seeded session's store document and reports what it did. */
-export async function generateWorkload(sessionId: string = DEFAULT_WORKLOAD_SESSION_ID, options: GenerateWorkloadOptions = {}): Promise<WorkloadSummary> {
+/** Generates the published workload into a seeded session's store document and reports what it did. */ export async function generateWorkload(sessionId: string = DEFAULT_WORKLOAD_SESSION_ID, options: GenerateWorkloadOptions = {}): Promise<WorkloadSummary> {
   const workload = buildWorkload(sessionId);
   await persistWorkload(sessionId, workload);
   return { sessionId, partners: workload.partners.length, gifts: workload.gifts.length, currencies: workload.header.currencies, coverage: workload.header.coverage, generatedAt: workload.header.generatedAt, elapsedMs: options.elapsedMs ?? 0, storePath: DATA_ROOT, workloadPath: sessionPaths(sessionId).workload };

@@ -6,5 +6,4 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 const MAX_OPERATION_ID_LENGTH = 200;
 const refusalIdentityOf = refusalIdentityGiven("session-context-route", MAX_OPERATION_ID_LENGTH);
-const selectContext = (request: Request): Promise<Response> => writeRoute(request, selectContextRequestSchema, mutations.context.selectContext, refusalIdentityOf);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: selectContext });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: (request: Request): Promise<Response> => writeRoute(request, selectContextRequestSchema, mutations.context.selectContext, refusalIdentityOf) });

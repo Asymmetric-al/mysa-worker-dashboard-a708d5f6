@@ -123,10 +123,8 @@ function Heading({ level, id, children }: { readonly level: 1 | 2; readonly id: 
   const Tag = HEADING_TAG[level];
   return <Tag {...{ id: id, className: cn(HEADING_SCALE[level], "text-pretty break-words") }}>{children}</Tag>;
 }
-/** The envelope the Server Component already read for this address. · The level of this surface's own heading. */
-export type InitiativeListProps = { readonly initialEnvelope: InitiativesEnvelope<InitiativeListPage>; readonly headingLevel?: 1 | 2; readonly className?: string };
-/** The initiative list surface: one page of the initiatives this ministry permits, over the URL's query state, with the composer for a new initiative gated on the action its read publishes. */
-export default function InitiativeList({ initialEnvelope, headingLevel = 2, className }: InitiativeListProps): ReactElement {
+/** The envelope the Server Component already read for this address. · The level of this surface's own heading. */ export type InitiativeListProps = { readonly initialEnvelope: InitiativesEnvelope<InitiativeListPage>; readonly headingLevel?: 1 | 2; readonly className?: string };
+/** The initiative list surface: one page of the initiatives this ministry permits, over the URL's query state, with the composer for a new initiative gated on the action its read publishes. */ export default function InitiativeList({ initialEnvelope, headingLevel = 2, className }: InitiativeListProps): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

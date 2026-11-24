@@ -190,13 +190,10 @@ export const ACCEPTANCE_REVIEW_COPY = {
   material: { heading: "The per-row review material could not be derived", lead: "This is the read's own statement of what it could not derive. No row is shown as an empty or a ready row in its place." },
 } as const;
 /** A row's verdict as words, keyed by the domain's own closed union so a verdict added or renamed there fails to compile here instead of rendering unexplained. */ export const REVIEW_VERDICT_WORDS: Record<ImportRowVerdict, string> = { ready: "Ready", "needs-correction": "Needs correction" };
-/** What a row of this file resembling another row of it says: the badge's word, the name its disclosure carries, and the sentence naming the other rows — none of which is a verdict, a merge or a decision. */
-export const REVIEW_DUPLICATE_COPY = {
+/** What a row of this file resembling another row of it says: the badge's word, the name its disclosure carries, and the sentence naming the other rows — none of which is a verdict, a merge or a decision. */ export const REVIEW_DUPLICATE_COPY = {
   word: "Duplicate-looking",
-  /** The name of the control that opens one row's review material, so the disclosure carries its row number and is never one of many unnamed controls. */
-  summaryLabel: (rowNumber: number): string => `Review material for row ${rowNumber}`,
-  /** The sentence naming the other rows of the file one row looks like, what was compared, and that nothing was merged or decided. */
-  sentence: (duplicate: ImportDuplicateLooking): string => {
+  /** The name of the control that opens one row's review material, so the disclosure carries its row number and is never one of many unnamed controls. */ summaryLabel: (rowNumber: number): string => `Review material for row ${rowNumber}`,
+  /** The sentence naming the other rows of the file one row looks like, what was compared, and that nothing was merged or decided. */ sentence: (duplicate: ImportDuplicateLooking): string => {
     const others = duplicate.otherRowNumbers.map((rowNumber) => `row ${rowNumber}`);
     const named = others.length === 1 ? (others[0] ?? "") : `${others.slice(0, -1).join(", ")} and ${others[others.length - 1] ?? ""}`;
     return `Row ${duplicate.rowNumber} carries the same name, "${duplicate.name}", as ${named} of this file, and no email address, phone number or source reference is shared between them. Nothing was merged and nothing was decided: each row keeps its own verdict and its own decision, and no contact you already hold was compared.`;

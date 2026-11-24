@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { parseCivilDate } from "@/modules/time/civil";
+import { isResolvableTimeZone, parseCivilDate } from "@/modules/time/civil";
 import { TASK_FIELD_MESSAGES, type TaskKind } from "../copy/task-status";
 export const TASK_SCHEMA_MESSAGES = {
   taskIdRequired: "This action applies to one task, so open the task again and retry.",
@@ -27,14 +27,6 @@ export const civilDateSchema = z
   });
 const PLANNED_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/u;
 export const plannedTimeSchema = z.string({ error: TASK_SCHEMA_MESSAGES.plannedTimeInvalid }).trim().regex(PLANNED_TIME_PATTERN, TASK_SCHEMA_MESSAGES.plannedTimeInvalid);
-function isResolvableTimeZone(value: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
 export const timeZoneSchema = z.string({ error: TASK_SCHEMA_MESSAGES.timeZoneInvalid }).trim().refine(isResolvableTimeZone, TASK_SCHEMA_MESSAGES.timeZoneInvalid);
 export const taskTitleSchema = z
   .string({ error: TASK_FIELD_MESSAGES.titleRequired })

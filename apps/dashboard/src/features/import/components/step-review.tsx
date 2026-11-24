@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import ActionReview, { type MutationSubmit } from "@/components/action-review";
+import { factFrame } from "@/components/fact-list";
 import { FormErrorSummary, FormField, FormFieldGroup, fieldControlId, type FieldErrorLookup } from "@/components/form-field";
 import { PaginationBar } from "@/components/pagination-bar";
 import StateNotice from "@/components/state-notice";
@@ -113,8 +114,7 @@ function decisionSignature(decision: ImportDecisionInput): string {
   const reason = decision.kind === "skip" ? (decision.reason ?? "").trim() : "";
   return [decision.kind, String(decision.rowNumber), candidate, corrections, reason].join("\u001e");
 }
-/** The decision a refused attempt posted, in this family's own words: the choice, each corrected cell, the contact a reuse names and the reason a skip gives — never the record itself. */
-function decisionWordsOf(decision: ImportDecisionInput, review: ImportProposalRowReview | null): readonly string[] {
+/** The decision a refused attempt posted, in this family's own words: the choice, each corrected cell, the contact a reuse names and the reason a skip gives — never the record itself. */ function decisionWordsOf(decision: ImportDecisionInput, review: ImportProposalRowReview | null): readonly string[] {
   const words: string[] = [DECISION_COPY[decision.kind].label];
   if (decision.kind === "create" || decision.kind === "reuse") {
     for (const correction of decision.corrections ?? []) {
@@ -265,16 +265,14 @@ const ROW_MATERIAL: readonly { readonly label: string; readonly body: (props: { 
   { label: REVIEW_COPY.column.suggestions, body: RowSuggestions },
 ];
 const REVIEW_HEADINGS: readonly string[] = [REVIEW_COPY.column.row, REVIEW_COPY.column.verdict, REVIEW_COPY.column.recordedDecision, REVIEW_COPY.column.material, REVIEW_COPY.column.decision];
-/** The review table's five column widths, fixed so opening one row's disclosure re-wraps that row's own material instead of redistributing every column. */
-const REVIEW_HEADING_WIDTHS: readonly (string | undefined)[] = ["w-[11%]", "w-[14%]", "w-[13%]", "w-[20%]", undefined];
+/** The review table's five column widths, fixed so opening one row's disclosure re-wraps that row's own material instead of redistributing every column. */ const REVIEW_HEADING_WIDTHS: readonly (string | undefined)[] = ["w-[11%]", "w-[14%]", "w-[13%]", "w-[20%]", undefined];
 const decisionFieldName = (branch: Branch, rowNumber: number): string => `decision-${branch}-${String(rowNumber)}`;
 const decisionOptionId = (branch: Branch, rowNumber: number, kind: ImportDecisionKind): string => `${fieldControlId(decisionFieldName(branch, rowNumber))}-option-${kind}`;
 // Where one option's consequence is stated: inside the row's disclosure, so the choice refers to the sentence that explains it and the two are read together without the sentence taking the choice's place in the row.
 const decisionConsequenceId = (branch: Branch, rowNumber: number, kind: ImportDecisionKind): string => `${decisionOptionId(branch, rowNumber, kind)}-consequence`;
 // Where the reason a row offers no contact to reuse is stated: beside the consequence of reusing, so a disabled choice explains itself without a line of prose above every row.
 const decisionReuseReasonId = (branch: Branch, rowNumber: number): string => `${fieldControlId(decisionFieldName(branch, rowNumber))}-reuse-reason`;
-/** One labelled run of a row's material, whether it sits in the review table's one material column or in a card. */
-const RowSection = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
+/** One labelled run of a row's material, whether it sits in the review table's one material column or in a card. */ const RowSection = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
   <div className="flex min-w-0 flex-col gap-1">
     <p className="text-sm font-medium">{label}</p>
     {children}
@@ -451,13 +449,7 @@ const RowDecisionStatus = ({ decisionLabel, decided }: { readonly decisionLabel:
   </div>
 );
 const REFUSAL_COPY: Readonly<Record<"denied" | "unavailable", { readonly title: string; readonly lead: string }>> = { denied: { title: REVIEW_COPY.refusal.deniedTitle, lead: REVIEW_COPY.refusal.deniedLead }, unavailable: { title: REVIEW_COPY.refusal.unavailableTitle, lead: REVIEW_COPY.refusal.unavailableLead } };
-/** One labelled fact of a refusal: the words that name it, then the value the answer states beside it. */
-const RefusalFact = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
-  <div className="flex min-w-0 flex-col gap-1">
-    <dt className="font-medium">{label}</dt>
-    <dd className="min-w-0 wrap-anywhere">{children}</dd>
-  </div>
-);
+/** One labelled fact of a refusal: the words that name it, then the value the answer states beside it. */ const RefusalFact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-1", termClassName: "font-medium", valueClassName: "min-w-0 wrap-anywhere" });
 function RefusalBlock({ refusal, held, review }: { readonly refusal: StepReviewRefusal; readonly held: string | null; readonly review: ImportProposalRowReview | null }): ReactElement {
   if (refusal.kind === "invalid") return <FormErrorSummary errors={refusal.errors} title={REVIEW_COPY.refusal.invalidTitle} description={REVIEW_COPY.refusal.invalidLead} headingLevel={3} />;
   if (refusal.kind === "unknown") return <StateNotice kind="unknown" headingLevel={3} title={REVIEW_COPY.refusal.unknownTitle} description={REVIEW_COPY.refusal.unknownLead} operationId={refusal.operationId} />;
@@ -470,10 +462,10 @@ function RefusalBlock({ refusal, held, review }: { readonly refusal: StepReviewR
         <AlertDescription>
           <p>{REVIEW_COPY.refusal.conflictLead}</p>
           <dl className="flex min-w-0 flex-col gap-2">
-            <RefusalFact label={REVIEW_COPY.refusal.conflictCurrentRevision}>
+            <RefusalFact term={REVIEW_COPY.refusal.conflictCurrentRevision}>
               <bdi className="mono-identifier">{refusal.currentRevision}</bdi>
             </RefusalFact>
-            <RefusalFact label={REVIEW_COPY.refusal.conflictPreserved}>
+            <RefusalFact term={REVIEW_COPY.refusal.conflictPreserved}>
               <ul className="flex list-disc flex-col gap-0.5 ps-4">
                 {recorded.map((word, index) => (
                   <li key={`${String(index)}-${word}`} className="text-pretty">
@@ -482,7 +474,7 @@ function RefusalBlock({ refusal, held, review }: { readonly refusal: StepReviewR
                 ))}
               </ul>
             </RefusalFact>
-            <RefusalFact label={REVIEW_COPY.refusal.conflictHeld}>
+            <RefusalFact term={REVIEW_COPY.refusal.conflictHeld}>
               <bdi>{held ?? REVIEW_COPY.noDecisionRecorded}</bdi>
             </RefusalFact>
           </dl>

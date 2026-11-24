@@ -1,5 +1,6 @@
 "use client";
 import { isNonEmptyString, isRecord } from "@/lib/guards";
+import { readJsonBody } from "@/lib/read-transport";
 import type { MutationInput, MutationOutcome, ReadEnvelope, ReadResult } from "@/modules/data-service";
 import { isOutcome, isReadResult } from "@/modules/data-service/outcome";
 /** The four paths this family posts a change to, exactly as AAP 0.6.3 names them. */ export const IMPORT_ENDPOINTS = { propose: "/api/import", decisions: "/api/import/decisions", accept: "/api/import/accept", cancel: "/api/import/cancel" } as const;
@@ -10,15 +11,12 @@ const READ_GUIDANCE = "The import record could not be read from the local data s
 /** The proposal read's answer: `in-flight` while the operation is reviewable, `completed` once its identity answers a receipt. */ export type ImportProposalEnvelope = ImportReadEnvelope;
 /** The receipt read's answer: `completed` once the operation has processed its rows, `in-flight` while it has not. */ export type ImportReceiptEnvelope = ImportReadEnvelope;
 type ImportReadWindow = { readonly page?: number; readonly pageSize?: number };
-/** Whether a parsed body is the envelope the service owns: the scope, source, revision, as-of, coverage, value states and advisory actions every read carries. */
-const isEnvelopeBody = (value: unknown): value is ReadEnvelope<unknown> =>
+/** Whether a parsed body is the envelope the service owns: the scope, source, revision, as-of, coverage, value states and advisory actions every read carries. */ const isEnvelopeBody = (value: unknown): value is ReadEnvelope<unknown> =>
   isRecord(value) && "data" in value && isRecord(value.scope) && isRecord(value.source) && typeof value.revision === "string" && typeof value.asOf === "string" && isRecord(value.coverage) && isRecord(value.valueStates) && Array.isArray(value.actions);
-/** Whether a parsed body is one of a read's four answers, with a wrapped envelope admitted by the same rule a flat one is. */
-const isReadResultBody = (value: unknown): value is ReadResult<ReadEnvelope<unknown>> => isReadResult(value) && (value.kind !== "envelope" || isEnvelopeBody(value.envelope));
+/** Whether a parsed body is one of a read's four answers, with a wrapped envelope admitted by the same rule a flat one is. */ const isReadResultBody = (value: unknown): value is ReadResult<ReadEnvelope<unknown>> => isReadResult(value) && (value.kind !== "envelope" || isEnvelopeBody(value.envelope));
 function readResultOf(body: unknown): ReadResult<ReadEnvelope<unknown>> | undefined {
   if (isReadResultBody(body)) return body;
-  if (isEnvelopeBody(body)) return { kind: "envelope", envelope: body };
-  return !isOutcome(body) ? undefined : body.outcome === "denied" ? { kind: "denied", denied: body } : body.outcome === "unavailable" ? { kind: "unavailable", unavailable: body } : body.outcome === "invalid" ? { kind: "refused", refused: body } : undefined;
+  return isEnvelopeBody(body) ? { kind: "envelope", envelope: body } : !isOutcome(body) ? undefined : body.outcome === "denied" ? { kind: "denied", denied: body } : body.outcome === "unavailable" ? { kind: "unavailable", unavailable: body } : body.outcome === "invalid" ? { kind: "refused", refused: body } : undefined;
 }
 function phaseOfData(data: unknown): ImportReadPhase | undefined {
   if (!isRecord(data)) return undefined;
@@ -28,14 +26,6 @@ function phaseOfData(data: unknown): ImportReadPhase | undefined {
 const withPhase = (envelope: ReadEnvelope<unknown>, phase: ImportReadPhase): ReadEnvelope<ImportReadEnvelope> => ({ ...envelope, data: { phase, data: envelope.data } });
 const readOutage = (reference: string): ReadResult<never> => ({ kind: "unavailable", unavailable: { outcome: "unavailable", operationId: "read", source: { system: "browser-transport", reference }, guidance: READ_GUIDANCE } });
 const unknownMember = (operationId: string): MutationOutcome => ({ outcome: "unknown", operationId });
-async function readJsonBody(response: Response): Promise<unknown> {
-  try {
-    const text = await response.text();
-    return text.trim().length === 0 ? undefined : (JSON.parse(text) as unknown);
-  } catch {
-    return undefined;
-  }
-}
 async function postJson<P>(path: string, input: MutationInput<P>): Promise<MutationOutcome> {
   const envelope: MutationInput<unknown> = { operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: input.payload };
   try {

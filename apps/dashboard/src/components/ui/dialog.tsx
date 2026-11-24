@@ -5,9 +5,7 @@ import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { useDirection } from "@/components/ui/direction";
 import { XIcon } from "lucide-react";
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
-}
+const Dialog = ({ ...props }: DialogPrimitive.Root.Props) => <DialogPrimitive.Root data-slot="dialog" {...props} />;
 const DialogTrigger = ({ ...props }: DialogPrimitive.Trigger.Props) => <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
 const DialogPortal = ({ ...props }: DialogPrimitive.Portal.Props) => <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 const DialogClose = ({ ...props }: DialogPrimitive.Close.Props) => <DialogPrimitive.Close data-slot="dialog-close" {...props} />;

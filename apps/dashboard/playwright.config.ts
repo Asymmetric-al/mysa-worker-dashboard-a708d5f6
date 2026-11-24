@@ -1,5 +1,4 @@
-/** The browser journey runner: one Chromium project driving the real application through the same seeded store and reset the specs assert against. */
-import { execFileSync, spawnSync } from "node:child_process";
+/** The browser journey runner: one Chromium project driving the real application through the same seeded store and reset the specs assert against. */ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
@@ -7,8 +6,7 @@ import { defineConfig, devices, expect, test as base, type APIRequestContext, ty
 import { parse } from "csv-parse/sync";
 const DEFAULT_PORT = 3000;
 const port = portFrom(process.env); // This clone's development server port, which `PORT` states so simultaneous checkouts never collide.
-/** The origin the journeys drive: this clone's server and nothing else, because there is no deployment. */
-export const BASE_URL = `http://127.0.0.1:${port}`;
+/** The origin the journeys drive: this clone's server and nothing else, because there is no deployment. */ export const BASE_URL = `http://127.0.0.1:${port}`;
 const READY_URL = `${BASE_URL}/icon.svg`; // One committed asset the application serves with no store and no session, which is what readiness is judged on.
 export const RESET_URL = `${BASE_URL}/api/dev`; // The development-control handler (AAP 0.6.3): the one named control a spec operates before it reads.
 const RESET_ACTION = "resetSeed";
@@ -20,16 +18,14 @@ const DETAIL_LIMIT = 400; // How much of a response body an error quotes, so a f
 export const SESSION_COOKIE = "dashboard_session"; // The development-session cookie's name, mirrored from `modules/store/sessions.ts`: the cookie is the whole identity a request is authorised as.
 export type SeededPersonaKind = "coach" | "reader" | "reviewer" | "worker"; // The kinds of seeded identity the roster holds, as a session's persisted persona record states them.
 export type PersonaName = "new-worker" | "established-worker" | "second-worker" | "fundraiser" | "coach" | "reviewer" | "reader-public" | "reader-approved-supporter" | "reader-unauthorized" | "subscriber"; // The ten seeded identities a spec may act as, named the way the seed's persona roster names them.
-/** One seeded identity: the session its cookie names, and the words the application uses for it. */
-export interface SeededPersona {
+/** One seeded identity: the session its cookie names, and the words the application uses for it. */ export interface SeededPersona {
   readonly sessionId: string; // The seeded session id this persona's `dashboard_session` cookie carries: the identity a spec acts as.
   readonly resetSessionId: string; // The session this runner operates the development reset as for this persona.
   readonly label: string; // The label the development panel and the seeded documents use for this identity.
   readonly kind: SeededPersonaKind;
   readonly description: string; // What this identity is admitted to and may do, in the seed's own words.
 }
-/** The seeded persona roster, mirrored from `modules/dev-runtime/seed.ts`: one row per persona of that roster. */
-export const SEEDED_PERSONAS: Readonly<Record<PersonaName, SeededPersona>> = {
+/** The seeded persona roster, mirrored from `modules/dev-runtime/seed.ts`: one row per persona of that roster. */ export const SEEDED_PERSONAS: Readonly<Record<PersonaName, SeededPersona>> = {
   "new-worker": { sessionId: "new-worker", resetSessionId: "new-worker", label: "New worker", kind: "worker", description: "A worker with no gifts, goal, subscription or integration, starting from a private contact, a task and an Update whose first draft is unwritten." },
   "established-worker": { sessionId: "established-worker", resetSessionId: "established-worker", label: "Established worker", kind: "worker", description: "A worker with years of support, recurring gifts, partners, drafts and pages, across two ministries." },
   "second-worker": { sessionId: "second-worker", resetSessionId: "second-worker", label: "Second worker", kind: "worker", description: "A worker in another organization, whose scope shares nothing with the first." },
@@ -91,8 +87,7 @@ export function repositoryRootFrom(startDirectory: string): string {
     current = parent;
   }
 }
-/** Regenerates the published validation workload into the established worker's session, refusing a document that does not report the published counts. */
-export function ensureWorkload(): void {
+/** Regenerates the published validation workload into the established worker's session, refusing a document that does not report the published counts. */ export function ensureWorkload(): void {
   const root = repositoryRootFrom(process.cwd());
   const script = join(root, WORKLOAD_SCRIPT);
   if (!existsSync(script)) throw new Error(`The workload this measurement is taken over is produced by ${WORKLOAD_SCRIPT}, and no such file stands in ${JSON.stringify(root)}. The published dataset is generated rather than committed, so the script is part of the checkout.`);
@@ -263,8 +258,7 @@ export async function readJson(context: APIRequestContext, path: string, session
 }
 /** The persistent label the shell states on every surface: the records a spec reads are synthetic. */ // The surfaces every spec reaches through the shell
 export const DEVELOPMENT_DATA_LABEL = "Development data";
-/** Admits one seeded session on the page's own context: the cookie is the whole identity every request is authorised as. */
-export async function actAs(page: Page, sessionId: string): Promise<void> {
+/** Admits one seeded session on the page's own context: the cookie is the whole identity every request is authorised as. */ export async function actAs(page: Page, sessionId: string): Promise<void> {
   await page.context().clearCookies(); // The jar is cleared first, so a cookie left by another identity is never sent beside this one: one request, one identity, and every later read is authorised again from this value.
   await page.context().addCookies([{ name: SESSION_COOKIE, value: sessionId, url: BASE_URL }]);
 }
@@ -288,9 +282,8 @@ export async function expectDevelopmentData(page: Page, surface: string): Promis
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first(), `${surface} states the persistent Development data label, so no screen of this application can be mistaken for production.`).toBeVisible();
 }
 export type FocusReading = { readonly ok: boolean; readonly name: string; readonly reason: string }; // What one look at the focused element answers: whether a keyboard user can see it and reach it, and what it is called.
-/** Reads the element that currently holds focus. */
-export async function readFocus(page: Page): Promise<FocusReading> {
-  return page.evaluate(() => {
+/** Reads the element that currently holds focus. */ export const readFocus = async (page: Page): Promise<FocusReading> =>
+  page.evaluate(() => {
     const active = document.activeElement;
     if (active === null || active === document.body || active === document.documentElement) return { ok: false, name: "", reason: "no control holds focus" };
     const labelledBy = active.getAttribute("aria-labelledby");
@@ -327,9 +320,7 @@ export async function readFocus(page: Page): Promise<FocusReading> {
     }
     return { ok: true, name: shortened, reason: "" };
   });
-}
-/** Asserts the focused control is visible and unobscured, reading it only once the browser has finished scrolling and styling it, and naming the step that left focus where it is. */
-export async function expectFocusVisibleAndUnobscured(page: Page, step: string): Promise<FocusReading> {
+/** Asserts the focused control is visible and unobscured, reading it only once the browser has finished scrolling and styling it, and naming the step that left focus where it is. */ export async function expectFocusVisibleAndUnobscured(page: Page, step: string): Promise<FocusReading> {
   // A focus change and the scroll-into-view and focus style it triggers land a frame or more apart, and further apart again on a loaded host, so the reading is retaken until the browser has stopped moving: bounded in real time, and always reported from the last reading, which is the one a control that never arrives fails on.
   const deadline = Date.now() + FOCUS_READ_DEADLINE_MS;
   let reading = await readFocus(page);
@@ -340,8 +331,7 @@ export async function expectFocusVisibleAndUnobscured(page: Page, step: string):
   expect(reading.ok, `${step}: the focused control must be visible and unobscured (WCAG 2.4.11), and ${reading.name === "" ? "no control" : JSON.stringify(reading.name)} was ${reading.reason}.`).toBe(true);
   return reading;
 }
-/** Asserts every scroll container carries the offset that keeps a focused control clear of the sticky shell. */
-export async function expectScrollPaddingSet(page: Page, surface: string): Promise<void> {
+/** Asserts every scroll container carries the offset that keeps a focused control clear of the sticky shell. */ export async function expectScrollPaddingSet(page: Page, surface: string): Promise<void> {
   const paddings = await page.evaluate(() => {
     const ports = [document.documentElement, document.getElementById("main-content")].filter((element): element is HTMLElement => element instanceof HTMLElement);
     return ports.map((element) => window.getComputedStyle(element).scrollPaddingBlockStart);
@@ -349,14 +339,12 @@ export async function expectScrollPaddingSet(page: Page, surface: string): Promi
   expect(paddings.length, `${surface} states the scroll ports whose padding is read.`).toBeGreaterThan(0);
   for (const padding of paddings) expect(Number.parseFloat(padding), `${surface}: every scroll port states a scroll-padding-block-start (${JSON.stringify(padding)}), so a focused control is scrolled clear of the sticky shell rather than under it.`).toBeGreaterThan(0);
 }
-/** The bounds one settle waits under: what has to stand still, for how long, and for how long at most. */
-interface SettleLimits {
+/** The bounds one settle waits under: what has to stand still, for how long, and for how long at most. */ interface SettleLimits {
   readonly quietMs: number; // How long the reading must be unchanged before the layout counts as settled.
   readonly stableFrames: number; // How many consecutive animation frames must agree on it.
   readonly deadlineMs: number; // How long a settle waits at most, so a control that never stops moving is reported rather than waited on forever.
 }
-/** Waits for the browser to finish moving what a focus change moves, so a reading describes the page a person actually sees. */
-export async function settleLayout(page: Page): Promise<void> {
+/** Waits for the browser to finish moving what a focus change moves, so a reading describes the page a person actually sees. */ export async function settleLayout(page: Page): Promise<void> {
   // The limits travel as an argument, not as a closure over module constants: this function is serialised into the page, where the module's bindings do not exist.
   await page.evaluate(
     (limits: SettleLimits) =>
@@ -404,8 +392,7 @@ export async function settleLayout(page: Page): Promise<void> {
     { quietMs: SETTLE_QUIET_MS, stableFrames: SETTLE_STABLE_FRAMES, deadlineMs: SETTLE_DEADLINE_MS },
   );
 }
-/** Focuses a control without a pointer, proves the focus landed, and then operates it from the keyboard alone. */
-export async function pressFromKeyboard(page: Page, control: Locator, step: string, key: "Enter" | " " = "Enter"): Promise<void> {
+/** Focuses a control without a pointer, proves the focus landed, and then operates it from the keyboard alone. */ export async function pressFromKeyboard(page: Page, control: Locator, step: string, key: "Enter" | " " = "Enter"): Promise<void> {
   await control.scrollIntoViewIfNeeded(); // A keyboard user reaches a control by tabbing to it and the browser scrolls it into view, so it is checked where a keyboard user would meet it.
   await control.focus();
   await expect(control, `${step}: the control takes focus, so the keyboard is enough to reach it.`).toBeFocused();
@@ -427,8 +414,7 @@ export async function typeFromKeyboard(page: Page, control: Locator, text: strin
   await page.keyboard.type(text);
   await expect(control, `${step}: the field holds the characters the keyboard typed.`).toHaveValue(text);
 }
-/** Walks the tab order of the surface on screen, proving each stop is visible and unobscured, and ending early on the control a caller names. */
-export async function sweepTabOrder(page: Page, surface: string, steps: number, until?: string): Promise<readonly string[]> {
+/** Walks the tab order of the surface on screen, proving each stop is visible and unobscured, and ending early on the control a caller names. */ export async function sweepTabOrder(page: Page, surface: string, steps: number, until?: string): Promise<readonly string[]> {
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   });
@@ -445,8 +431,7 @@ export async function sweepTabOrder(page: Page, surface: string, steps: number, 
   await expectFocusVisibleAndUnobscured(page, `${surface}: Shift+Tab returns along the same path`);
   return names;
 }
-/** Asserts focus is still inside the open dialog's own layer. */
-export async function expectFocusInsideDialog(picker: Locator, step: string): Promise<void> {
+/** Asserts focus is still inside the open dialog's own layer. */ export async function expectFocusInsideDialog(picker: Locator, step: string): Promise<void> {
   const inside = await picker.evaluate((dialog: Element) => {
     const active = document.activeElement;
     const layer = dialog.parentElement?.closest("[data-slot$='-portal']") ?? dialog;
@@ -486,9 +471,8 @@ export async function expectSoleHorizontalScroller(page: Page, region: Locator, 
 }
 /** One control that rendered below the 24×24 CSS px floor, with whether its spacing saves it. */ // Target size (2.5.8) and motion (2.3.3 / reduced motion): the two floors a control can miss
 export type UndersizedTarget = { readonly label: string; readonly width: number; readonly height: number; readonly spaced: boolean };
-/** Measures every control inside one named scope against the 24×24 CSS px floor. */
-export async function measureUndersizedTargets(scope: Locator, floor: number): Promise<readonly UndersizedTarget[]> {
-  return scope.evaluate(
+/** Measures every control inside one named scope against the 24×24 CSS px floor. */ export const measureUndersizedTargets = async (scope: Locator, floor: number): Promise<readonly UndersizedTarget[]> =>
+  scope.evaluate(
     (root: Element, limits: { readonly floor: number; readonly minimumBox: number }) => {
       const selector = 'a[href], button, input:not([type="hidden"]), select, textarea, [role="button"], [role="checkbox"], [role="radio"], [role="tab"], [role="switch"], [tabindex="0"]';
       const boxes = Array.from(root.querySelectorAll(selector))
@@ -516,7 +500,6 @@ export async function measureUndersizedTargets(scope: Locator, floor: number): P
     },
     { floor, minimumBox: PROXY_CONTROL_BOX_PX },
   );
-}
 export async function expectTargetSizeFloor(page: Page, scope: Locator, surface: string, testInfo: TestInfo): Promise<void> {
   const undersized = await measureUndersizedTargets(scope, TARGET_FLOOR_PX); // Asserts no control in the scope is below the target floor without the spacing exception, and reports the ones the exception saves.
   const failing = undersized.filter((target) => !target.spaced);
@@ -530,9 +513,8 @@ export async function expectTargetSizeFloor(page: Page, scope: Locator, surface:
   ).toEqual([]);
 }
 export type MotionReading = { readonly slowestSeconds: number; readonly control: string }; // The slowest motion one scope's controls declare, in seconds, with the control that declares it.
-/** Reads the longest transition and animation a scope's controls declare. */
-export async function readLongestMotion(scope: Locator): Promise<MotionReading> {
-  return scope.evaluate((root: Element) => {
+/** Reads the longest transition and animation a scope's controls declare. */ export const readLongestMotion = async (scope: Locator): Promise<MotionReading> =>
+  scope.evaluate((root: Element) => {
     const secondsOf = (value: string): number => {
       let longest = 0;
       for (const part of value.split(",")) {
@@ -558,17 +540,14 @@ export async function readLongestMotion(scope: Locator): Promise<MotionReading> 
     }
     return { slowestSeconds: slowest, control };
   });
-}
 /** One audited surface, so the report names what was read and the test can assert all five ran. */ // The WCAG 2.2 AA audit
 export const auditedSurfaces: string[] = [];
-/** The readable account one attached finding carries: the rule, its impact, the nodes and the help it points at. */
-export function violationSummary(violations: readonly AccessibilityViolation[]): string {
-  return JSON.stringify(
+/** The readable account one attached finding carries: the rule, its impact, the nodes and the help it points at. */ export const violationSummary = (violations: readonly AccessibilityViolation[]): string =>
+  JSON.stringify(
     violations.map((violation) => ({ id: violation.id, impact: violation.impact ?? "unstated", help: violation.help, helpUrl: violation.helpUrl, nodes: violation.nodes.slice(0, ATTACHED_NODE_LIMIT).map((node) => ({ target: node.target, summary: node.failureSummary })), nodeCount: violation.nodes.length })),
     null,
     2,
   );
-}
 export async function auditSurface(page: Page, testInfo: TestInfo, surface: string): Promise<void> {
   const audit: AccessibilityAudit = await new AxeBuilder({ page }).withTags([...WCAG_22_AA_TAGS]).analyze(); // Audits one surface against WCAG 2.2 AA, attaches every finding of any impact, and fails on anything serious or critical.
   const url = page.url();
@@ -581,8 +560,7 @@ export async function auditSurface(page: Page, testInfo: TestInfo, surface: stri
   auditedSurfaces.push(surface);
   testInfo.annotations.push({ type: `axe ${surface}`, description: `${url} — ${String(blocking.length)} serious or critical violation(s), ${String(audit.violations.length)} finding(s) at any impact across ${String(audit.passes.length)} passing rule(s).` }); // The outcome is recorded on the test as well as attached, so the report states which surface was read, how many rules passed and what was found at any impact.
 }
-/** Asserts a text element renders all of its own content, rather than clipping it to a fixed box. */
-export async function expectTextNotClipped(scope: Locator, surface: string): Promise<void> {
+/** Asserts a text element renders all of its own content, rather than clipping it to a fixed box. */ export async function expectTextNotClipped(scope: Locator, surface: string): Promise<void> {
   const clipped = await scope.evaluate((root: Element) => {
     const elements = [root, ...Array.from(root.querySelectorAll("h1, h2, p, output, label"))].filter((element): element is HTMLElement => element instanceof HTMLElement).slice(0, 40);
     const findings: { readonly element: string; readonly overflow: number }[] = [];
@@ -612,13 +590,11 @@ const SETTLE_QUIET_MS = 100; // How long the focused control's box and the offse
 const SETTLE_STABLE_FRAMES = 2; // How many consecutive animation frames must agree on that reading, so one slow frame cannot pass as a settled one.
 const SETTLE_DEADLINE_MS = 2_000; // How long a settle waits at most, so a control that never stops moving is reported rather than waited on forever.
 const ATTACHED_NODE_LIMIT = 5; // How many offending nodes one attached finding names, so the report is readable rather than exhaustive.
-/** The fixtures a spec reaches the application through. */
-type RunnerFixtures = {
+/** The fixtures a spec reaches the application through. */ type RunnerFixtures = {
   persona: PersonaName; // The seeded identity this test acts as.
   seedReset: void; // The automatic fixture that admits the persona and restores the seed before the test body runs.
 };
-/** The runner every spec imports, carrying the seeded persona and the reset it is admitted under. */
-export const test = base.extend<RunnerFixtures>({
+/** The runner every spec imports, carrying the seeded persona and the reset it is admitted under. */ export const test = base.extend<RunnerFixtures>({
   persona: [DEFAULT_PERSONA, { option: true }],
   seedReset: [
     async ({ persona, context, request }, use) => {
@@ -776,8 +752,7 @@ export function rowMinorUnitsOf(file: CsvFile, row: Readonly<Record<string, stri
   return value;
 }
 export const CSV_META = "#meta"; // The one document key the CSV writer puts on every metadata record (`export/csv.ts`).
-/** The metadata field names this file reads, each stated once so a renamed field fails one assertion rather than five. */
-export const CSV_FIELD = {
+/** The metadata field names this file reads, each stated once so a renamed field fails one assertion rather than five. */ export const CSV_FIELD = {
   grain: "grain",
   basis: "basis",
   currency: "currency",

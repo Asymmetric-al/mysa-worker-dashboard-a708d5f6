@@ -1,6 +1,5 @@
 "use client";
-/** The one adapter between the application and the pinned UI SDK's behaviours. */
-import { bindLayer, createRovingFocus, createTypeahead, isComposing, isTypeaheadKey, keepFocus, type LayerDismissReason, type RovingFocus, type RovingOrientation, type Store } from "@ui-sdk/core";
+/** The one adapter between the application and the pinned UI SDK's behaviours. */ import { bindLayer, createRovingFocus, createTypeahead, isComposing, isTypeaheadKey, keepFocus, type LayerDismissReason, type RovingFocus, type RovingOrientation, type Store } from "@ui-sdk/core";
 import { mergeProps } from "@ui-sdk/react/primitive";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
@@ -16,8 +15,7 @@ function toDismissReason(reason: LayerDismissReason): DismissReason {
 const TYPEAHEAD_IDLE_MS = 500;
 const TABBABLE_SELECTOR = ["a[href]", "button", 'input:not([type="hidden"])', "select", "textarea", "iframe", "summary", '[contenteditable]:not([contenteditable="false"])', "[tabindex]"].join(",");
 function tabbableWithin(root: HTMLElement): HTMLElement[] {
-  const found = Array.from(root.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR));
-  return found.filter((element) => {
+  return Array.from(root.querySelectorAll<HTMLElement>(TABBABLE_SELECTOR)).filter((element) => {
     if (element.hasAttribute("disabled")) return false;
     if (element.tabIndex < 0) return false;
     return element.closest("[inert]") !== null ? false : element.getClientRects().length > 0;
@@ -208,15 +206,15 @@ export type TypeaheadApi = { onKeyDown: (event: ReactKeyboardEvent<HTMLElement>)
   const isActive = useCallback(() => search.active(), [search]);
   return { onKeyDown, reset, isActive };
 }
-export type ModalFocusContainmentOptions = { open: boolean; dialogRef: RefObject<HTMLElement | null>; triggerRef?: RefObject<HTMLElement | null>; initialFocusRef?: RefObject<HTMLElement | null>; onDismiss: (reason: DismissReason) => void };
+/** `contains` reports a press as inside the layer even though it landed outside the layer's element — a popup the layer opened above itself — so that popup handles it rather than the layer cancelling it as an outside press. */
+export type ModalFocusContainmentOptions = { open: boolean; dialogRef: RefObject<HTMLElement | null>; triggerRef?: RefObject<HTMLElement | null>; initialFocusRef?: RefObject<HTMLElement | null>; onDismiss: (reason: DismissReason) => void; contains?: (target: Node) => boolean };
 export type ModalFocusContainmentApi = { restoreFocus: () => void };
-/** Keeps focus inside an open dialog — initial focus within it, Tab and Shift+Tab wrapping — dismisses on Escape and returns focus to the invoking control when it closes. */
-export function useModalFocusContainment(options: ModalFocusContainmentOptions): ModalFocusContainmentApi {
-  const { open, dialogRef, triggerRef, initialFocusRef, onDismiss } = options;
-  const latest = useRef({ onDismiss, triggerRef, initialFocusRef });
+/** Keeps focus inside an open dialog — initial focus within it, Tab and Shift+Tab wrapping — dismisses on Escape and returns focus to the invoking control when it closes. */ export function useModalFocusContainment(options: ModalFocusContainmentOptions): ModalFocusContainmentApi {
+  const { open, dialogRef, triggerRef, initialFocusRef, onDismiss, contains } = options;
+  const latest = useRef({ onDismiss, triggerRef, initialFocusRef, contains });
   useEffect(() => {
-    latest.current = { onDismiss, triggerRef, initialFocusRef };
-  }, [onDismiss, triggerRef, initialFocusRef]);
+    latest.current = { onDismiss, triggerRef, initialFocusRef, contains };
+  }, [onDismiss, triggerRef, initialFocusRef, contains]);
   const invoking = useRef<HTMLElement | null>(null); // Where focus came from, captured as the dialog opens: the trigger when the caller names one, else whatever held focus before the dialog took it.
   const restoreFocus = useCallback(() => {
     const target = invoking.current;
@@ -242,6 +240,10 @@ export function useModalFocusContainment(options: ModalFocusContainmentOptions):
     // The SDK's dialog preset is the only place it contains focus, and it needs a whole popup primitive; on its own `bindLayer` dismisses and blocks outside presses but leaves the Tab cycle alone. This is that cycle.
     const containTab = (event: KeyboardEvent) => {
       if (event.key !== "Tab") return;
+      // A handler that has already taken this press keeps it, and so does a popup this layer opened above itself — the same `contains` a press is measured against. That popup's own trap owns the Tab cycle from there, so this one must not pull focus back to its first stop.
+      if (event.defaultPrevented) return;
+      const owner: Node | null = event.target instanceof Node ? event.target : null;
+      if (owner !== null && latest.current.contains?.(owner) === true) return;
       const stops = tabbableWithin(dialog);
       const active = document.activeElement;
       const inside = active instanceof HTMLElement && dialog.contains(active);
@@ -264,7 +266,8 @@ export function useModalFocusContainment(options: ModalFocusContainmentOptions):
         first.focus();
       }
     };
-    const releaseLayer = bindLayer(dialog, { modal: true, onDismiss: (reason) => latest.current.onDismiss(toDismissReason(reason)) });
+    // A press inside a popup this layer opened above itself is that popup's to handle, so the layer must not cancel it as an outside press on itself.
+    const releaseLayer = bindLayer(dialog, { modal: true, onDismiss: (reason) => latest.current.onDismiss(toDismissReason(reason)), contains: (target) => latest.current.contains?.(target) ?? false });
     document.addEventListener("keydown", containTab, true);
     // Both go in one cleanup, so the page is fully reachable again the moment the dialog closes and a keyboard user is never left without a way out.
     return () => {

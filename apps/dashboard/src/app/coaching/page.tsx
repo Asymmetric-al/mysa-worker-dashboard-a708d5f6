@@ -20,10 +20,7 @@ const DESTINATIONS = [
   { href: "/coaching/targets", label: COACHING_COPY.targets.heading },
   { href: "/coaching/coach", label: COACHING_COPY.coachPortfolio.heading },
 ] as const;
-function currentRelationshipOf(overview: CoachingOverview): CoachingRelationship | null {
-  const live = overview.relationships.find((relationship) => relationship.grantId === overview.activeGrantId);
-  return live ?? overview.relationships[0] ?? null;
-}
+const currentRelationshipOf = (overview: CoachingOverview): CoachingRelationship | null => overview.relationships.find((relationship) => relationship.grantId === overview.activeGrantId) ?? overview.relationships[0] ?? null;
 function currentPreparationOf(records: CoachingOverview["preparation"]): PreparationRecordView | null {
   let current: PreparationRecordView | null = null;
   let latestDay = "";

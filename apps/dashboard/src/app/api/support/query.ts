@@ -6,19 +6,17 @@ import { REPORT_IDS, SORT_DIRECTIONS, SORT_FIELDS } from "@/modules/support/repo
 import { wholePageParameter } from "../paging";
 import { READ_ATTEMPT } from "../read";
 import { refusedSearchParameters, statedSearchValues } from "../search";
-/** The bounded filter set the query-shaped Support reads accept, taken from a read's own signature rather than restated: a member the service adds, renames or withdraws reaches this file by. */
-export type SupportQuery = NonNullable<Parameters<typeof reads.support.readGifts>[0]>;
+/** The bounded filter set the query-shaped Support reads accept, taken from a read's own signature rather than restated: a member the service adds, renames or withdraws reaches this file by. */ export type SupportQuery = NonNullable<Parameters<typeof reads.support.readGifts>[0]>;
 /** The window `readCommitments` accepts, taken from that read's own signature. */ export type SupportPageQuery = NonNullable<Parameters<typeof reads.support.readCommitments>[0]>;
 /** One of the four report identities `readReport` computes, read from its own first parameter. */ export type ReportIdentity = Parameters<typeof reads.support.readReport>[0];
 /** A parsed request, or the grammar error that refused it. */ export type ParsedQuery<Query> = Result<Query, z.ZodError>;
 const AMOUNT_BOUND = /^-?\d{1,16}$/u;
-function amountBound(message: string) {
-  return z
+const amountBound = (message: string) =>
+  z
     .string()
     .regex(AMOUNT_BOUND, message)
     .refine((value) => Number.isSafeInteger(Number(value)), message)
     .transform((value) => Number(value));
-}
 const RECIPIENT_PARTNER = "partner";
 const RECIPIENT_ANONYMOUS = "anonymous";
 const RECIPIENT_UNRESOLVED = "unresolved";
@@ -131,8 +129,7 @@ export function giftsQueryFromSearch(search: URLSearchParams): ParsedQuery<Suppo
 const commitmentsSearchSchema = z.strictObject({ "page.index": wholePageParameter(MESSAGES.pageNumber).optional(), "page.size": wholePageParameter(MESSAGES.pageSize).optional(), commitmentId: z.string().min(1, MESSAGES.commitmentId).optional() }).superRefine((params, context) => {
   if (params["page.size"] !== undefined && params["page.index"] === undefined) context.addIssue({ code: "custom", path: ["page.size"], message: MESSAGES.pageSizeNeedsPage });
 });
-/** Reads the commitments list's page window and the commitment a detail names out of the request's search parameters, refusing by name every parameter the grammar does not declare. */
-export function supportPageFromSearch(search: URLSearchParams): ParsedQuery<SupportPageQuery> {
+/** Reads the commitments list's page window and the commitment a detail names out of the request's search parameters, refusing by name every parameter the grammar does not declare. */ export function supportPageFromSearch(search: URLSearchParams): ParsedQuery<SupportPageQuery> {
   const parsed = commitmentsSearchSchema.safeParse(statedSearchValues(search));
   if (!parsed.success) return err(refusedSearchParameters(parsed.error));
   const { commitmentId } = parsed.data;
@@ -178,10 +175,8 @@ const POSTED_FILTER_FIELDS = {
 };
 /** A posted query may state the authority it believes it is read under: a well-formed scope is admitted and then held against the authority the read ran under, while a malformed one is refused here by its own field, and omitting it reads under the session's own authority as this application's own client does. */
 const postedScopeField = scopeSchema.optional();
-/** The two members of a posted query the amount-range rule relates: the selection amounts are stated in, and the range stated over them. */
-type PostedCurrencyAndRange = { readonly currency?: z.output<typeof currencyBodySchema>; readonly amountRange?: z.output<typeof amountRangeBodySchema> };
-/** Whether a posted query names exactly one currency: the code stated as the selection itself, or the single-currency form of the report query's own selection. */
-function postsOneCurrency(currency: PostedCurrencyAndRange["currency"]): boolean {
+/** The two members of a posted query the amount-range rule relates: the selection amounts are stated in, and the range stated over them. */ type PostedCurrencyAndRange = { readonly currency?: z.output<typeof currencyBodySchema>; readonly amountRange?: z.output<typeof amountRangeBodySchema> };
+/** Whether a posted query names exactly one currency: the code stated as the selection itself, or the single-currency form of the report query's own selection. */ function postsOneCurrency(currency: PostedCurrencyAndRange["currency"]): boolean {
   if (currency === undefined) return false;
   return typeof currency === "string" ? currency.trim() !== "" : currency.kind === "one";
 }
@@ -196,8 +191,7 @@ export const reportRequestSchema = z.strictObject({ query: z.strictObject({ repo
 /** The body `POST /api/export` reads: the same shape, whose query may name the report it is an export of, under the same amount-range rule so the two artifacts of a query are built from the same reading of it. */
 export const exportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema.optional(), scope: postedScopeField, ...POSTED_FILTER_FIELDS }).superRefine(refineAmountRangeCurrency), snapshotId: snapshotIdSchema });
 /** A posted query as the broader of the two bodies reads it. */ export type PostedQuery = z.output<typeof exportRequestSchema>["query"];
-/** Reduces a posted query to the bounded filter set the reads accept, naming the one currency a scoped selection states and the one report an export is of when it names one. */
-export function supportQueryOf(posted: PostedQuery): SupportQuery {
+/** Reduces a posted query to the bounded filter set the reads accept, naming the one currency a scoped selection states and the one report an export is of when it names one. */ export function supportQueryOf(posted: PostedQuery): SupportQuery {
   const stated = posted.currency;
   const currency = stated === undefined ? undefined : typeof stated === "string" ? stated : stated.kind === "one" ? stated.currency : undefined;
   return {
@@ -214,8 +208,7 @@ export function supportQueryOf(posted: PostedQuery): SupportQuery {
     ...(posted.timeZone === undefined ? {} : { timeZone: posted.timeZone }),
   };
 }
-/** The four members a posted scope states, each with the noun a refusal names it by, so every member that is not the authority the read ran under is refused at its own path. */
-const POSTED_SCOPE_MEMBERS: readonly { readonly member: keyof Scope; readonly noun: string }[] = [
+/** The four members a posted scope states, each with the noun a refusal names it by, so every member that is not the authority the read ran under is refused at its own path. */ const POSTED_SCOPE_MEMBERS: readonly { readonly member: keyof Scope; readonly noun: string }[] = [
   { member: "organizationId", noun: "organization" },
   { member: "ministryId", noun: "ministry" },
   { member: "supportSubjectId", noun: "support subject" },

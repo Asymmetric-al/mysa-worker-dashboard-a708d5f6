@@ -14,7 +14,6 @@ const FACT_LABELS = { period: "Period", coverage: "Coverage", asOf: "As of" } as
 const Fact = factFrame({ rowClassName: "flex flex-wrap items-baseline gap-x-1.5", termClassName: "font-medium", valueClassName: "min-w-0 break-words" });
 /** Presents one measure with its exact amount, unit, period, coverage and as-of; never combines it with another measure. */ export function MeasureCard({ measure, money, valueState, unit, period, coverage, asOf, isCurrentPeriod, locale, emphasis = "primary", detail, className }: MeasureCardProps): ReactElement {
   const secondary = emphasis === "secondary";
-  const hasDetail = detail !== undefined && detail !== null;
   const headingId = `measure-card-${measure}-${money.currency}`;
   return (
     <SectionCard
@@ -31,7 +30,7 @@ const Fact = factFrame({ rowClassName: "flex flex-wrap items-baseline gap-x-1.5"
         <AmountValue money={money} valueState={valueState} locale={locale} emphasis={secondary ? "default" : "headline"} />
         <bdi className="text-sm text-muted-foreground">{unit}</bdi>
       </p>
-      {hasDetail ? <div className="break-words text-sm text-muted-foreground">{detail}</div> : null}
+      {detail !== undefined && detail !== null ? <div className="break-words text-sm text-muted-foreground">{detail}</div> : null}
       {isCurrentPeriod ? <p className="text-xs text-muted-foreground">{IN_PROGRESS_NOTE}</p> : null}
       <dl className="grid gap-1 text-xs text-muted-foreground">
         {period === null ? null : <Fact term={FACT_LABELS.period} value={<bdi>{`${period.from} – ${period.to}`}</bdi>} />}

@@ -29,8 +29,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: DETAIL_COPY.unavailable.title, body: DETAIL_COPY.unavailable.body },
   refused: { title: DETAIL_COPY.refused.title, body: DETAIL_COPY.refused.body, action: { label: PARTNER_ACTION_LABELS.backToRoster, href: ROSTER_HREF } },
 };
-/** The permitted-field edit of one partner record, composed from the service's own read of that record. */
-export default async function PartnerEditPage({ params }: { readonly params: Promise<{ partnerId: string }> }): Promise<ReactElement> {
+/** The permitted-field edit of one partner record, composed from the service's own read of that record. */ export default async function PartnerEditPage({ params }: { readonly params: Promise<{ partnerId: string }> }): Promise<ReactElement> {
   const { partnerId } = await params;
   const result = await reads.partners.readPartner(partnerId);
   if (result.kind !== "envelope") return <ReadNotices failure={result} copy={{ ...NOTICE_COPY, unavailable: { ...NOTICE_COPY.unavailable, action: { label: PARTNER_ACTION_LABELS.retry, href: editHref(partnerId) } } }} className={PAGE_COLUMN} />;

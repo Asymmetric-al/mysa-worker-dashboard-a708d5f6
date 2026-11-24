@@ -1,6 +1,7 @@
 "use client";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { FactList } from "@/components/fact-list";
 import { refusalSummary } from "@/components/form-field";
 import { RecordList, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import { StateNotice } from "@/components/state-notice";
@@ -45,15 +46,13 @@ const NO_COLUMNS_HIDDEN: ColumnVisibility = {};
 const RESULT_PARAM = { page: "page", pageSize: "pageSize" } as const;
 const FIRST_PAGE = 1;
 export type InitiativeResultsQuery = { readonly page: number; readonly pageSize: number };
-/** Writes the page window as URL parameters, so a pager change, a reload and a return from a Request all state the same window. */
-export function toInitiativeResultsParams(query: InitiativeResultsQuery): URLSearchParams {
+/** Writes the page window as URL parameters, so a pager change, a reload and a return from a Request all state the same window. */ export function toInitiativeResultsParams(query: InitiativeResultsQuery): URLSearchParams {
   const params = new URLSearchParams();
   params.set(RESULT_PARAM.page, String(pageNumberOf(query.page)));
   params.set(RESULT_PARAM.pageSize, String(pageSizeNumberOf(query.pageSize)));
   return params;
 }
-/** Reads the page window back from an address, applying the same two rules the writer applies so a round trip returns an equal window. */
-export function parseInitiativeResultsQuery(source: URLSearchParams | string): InitiativeResultsQuery {
+/** Reads the page window back from an address, applying the same two rules the writer applies so a round trip returns an equal window. */ export function parseInitiativeResultsQuery(source: URLSearchParams | string): InitiativeResultsQuery {
   const params = typeof source === "string" ? new URLSearchParams(source) : source;
   return { page: pageNumberOf(integerOf(params.get(RESULT_PARAM.page)) ?? FIRST_PAGE), pageSize: pageSizeNumberOf(integerOf(params.get(RESULT_PARAM.pageSize)) ?? PAGE_SIZE_DEFAULT) };
 }
@@ -84,8 +83,7 @@ function DenominatorFigure({ measured }: { readonly measured: MeasuredCount }): 
 }
 function ShareFigure({ measured }: { readonly measured: MeasuredCount }): ReactElement {
   const share = measured.percentage;
-  if (share === undefined || !Number.isFinite(share)) return <span className="text-pretty text-muted-foreground">{RESULTS_COPY.denominatorMissingNote}</span>;
-  return <span className="tabular-figures">{shareFormat.format(share)}</span>;
+  return share === undefined || !Number.isFinite(share) ? <span className="text-pretty text-muted-foreground">{RESULTS_COPY.denominatorMissingNote}</span> : <span className="tabular-figures">{shareFormat.format(share)}</span>;
 }
 function KindFigure({ kind }: { readonly kind: RecordedResponseKind }): ReactElement {
   const copy = RESPONSE_KIND_COPY[COPY_KIND_OF_RECORDED_KIND[kind]];
@@ -133,28 +131,17 @@ const KindList = ({ rows, valueStates, showsShare, label }: { readonly rows: rea
       {rows.map((row) => (
         <li key={row.kind} className="flex min-w-0 flex-col gap-2 border-b border-border pb-4 last:border-b-0 last:pb-0">
           <KindFigure kind={row.kind} />
-          <dl className="flex min-w-0 flex-col gap-1 text-sm">
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-              <dt className="text-muted-foreground">{RESULTS_COPY.countColumnLabel}</dt>
-              <dd className="min-w-0 break-words">
-                <CountFigure count={row.count} state={statedState(valueStates, countStatePath(row.kind))} />
-              </dd>
-            </div>
-            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-              <dt className="text-muted-foreground">{RESULTS_COPY.denominatorLabel}</dt>
-              <dd className="min-w-0">
-                <DenominatorFigure measured={row} />
-              </dd>
-            </div>
-            {showsShare ? (
-              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-                <dt className="text-muted-foreground">{RESULTS_COPY.shareColumnLabel}</dt>
-                <dd className="min-w-0">
-                  <ShareFigure measured={row} />
-                </dd>
-              </div>
-            ) : null}
-          </dl>
+          <FactList
+            className="flex min-w-0 flex-col gap-1 text-sm"
+            rowClassName="flex min-w-0 flex-wrap items-baseline gap-x-2"
+            termClassName="text-muted-foreground"
+            valueClassName="min-w-0"
+            facts={[
+              { term: RESULTS_COPY.countColumnLabel, value: <CountFigure count={row.count} state={statedState(valueStates, countStatePath(row.kind))} />, valueClassName: "min-w-0 break-words" },
+              { term: RESULTS_COPY.denominatorLabel, value: <DenominatorFigure measured={row} /> },
+              ...(showsShare ? [{ term: RESULTS_COPY.shareColumnLabel, value: <ShareFigure measured={row} /> }] : []),
+            ]}
+          />
         </li>
       ))}
     </ul>
@@ -272,9 +259,7 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
 }
 /** The page window a composing page controls, in the preset's own query-state shape. · The envelope the Server Component already read, and the authority the browser read re-requests under. · Receives every window or column change as well, for a caller that keeps its own copy of the state. */
 export type InitiativeResultsProps = { readonly initiativeId: string; readonly queryState?: RecordListQueryState; readonly initialEnvelope?: ReadEnvelope<ResultsData>; readonly onQueryStateChange?: (next: RecordListQueryState) => void; readonly className?: string };
-/** The initiative results surface. */
-export default function InitiativeResults({ initiativeId, queryState, initialEnvelope, onQueryStateChange, className }: InitiativeResultsProps): ReactElement {
+/** The initiative results surface. */ export default function InitiativeResults({ initiativeId, queryState, initialEnvelope, onQueryStateChange, className }: InitiativeResultsProps): ReactElement {
   const headingId = useId();
-  if (initialEnvelope === undefined) return loadingSurface(headingId, className);
-  return <InitiativeResultsSurface initiativeId={initiativeId} queryState={queryState} initialEnvelope={initialEnvelope} onQueryStateChange={onQueryStateChange} className={className} />;
+  return initialEnvelope === undefined ? loadingSurface(headingId, className) : <InitiativeResultsSurface initiativeId={initiativeId} queryState={queryState} initialEnvelope={initialEnvelope} onQueryStateChange={onQueryStateChange} className={className} />;
 }

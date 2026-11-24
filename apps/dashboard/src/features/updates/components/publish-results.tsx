@@ -125,8 +125,7 @@ export type PublishResultsProps = {
 const synthesisOf = (editions: readonly PublishedEdition[]): readonly VariantReleaseOutcome[] =>
   editions.flatMap((edition): readonly VariantReleaseOutcome[] => {
     if (edition.state === "withdrawn") return [];
-    if (edition.state !== "released") return [{ variantId: edition.variant.variantId, outcome: { status: "failed", reason: edition.reason?.trim() ?? "" } }];
-    return edition.release === undefined ? [] : [{ variantId: edition.variant.variantId, outcome: { status: "released", release: edition.release } }];
+    return edition.state !== "released" ? [{ variantId: edition.variant.variantId, outcome: { status: "failed", reason: edition.reason?.trim() ?? "" } }] : edition.release === undefined ? [] : [{ variantId: edition.variant.variantId, outcome: { status: "released", release: edition.release } }];
   });
 export function PublishResults({ outcome, editions, onCheckResult, onReapply, fieldLabels, renderEditionAction, headingLevel = 2, className }: PublishResultsProps): ReactElement {
   const titleId = useId();
@@ -139,7 +138,6 @@ export function PublishResults({ outcome, editions, onCheckResult, onReapply, fi
   const refused = outcome.outcome === "invalid" ? fieldErrorsFromInvalid(outcome) : undefined;
   const operationId = outcome.operationId;
   const checkResult = (): void => void onCheckResult(operationId);
-  const notes: readonly string[] = [...(outcome.outcome === "alreadyAccepted" ? [REPLAY_NOTE] : []), REVIEW_ROUND_NOTE.approvalIsPerVariant, ...(anyNotice ? [NOTICE_HONESTY_NOTE] : []), ...(anyUnfinished ? [RETRY_INTENT_NOTE] : [])];
   return (
     <div data-slot="publish-results" data-outcome={outcome.outcome} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <OperationResult outcome={outcome} heading={RECEIPT_HEADING[outcome.outcome]} headingLevel={headingLevel} onCheckResult={checkResult} onReapply={onReapply} fieldLabels={fieldLabels} />
@@ -164,7 +162,7 @@ export function PublishResults({ outcome, editions, onCheckResult, onReapply, fi
             </ul>
             <Separator />
             <div className="flex min-w-0 flex-col gap-2">
-              {notes.map((note) => (
+              {[...(outcome.outcome === "alreadyAccepted" ? [REPLAY_NOTE] : []), REVIEW_ROUND_NOTE.approvalIsPerVariant, ...(anyNotice ? [NOTICE_HONESTY_NOTE] : []), ...(anyUnfinished ? [RETRY_INTENT_NOTE] : [])].map((note) => (
                 <p key={note} className="type-supporting text-pretty wrap-anywhere">
                   {note}
                 </p>

@@ -580,19 +580,17 @@ export default function DeliveryResults({ scope, locale, intentId: statedIntentI
     writeWindow({ page: pageCount, pageSize });
   }, [controlledState, pageCount, page, pageSize, writeWindow]);
   const checkResult = (): void => read.refetch();
-  function frame(children: ReactNode): ReactElement {
-    return (
-      <section aria-labelledby={headingId} data-slot="delivery-results" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
-        <div className="flex min-w-0 flex-col gap-1">
-          <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty wrap-anywhere") }}>{SURFACE.heading}</Heading>
-          <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{SURFACE.intro}</p>
-        </div>
-        {/* The one simulated-effect disclosure for this surface, stated where the mail-submission boundary is crossed rather than once per row. */}
-        <SimulationLabel effect={SIMULATED_EFFECT_BY_TRIGGER.notify} context="block" />
-        {children}
-      </section>
-    );
-  }
+  const frame = (children: ReactNode): ReactElement => (
+    <section aria-labelledby={headingId} data-slot="delivery-results" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
+      <div className="flex min-w-0 flex-col gap-1">
+        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty wrap-anywhere") }}>{SURFACE.heading}</Heading>
+        <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{SURFACE.intro}</p>
+      </div>
+      {/* The one simulated-effect disclosure for this surface, stated where the mail-submission boundary is crossed rather than once per row. */}
+      <SimulationLabel effect={SIMULATED_EFFECT_BY_TRIGGER.notify} context="block" />
+      {children}
+    </section>
+  );
   const retry = { label: "Try again", onClick: checkResult };
   if (intentId === "") return frame(<StateNotice kind="empty" title={SURFACE.noNoticeTitle} description={SURFACE.noNoticeDescription} action={UPDATES_LIST} headingLevel={headingLevel} />);
   if (read.isPending || stale) return frame(<StateNotice kind="loading" title={SURFACE.loadingTitle} description={SURFACE.loadingDescription} headingLevel={headingLevel} loadingLines={7} />);
@@ -631,12 +629,8 @@ export default function DeliveryResults({ scope, locale, intentId: statedIntentI
       )
     ) : (
       <>
-        {/*
-          One composition of this answer at every width: the shared record list, whose own labelled, focusable
-          scroll region carries the table on a narrow screen, so a reader meets each recipient's row exactly
-          once instead of through a second rendering beside it (WCAG 1.3.1, 1.4.10). Only that region may
-          scroll sideways; the page itself never does.
-        */}
+        {/* One composition of this answer at every width: the shared record list, whose own labelled, focusable scroll region carries the table on a narrow screen, so a reader meets each recipient's row exactly once instead of through a second rendering beside it (WCAG 1.3.1, 1.4.10). Only that region may scroll
+         * sideways; the page itself never does. */}
         <RecordList label={tableLabel} columns={columns} rows={rows} rowCount={data.page.total} queryState={listQueryState} onQueryStateChange={commitQuery} getRowId={(row) => row.recipientId} itemNoun="recipients" pageSizeOptions={PAGE_SIZES} locale={locale} />
         <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
           <p className="text-pretty wrap-anywhere">{SURFACE.recipientHelp}</p>

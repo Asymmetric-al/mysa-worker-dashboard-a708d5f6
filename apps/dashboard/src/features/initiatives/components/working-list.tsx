@@ -497,8 +497,7 @@ function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onWind
     </div>
   );
 }
-/** The heading level this section renders at; its groups, cards and closure section render one level deeper. */
-export type WorkingListProps = {
+/** The heading level this section renders at; its groups, cards and closure section render one level deeper. */ export type WorkingListProps = {
   readonly initiativeId: string;
   readonly envelope: ReadEnvelope<InitiativeDetail>;
   readonly candidates: readonly MemberCandidate[] | MemberCandidates;
@@ -508,22 +507,20 @@ export type WorkingListProps = {
   readonly headingLevel?: WorkingListHeadingLevel;
   readonly className?: string;
 };
-/** The reviewed working list of one initiative. */
-export default function WorkingList({ initiativeId, envelope, candidates, onChanged, readWindow, onWindowChange, headingLevel = 3, className }: WorkingListProps): ReactElement {
+/** The reviewed working list of one initiative. */ export default function WorkingList({ initiativeId, envelope, candidates, onChanged, readWindow, onWindowChange, headingLevel = 3, className }: WorkingListProps): ReactElement {
   const headingId = useId();
   // The composing detail read's window travels here so this section re-reads the same record under the same window — one cache entry for one read — rather than a second entry of the same initiative whose own lists sit on a different page.
   const query = useInitiative<InitiativeDetail>(initiativeId, envelope, readWindow);
   const queryClient = useQueryClient();
   const checkResult = useCallback((): void => void invalidateInitiativeReads(queryClient, envelope.scope), [queryClient, envelope.scope]);
   const result = query.status === "ready" ? query.result : undefined;
-  const current = result !== undefined && result.kind === "envelope" ? result.envelope : envelope;
   const refusal: Exclude<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }> | undefined = result !== undefined && result.kind !== "envelope" ? result : undefined;
   const Heading = SECTION_HEADING_TAG[headingLevel];
   return (
     <section aria-labelledby={headingId} data-slot="working-list" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
       <Heading {...{ id: headingId, className: cn(SECTION_HEADING_SCALE[headingLevel], "text-pretty") }}>{INITIATIVE_COPY.membersHeading}</Heading>
       {refusal === undefined ? (
-        <WorkingListBody initiativeId={initiativeId} envelope={current} candidates={candidates} onChanged={onChanged} onWindowChange={onWindowChange} onCheckResult={checkResult} level={headingLevel} />
+        <WorkingListBody initiativeId={initiativeId} envelope={result !== undefined && result.kind === "envelope" ? result.envelope : envelope} candidates={candidates} onChanged={onChanged} onWindowChange={onWindowChange} onCheckResult={checkResult} level={headingLevel} />
       ) : refusal.kind === "denied" ? (
         <StateNotice kind="denied" headingLevel={headingLevel} title={STATE_NOTICE_COPY.denied.title} description={STATE_NOTICE_COPY.denied.body} reasonCode={refusal.denied.reasonCode} />
       ) : refusal.kind === "refused" ? (

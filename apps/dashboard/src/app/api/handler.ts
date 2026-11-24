@@ -21,8 +21,7 @@ const joinChunks = (chunks: readonly Uint8Array[], totalBytes: number): Uint8Arr
   }
   return joined;
 };
-/** The media types whose body this transport reads: JSON itself and a structured-syntax `+json` subtype, with any parameter a client appends (`; charset=utf-8`) stated after the type rather than as part of it. */
-const JSON_MEDIA_TYPE = /^application\/(?:[^;\s]+\+)?json$/i;
+/** The media types whose body this transport reads: JSON itself and a structured-syntax `+json` subtype, with any parameter a client appends (`; charset=utf-8`) stated after the type rather than as part of it. */ const JSON_MEDIA_TYPE = /^application\/(?:[^;\s]+\+)?json$/i;
 /** States whether a request declares its own body as JSON: only a declared `application/json` or `+json` media type is one this transport reads, so a body a client labelled anything else — `text/plain` included — is refused rather than decoded. The two transports that read their own text for a byte ceiling of their own ask this same question, so the rule is stated once here rather than restated beside each reader. */
 export const declaresJsonBody = (request: Request): boolean => {
   const contentType = request.headers.get("content-type");
@@ -58,8 +57,7 @@ export async function readRequestBody(request: Request, maxBytes: number = DEFAU
     return { kind: "unreadable" };
   }
 }
-/** Reads one request's body as the value its JSON decodes to, or `undefined` for a body the reader refused or could not decode — the shape every transport's payload schema already answers as `invalid`. */
-export async function jsonBodyOf(request: Request): Promise<unknown> {
+/** Reads one request's body as the value its JSON decodes to, or `undefined` for a body the reader refused or could not decode — the shape every transport's payload schema already answers as `invalid`. */ export async function jsonBodyOf(request: Request): Promise<unknown> {
   const body = await readRequestBody(request);
   return body.kind === "body" ? body.value : undefined;
 }
@@ -67,8 +65,7 @@ export async function jsonBodyOf(request: Request): Promise<unknown> {
   const identity = attemptIdentitySchema.safeParse(raw);
   return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
 }
-/** The identity one refused attempt is answered under: the operation id the body states, or the marker this path answers under where it states none a caller could match an answer to, or states one longer than the length this transport is willing to echo. */
-export const refusalIdentityGiven =
+/** The identity one refused attempt is answered under: the operation id the body states, or the marker this path answers under where it states none a caller could match an answer to, or states one longer than the length this transport is willing to echo. */ export const refusalIdentityGiven =
   (unstated: string, echoedLimit: number = Number.POSITIVE_INFINITY) =>
   (raw: unknown): string => {
     const claimed = operationIdentityOf(raw);
@@ -121,21 +118,16 @@ export async function dispatch<Payload, Discriminant extends string>(schema: z.Z
     return toResponse(outcomeFromError(operationId, error));
   }
 }
-/** The identity one attempt is answered under: the operation id the caller stated, and the session the request travels in, which a mutation that acts on the session's own scope reads before it runs. */
-export type AttemptIdentity = { readonly operationId: string; readonly sessionId: string };
-/** One operation of a path's closed set, given the body exactly as it arrived: the operation's own payload schema judges that body next, and its mutation settles the outcome. */
-export type ClaimedWrite = (raw: unknown, attempt: AttemptIdentity) => Promise<Response>;
-/** One member of such a set, stated as its own data: the schema that judges its payload and the named mutation that applies it. */
-export type ClaimedWritePart = readonly [schema: z.ZodType<MutationInput<unknown>>, run: (...args: never[]) => Promise<MutationOutcome>];
+/** The identity one attempt is answered under: the operation id the caller stated, and the session the request travels in, which a mutation that acts on the session's own scope reads before it runs. */ export type AttemptIdentity = { readonly operationId: string; readonly sessionId: string };
+/** One operation of a path's closed set, given the body exactly as it arrived: the operation's own payload schema judges that body next, and its mutation settles the outcome. */ export type ClaimedWrite = (raw: unknown, attempt: AttemptIdentity) => Promise<Response>;
+/** One member of such a set, stated as its own data: the schema that judges its payload and the named mutation that applies it. */ export type ClaimedWritePart = readonly [schema: z.ZodType<MutationInput<unknown>>, run: (...args: never[]) => Promise<MutationOutcome>];
 /** Builds a path's operation table from that table's own data, so a closed set of named operations is stated once rather than re-stated as one arrow per member: every member answers under the path's one discriminant and is judged by its own schema. */
 export function claimedWrites<Operation extends string>(discriminant: string, parts: Readonly<Record<Operation, ClaimedWritePart>>): Readonly<Record<Operation, ClaimedWrite>> {
   const entries = Object.entries(parts) as [Operation, ClaimedWritePart][];
   return Object.fromEntries(entries.map(([operation, [schema, run]]): [Operation, ClaimedWrite] => [operation, (raw, { operationId }) => dispatch(schema, raw, operationId, discriminant, run as (input: MutationInput<unknown>) => Promise<MutationOutcome>)])) as Readonly<Record<Operation, ClaimedWrite>>;
 }
 /** Judges one body once for a path whose closed operation set names several mutations — a body that is not JSON, or whose `payload` names no operation the path admits, is answered `invalid` in the closed set's own words — and then runs the one operation it named. Every operation the path declares has a handler, and no other value reaches one. */
-export async function claimedWriteRoute<Claim, Operation extends string>(request: NextRequest, claim: z.ZodType<Claim>, operationOf: (claim: Claim) => Operation, writes: Readonly<Record<Operation, ClaimedWrite>>): Promise<Response> {
-  return claimedBodyRoute(request, await jsonBodyOf(request), claim, operationOf, writes);
-}
+export const claimedWriteRoute = async <Claim, Operation extends string>(request: NextRequest, claim: z.ZodType<Claim>, operationOf: (claim: Claim) => Operation, writes: Readonly<Record<Operation, ClaimedWrite>>): Promise<Response> => claimedBodyRoute(request, await jsonBodyOf(request), claim, operationOf, writes);
 /** The same judgement over a body the path's own transport read first — a size bound, a decoder, a text length it has to state — so a path whose body is not plain JSON still names its operations in one table. */
 export async function claimedBodyRoute<Claim, Operation extends string>(request: NextRequest, raw: unknown, claim: z.ZodType<Claim>, operationOf: (claim: Claim) => Operation, writes: Readonly<Record<Operation, ClaimedWrite>>): Promise<Response> {
   const operationId = operationIdentityOf(raw);

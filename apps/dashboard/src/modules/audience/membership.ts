@@ -1,5 +1,5 @@
 import type { Temporal } from "temporal-polyfill";
-import { confirmationDeadline } from "../time/window";
+import { CONFIRMATION_WINDOW_HOURS, confirmationDeadline } from "../time/window";
 export const UPDATE_EMAIL_PURPOSE = "update-email" as const;
 export type AudiencePurpose = typeof UPDATE_EMAIL_PURPOSE;
 export const MEMBERSHIP_STATES = ["active", "awaiting-proof", "off", "restricted"] as const;
@@ -39,12 +39,33 @@ export type PendingProofResult = { readonly status: "pending"; readonly claimsMa
 export type NewMembershipResult = { readonly membership: MembershipRecord; readonly proof: PendingProofResult };
 export type ConfirmationRefusalReason = "confirmation-expired" | "not-awaiting-proof" | "source-excluded";
 export type ConfirmMembershipResult = { readonly status: "confirmed"; readonly membership: MembershipRecord } | { readonly status: "refused"; readonly reason: ConfirmationRefusalReason };
-/** Opens the proof step for a deliberate signup: `awaiting-proof`, Immediate, an acceptance at `now` and the confirmation deadline that follows from it. */
-export function newPendingMembership(input: NewMembershipInput, now: Temporal.Instant): NewMembershipResult {
+/** Opens the proof step for a deliberate signup: `awaiting-proof`, Immediate, an acceptance at `now` and the confirmation deadline that follows from it. */ export function newPendingMembership(input: NewMembershipInput, now: Temporal.Instant): NewMembershipResult {
   const { deadlineInstant } = confirmationDeadline({ acceptedAt: now, now });
   return { membership: { ...membershipIdentity(input), state: "awaiting-proof", choice: "immediate", acceptedAt: now, confirmationDeadline: deadlineInstant, revision: 1 }, proof: pendingProofResult() };
 }
 export const pendingProofResult = (): PendingProofResult => ({ status: "pending", claimsMailSent: false, nextStep: "confirm-from-the-rendered-message" });
+/** The sender a confirmation message is rendered from: the application's own notice identity, passed in by the caller so the message states where it is from and nothing here invents a second one. */ export type ConfirmationMessageSender = { readonly name: string; readonly address: string };
+/** The record a confirmation applies to, named by the membership the surface has already read: no link, no token and no query string stands between this message and the membership it is about. */ export type ConfirmationMessageTarget = { readonly membershipId: string; readonly address: string };
+/** One awaiting-proof membership's confirmation message, as the preferences surface renders it in place of sending one: who it is from, where it goes, what it is called, what it says, and the membership a confirmation of it acts on. */
+export type ConfirmationMessage = { readonly sender: ConfirmationMessageSender; readonly to: string; readonly subject: string; readonly wording: readonly string[]; readonly confirmTarget: ConfirmationMessageTarget };
+export type ConfirmationMessageInput = { readonly publisherLabel: string; readonly sender: ConfirmationMessageSender; readonly to: string; readonly membershipId: string };
+/** Composes the confirmation message for one awaiting-proof membership: fixed wording, the address that membership records, and the window its acceptance opened. It carries no link, no token and no claim that anything was sent, because the proof journey never leaves this application. */
+export function confirmationMessageOf(input: ConfirmationMessageInput): ConfirmationMessage {
+  const { membershipId, publisherLabel, sender, to } = input;
+  return {
+    sender: { name: sender.name, address: sender.address },
+    to,
+    subject: `Confirm your address for ${publisherLabel} Update notices`,
+    wording: [
+      `This is the confirmation message for your Update-email membership with ${publisherLabel}.`,
+      "The membership becomes active only once the address it is set for is confirmed, and confirming that address subscribes you to no other publisher, no other purpose and no other record about you.",
+      "Confirming is your own act: it happens when you activate the Confirm this address control on the preferences page, and at no other moment.",
+      "Opening this message, rendering the page it appears on or previewing it confirms nothing, and leaves the membership exactly as it is.",
+      `The confirmation window is ${String(CONFIRMATION_WINDOW_HOURS)} hours from the acceptance this membership records, counted in elapsed hours, and reloading the page, retrying or asking for this message again never extends that window.`,
+    ],
+    confirmTarget: { membershipId, address: to },
+  };
+}
 /** Whether a confirmation is still open at `now`: only while the record is `awaiting-proof` and `now` is strictly before the deadline the confirmation window computes from the recorded. */
 export const isConfirmationOpen = (membership: MembershipRecord, now: Temporal.Instant): boolean => (!isAwaitingProofState(membership.state) || membership.acceptedAt === undefined ? false : confirmationDeadline({ acceptedAt: membership.acceptedAt, now }).status === "within-window");
 export function confirmAt(membership: MembershipRecord, now: Temporal.Instant): ConfirmMembershipResult {

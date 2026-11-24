@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import ActionReview from "@/components/action-review";
 import DraftStatus, { LIFECYCLE_STATUS, lifecycleOf, variantRecordOf } from "@/components/draft-status";
+import { factFrame } from "@/components/fact-list";
 import LocaleSwitcher, { type LocaleEdition } from "@/components/locale-switcher";
 import { StateNotice, type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { REACH_STATUS } from "@/components/status-badge";
@@ -104,21 +105,11 @@ const FACT_VALUE_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 
 const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
 const LINK_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS);
 const ACTION_LIST_CLASS = "flex min-w-0 flex-wrap items-center gap-2";
-function instantTextOf(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (value === null || typeof value !== "object") return "";
-  return String(value).trim();
-}
+const instantTextOf = (value: unknown): string => (typeof value === "string" ? value.trim() : value === null || typeof value !== "object" ? "" : String(value).trim());
 const nestedLevel = (level: 2 | 3 | 4): 2 | 3 | 4 => (level === 4 ? 4 : ((level + 1) as 3 | 4));
-const Fact = ({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement => (
-  <div className="flex min-w-0 flex-col gap-1">
-    <dt className={FACT_TERM_CLASS}>{term}</dt>
-    <dd className="min-w-0">{children}</dd>
-  </div>
-);
+const Fact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-1", termClassName: FACT_TERM_CLASS, valueClassName: "min-w-0" });
 const Identifier = ({ value }: { readonly value: string }): ReactElement | null => (value.trim() === "" ? null : <bdi className={IDENTIFIER_CLASS}>{value.trim()}</bdi>);
-/** What the reviewer will approve: the exact frozen revision and its checksum, read from the candidate's own named revision. */
-function FrozenCandidate({ scope, variantId, headingLevel }: { readonly scope: Scope; readonly variantId: string; readonly headingLevel: NoticeHeadingLevel }): ReactElement {
+/** What the reviewer will approve: the exact frozen revision and its checksum, read from the candidate's own named revision. */ function FrozenCandidate({ scope, variantId, headingLevel }: { readonly scope: Scope; readonly variantId: string; readonly headingLevel: NoticeHeadingLevel }): ReactElement {
   const candidate = useCandidate({ scope, variantId });
   const result: ReturnType<typeof useCandidate>["result"] = candidate.result;
   if (result === undefined) return <p className={NOTE_CLASS}>{candidate.isPending ? CANDIDATE_COPY.reading : CANDIDATE_COPY.unavailableDescription}</p>;
@@ -258,8 +249,7 @@ function ReviewStep({ scope, intent, submitForReview, restoreRevision, withdrawL
           consequence={
             <StepSentences>
               <p>{REVIEW_COPY.withdrawLocale.consequence}</p>
-              {/* The confirmation dialog is where the decision is taken, so the sentence that says what a withdrawal
-                  cannot undo is stated inside it rather than only in the review beside it. */}
+              {/* The confirmation dialog is where the decision is taken, so the sentence that says what a withdrawal cannot undo is stated inside it rather than only in the review beside it. */}
               <p>{WITHDRAWAL_WORDING.whatItDoesNotDo}</p>
             </StepSentences>
           }
@@ -347,8 +337,7 @@ function ReleaseFacts({ edition }: { readonly edition: EditionView }): ReactElem
   );
 }
 type EditionCellProps = { readonly documentId: string; readonly documentRevision: string; readonly edition: EditionView; readonly scope: Scope; readonly headingLevel: 2 | 3 | 4; readonly onChoose: (intent: ReviewIntent) => void };
-/** One edition: its audience and language, the lifecycle word the shared vocabulary gives its pointers, the three pointers' own words. */
-function EditionCell({ documentId, documentRevision, edition, scope, headingLevel, onChoose }: EditionCellProps): ReactElement {
+/** One edition: its audience and language, the lifecycle word the shared vocabulary gives its pointers, the three pointers' own words. */ function EditionCell({ documentId, documentRevision, edition, scope, headingLevel, onChoose }: EditionCellProps): ReactElement {
   const titleId = useId();
   const head: Release | null = edition.headRelease;
   const lifecycle = lifecycleOf(variantRecordOf(documentId, edition), head ?? undefined, { reviewDecision: edition.candidate?.decision ?? null });
@@ -443,8 +432,7 @@ export type VariantOverviewProps = {
 };
 export function VariantOverview({ scope, documentId, initialResult, initialDataUpdatedAt, headingLevel = 2, className }: VariantOverviewProps): ReactElement {
   const headingId = useId();
-  const seedOptions = initialResult === undefined ? {} : initialDataUpdatedAt === undefined ? { initialData: initialResult } : { initialData: initialResult, initialDataUpdatedAt };
-  const overview = useVariantOverview({ scope, documentId }, seedOptions);
+  const overview = useVariantOverview({ scope, documentId }, initialResult === undefined ? {} : initialDataUpdatedAt === undefined ? { initialData: initialResult } : { initialData: initialResult, initialDataUpdatedAt });
   const submitForReview = useSubmitForReview();
   const restoreRevision = useRestoreRevisionAsDraft();
   const withdrawLocale = useWithdrawLocale();

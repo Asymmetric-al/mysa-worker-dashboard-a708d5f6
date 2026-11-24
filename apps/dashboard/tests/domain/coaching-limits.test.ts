@@ -1,5 +1,4 @@
-/** The limits and revision identity of the coaching share surfaces — success criterion 16's final clause, "check-in limits are enforced without truncation". */
-import { Temporal } from "temporal-polyfill";
+/** The limits and revision identity of the coaching share surfaces — success criterion 16's final clause, "check-in limits are enforced without truncation". */ import { Temporal } from "temporal-polyfill";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import {
@@ -33,17 +32,13 @@ const WORKER: SessionSource = { sessionId: WORKER_SESSION };
 const COACH: SessionSource = { sessionId: COACH_SESSION };
 const PAGING: SessionSource = { sessionId: PAGING_SESSION };
 const ACTIVE_GRANT = "grant-established-coach";
-/** A task that does not recur, so its one occurrence is the task itself. */
-const PLAIN_TASK = "task-care-jo";
+/** A task that does not recur, so its one occurrence is the task itself. */ const PLAIN_TASK = "task-care-jo";
 const RECURRING_TASK = "task-series-weekly-call";
 const FIRST_REVISION = "rev-1";
-/** The display zone the task list is read in; it is stated rather than assumed, as every zone is. */
-const DISPLAY_ZONE = "Europe/London";
-/** The seed's own instant (2026-11-20T00:00:00Z), stated here so this file reads no clock. */
-const SEEDED_AT = Temporal.Instant.from("2026-11-20T00:00:00Z");
+/** The display zone the task list is read in; it is stated rather than assumed, as every zone is. */ const DISPLAY_ZONE = "Europe/London";
+/** The seed's own instant (2026-11-20T00:00:00Z), stated here so this file reads no clock. */ const SEEDED_AT = Temporal.Instant.from("2026-11-20T00:00:00Z");
 const REQUEST_CEILING_BYTES = 262_144;
-/** AAP 0.8.7's coaching list page size: 25 rows by default, clamped to 100 at most. */
-const PAGE_SIZE_DEFAULT = 25;
+/** AAP 0.8.7's coaching list page size: 25 rows by default, clamped to 100 at most. */ const PAGE_SIZE_DEFAULT = 25;
 const PAGE_SIZE_CAP = 100;
 type Ok<T> = { readonly ok: true; readonly value: T };
 type Refused<E> = { readonly ok: false; readonly error: E };
@@ -104,8 +99,7 @@ const withdrawCheckIn = async (checkInId: string, expectedRevision: string): Pro
 const setModule = async (moduleKey: "task-summaries" | "check-ins", enabled: boolean, expectedRevision: string = FIRST_REVISION): Promise<MutationOutcome> => mutations.coaching.setModule(attempt({ grantId: ACTIVE_GRANT, moduleKey, enabled }, expectedRevision), WORKER);
 const shareTaskSummary = async (taskId: string, safeDescription: string, expectedRevision: string): Promise<MutationOutcome> => mutations.coaching.shareTaskSummary(attempt({ taskId, safeDescription }, expectedRevision), WORKER);
 const stopTaskShare = async (shareId: string, expectedRevision: string): Promise<MutationOutcome> => mutations.coaching.stopTaskShare(attempt({ shareId }, expectedRevision), WORKER);
-/** A check-in whose answers are already stored, so a later case has a last-accepted value to compare against. */
-type StoredDraft = { readonly checkInId: string; readonly revision: string; readonly answers: readonly string[] };
+/** A check-in whose answers are already stored, so a later case has a last-accepted value to compare against. */ type StoredDraft = { readonly checkInId: string; readonly revision: string; readonly answers: readonly string[] };
 async function draftWith(answers: readonly string[], questions: readonly string[] = []): Promise<StoredDraft> {
   const accepted = outcomeNamed(await saveCheckIn({ ...(questions.at(0) === undefined ? {} : { questions }), answers }), "accepted", "saveCheckIn");
   const checkInId = firstCreated(accepted, "saveCheckIn");
@@ -171,11 +165,9 @@ async function pagingHistory(): Promise<readonly string[]> {
   return history.map((record) => record.targetId);
 }
 async function pagingPage(query: { readonly page?: number; readonly pageSize?: number }): Promise<TargetsData> {
-  const result = expectEnvelope(await reads.coaching.readTargets(query, PAGING), "the targets read");
-  return result.data;
+  return expectEnvelope(await reads.coaching.readTargets(query, PAGING), "the targets read").data;
 }
-/** AAP 0.8.7 fixes the coaching list page size at 25 rows by default with a 100-row cap, and states that "eligible history is never truncated by the cap"; that is the value Criterion 16 rests on. */
-describe("the list page size", () => {
+/** AAP 0.8.7 fixes the coaching list page size at 25 rows by default with a 100-row cap, and states that "eligible history is never truncated by the cap"; that is the value Criterion 16 rests on. */ describe("the list page size", () => {
   beforeAll(async () => await layDownPagingWorld());
   it("pages 25 rows by default, clamps a larger request to 100, and loses no target to the cap", async () => {
     const history = await pagingHistory();
@@ -296,8 +288,7 @@ it("the 256 KiB request ceiling: refuses a 4,001-scalar answer by the answer rul
   const over = codePoints(CHECKIN_MAX_ANSWER_SCALARS + 1);
   const payload = modulePayload([], [over]);
   expect(bytesOf(payload)).toBeLessThan(REQUEST_CEILING_BYTES); // The request is far inside the ceiling, so only the answer rule can refuse it.
-  const violations = validateCheckInRequest(payload);
-  expect(violations.map((violation) => violation.reason)).toEqual(["answer-too-long"]);
+  expect(validateCheckInRequest(payload).map((violation) => violation.reason)).toEqual(["answer-too-long"]);
   const refused = outcomeNamed(await saveCheckIn({ answers: [over] }), "invalid", "the 4,001-scalar answer");
   expect(Object.keys(refused.fields)).toEqual(["answers[0].text"]);
 });
@@ -321,11 +312,11 @@ it("the reviewed safe description: accepts exactly 240 code points built from as
   expect([refusal.codePoints, refusal.limit]).toEqual([241, 240]);
   outcomeNamed(await setModule("task-summaries", true), "accepted", "enabling the task-summaries module");
   const row = await taskRow(PLAIN_TASK);
+  const beforeRefusal = requiredSaying(summariesModuleOf(await coachSubject()), "The coach read admitted no task-summaries module, so nothing can be asserted about what it shows");
   const refused = outcomeNamed(await shareTaskSummary(PLAIN_TASK, over, row.revision), "invalid", "the 241-code-point description");
-  const message = required(refused.fields.safeDescription?.at(0), "the description-length refusal message");
-  for (const needle of ["241", "240"]) expect(message).toContain(needle);
+  for (const needle of ["241", "240"]) expect(required(refused.fields.safeDescription?.at(0), "the description-length refusal message")).toContain(needle);
   const summaries = requiredSaying(summariesModuleOf(await coachSubject()), "The coach read admitted no task-summaries module, so nothing can be asserted about what it shows");
-  expect(summaries.summaries).toHaveLength(0);
+  expect(summaries, "The refused description wrote nothing: the module is the one the read stated before the attempt, so no summary was added and no summary already shared was replaced").toEqual(beforeRefusal);
 });
 it("the reviewed safe description: carries the reviewed description with the live due date and status, and nothing else of the task", () => {
   const summary = valueOf(safeTaskSummary(summaryInput()), "safeTaskSummary");
@@ -363,8 +354,7 @@ it("the reviewed safe description: requires a fresh selection for a recurring su
   expect(selected.occurrenceId).toBe("occurrence-next-week");
   const row = await taskRow(RECURRING_TASK);
   expect(row.seriesId).not.toBeNull();
-  const serviceRefusal = outcomeNamed(await shareTaskSummary(RECURRING_TASK, REVIEWED_DESCRIPTION, row.revision), "invalid", "the recurring task's share");
-  expect(Object.keys(serviceRefusal.fields)).toEqual(["occurrenceId"]);
+  expect(Object.keys(outcomeNamed(await shareTaskSummary(RECURRING_TASK, REVIEWED_DESCRIPTION, row.revision), "invalid", "the recurring task's share").fields)).toEqual(["occurrenceId"]);
 });
 it("the reviewed safe description: stops sharing a summary without changing the task, and the summary leaves the coach read", async () => {
   outcomeNamed(await setModule("task-summaries", true), "accepted", "enabling the task-summaries module");

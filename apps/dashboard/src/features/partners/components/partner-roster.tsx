@@ -181,27 +181,23 @@ const OpenRecordAction = ({ row }: { readonly row: PartnerRosterRow }): ReactEle
   </Link>
 );
 /** The row action that opens the record beside the list: its visible word is the same on every row, so the hidden half names the record it opens and where it opens it, and one control never reads as a second way to the record's own page. */
-function OpenBesideAction({ row, onOpen }: { readonly row: PartnerRosterRow; readonly onOpen: (partnerId: string) => void }): ReactElement {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      onClick={() => {
-        onOpen(row.partner.partnerId);
-      }}
-      className="max-w-full whitespace-normal"
-    >
-      {ROSTER_COPY.openBeside}
-      <span className="sr-only">{ROSTER_COPY.openBesideNote(nameOf(row))}</span>
-    </Button>
-  );
-}
+const OpenBesideAction = ({ row, onOpen }: { readonly row: PartnerRosterRow; readonly onOpen: (partnerId: string) => void }): ReactElement => (
+  <Button
+    type="button"
+    variant="ghost"
+    size="sm"
+    onClick={() => {
+      onOpen(row.partner.partnerId);
+    }}
+    className="max-w-full whitespace-normal"
+  >
+    {ROSTER_COPY.openBeside}
+    <span className="sr-only">{ROSTER_COPY.openBesideNote(nameOf(row))}</span>
+  </Button>
+);
 const ImportFirstAction = (): ReactElement => (
   <div className="flex max-w-prose flex-col items-center gap-2">
-    <Link href="/partners/import" data-slot="button" className={cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS)}>
-      Import a contact list
-    </Link>
+    <Link {...{ href: "/partners/import", "data-slot": "button", className: cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS) }}>Import a contact list</Link>
     <p className="text-center text-xs text-pretty text-muted-foreground">A contact list is imported into this ministry and reviewed row by row before anything is accepted.</p>
   </div>
 );

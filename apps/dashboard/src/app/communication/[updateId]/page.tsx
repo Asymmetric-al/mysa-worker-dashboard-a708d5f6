@@ -14,8 +14,7 @@ export const metadata: Metadata = { title: "Update" };
 type OverviewEnvelope = Extract<Awaited<ReturnType<typeof reads.updates.readVariantOverview>>, { readonly kind: "envelope" }>["envelope"];
 const PAGE_LEDE = "Every edition of this Update, each with its own saved draft, its frozen candidate and its published revision. " + "A release is what a reader is served; a notice is a separate outcome again, and no edition is ever summarised " + "into one status for the whole Update.";
 const SURFACE_HEADING_LEVEL = 2;
-/** The level the release review occupies: a second section under the same `h1`, beside the matrix rather than inside it, because releasing is not one of the matrix's per-edition writes and the review opens its own blocks below itself. */
-const PUBLISH_HEADING_LEVEL = 2;
+/** The level the release review occupies: a second section under the same `h1`, beside the matrix rather than inside it, because releasing is not one of the matrix's per-edition writes and the review opens its own blocks below itself. */ const PUBLISH_HEADING_LEVEL = 2;
 /** The page's own title, stated by the heading block above the matrix and kept whenever the read answers with a refusal, so no refusal arm leaves a notice standing in for the page's heading. */ const PAGE_TITLE = "Update";
 /** The level a notice nests at beneath that title: the page keeps its heading and the refusal is stated under it. */ const NESTED_NOTICE_LEVEL = 2;
 const DENIED_DESCRIPTION = "This session may not read this Update's editions in the context it is working in, so no edition, revision, " + "candidate, language or count is stated here. A refusal is not an Update with no editions.";
@@ -77,8 +76,7 @@ async function ceilingOf(): Promise<PublishAudienceCeiling | undefined> {
       return assertNever(result, "Unhandled audience read result");
   }
 }
-/** The page's one `h1`, its lede, then the family's own matrix seeded with the envelope this request already read, and below it the release review that publishes the frozen revision of the editions a person selects. */
-const OverviewSurface = ({ envelope, ceiling }: OverviewSurfaceProps): ReactElement => {
+/** The page's one `h1`, its lede, then the family's own matrix seeded with the envelope this request already read, and below it the release review that publishes the frozen revision of the editions a person selects. */ const OverviewSurface = ({ envelope, ceiling }: OverviewSurfaceProps): ReactElement => {
   const documentId = envelope.data.document.documentId;
   return (
     <div className={"flex min-w-0 flex-col gap-6 text-start"}>
@@ -91,20 +89,17 @@ const OverviewSurface = ({ envelope, ceiling }: OverviewSurfaceProps): ReactElem
     </div>
   );
 };
-/** An outage behind this Update, stated under the page's own title: the service's guidance is the sentence unless it stated none, and the page's own words stand in only then. */
-function unavailableRefusal(result: ReadRefusal, guidance: string): ReactElement {
+/** An outage behind this Update, stated under the page's own title: the service's guidance is the sentence unless it stated none, and the page's own words stand in only then. */ function unavailableRefusal(result: ReadRefusal, guidance: string): ReactElement {
   const stated = guidance.trim();
   return pageRefusalOf(result, stated === "" ? { ...NOTICE_COPY, unavailable: { title: UNAVAILABLE_TITLE, body: UNAVAILABLE_FALLBACK } } : NOTICE_COPY, 6, { title: PAGE_TITLE });
 }
-/** A request this route does not serve — a document of another family — stated under the page's own title rather than as a heading of its own, because the route keeps one heading and states the refusal beneath it. */
-const routeRefusal = (title: string, description: string): ReactElement => (
+/** A request this route does not serve — a document of another family — stated under the page's own title rather than as a heading of its own, because the route keeps one heading and states the refusal beneath it. */ const routeRefusal = (title: string, description: string): ReactElement => (
   <PageColumn>
     <PageHeading title={PAGE_TITLE} />
     <StateNotice kind="refused" headingLevel={NESTED_NOTICE_LEVEL} title={title} description={description} />
   </PageColumn>
 );
-/** The variant overview and status of one Update: one read, one envelope, and an honest notice in place of the matrix when the read does not answer with one. */
-export default async function CommunicationUpdateOverviewPage({ params }: { readonly params: Promise<{ updateId: string }> }): Promise<ReactElement> {
+/** The variant overview and status of one Update: one read, one envelope, and an honest notice in place of the matrix when the read does not answer with one. */ export default async function CommunicationUpdateOverviewPage({ params }: { readonly params: Promise<{ updateId: string }> }): Promise<ReactElement> {
   const { updateId } = await params;
   const result = await reads.updates.readVariantOverview({ documentId: updateId });
   switch (result.kind) {

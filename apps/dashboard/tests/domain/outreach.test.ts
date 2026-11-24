@@ -1,5 +1,4 @@
-/** Proves the outreach initiative model (success criterion 14): a reviewed working list that holds only the partners somebody explicitly chose, three member states that stay three, a stage that is a human assessment. */
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+/** Proves the outreach initiative model (success criterion 14): a reviewed working list that holds only the partners somebody explicitly chose, three member states that stay three, a stage that is a human assessment. */ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { isOutcome, type InvalidOutcome, type MutationOutcome, type ReadResult } from "@/modules/data-service/outcome";
 import { mutations, reads, type MutationInput, type Scope } from "@/modules/data-service";
@@ -7,17 +6,14 @@ import { DEFAULT_SESSION_ID, seed, type SeededSessionDocuments, type SessionStat
 import type { Money } from "@/modules/money/amount";
 import { readSession, resetSession } from "@/modules/store/repository";
 import { expectEnvelope, firstWhere, requiredSaying, throwing } from "../helpers/answers";
-/** This file's own session: a private id, so no other suite's seeded world is shared or disturbed. */
-const SESSION_ID = "domain-outreach";
+/** This file's own session: a private id, so no other suite's seeded world is shared or disturbed. */ const SESSION_ID = "domain-outreach";
 const SOURCE = { sessionId: SESSION_ID } as const;
 const SEEDED_INITIATIVE = "initiative-autumn-appeal";
 const EXCLUDED_PARTNER = "partner-marcus-webb";
 const PAUSED_SERIES = "series-fortnightly-newsletter";
-/** The membership a `subscribed` column could be mistaken for: recorded, and off rather than consented. */
-const required = <T>(value: T | undefined, what: string): T => requiredSaying(value, `The seeded world carries no ${what}, so this case cannot start from it.`);
+/** The membership a `subscribed` column could be mistaken for: recorded, and off rather than consented. */ const required = <T>(value: T | undefined, what: string): T => requiredSaying(value, `The seeded world carries no ${what}, so this case cannot start from it.`);
 let seededScope: Scope | undefined;
-/** The seeded document set every case is laid down from, captured once so each case starts from the seed. */
-let seededDocuments: SeededSessionDocuments | undefined;
+/** The seeded document set every case is laid down from, captured once so each case starts from the seed. */ let seededDocuments: SeededSessionDocuments | undefined;
 const scope = (): Scope => requiredSaying(seededScope, "The seeded world was not laid down before this case ran.");
 function scopeOf(state: SessionStateDocument): Scope {
   const { context: stored } = state;
@@ -59,8 +55,7 @@ interface RecordCounts {
   readonly memberships: number;
   readonly notificationIntents: number;
   readonly notificationResults: number;
-  /** The membership a `subscribed`-looking column would have created, by id, so its state is comparable. */
-  readonly membershipStates: Readonly<Record<string, string>>;
+  /** The membership a `subscribed`-looking column would have created, by id, so its state is comparable. */ readonly membershipStates: Readonly<Record<string, string>>;
 }
 function readArrayMember(document: unknown, key: string): readonly unknown[] {
   if (typeof document !== "object" || document === null) throw new Error("This session's state document is not an object, so its records cannot be counted.");
@@ -111,8 +106,7 @@ async function addPartners(initiativeId: string, partnerIds: readonly string[]) 
   const before = await initiativeDetail(initiativeId);
   return mutations.outreach.addMembers(attempt({ initiativeId, partnerIds }, before.revision), SOURCE);
 }
-/** A fresh initiative holding one seeded partner, with the member row the case acts on: the arrange every assessment case starts from. */
-async function initiativeWithMember(name: string, purpose: string, partnerId: string): Promise<{ readonly initiativeId: string; readonly member: WorkingListRows[number] }> {
+/** A fresh initiative holding one seeded partner, with the member row the case acts on: the arrange every assessment case starts from. */ async function initiativeWithMember(name: string, purpose: string, partnerId: string): Promise<{ readonly initiativeId: string; readonly member: WorkingListRows[number] }> {
   const initiativeId = await createInitiative(name, purpose);
   acceptedOutcome(await addPartners(initiativeId, [partnerId]));
   return { initiativeId, member: memberRowFor((await initiativeDetail(initiativeId)).data.workingList.items, partnerId) };
@@ -311,8 +305,7 @@ it("a Request answers the terms version it was presented: keeps the response kin
   expect([new Set(kinds).size, [...kinds]]).toEqual([7, ["agreed", "conditional", "partial", "deferred", "declined", "unanswered", "needs-clarification"]]);
   acceptedOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "agreed", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v1" })); // The answer the refused eighth kind must leave alone is one this case records itself, so the case holds whatever order the cases run in.
   const before = await recordCounts();
-  const eighth = invalidOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "accepted", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v1" }));
-  expect(fieldPathsOf(eighth)).toEqual(["response.kind"]);
+  expect(fieldPathsOf(invalidOutcome(await answerAsk(SEEDED_INITIATIVE, "request-autumn-grace", { kind: "accepted", respondentId: "partner-grace-adeyemi", termsVersionRef: "terms-v1" })))).toEqual(["response.kind"]);
   const after = await recordCounts();
   expect(after.requests).toBe(before.requests);
   expect(requestRowFor((await initiativeDetail(SEEDED_INITIATIVE)).data.requests.items, "request-autumn-grace").response?.kind).toBe("agreed");
@@ -323,8 +316,7 @@ it("an agreement creates nothing but an answer: records the answer without creat
   acceptedOutcome(await presentAsk(initiativeId, ask, "2026-11-05", "terms-v1"));
   const nextWorkBefore = (await initiativeDetail(initiativeId)).data.nextWork.total;
   const before = await recordCounts();
-  const recorded = acceptedOutcome(await answerAsk(initiativeId, ask, { kind: "agreed", respondentId: "partner-church-st-aidan", termsVersionRef: "terms-v1" }));
-  expect(recorded.changed).toEqual([ask]);
+  expect(acceptedOutcome(await answerAsk(initiativeId, ask, { kind: "agreed", respondentId: "partner-church-st-aidan", termsVersionRef: "terms-v1" })).changed).toEqual([ask]);
   const after = await recordCounts();
   expect([after.gifts, after.commitments, after.tasks, after.interactions, after.notificationIntents, after.notificationResults, after.partners]).toEqual([before.gifts, before.commitments, before.tasks, before.interactions, before.notificationIntents, before.notificationResults, before.partners]);
   const detail = await initiativeDetail(initiativeId);
@@ -416,8 +408,7 @@ it("closing fences new solicitation and resolves nothing: closes with a disposit
   expect(fieldPathsOf(drafted)).toEqual(["initiativeId"]);
   expect(fieldPathsOf(invalidOutcome(await presentAsk(SEEDED_INITIATIVE, unpresented, "2026-11-12", "terms-v2")))).toEqual(["initiativeId"]);
   expect(fieldPathsOf(invalidOutcome(await addPartners(SEEDED_INITIATIVE, ["partner-kenji-nakamura"])))).toEqual(["initiativeId"]);
-  const answered = acceptedOutcome(await answerAsk(SEEDED_INITIATIVE, presentedBeforeClose, { kind: "deferred", respondentId: "partner-ruth-okafor", termsVersionRef: "terms-v2" }));
-  expect(answered.changed).toEqual([presentedBeforeClose]);
+  expect(acceptedOutcome(await answerAsk(SEEDED_INITIATIVE, presentedBeforeClose, { kind: "deferred", respondentId: "partner-ruth-okafor", termsVersionRef: "terms-v2" })).changed).toEqual([presentedBeforeClose]);
   const stillClosed = await initiativeDetail(SEEDED_INITIATIVE);
   expect([stillClosed.data.initiative.state, requestRowFor(stillClosed.data.requests.items, presentedBeforeClose).response?.kind]).toEqual(["closed", "deferred"]);
 });
@@ -436,8 +427,7 @@ it("closing fences new solicitation and resolves nothing: reopens with its closu
   expect(after.data.initiative.closureDisposition).toBe(disposition); // The earlier close is preserved rather than rewritten by the reopen.
   const excludedAfter = memberRowFor(after.data.workingList.items, EXCLUDED_PARTNER);
   expect([excludedAfter.state, excludedAfter.revision]).toEqual(["excluded", excludedBefore.revision]);
-  const returnedExcluded = invalidOutcome(await mutations.outreach.returnMember(attempt({ initiativeId: SEEDED_INITIATIVE, memberId: excludedAfter.memberId }, excludedAfter.revision), SOURCE));
-  expect(fieldPathsOf(returnedExcluded)).toEqual(["memberId"]);
+  expect(fieldPathsOf(invalidOutcome(await mutations.outreach.returnMember(attempt({ initiativeId: SEEDED_INITIATIVE, memberId: excludedAfter.memberId }, excludedAfter.revision), SOURCE)))).toEqual(["memberId"]);
   const readded = outcomeIs(await addPartners(SEEDED_INITIATIVE, [EXCLUDED_PARTNER]), "unchanged");
   if (readded.outcome !== "unchanged") throw new Error("Selecting an excluded partner again was expected to change nothing.");
   expect(readded.revision).toBe(after.revision);

@@ -1,5 +1,4 @@
-/** The grant half of success criterion 16: the coaching episode, its frozen exclusive cutoff, the five independent module flags that start unselected, the ended-then-stale-action refusal. */
-import { Temporal } from "temporal-polyfill";
+/** The grant half of success criterion 16: the coaching episode, its frozen exclusive cutoff, the five independent module flags that start unselected, the ended-then-stale-action refusal. */ import { Temporal } from "temporal-polyfill";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { CoachingGrantRecord, CoachingTargetRecord, Scope } from "@/modules/data-service";
 import { assertScopeUnder, canEdit, canExport, canView, type ResolvedSession } from "@/modules/data-service/authorize";
@@ -167,8 +166,7 @@ function eventsOf(kind: ActivityEventKind, count: number, start: Temporal.PlainD
   return Array.from({ length: count }, (_unused, index) => ({ activityId: `activity-${kind}${marker}-${String(index)}`, kind, occurrence: { precision: "date", date: start.add({ days: index % 7 }) } }));
 }
 const countOf = (measure: TargetMeasure, activities: readonly ActivityEvent[], period: ResolvedPeriod, alreadyCredited: ReadonlySet<string> = new Set<string>()): number => measureFor({ measure, period, activities, alreadyCredited }).count;
-/** The refusal every write the coach is not the holder of answers, by the two facts a refusal states. */
-const refusalFactsOf = (refusal: CoachingRefusal) => ({ reason: refusal.reason, keys: Object.keys(refusal).sort() });
+/** The refusal every write the coach is not the holder of answers, by the two facts a refusal states. */ const refusalFactsOf = (refusal: CoachingRefusal) => ({ reason: refusal.reason, keys: Object.keys(refusal).sort() });
 it("A — an invitation names everything, and the five modules start unselected: names the recipient, the ministries and the duration, with exactly five module flags all off", () => {
   const invited = invitationOf();
   expect(invited).toMatchObject({ state: "invited", identityVerification: "unverified", acceptedAt: null, coachPrincipalId: COACH, ministryIds: [seeded.ministryId], duration: { kind: "through-date" } });

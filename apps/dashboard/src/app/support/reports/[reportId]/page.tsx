@@ -56,10 +56,7 @@ const PAGE_COPY = {
   pageIndex: "State the page as a whole number of pages from 0, the first page.",
   pageSize: "State the page size as a whole number of rows.",
 } as const;
-interface AddressProblem {
-  readonly field: string;
-  readonly message: string;
-}
+type AddressProblem = { readonly field: string; readonly message: string };
 const statedText = (search: SearchParams, name: string): string | undefined => firstValueOf(search[name]);
 function statedYear(search: SearchParams): number | undefined {
   const stated = statedText(search, PARAM.year);
@@ -122,8 +119,7 @@ function amountRangeOf(search: SearchParams, problems: AddressProblem[]): Report
   }
   return { minMinor, maxMinor };
 }
-/** The page window the address states: a whole page index counted from zero, and the row count it holds, which travels with it because a size with no page states no window. */
-function pageWindowOf(search: SearchParams, problems: AddressProblem[]): ReportFilters["page"] {
+/** The page window the address states: a whole page index counted from zero, and the row count it holds, which travels with it because a size with no page states no window. */ function pageWindowOf(search: SearchParams, problems: AddressProblem[]): ReportFilters["page"] {
   const stated = statedText(search, PARAM.page);
   if (stated === undefined) return undefined;
   if (!WHOLE_COUNT.test(stated)) {

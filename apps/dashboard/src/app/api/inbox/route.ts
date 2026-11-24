@@ -9,5 +9,4 @@ const MESSAGES = {
   pageSizeInvalid: "Read the page size as a whole number of one or more, so the messages arrive in pages of the size you asked for; the service applies its own cap.",
 } as const;
 const inboxQuerySchema = pagingQuerySchema({ page: MESSAGES.pageInvalid, pageSize: MESSAGES.pageSizeInvalid });
-const readInbox = readRoute(readGrammar(inboxQuerySchema, pagingParamsOf), (params) => reads.audience.readInbox(params));
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readInbox });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readRoute(readGrammar(inboxQuerySchema, pagingParamsOf), (params) => reads.audience.readInbox(params)) });

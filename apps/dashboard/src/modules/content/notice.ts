@@ -181,8 +181,7 @@ function composeParagraphs(input: { readonly publisher: string | undefined; read
   paragraphs.push(`${protectedCopy ? `${NOTICE_COPY.signIn} ` : ""}${reason} ${NOTICE_COPY.preferences}`);
   return paragraphs;
 }
-/** Builds the notice one recipient receives for the copy they were pinned to: a sender, a generic subject, and the same short wording in plain text and in HTML, pointing at the receiving route. */
-export function buildNotice(input: NoticeInput): Notice {
+/** Builds the notice one recipient receives for the copy they were pinned to: a sender, a generic subject, and the same short wording in plain text and in HTML, pointing at the receiving route. */ export function buildNotice(input: NoticeInput): Notice {
   const pinned = input.pinned;
   const publisher = publisherNameOf(input.publisher);
   const phrase = purposePhraseOf(input.purpose);

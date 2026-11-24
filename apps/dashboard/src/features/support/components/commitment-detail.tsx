@@ -2,7 +2,8 @@
 import { ArrowLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useMemo, type ReactElement, type ReactNode } from "react";
+import { Suspense, useMemo, type ReactElement } from "react";
+import { factFrame } from "@/components/fact-list";
 import { refusalSummary } from "@/components/form-field";
 import SectionCard from "@/components/section-card";
 import { StateNotice } from "@/components/state-notice";
@@ -69,12 +70,7 @@ const ReturnPath = ({ href }: { readonly href: string }): ReactElement => (
     </Link>
   </nav>
 );
-const Fact = ({ term, value }: { readonly term: string; readonly value: ReactNode }): ReactElement => (
-  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-    <dt className="font-medium text-muted-foreground">{term}</dt>
-    <dd className="min-w-0 break-words">{value}</dd>
-  </div>
-);
+const Fact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1", termClassName: "font-medium text-muted-foreground", valueClassName: "min-w-0 break-words" });
 const Identifier = ({ value }: { readonly value: string }): ReactElement => <bdi className="mono-identifier break-all">{value}</bdi>;
 function SourceDate({ value }: { readonly value: string | null }): ReactElement {
   if (value === null) return <span className="text-muted-foreground">{"The source states no date"}</span>;
@@ -193,9 +189,8 @@ const OutcomeHistoryCard = ({ buckets, total, current, locale }: { readonly buck
     <ul className="flex min-w-0 flex-col gap-2">
       {buckets.map((figure) => {
         const isCurrent = figure.bucket === current;
-        const isOutside = figure.bucket === OUTSIDE_PARTITION;
         return (
-          <li key={figure.bucket} data-outcome={figure.bucket} className={cn("flex min-w-0 flex-col gap-1.5 rounded-lg border border-border p-3", isOutside && "bg-muted/40", isCurrent && "ring-1 ring-ring")}>
+          <li key={figure.bucket} data-outcome={figure.bucket} className={cn("flex min-w-0 flex-col gap-1.5 rounded-lg border border-border p-3", figure.bucket === OUTSIDE_PARTITION && "bg-muted/40", isCurrent && "ring-1 ring-ring")}>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <StatusBadge {...statusBadgeProps(BUCKET_STATUS, figure.bucket)} srPrefix="Outcome" className={WRAPPING_BADGE_CLASS} />
               <CountFigure count={figure.count} valueState={figure.valueState} locale={locale} />

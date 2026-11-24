@@ -95,8 +95,8 @@ function checkTextHasNoBidiControl(value: string, path: string, issues: Document
   if (index === undefined) return;
   issues.push({ path, message: `Text contains the bidi control character ${codePointLabel(value.charCodeAt(index))}: direction is a document property, so no directional mark is stored in content.` });
 }
-function scanMarks(marks: readonly unknown[], path: string, issues: DocumentIssue[]): void {
-  marks.forEach((mark, index) => {
+const scanMarks = (marks: readonly unknown[], path: string, issues: DocumentIssue[]): void =>
+  void marks.forEach((mark, index) => {
     const markPath = `${path}.${index}`;
     if (!isRecord(mark)) return void issues.push({ path: markPath, message: "Each mark must be an object." });
     const markType = mark["type"];
@@ -110,7 +110,6 @@ function scanMarks(marks: readonly unknown[], path: string, issues: DocumentIssu
     const problem = linkHrefProblem(href);
     if (problem !== undefined) issues.push({ path: `${markPath}.attrs.href`, message: problem });
   });
-}
 function scanHeadingAttrs(attrs: unknown, path: string, issues: DocumentIssue[]): void {
   if (!isRecord(attrs)) return;
   const level = attrs["level"];
@@ -174,8 +173,7 @@ function appendZodIssues(issues: readonly ZodIssueLike[], prefix: readonly strin
   }
 }
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-/** Validates untrusted document input — a stored revision body, a submitted draft or a parsed paste — and reports every problem at the path the authoring form uses for that field. */
-export function parseDocument(input: unknown): ParseDocumentResult {
+/** Validates untrusted document input — a stored revision body, a submitted draft or a parsed paste — and reports every problem at the path the authoring form uses for that field. */ export function parseDocument(input: unknown): ParseDocumentResult {
   try {
     const issues = scanDocument(input);
     if (issues.length > 0) return { status: "invalid", issues };
@@ -281,8 +279,8 @@ function convertMarks(value: unknown, dropped: DroppedNames): ContentMarkNode[] 
     return [{ type: "link", attrs: { href: stripBidiControls(href) } }];
   });
 }
-function convertInlineNodes(values: readonly unknown[], dropped: DroppedNames): ContentInlineNode[] {
-  return values.flatMap((value): ContentInlineNode[] => {
+const convertInlineNodes = (values: readonly unknown[], dropped: DroppedNames): ContentInlineNode[] =>
+  values.flatMap((value): ContentInlineNode[] => {
     if (typeof value === "string") {
       const text = stripBidiControls(value);
       return text.length > 0 ? [{ type: "text", text }] : [];
@@ -300,16 +298,14 @@ function convertInlineNodes(values: readonly unknown[], dropped: DroppedNames): 
     const marks = convertMarks(value["marks"], dropped);
     return [marks.length === 0 ? { type: "text", text } : { type: "text", text, marks }];
   });
-}
-function convertListItems(values: readonly unknown[], dropped: DroppedNames, depth: number): ContentListItemNode[] {
-  return values.flatMap((value) => {
+const convertListItems = (values: readonly unknown[], dropped: DroppedNames, depth: number): ContentListItemNode[] =>
+  values.flatMap((value) => {
     if (!isRecord(value)) return [];
     const nodeType = value["type"];
     if (nodeType !== "listItem" && typeof nodeType === "string" && !ADMITTED_NODE_TYPE_SET.has(nodeType)) dropped.note(nodeType);
     const content = convertBlockNodes(childrenOf(value), dropped, depth + 1);
     return content.length > 0 ? [{ type: "listItem", content }] : [];
   });
-}
 function convertBlockNode(value: unknown, dropped: DroppedNames, depth: number): ContentBlockNode | undefined {
   if (depth > MAX_CONTENT_DEPTH) return undefined;
   if (!isRecord(value)) return undefined;
@@ -356,8 +352,8 @@ function convertBlockNode(value: unknown, dropped: DroppedNames, depth: number):
       return undefined;
   }
 }
-function convertBlockNodes(values: readonly unknown[], dropped: DroppedNames, depth: number): ContentBlockNode[] {
-  return values.flatMap((value) => {
+const convertBlockNodes = (values: readonly unknown[], dropped: DroppedNames, depth: number): ContentBlockNode[] =>
+  values.flatMap((value) => {
     if (isRecord(value) && typeof value["type"] !== "string" && Array.isArray(value["content"])) return convertBlockNodes(value["content"], dropped, depth + 1);
     const block = convertBlockNode(value, dropped, depth);
     if (block === undefined) return [];
@@ -367,7 +363,6 @@ function convertBlockNodes(values: readonly unknown[], dropped: DroppedNames, de
     const fallback = paragraphOfText(plainTextOf(block));
     return fallback === undefined ? [] : [fallback];
   });
-}
 export function admittedPasteDecision(decision: PasteDecision, input: PasteInput): PasteOutcome {
   if (decision === "cancel") return { status: "cancelled", content: null };
   const source: PasteInput = isRecord(input) ? input : {};

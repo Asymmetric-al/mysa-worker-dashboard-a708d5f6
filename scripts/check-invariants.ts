@@ -1,5 +1,4 @@
-/** Enforces the two invariants Oxlint 1.94.0 has no rule for, as part of `bun run lint`. */
-import { readdir, readFile } from "node:fs/promises";
+/** Enforces the two invariants Oxlint 1.94.0 has no rule for, as part of `bun run lint`. */ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 const ROOT = path.join(import.meta.dir, "..");
 const APP_SOURCE = path.join(ROOT, "apps", "dashboard", "src");
@@ -27,14 +26,11 @@ const NUMBER_LITERAL = /(?<![\w$.])(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]
 const ADMITTED_QUOTES = new Set(['"', "'", "`"]);
 type Violation = { readonly file: string; readonly line: number; readonly name: string; readonly source: string };
 interface ScannedLine {
-  /** The line with its trailing comment removed, so a quoted colour value is still read. */
-  readonly code: string;
-  /** The same, with every quoted span blanked, so text is never mistaken for an operator or a literal. */
-  readonly bare: string;
+  /** The line with its trailing comment removed, so a quoted colour value is still read. */ readonly code: string;
+  /** The same, with every quoted span blanked, so text is never mistaken for an operator or a literal. */ readonly bare: string;
 }
 const isCommentLine = (line: string): boolean => /^\s*(?:\/\/|\/\*|\*)/u.test(line);
-/** Splits one line into its code and its code with quoted spans blanked, treating a trailing `//` as a comment. */
-function scanLine(line: string): ScannedLine {
+/** Splits one line into its code and its code with quoted spans blanked, treating a trailing `//` as a comment. */ function scanLine(line: string): ScannedLine {
   let code = "";
   let bare = "";
   let quote: string | null = null;
@@ -71,15 +67,12 @@ function scanLine(line: string): ScannedLine {
   }
   return { code, bare };
 }
-/** True when the code holds a numeric literal that is not an integer — a decimal point before a digit, or an exponent. */
-const hasNonIntegerLiteral = (bare: string): boolean => [...bare.matchAll(NUMBER_LITERAL)].some((match) => !/^0[xXbBoO]/u.test(match[0]) && /\.\d|[eE]/u.test(match[0]));
+/** True when the code holds a numeric literal that is not an integer — a decimal point before a digit, or an exponent. */ const hasNonIntegerLiteral = (bare: string): boolean => [...bare.matchAll(NUMBER_LITERAL)].some((match) => !/^0[xXbBoO]/u.test(match[0]) && /\.\d|[eE]/u.test(match[0]));
 interface FloorCall {
   readonly open: number;
-  /** The index of the closing parenthesis, or `-1` when the argument continues past this line. */
-  readonly close: number;
+  /** The index of the closing parenthesis, or `-1` when the argument continues past this line. */ readonly close: number;
 }
-/** Locates every `Math.floor(…)` call on one line, so a division can be matched to the call that floors it. */
-function floorCalls(bare: string): readonly FloorCall[] {
+/** Locates every `Math.floor(…)` call on one line, so a division can be matched to the call that floors it. */ function floorCalls(bare: string): readonly FloorCall[] {
   const calls: FloorCall[] = [];
   for (const match of bare.matchAll(/Math\.floor\s*\(/gu)) {
     const open = (match.index ?? 0) + match[0].length - 1;
@@ -128,8 +121,7 @@ function moneyViolations(file: string, lines: readonly string[], inMoneyModule: 
   });
   return violations;
 }
-/** Every file under `directory` whose name ends in one of `extensions`, in a stable order. */
-async function collectFiles(directory: string, extensions: readonly string[]): Promise<readonly string[]> {
+/** Every file under `directory` whose name ends in one of `extensions`, in a stable order. */ async function collectFiles(directory: string, extensions: readonly string[]): Promise<readonly string[]> {
   const entries = (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name));
   const files: string[] = [];
   for (const entry of entries) {

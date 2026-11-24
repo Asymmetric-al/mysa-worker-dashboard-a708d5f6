@@ -14,8 +14,7 @@ function operationIdOf(params: SearchParams): string | undefined {
   const first = Array.isArray(stated) ? stated[0] : stated;
   return typeof first === "string" && first.length > 0 ? first : undefined;
 }
-/** The contact-import journey's destination: admission, the page's one heading and lead, and the journey itself. */
-export default async function ImportPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
+/** The contact-import journey's destination: admission, the page's one heading and lead, and the journey itself. */ export default async function ImportPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   const admission = await reads.context.readAdmissionState();
   const initialOperationId = operationIdOf(await searchParams);
   switch (admission.kind) {

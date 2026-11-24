@@ -10,5 +10,4 @@ const unsubscribePayloadSchema = z.strictObject({
   purpose: z.literal(UPDATE_EMAIL_PURPOSE, `This release keeps memberships for one purpose only (${UPDATE_EMAIL_PURPOSE}); another purpose would need its own consent.`),
 });
 const unsubscribeRequestSchema = z.custom<unknown>((stated) => stated !== undefined, { error: "Send the unsubscribe as a JSON object in the request body: the publisher and the purpose are read from that body alone, never from the address." }).pipe(mutationInputSchema(unsubscribePayloadSchema));
-const turnOffUpdateEmail = (request: Request): Promise<Response> => writeRoute(request, unsubscribeRequestSchema, mutations.audience.unsubscribe);
-export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: turnOffUpdateEmail });
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: (request: Request): Promise<Response> => writeRoute(request, unsubscribeRequestSchema, mutations.audience.unsubscribe) });

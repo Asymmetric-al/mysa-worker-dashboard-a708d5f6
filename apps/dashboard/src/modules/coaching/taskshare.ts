@@ -34,8 +34,7 @@ export function safeTaskSummary(input: SafeTaskSummaryInput): Result<SafeTaskSum
 }
 export const taskShareReadState = (input: TaskShareReadStateInput): TaskShareSummaryState =>
   input.share === undefined || input.share.state === "removed" ? "removed" : !input.sourceAvailable ? "unavailable" : fingerprintVerdict(input.share.reviewedFingerprint, input.currentFingerprint) === "current" ? "shared" : "needs-review";
-/** Authorises a share to cover a recurring task's next occurrence — only when the worker selected that occurrence explicitly. */
-export function selectSuccessorForSharing(request: SuccessorSharingRequest): Result<SelectedSuccessorOccurrence, TaskShareRefusal> {
+/** Authorises a share to cover a recurring task's next occurrence — only when the worker selected that occurrence explicitly. */ export function selectSuccessorForSharing(request: SuccessorSharingRequest): Result<SelectedSuccessorOccurrence, TaskShareRefusal> {
   if (request.share.state !== "shared") return err({ outcome: "refused", reason: "not-shared" });
   if (request.expectedRevision !== request.share.revision) return err({ outcome: "refused", reason: "stale-revision" });
   if (request.occurrenceId === request.share.occurrenceId) return err({ outcome: "refused", reason: "occurrence-already-shared" });

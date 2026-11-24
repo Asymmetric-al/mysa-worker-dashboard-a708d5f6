@@ -35,8 +35,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: STATE_NOTICE_COPY.unavailable.title },
   refused: { title: STATE_NOTICE_COPY.refused.title, body: STATE_NOTICE_COPY.refused.body, action: BACK_TO_LIST },
 };
-/** One initiative: its overview, its working list, its Requests, the next work it carries and its history. */
-export default async function InitiativeDetailPage({ params }: { readonly params: Promise<{ readonly initiativeId: string }> }): Promise<ReactElement> {
+/** One initiative: its overview, its working list, its Requests, the next work it carries and its history. */ export default async function InitiativeDetailPage({ params }: { readonly params: Promise<{ readonly initiativeId: string }> }): Promise<ReactElement> {
   const { initiativeId } = await params;
   const [initiative, results] = await Promise.all([reads.outreach.readInitiative(initiativeId), reads.outreach.readInitiativeResults(initiativeId)]);
   if (initiative.kind !== "envelope") return <ReadNotices failure={initiative} copy={{ ...NOTICE_COPY, unavailable: { ...NOTICE_COPY.unavailable, action: retryOf(initiativeId) } }} />;

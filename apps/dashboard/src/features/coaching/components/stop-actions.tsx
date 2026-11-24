@@ -200,8 +200,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
   const keep = (): void => {
     setChosen(null);
   };
-  /** Every stop effect records the facts its attempt presented before the mutation runs, so the receipt keeps describing the change that was made; the six submissions differ only in which mutation they call. */
-  const held =
+  /** Every stop effect records the facts its attempt presented before the mutation runs, so the receipt keeps describing the change that was made; the six submissions differ only in which mutation they call. */ const held =
     <P,>(mutate: (attempt: MutationInput<P>) => Promise<MutationOutcome>): MutationSubmit<P> =>
     (attempt) => {
       holdAttempt(attempt.expectedRevision);

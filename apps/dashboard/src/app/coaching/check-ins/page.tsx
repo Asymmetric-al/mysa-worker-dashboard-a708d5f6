@@ -82,14 +82,12 @@ function taskShareEntryOf(share: TaskShareRow, taskStatus: TaskShareListEntry["t
     sharedAt: share.reviewedAt,
   };
 }
-/** One task the read offers, in the selector's own vocabulary: the civil day the read states is handed on as that day, and a task with no due date states no day at all rather than a precision nothing supports. */
-function candidateOf(candidate: TaskSummaryCandidateRow): TaskSummaryCandidate {
+/** One task the read offers, in the selector's own vocabulary: the civil day the read states is handed on as that day, and a task with no due date states no day at all rather than a precision nothing supports. */ function candidateOf(candidate: TaskSummaryCandidateRow): TaskSummaryCandidate {
   const due = candidate.dueDate;
   const dueOn = due.kind === "dated" ? due.date : null; // The read states the day it serialised, so the selector renders that stored day rather than one re-parsed here.
   return { taskId: candidate.taskId, safeLabel: candidate.safeLabel, dueOn, duePrecision: due.kind === "dated" ? duePrecisionOf(due.precision) : "unknown", status: candidate.status, isRecurringSuccessor: candidate.isRecurringSuccessor, reviewedFingerprint: candidate.reviewedFingerprint, revision: candidate.revision };
 }
-/** One summary that already exists for a task, so the same occurrence is never shared twice. */
-const existingShareOf = (share: TaskShareRow): TaskSummaryExistingShare => ({ taskId: share.taskId, state: share.state, reviewedDescription: share.description });
+/** One summary that already exists for a task, so the same occurrence is never shared twice. */ const existingShareOf = (share: TaskShareRow): TaskSummaryExistingShare => ({ taskId: share.taskId, state: share.state, reviewedDescription: share.description });
 function taskSharesOf(shares: readonly TaskShareRow[]): { readonly entries: readonly TaskShareListEntry[]; readonly unstatedStatus: number } {
   const entries: TaskShareListEntry[] = [];
   let unstatedStatus = 0;
@@ -103,8 +101,7 @@ function taskSharesOf(shares: readonly TaskShareRow[]): { readonly entries: read
   return { entries, unstatedStatus };
 }
 const noticeCopyOf = (title: string): ReadNoticeCopy => ({ headingLevel: NOTICE_HEADING_LEVEL, denied: { title }, unavailable: { title }, refused: { title } });
-/** The worker's check-ins and shared task summaries: one page window, two reads, and the family's own surfaces rendering them. */
-export default async function CheckInsPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
+/** The worker's check-ins and shared task summaries: one page window, two reads, and the family's own surfaces rendering them. */ export default async function CheckInsPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   const stated = await searchParams;
   const addressPage = positiveIntegerOf(paramOf(stated, "page")) ?? FIRST_PAGE;
   const addressPageSize = positiveIntegerOf(paramOf(stated, "pageSize"));

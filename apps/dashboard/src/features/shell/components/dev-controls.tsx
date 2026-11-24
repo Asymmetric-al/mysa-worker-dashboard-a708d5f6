@@ -72,8 +72,6 @@ function ReadyControls({ devState, transports, onReread, className }: { readonly
     const preset = lastPreset.current;
     if (preset !== null) void advanceBy(preset);
   }, [advanceBy]);
-  const receiptReplay = receipt !== null && mayReplay(receipt.outcome) ? replay : undefined;
-  const receiptCheck = receipt !== null && receipt.outcome.outcome === "unknown" ? onReread : undefined;
   const receiptHeading = receipt !== null && (receipt.outcome.outcome === "accepted" || receipt.outcome.outcome === "alreadyAccepted" || receipt.outcome.outcome === "unchanged") ? `${CLOCK_COPY.advanceLabel}: ${receipt.preset}` : undefined;
   return (
     <div data-slot="dev-controls" data-state="ready" className={cn("flex min-w-0 flex-col gap-6", className)}>
@@ -91,7 +89,7 @@ function ReadyControls({ devState, transports, onReread, className }: { readonly
         {advancing ? <output className="block type-supporting text-pretty">{CLOCK_COPY.presetPendingNote}</output> : null}
         {receipt === null ? null : (
           <div data-slot="dev-controls-preset-result" data-outcome={receipt.outcome.outcome} className="min-w-0">
-            <OperationResult outcome={receipt.outcome} heading={receiptHeading} headingLevel={4} onCheckResult={receiptCheck} onRetrySameWork={receiptReplay} />
+            <OperationResult outcome={receipt.outcome} heading={receiptHeading} headingLevel={4} onCheckResult={receipt !== null && receipt.outcome.outcome === "unknown" ? onReread : undefined} onRetrySameWork={receipt !== null && mayReplay(receipt.outcome) ? replay : undefined} />
           </div>
         )}
       </fieldset>

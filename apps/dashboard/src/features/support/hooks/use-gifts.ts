@@ -1,6 +1,7 @@
 "use client";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { scopeKey } from "@/components/context-switch-guard";
+import { GIFTS_PARAM as PARAM } from "../gift-params";
 import { isRecord } from "@/lib/guards";
 import { asOfInstant, fetchRead } from "@/lib/read-transport";
 import type { reads } from "@/modules/data-service";
@@ -23,26 +24,7 @@ export interface GiftsQuery {
   readonly page: number;
   readonly pageSize: number;
 }
-const PARAM = {
-  period: "period",
-  from: "from",
-  to: "to",
-  currency: "currency",
-  amountMin: "amountMin",
-  amountMax: "amountMax",
-  recipient: "recipient",
-  partnerId: "partnerId",
-  designation: "designation",
-  method: "method",
-  search: "search",
-  sortField: "sortField",
-  sortDirection: "sortDirection",
-  page: "page",
-  pageSize: "pageSize",
-  record: "record",
-} as const;
-/** The preset this ledger's query states when the address states no period: the same default `readGifts` applies from `DEFAULT_PERIOD` in `modules/data-service/reads/support.ts`, so the period the read is narrowed to is the period the query states. */
-export const GIFTS_DEFAULT_PERIOD_PRESET = "this-month";
+/** The preset this ledger's query states when the address states no period: the same default `readGifts` applies from `DEFAULT_PERIOD` in `modules/data-service/reads/support.ts`, so the period the read is narrowed to is the period the query states. */ export const GIFTS_DEFAULT_PERIOD_PRESET = "this-month";
 const FIRST_PAGE = 0;
 const SIGNED_INTEGER_PATTERN = /^-?\d+$/;
 /** Writes a ledger query as URL parameters, in the service's vocabulary, so a detail visit, a drilldown and a browser Back all restore the exact view the worker left. */ export function toGiftsParams(query: GiftsQuery): URLSearchParams {

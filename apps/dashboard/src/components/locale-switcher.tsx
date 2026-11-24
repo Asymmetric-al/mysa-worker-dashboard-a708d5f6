@@ -37,21 +37,17 @@ function optionTextOf(edition: LocaleEdition): string {
   const name = displayNameOf(edition);
   return name === "" || normaliseTag(name) === normaliseTag(edition.tag) ? edition.tag : `${name} (${edition.tag})`;
 }
-/** The single locale-edition and direction selector. */
-export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = false, onRequest, onDirectionChange, unavailable = false, label, className }: LocaleSwitcherProps): ReactElement {
+/** The single locale-edition and direction selector. */ export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = false, onRequest, onDirectionChange, unavailable = false, label, className }: LocaleSwitcherProps): ReactElement {
   const selectId = useId();
   const servedSentenceId = useId();
   const requestedTag = requested.trim();
   const hasEditions = locales.length > 0;
   const isUnavailable = unavailable || !hasEditions;
   const requestedEdition = isUnavailable ? undefined : findEdition(locales, requestedTag);
-  const namedServedEdition = findEdition(locales, served);
-  const servedEdition = isUnavailable ? undefined : (namedServedEdition ?? (fallbackOccurred ? undefined : requestedEdition));
+  const servedEdition = isUnavailable ? undefined : (findEdition(locales, served) ?? (fallbackOccurred ? undefined : requestedEdition));
   const servedTag = servedEdition?.tag ?? "";
   const servedDirection: ContentDirection | undefined = servedEdition?.direction;
-  const servedName = servedEdition === undefined ? "" : displayNameOf(servedEdition);
   const requestedName = requestedEdition === undefined ? languageNameOf(requestedTag) : displayNameOf(requestedEdition);
-  const fallbackDisclosed = servedEdition !== undefined && requestedTag !== "" && normaliseTag(servedTag) !== normaliseTag(requestedTag);
   const directionHandler = useRef(onDirectionChange);
   const reportedDirection = useRef<ContentDirection | undefined>(undefined);
   useEffect(() => {
@@ -68,14 +64,14 @@ export function LocaleSwitcher({ locales, requested, served, fallbackOccurred = 
   } else {
     servedSentence = (
       <>
-        {fallbackDisclosed ? (
+        {servedEdition !== undefined && requestedTag !== "" && normaliseTag(servedTag) !== normaliseTag(requestedTag) ? (
           <span className="min-w-0 text-muted-foreground text-pretty wrap-anywhere">
             Requested <bdi className="font-medium text-foreground">{requestedName}</bdi> <bdi className="mono-identifier">{requestedTag}</bdi>.
           </span>
         ) : null}
         <span className="text-muted-foreground">showing</span>
         <Badge variant="outline">
-          <bdi className="min-w-0 break-words">{servedName}</bdi>
+          <bdi className="min-w-0 break-words">{servedEdition === undefined ? "" : displayNameOf(servedEdition)}</bdi>
         </Badge>
         <bdi className="mono-identifier">{servedTag}</bdi>
         <span className="text-muted-foreground">read {DIRECTION_WORDS[servedEdition.direction]}.</span>

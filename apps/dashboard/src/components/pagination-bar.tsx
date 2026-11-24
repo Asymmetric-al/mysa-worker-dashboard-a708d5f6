@@ -30,9 +30,6 @@ type PageToken = number | "gap";
   const currentPageSize = clampPageSize(pageSize, options);
   const pageCount = pageCountFor(totalCount, currentPageSize);
   const currentPage = clampPage(page, pageCount);
-  const firstRow = totalCount === 0 ? 0 : (currentPage - 1) * currentPageSize + 1;
-  const lastRow = Math.min(currentPage * currentPageSize, totalCount);
-  const countText = totalCount === 0 ? `Showing 0 of 0 ${itemNoun}` : `Showing ${formatCount.format(firstRow)}\u2013${formatCount.format(lastRow)} of ${formatCount.format(totalCount)} ${itemNoun}`;
   function requestPage(requested: number): void {
     if (disabled) return;
     const nextPage = clampPage(requested, pageCount);
@@ -43,15 +40,14 @@ type PageToken = number | "gap";
     if (disabled) return;
     const nextPageSize = clampPageSize(requested, options);
     if (nextPageSize === currentPageSize) return;
-    const firstVisibleRow = (currentPage - 1) * currentPageSize;
-    const nextPage = clampPage(Math.trunc(firstVisibleRow / nextPageSize) + 1, pageCountFor(totalCount, nextPageSize));
+    const nextPage = clampPage(Math.trunc(((currentPage - 1) * currentPageSize) / nextPageSize) + 1, pageCountFor(totalCount, nextPageSize));
     onPageSizeChange(nextPageSize);
     if (nextPage !== currentPage) onPageChange(nextPage);
   }
   return (
     <div data-slot="pagination-bar" className={cn("flex flex-wrap items-center justify-between gap-x-4 gap-y-3", className)}>
       <output className="tabular-figures text-sm text-muted-foreground">
-        {countText}
+        {totalCount === 0 ? `Showing 0 of 0 ${itemNoun}` : `Showing ${formatCount.format(totalCount === 0 ? 0 : (currentPage - 1) * currentPageSize + 1)}\u2013${formatCount.format(Math.min(currentPage * currentPageSize, totalCount))} of ${formatCount.format(totalCount)} ${itemNoun}`}
         {disabled ? <span className="sr-only"> Updating results.</span> : null}
       </output>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -112,8 +108,7 @@ function DirectionalChevron({ direction }: { direction: "previous" | "next" }) {
   );
 }
 function normalisePageSizeOptions(options: readonly number[] | undefined): number[] {
-  const source = options ?? DEFAULT_PAGE_SIZE_OPTIONS;
-  const usable = source.filter((size) => Number.isInteger(size) && size > 0);
+  const usable = (options ?? DEFAULT_PAGE_SIZE_OPTIONS).filter((size) => Number.isInteger(size) && size > 0);
   const unique = [...new Set(usable)].sort((left, right) => left - right);
   return unique.length > 0 ? unique : [...DEFAULT_PAGE_SIZE_OPTIONS];
 }
@@ -128,15 +123,11 @@ function clampPageSize(requested: number, options: readonly number[]): number {
   for (const option of options) if (option <= size) offered = option;
   return offered;
 }
-function pageCountFor(total: number, pageSize: number): number {
-  if (total <= 0 || pageSize <= 0) return 1;
-  return Math.max(1, Math.ceil(total / pageSize));
-}
+const pageCountFor = (total: number, pageSize: number): number => (total <= 0 || pageSize <= 0 ? 1 : Math.max(1, Math.ceil(total / pageSize)));
 function clampPage(requested: number, pageCount: number): number {
   if (!Number.isFinite(requested)) return 1;
   const page = Math.trunc(requested);
-  if (page <= 1) return 1;
-  return page >= pageCount ? pageCount : page;
+  return page <= 1 ? 1 : page >= pageCount ? pageCount : page;
 }
 function pageWindow(current: number, pageCount: number): PageToken[] {
   const tokens: PageToken[] = [];

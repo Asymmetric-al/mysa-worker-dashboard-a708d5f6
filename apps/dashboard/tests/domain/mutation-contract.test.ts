@@ -1,5 +1,4 @@
-/** The closed mutation contract, proven at the service boundary: the four fields every named mutation presents, the eight outcomes it may answer with, and the rejection paths that make that set closed. */
-import { Buffer } from "node:buffer";
+/** The closed mutation contract, proven at the service boundary: the four fields every named mutation presents, the eight outcomes it may answer with, and the rejection paths that make that set closed. */ import { Buffer } from "node:buffer";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ZodError, z } from "zod";
 import { newOperationId } from "@/lib/ids";
@@ -15,32 +14,23 @@ import { readSession, resetSession } from "@/modules/store/repository";
 import { expectEnvelope, expectOutcome, firstSaying, required, throwing, type OutcomeNamed } from "../helpers/answers";
 import { scopeOf, seededDocuments, sessionOf, storedStateOf } from "../helpers/fixtures";
 // The identities this file acts as, and the seeded records it acts on
-/** The seated worker: admitted to two ministries, holding `canEditGoal`, author of the seeded content. */
-const HERO: SessionSource = { sessionId: "established-worker" };
-/** A second principal in a second ministry. Every call it makes across that boundary must be refused. */
-const OTHER_WORKER: SessionSource = { sessionId: "second-worker" };
-/** A seeded shared partner of the worker's own ministry, with tags, a goal subject and recorded activity. */
-const PARTNER = "partner-jo-mbeki";
-/** The seeded Update document whose editions carry a draft, a candidate and a release. */
-const UPDATE_DOCUMENT = "doc-update-autumn";
-/** The seeded publisher whose Update-email purpose the audience mutations address. */
-const PUBLISHER = "publisher-harbour";
-/** The revision token an attempt presents when it creates a record rather than changing one. */
-const NO_RECORD = "rev-none";
-/** Builds the four-field input every named mutation presents, with a fresh attempt identity. */
-const attempt = <P>(scope: Scope, expectedRevision: string, payload: P): MutationInput<P> => ({ operationId: newOperationId(), expectedRevision, payload, scope });
+/** The seated worker: admitted to two ministries, holding `canEditGoal`, author of the seeded content. */ const HERO: SessionSource = { sessionId: "established-worker" };
+/** A second principal in a second ministry. Every call it makes across that boundary must be refused. */ const OTHER_WORKER: SessionSource = { sessionId: "second-worker" };
+/** A seeded shared partner of the worker's own ministry, with tags, a goal subject and recorded activity. */ const PARTNER = "partner-jo-mbeki";
+/** The seeded Update document whose editions carry a draft, a candidate and a release. */ const UPDATE_DOCUMENT = "doc-update-autumn";
+/** The seeded publisher whose Update-email purpose the audience mutations address. */ const PUBLISHER = "publisher-harbour";
+/** The revision token an attempt presents when it creates a record rather than changing one. */ const NO_RECORD = "rev-none";
+/** Builds the four-field input every named mutation presents, with a fresh attempt identity. */ const attempt = <P>(scope: Scope, expectedRevision: string, payload: P): MutationInput<P> => ({ operationId: newOperationId(), expectedRevision, payload, scope });
 let session: ResolvedSession; // The world, resolved once per case: the seed lays the same sessions and the same selection down before every one
 let scope: Scope;
 let partnerRevision: string; // The revision the seeded partner stands at, which every case that changes it presents as the one it read.
-/** Lays the seeded world down before every case. */
-beforeEach(async () => {
+/** Lays the seeded world down before every case. */ beforeEach(async () => {
   await resetSeed();
   session = await sessionOf(HERO);
   scope = required(session.selected, `the selected context of ${HERO.sessionId}`);
   partnerRevision = (await partnerEnvelope(PARTNER)).revision;
 });
-/** Clears the armed failure after every case, whatever the case did with it. */
-afterEach(async () => {
+/** Clears the armed failure after every case, whatever the case did with it. */ afterEach(async () => {
   const state = expectEnvelope(await reads.dev.readDevState(HERO), "readDevState");
   if (!state.data.failurePlan.armed) return;
   expectOutcome(await mutations.dev.setFailurePlan(attempt(state.scope, state.revision, { plan: null }), HERO), "accepted"); // A plan left armed would answer a later case with an injected outcome, so a disarm that did not take is a failure of the case that armed it rather than something to leave behind.
@@ -55,13 +45,11 @@ async function proposalSnapshot(): Promise<unknown> {
   // A session that has never proposed a file answers `unavailable` rather than an empty proposal, and that absence is itself the state a refused proposal must leave exactly as it found it.
   return result.kind === "envelope" ? { kind: result.kind, revision: result.envelope.revision, data: result.envelope.data } : { kind: result.kind };
 }
-/** Arms exactly one simulated failure for the hero session, the way the development panel does. */
-async function armFailure(mode: FailureMode, kind: FailureTargetKind, name: string): Promise<void> {
+/** Arms exactly one simulated failure for the hero session, the way the development panel does. */ async function armFailure(mode: FailureMode, kind: FailureTargetKind, name: string): Promise<void> {
   const revision = expectEnvelope(await reads.dev.readDevState(HERO), "readDevState").revision;
   expectOutcome(await mutations.dev.setFailurePlan(attempt(scope, revision, { mode, target: { kind, name } }), HERO), "accepted");
 }
-/** Drives one attempt to `accepted` and then replays it twice. */
-async function acceptedThenReplayed<P>(run: (input: MutationInput<P>) => Promise<MutationOutcome>, input: MutationInput<P>): Promise<OutcomeNamed<"accepted">> {
+/** Drives one attempt to `accepted` and then replays it twice. */ async function acceptedThenReplayed<P>(run: (input: MutationInput<P>) => Promise<MutationOutcome>, input: MutationInput<P>): Promise<OutcomeNamed<"accepted">> {
   const first = expectOutcome(await run(input), "accepted");
   const replay = expectOutcome(await run(input), "alreadyAccepted");
   expect(replay.revision).toBe(first.revision);
@@ -74,11 +62,9 @@ async function acceptedThenReplayed<P>(run: (input: MutationInput<P>) => Promise
 type NamedMember = { readonly group: string; readonly name: string; readonly member: unknown };
 const namedMembersOf = (surface: typeof reads | typeof mutations): readonly NamedMember[] => Object.entries(surface).flatMap(([group, members]) => Object.entries(members).map(([name, member]) => ({ group, name, member })));
 const memberNamesOf = (surface: typeof reads | typeof mutations): readonly string[] => namedMembersOf(surface).map((entry) => entry.name);
-/** Every name that appears more than once, sorted: the deliberate re-uses a two-family job shares. */
-const duplicateNamesOf = (names: readonly string[]): readonly string[] => [...new Set(names.filter((name, index) => names.indexOf(name) !== index))].sort();
+/** Every name that appears more than once, sorted: the deliberate re-uses a two-family job shares. */ const duplicateNamesOf = (names: readonly string[]): readonly string[] => [...new Set(names.filter((name, index) => names.indexOf(name) !== index))].sort();
 const OUTCOME_NAMES: readonly OperationOutcomeName[] = ["accepted", "alreadyAccepted", "unchanged", "conflict", "denied", "invalid", "unavailable", "unknown"];
-/** One constructor per outcome, so "each has a constructor" is a fact this file checks rather than assumes. */
-const OUTCOME_CONSTRUCTORS: Readonly<Record<OperationOutcomeName, (operationId: string) => MutationOutcome>> = {
+/** One constructor per outcome, so "each has a constructor" is a fact this file checks rather than assumes. */ const OUTCOME_CONSTRUCTORS: Readonly<Record<OperationOutcomeName, (operationId: string) => MutationOutcome>> = {
   accepted: (operationId) => accepted({ operationId, revision: "rev-1" }),
   alreadyAccepted: (operationId) => alreadyAccepted({ operationId, revision: "rev-1", result: { recorded: true } }),
   unchanged: (operationId) => unchanged({ operationId, revision: "rev-1" }),
@@ -114,12 +100,10 @@ it("the named inventory: closes the outcome set at the eight names, each with a 
 });
 // The envelope, the payload, and the order between them
 type GoalSavePayload = { readonly amount: { readonly currency: string; readonly minorUnits: number }; readonly measure: "received-gifts"; readonly effectiveFrom: string };
-/** A complete four-field request, which the cases that remove or add a member start from. */
-const completeAttempt = (): Record<string, unknown> => ({ ...attempt(scope, "rev-1", { title: "A follow-up call" }) });
+/** A complete four-field request, which the cases that remove or add a member start from. */ const completeAttempt = (): Record<string, unknown> => ({ ...attempt(scope, "rev-1", { title: "A follow-up call" }) });
 const goalPayload = (minorUnits: number): GoalSavePayload => ({ amount: { currency: "USD", minorUnits }, measure: "received-gifts", effectiveFrom: "2026-11-20" });
 const importPayload = (csv: string) => ({ fileName: "contacts.csv", contentBase64: Buffer.from(csv, "utf8").toString("base64") });
-/** The one shape guard every named mutation runs before it reads or writes anything. */
-const ENVELOPE_SCHEMA = mutationInputSchema(z.unknown());
+/** The one shape guard every named mutation runs before it reads or writes anything. */ const ENVELOPE_SCHEMA = mutationInputSchema(z.unknown());
 const ENVELOPE_MEMBERS = ["operationId", "scope", "expectedRevision", "payload"] as const;
 function withoutMember(member: (typeof ENVELOPE_MEMBERS)[number], complete: MutationInput<GoalSavePayload>): MutationInput<GoalSavePayload> {
   const rest: Record<string, unknown> = { ...complete };
@@ -164,25 +148,18 @@ it("the four-field input: refuses a malformed request before any record is read 
 });
 const documentRevision = async (): Promise<string> => expectEnvelope(await reads.updates.readVariantOverview({ documentId: UPDATE_DOCUMENT, session: HERO }), "readVariantOverview").revision; // Accepted, then replayed — one representative mutation from each job group
 // The bulk actions, and the seeded rows they act on
-/** An open task of the worker's own, so a bulk action may change it. */
-const OWNED_OPEN_TASK = "task-care-jo";
-/** The worker's other open task, undated on purpose, so nothing about the first row's date decides it. */
-const OWNED_UNDATED_TASK = "task-undated-prayer";
-/** The worker's own task that is already complete, so completing it again must change nothing. */
-const COMPLETED_TASK = "task-completed-intro";
-/** An open task in the second worker's ministry, which the selected worker may not change. */
-const FOREIGN_TASK = "task-river-invite-owen";
-/** The worker's own series still in force, so a series mutation may pause it and the result can be read back. */
-const OWNED_ACTIVE_SERIES = "series-weekly-call-round";
-/** The private tag these cases apply. The seed sets no task tags at all, so the first attempt writes it. */
-const BULK_TAG = "contract-bulk";
+/** An open task of the worker's own, so a bulk action may change it. */ const OWNED_OPEN_TASK = "task-care-jo";
+/** The worker's other open task, undated on purpose, so nothing about the first row's date decides it. */ const OWNED_UNDATED_TASK = "task-undated-prayer";
+/** The worker's own task that is already complete, so completing it again must change nothing. */ const COMPLETED_TASK = "task-completed-intro";
+/** An open task in the second worker's ministry, which the selected worker may not change. */ const FOREIGN_TASK = "task-river-invite-owen";
+/** The worker's own series still in force, so a series mutation may pause it and the result can be read back. */ const OWNED_ACTIVE_SERIES = "series-weekly-call-round";
+/** The private tag these cases apply. The seed sets no task tags at all, so the first attempt writes it. */ const BULK_TAG = "contract-bulk";
 /** One row of a bulk action's answer, as the stored result carries it. */
 const BULK_ROW_SCHEMA = z.object({ taskId: z.string(), state: z.enum(["accepted", "unchanged", "excluded", "failed"]), revision: z.string().nullable(), createdTaskId: z.string().nullable(), reasonCode: z.string().nullable(), reason: z.string().nullable() });
 /** A bulk action's own answer: one row per selected task, the counts derived from those rows, and the tasks created. */
 const BULK_ANSWER_SCHEMA = z.object({ items: z.array(BULK_ROW_SCHEMA), acceptedCount: z.number().int(), unchangedCount: z.number().int(), excludedCount: z.number().int(), failedCount: z.number().int(), createdTaskIds: z.array(z.string()) });
 type BulkAnswer = z.infer<typeof BULK_ANSWER_SCHEMA>;
-/** The answer a caller recovers after losing the acknowledgement: re-querying the accepted identity returns the stored result, which is where the per-item rows live. */
-async function recoveredBulkAnswer<P>(run: (input: MutationInput<P>) => Promise<MutationOutcome>, input: MutationInput<P>): Promise<BulkAnswer> {
+/** The answer a caller recovers after losing the acknowledgement: re-querying the accepted identity returns the stored result, which is where the per-item rows live. */ async function recoveredBulkAnswer<P>(run: (input: MutationInput<P>) => Promise<MutationOutcome>, input: MutationInput<P>): Promise<BulkAnswer> {
   const recovered = expectOutcome(await run(input), "alreadyAccepted");
   const parsed = BULK_ANSWER_SCHEMA.safeParse(recovered.result);
   expect(parsed.success).toBe(true);
@@ -191,14 +168,12 @@ async function recoveredBulkAnswer<P>(run: (input: MutationInput<P>) => Promise<
 }
 /** One row of a bulk answer, by the task it answered for, so a missing row fails by name. */
 const bulkRowOf = (answer: BulkAnswer, taskId: string): BulkAnswer["items"][number] => firstSaying(answer.items, "taskId", taskId, `The bulk answer reported no row for ${taskId}, so it answered for the selection instead of per row.`);
-/** The revision one task stands at as a list reports it, so a per-item row can be held to the record it names. */
-async function listedRevisionOf(taskId: string): Promise<string> {
+/** The revision one task stands at as a list reports it, so a per-item row can be held to the record it names. */ async function listedRevisionOf(taskId: string): Promise<string> {
   const rows = expectEnvelope(await reads.work.listTasks({ list: "all", displayTimeZone: "UTC", pageSize: 200 }, HERO), "listTasks").data.tasks;
   const row = firstSaying(rows, "taskId", taskId, `The task ${taskId} stands in no list the worker reads, so no record stands behind that row.`);
   return row.revision;
 }
-/** How much work the worker still owes: the upcoming list holds only tasks awaiting action. */
-const openTotal = async (): Promise<number> => expectEnvelope(await reads.work.listTasks({ list: "upcoming", displayTimeZone: "UTC" }, HERO), "listTasks").data.total;
+/** How much work the worker still owes: the upcoming list holds only tasks awaiting action. */ const openTotal = async (): Promise<number> => expectEnvelope(await reads.work.listTasks({ list: "upcoming", displayTimeZone: "UTC" }, HERO), "listTasks").data.total;
 it("accepted, then replayed: answers accepted and replays through the shell job, returning the seeded context", async () => {
   const current = required(session.selected, "the context the seeded worker selected");
   const target = session.admittedMemberships.find((membership) => membership.ministryId !== current.ministryId) ?? throwing("The seeded worker is admitted to one ministry, so this case cannot switch context.");
@@ -467,12 +442,9 @@ describe("invalid, keyed by field and free of side effects", () => {
   });
 });
 // One convention for a name a job does not admit, and one bound on the identity a refusal echoes
-/** The wording every path uses for a name the job it calls does not declare. */
-const unadmittedKeyMessage = (name: string): string => `This request does not accept "${name}": every name it sends must be one the job declares, so remove it rather than having it silently ignored.`;
-/** A strict payload under the shared envelope, so a surplus member can be refused at either depth. */
-const STRICT_TASK_BODY = mutationInputSchema(z.strictObject({ title: z.string() }));
-/** The two depths one fault class can arrive at: a member of the request envelope itself, and a member inside the payload the envelope carries. */
-const SURPLUS_KEY_CASES = [
+/** The wording every path uses for a name the job it calls does not declare. */ const unadmittedKeyMessage = (name: string): string => `This request does not accept "${name}": every name it sends must be one the job declares, so remove it rather than having it silently ignored.`;
+/** A strict payload under the shared envelope, so a surplus member can be refused at either depth. */ const STRICT_TASK_BODY = mutationInputSchema(z.strictObject({ title: z.string() }));
+/** The two depths one fault class can arrive at: a member of the request envelope itself, and a member inside the payload the envelope carries. */ const SURPLUS_KEY_CASES = [
   { label: "a member of the request envelope", surplus: "comment", body: (complete: Record<string, unknown>): Record<string, unknown> => ({ ...complete, comment: "a field no mutation reads" }) },
   { label: "a member inside the payload", surplus: "audience", body: (complete: Record<string, unknown>): Record<string, unknown> => ({ ...complete, payload: { title: "A follow-up call", audience: "public" } }) },
 ] as const;
@@ -503,8 +475,7 @@ describe("a refusal names the field to fix, under a bounded attempt identity", (
   });
 });
 const interactionPayload = (date: string) => ({ partnerId: PARTNER, type: "call" as const, occurredOn: { precision: "date" as const, date }, outcome: "Caught up briefly", participants: [{ partnerId: PARTNER, role: "Person" }] });
-/** Reads the interaction id off the stored result. */
-function interactionIdOf(result: MutationResult): string {
+/** Reads the interaction id off the stored result. */ function interactionIdOf(result: MutationResult): string {
   const fields: Readonly<Record<string, MutationResult>> = typeof result === "object" && result !== null && !Array.isArray(result) ? (result as Readonly<Record<string, MutationResult>>) : {};
   const id = fields["interactionId"];
   if (typeof id !== "string" || id.length === 0) throw new Error("The recovered result states no interaction id, so the effect it stands for cannot be found.");
@@ -531,14 +502,10 @@ describe("denied", () => {
   });
 });
 // A private record's author is the principal its own document names, never whoever addresses it
-/** A session id this file owns, so a world whose stored author differs from its caller can be laid down without touching a seeded session. */
-const DOCUMENT_AUTHOR_SESSION = "mutation-contract-document-author";
-/** The new worker's private preparation record: its audience is private, so the author its document names decides who may change it. */
-const PRIVATE_PREPARATION = "partner-nw-ada-quinn";
-/** The seeded new worker, the identity that private record belongs to. */
-const NEW_WORKER: SessionSource = { sessionId: "new-worker" };
-/** Lays the seeded new-worker world down under this file's own session id, with the state document's own principal set to the identity the case names, and answers the scope that session acts in. */
-async function layDownPrivatePreparationWorld(storedAuthorPrincipalId: PrincipalId): Promise<Scope> {
+/** A session id this file owns, so a world whose stored author differs from its caller can be laid down without touching a seeded session. */ const DOCUMENT_AUTHOR_SESSION = "mutation-contract-document-author";
+/** The new worker's private preparation record: its audience is private, so the author its document names decides who may change it. */ const PRIVATE_PREPARATION = "partner-nw-ada-quinn";
+/** The seeded new worker, the identity that private record belongs to. */ const NEW_WORKER: SessionSource = { sessionId: "new-worker" };
+/** Lays the seeded new-worker world down under this file's own session id, with the state document's own principal set to the identity the case names, and answers the scope that session acts in. */ async function layDownPrivatePreparationWorld(storedAuthorPrincipalId: PrincipalId): Promise<Scope> {
   const documents = await seededDocuments(NEW_WORKER.sessionId);
   await resetSession(DOCUMENT_AUTHOR_SESSION, { ...documents, state: { ...documents.state, context: { ...documents.state.context, sessionId: DOCUMENT_AUTHOR_SESSION, principalId: storedAuthorPrincipalId } } });
   return scopeOf({ sessionId: DOCUMENT_AUTHOR_SESSION });
@@ -685,10 +652,8 @@ it("never a bare boolean: narrows a call by its predicate, never by the truthine
 });
 
 // The authority a grant- or owner-authorised attempt is admitted under comes from the caller's own memberships, and the entry it records states that admission rather than the request's claim
-/** A reader holding no admitted membership of any ministry: one of the seats the owner authority exists for. */
-const SUBSCRIBER: SessionSource = { sessionId: "subscriber" };
-/** The operation ledger a session's own documents hold. */
-const ledgerOf = async (sessionId: string): Promise<OperationLedger> => readLedger(required((await readSession(sessionId))?.operations, `The store holds no operations document under "${sessionId}", so no case here can read what the attempt recorded`));
+/** A reader holding no admitted membership of any ministry: one of the seats the owner authority exists for. */ const SUBSCRIBER: SessionSource = { sessionId: "subscriber" };
+/** The operation ledger a session's own documents hold. */ const ledgerOf = async (sessionId: string): Promise<OperationLedger> => readLedger(required((await readSession(sessionId))?.operations, `The store holds no operations document under "${sessionId}", so no case here can read what the attempt recorded`));
 it("the scope an attempt is admitted under: holds an owner-authority claim to the caller's own memberships, and records no entry when it refuses", async () => {
   const elsewhere = required((await sessionOf(OTHER_WORKER)).selected, `The session "${OTHER_WORKER.sessionId}" has selected no context, so no case here can name a context the established worker holds no membership of`);
   const claim: Scope = { ...elsewhere, principalId: session.principalId };
@@ -703,12 +668,12 @@ it("the scope an attempt is admitted under: holds an owner-authority claim to th
 });
 it("the scope an attempt is admitted under: records the scope a membership-less seat's own change was admitted under", async () => {
   const reader = await sessionOf(SUBSCRIBER);
-  const row = firstSaying((await storedStateOf(SUBSCRIBER.sessionId)).memberships, "membershipId", reader.principalId, `The seeded "${SUBSCRIBER.sessionId}" session holds no membership keyed by its own principal, so no case here has the reader's own record to change`);
+  const row = firstSaying((await storedStateOf(HERO.sessionId)).memberships, "membershipId", reader.principalId, `The seeded audience holds no membership keyed by "${reader.principalId}", so no case here has the reader's own record to change`);
   // A reader selects no context of its own: the scope its record sits in carries the publisher world's three references and the reader's own principal, the only authority an owner-authorised change is held to.
   const claim: Scope = { organizationId: scope.organizationId, ministryId: scope.ministryId, supportSubjectId: scope.supportSubjectId, principalId: reader.principalId };
   const input = attempt(claim, row.revision, { membershipId: reader.principalId, choice: "immediate", languagePreference: "cy" } as const);
   expect(expectOutcome(await mutations.audience.setPreference(input, SUBSCRIBER), "accepted").revision).not.toBe(row.revision);
-  const entry = required(lookup(await ledgerOf(SUBSCRIBER.sessionId), input.operationId), `The ledger holds no entry under ${input.operationId}, so the accepted change recorded nothing`);
+  const entry = required(lookup(await ledgerOf(HERO.sessionId), input.operationId), `The ledger holds no entry under ${input.operationId}, so the accepted change recorded nothing`); // The row has one owner, so the attempt that changed it is recorded beside it in the publisher world rather than in a session that holds no copy.
   // The membership-less seat is admitted under its own principal, and the entry states exactly the scope that admission established: its own record, in the publisher world, under its own identity. A caller holding no membership is admitted all the same, which is what keeps the owner authority doing its job.
   expect([entry.outcome, entry.scope]).toEqual(["accepted", claim]);
 });

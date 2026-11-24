@@ -6,8 +6,7 @@ export type GoalRecord = { readonly minorUnits: MinorUnits; readonly currency: s
 export const GOAL_MEASURE = "received-gifts" as const satisfies SupportMeasure;
 export const GOAL_CAPABILITY = "canEditGoal";
 export type GoalDenialReason = "capability-absent" | "scope-mismatch" | "source-unavailable";
-/** Whether the caller holds the capability that permits editing the goal — the single permission test for a goal in this application. */
-export const canEditGoal = (capabilities: readonly string[]): boolean => capabilities.includes(GOAL_CAPABILITY);
+/** Whether the caller holds the capability that permits editing the goal — the single permission test for a goal in this application. */ export const canEditGoal = (capabilities: readonly string[]): boolean => capabilities.includes(GOAL_CAPABILITY);
 export type GoalAmountInput = { readonly minorUnits: MinorUnits; readonly currency: string };
 export type GoalAmountProblem = { readonly field: "minorUnits"; readonly message: string } | { readonly field: "currency"; readonly message: string };
 /** Validates a stated goal amount, returning one problem per refused field and an empty list when the amount is acceptable. */ export function validateGoalAmount(input: GoalAmountInput): GoalAmountProblem[] {
@@ -24,8 +23,7 @@ export type GoalSaveDecision =
   | { readonly status: "conflict"; readonly current: GoalRecord; readonly input: GoalSaveInput }
   | { readonly status: "denied"; readonly reason: GoalDenialReason }
   | { readonly status: "invalid"; readonly problems: GoalAmountProblem[] };
-/** Decides a goal save and returns the goal it would produce, without writing anything. */
-export function applyGoalSave(current: GoalRecord | undefined, input: GoalSaveInput, capabilities: readonly string[], sourceAvailable: boolean, effectiveFrom: CivilDate): GoalSaveDecision {
+/** Decides a goal save and returns the goal it would produce, without writing anything. */ export function applyGoalSave(current: GoalRecord | undefined, input: GoalSaveInput, capabilities: readonly string[], sourceAvailable: boolean, effectiveFrom: CivilDate): GoalSaveDecision {
   if (!canEditGoal(capabilities)) return { status: "denied", reason: "capability-absent" };
   if (!sourceAvailable) return { status: "denied", reason: "source-unavailable" };
   const problems = validateGoalAmount(input.amount);

@@ -1,5 +1,4 @@
-/** The referrals list transport reads the answers `GET /api/referrals` writes: each case below is fed what the service's own outcome constructors and `toResponse` put on the wire, so a change to that mapping or to a status it decides fails this file. */
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+/** The referrals list transport reads the answers `GET /api/referrals` writes: each case below is fed what the service's own outcome constructors and `toResponse` put on the wire, so a change to that mapping or to a status it decides fails this file. */ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fetchReferralRead, REFERRALS_ENDPOINT, type ReferralListPage } from "@/features/referrals/hooks/use-referrals";
 import { toResponse } from "@/modules/data-service";
 // The transport's import graph holds one React client module — the query key's scope segments, which belong to the context-switch guard — and the no-DOM runner cannot parse it. The transport under test never reads a query key, so the substitute answers nothing: a call to it would be a defect this file
@@ -10,8 +9,7 @@ vi.mock("@/components/context-switch-guard", () => ({
   },
 }));
 const LIST_PATH = `${REFERRALS_ENDPOINT}?list=active&page=1&pageSize=50`;
-/** The one page of one list the envelope cases carry, shaped as the read builds it. */
-const LIST_PAGE = {
+/** The one page of one list the envelope cases carry, shaped as the read builds it. */ const LIST_PAGE = {
   list: "active",
   items: [
     {
@@ -35,8 +33,7 @@ const LIST_PAGE = {
   continuationPolicy: { setting: "on", reason: null },
 } as const;
 const FOLDER_SOURCE = { system: "local-store", reference: "outreach" };
-/** The envelope `readReferrals` builds around the page it read: the frame `toResponse` writes onto the 200 unsliced, so the whole body is the envelope itself, with no `kind` around it. */
-const FLAT_ENVELOPE = {
+/** The envelope `readReferrals` builds around the page it read: the frame `toResponse` writes onto the 200 unsliced, so the whole body is the envelope itself, with no `kind` around it. */ const FLAT_ENVELOPE = {
   data: LIST_PAGE,
   scope: { organizationId: "org-harbour", ministryId: "min-harbour-youth", supportSubjectId: "sup-harbour-youth", principalId: "principal-established-worker" },
   source: FOLDER_SOURCE,
@@ -49,21 +46,16 @@ const FLAT_ENVELOPE = {
     { name: "readReferral", available: true },
   ],
 } as const;
-/** The body a 403 carries: the denial the service built, and nothing about the records it refused. */
-const DENIED_BODY = { outcome: "denied", operationId: "read", reasonCode: "no-permission" } as const;
-/** The body a 401 carries: the same denial, keyed to the session's own fault rather than to the caller's authority. */
-const SESSION_DENIED_BODY = { outcome: "denied", operationId: "read", reasonCode: "session-expired" } as const;
-/** The body a 503 carries: the outage naming the source that did not answer. */
-const UNAVAILABLE_BODY = { outcome: "unavailable", operationId: "read", source: { system: "local-store", reference: "outreach" }, guidance: "The referral records could not be read from the store. Retry this view." } as const;
-/** The body a 422 carries: the field-keyed refusal of a request the read does not admit, keyed at the caller's own field. */
-const REFUSED_BODY = { outcome: "invalid", operationId: "read", fields: { page: ["State the page as a whole number from 1."] } } as const;
+/** The body a 403 carries: the denial the service built, and nothing about the records it refused. */ const DENIED_BODY = { outcome: "denied", operationId: "read", reasonCode: "no-permission" } as const;
+/** The body a 401 carries: the same denial, keyed to the session's own fault rather than to the caller's authority. */ const SESSION_DENIED_BODY = { outcome: "denied", operationId: "read", reasonCode: "session-expired" } as const;
+/** The body a 503 carries: the outage naming the source that did not answer. */ const UNAVAILABLE_BODY = { outcome: "unavailable", operationId: "read", source: { system: "local-store", reference: "outreach" }, guidance: "The referral records could not be read from the store. Retry this view." } as const;
+/** The body a 422 carries: the field-keyed refusal of a request the read does not admit, keyed at the caller's own field. */ const REFUSED_BODY = { outcome: "invalid", operationId: "read", fields: { page: ["State the page as a whole number from 1."] } } as const;
 const ORIGINAL_FETCH = globalThis.fetch;
 let requestedPaths: string[] = [];
 beforeEach(() => (requestedPaths = []));
 afterEach(() => (globalThis.fetch = ORIGINAL_FETCH));
 const jsonAnswer = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8" } });
-/** Replaces the one external boundary the transport crosses: the request that leaves the browser. */
-function answerWith(reply: () => Promise<Response>): void {
+/** Replaces the one external boundary the transport crosses: the request that leaves the browser. */ function answerWith(reply: () => Promise<Response>): void {
   globalThis.fetch = async (input) => {
     requestedPaths.push(String(input));
     return reply();

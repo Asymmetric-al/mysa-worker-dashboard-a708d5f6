@@ -3,8 +3,7 @@ import { FlaskConicalIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 export type DevBannerProps = { scenarioId?: string; className?: string };
-/** The persistent **Development data** label: the single statement that this application shows synthetic development data and simulated external effects, present on every surface — signed in. */
-export function DevBanner({ scenarioId, className }: DevBannerProps) {
+/** The persistent **Development data** label: the single statement that this application shows synthetic development data and simulated external effects, present on every surface — signed in. */ export function DevBanner({ scenarioId, className }: DevBannerProps) {
   const scenario = scenarioId?.trim() ?? "";
   return (
     <div className={cn("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs", className)}>

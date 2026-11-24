@@ -179,8 +179,8 @@ function workingVersionOf(version: CoachingTargetRecord["versions"][number]): Ta
   const effectiveTo = version.effectiveTo === null ? null : civilDateOf(version.effectiveTo);
   return version.effectiveTo !== null && effectiveTo === null ? null : { revisionId: version.revisionId, effectiveFrom, ...(effectiveTo === null ? {} : { effectiveTo }), quantity: version.quantity, measure: version.measure, calendarStart };
 }
-function storedVersionsOf(versions: readonly TargetVersion[]): CoachingTargetRecord["versions"] {
-  return versions.map((version) => ({
+const storedVersionsOf = (versions: readonly TargetVersion[]): CoachingTargetRecord["versions"] =>
+  versions.map((version) => ({
     revisionId: version.revisionId,
     effectiveFrom: serialiseCivilDate(version.effectiveFrom),
     effectiveTo: version.effectiveTo === undefined ? null : serialiseCivilDate(version.effectiveTo),
@@ -188,7 +188,6 @@ function storedVersionsOf(versions: readonly TargetVersion[]): CoachingTargetRec
     measure: version.measure,
     calendarStart: serialiseCivilDate(version.calendarStart),
   }));
-}
 function workingPeriodOf(record: CoachingTargetRecord): TargetPeriod | null {
   const period = record.period;
   if (period.kind !== "custom") return { kind: period.kind };
@@ -539,8 +538,7 @@ function applySaveTarget(context: MutationContext, payload: TargetSavePayload): 
   context.docs.state = withFamily(families.document, "coachingTargets", [...families.targets, record]);
   return { changed: true, revision: FIRST_REVISION, created: [targetId], result: { targetId, state: record.state, revision: FIRST_REVISION, versionRevisionId: firstVersion.revisionId } };
 }
-/** Changes a target's plan, opening a prospective version when the count, the measure or the calendar start changes. */
-export const editTarget = async (input: MutationInput<TargetEditPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Changes a target's plan, opening a prospective version when the count, the measure or the calendar start changes. */ export const editTarget = async (input: MutationInput<TargetEditPayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, targetEditPayload, "editTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyEditTarget(context, input.payload) });
 function applyEditTarget(context: MutationContext, payload: TargetEditPayload): ApplyResult<TargetResult> {
   const { operationId } = context;
@@ -591,8 +589,7 @@ function applyEditTarget(context: MutationContext, payload: TargetEditPayload): 
 }
 /** Pauses a target: distinct from ending it and from a source that cannot be read. */ export const pauseTarget = async (input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, targetStatePayload, "pauseTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyTargetLifecycle(context, input.payload, "paused") });
-/** Ends a target: its history is kept, its closed periods keep the version they were measured against, and no later action reopens it. */
-export const endTarget = async (input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Ends a target: its history is kept, its closed periods keep the version they were measured against, and no later action reopens it. */ export const endTarget = async (input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, targetStatePayload, "endTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyTargetLifecycle(context, input.payload, "ended") });
 function applyTargetLifecycle(context: MutationContext, payload: TargetStatePayload, state: "paused" | "ended"): ApplyResult<TargetResult> {
   const { operationId } = context;

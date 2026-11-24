@@ -1,5 +1,4 @@
-/** Criterion 9 — Update publication. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 9 — Update publication. */ import type { Locator, Page } from "@playwright/test";
 import { test, expect, actAs, devStateOf, fieldAt, fixturePathOf, jpegSizeOf, jsonOf, messagesAt, newAttemptId, outcomeOf, sessionCookie, type JsonRecord } from "../playwright.config";
 const CONTRIBUTOR_SESSION = "established-worker"; // The name of the development-session cookie, mirrored once from `modules/store/sessions.ts`, where the
 const REVIEWER_SESSION = "content-reviewer";
@@ -49,9 +48,8 @@ async function postRelease(page: Page, sessionId: string, attempt: { readonly op
   return jsonOf(answer, `POST ${PUBLISH_API} as ${sessionId}`);
 }
 type PhaseRecorderHost = { __mediaPickerPhases?: string[] }; // The window member the simulated phase recorder appends to, read back by {@link pickerPhases}.
-/** Starts recording every phase the media picker reports, before the file is chosen. */
-async function recordPickerPhases(page: Page): Promise<void> {
-  await page.evaluate(() => {
+/** Starts recording every phase the media picker reports, before the file is chosen. */ const recordPickerPhases = async (page: Page): Promise<void> =>
+  void (await page.evaluate(() => {
     const host = globalThis as unknown as PhaseRecorderHost & { MutationObserver: typeof MutationObserver };
     const phases: string[] = [];
     host.__mediaPickerPhases = phases;
@@ -62,8 +60,7 @@ async function recordPickerPhases(page: Page): Promise<void> {
     };
     collect();
     new MutationObserver(collect).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-phase"] });
-  });
-}
+  }));
 const pickerPhases = async (page: Page): Promise<readonly string[]> => page.evaluate(() => (globalThis as unknown as PhaseRecorderHost).__mediaPickerPhases ?? []);
 function responseTextOf(bytes: Buffer, headers: Readonly<Record<string, string>>, status: number): string {
   const stated = Object.entries(headers).map(([name, value]) => `${name}: ${value}`); // Everything a rendition response states, as text: its status line, every header and the body's own bytes

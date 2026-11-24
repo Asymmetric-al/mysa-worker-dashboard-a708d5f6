@@ -94,8 +94,7 @@ function previewViewOf(result: PagePreviewReadResult): PagePreviewView {
     case "envelope": {
       const data = result.envelope.data;
       if (data.status === "authorised") return { status: "authorised", variantId: data.variantId, revisionId: data.revision.revisionId, servedLocale: data.locale.tag, direction: data.locale.direction, html: data.renderedHtml, unreadyMedia: data.unreadyMedia, inert: true, givingAction: "none" };
-      if (data.status === "denied") return previewRefusalViewOf(data.reason);
-      return { status: "unavailable", source: result.envelope.source };
+      return data.status === "denied" ? previewRefusalViewOf(data.reason) : { status: "unavailable", source: result.envelope.source };
     }
     case "denied":
       return { status: "denied", reason: result.denied.reasonCode };
@@ -165,11 +164,10 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
     setSelection((current) => ({ ...current, sectionId }));
   };
   const previewParams = previewParamsOf(documentId, activeRecord);
-  const previewSeedApplies = preview !== undefined && (preview.status === "authorised" ? preview.variantId === (activeEdition?.variant.variantId ?? "") : activeLocale === openingLocale);
   const unreleasedPreview: PagePreviewView | undefined = previewParams === undefined && activeLocale !== "" ? { status: "unreleased", locale: activeLocale } : undefined;
   const previewRead = usePagePreview(scope, previewParams);
   const previewFromRead = previewRead.data === undefined ? undefined : previewViewOf(previewRead.data);
-  const previewView = previewFromRead ?? (previewSeedApplies ? preview : undefined) ?? unreleasedPreview;
+  const previewView = previewFromRead ?? (preview !== undefined && (preview.status === "authorised" ? preview.variantId === (activeEdition?.variant.variantId ?? "") : activeLocale === openingLocale) ? preview : undefined) ?? unreleasedPreview;
   const rereadGiving = givingRead.refetch;
   if (pageResult.kind !== "envelope") return refusalNotice(pageResult, PAGE_REFUSAL, () => void pageRead.refetch(), className);
   const builder = pageResult.envelope.data;
@@ -254,7 +252,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
             ) : builder.draft === null ? (
               <FamilyCatalogue family={family} catalogue={catalogue} scope={scope} document={catalogueDocument} />
             ) : null}
-            {composingDraft && builder.draft !== null ? <PresetChooser family={family} presets={builder.presets} baseVariantId={draftVariantId} locale={composedLocale} expectedRevision={draftExpectedRevision} scope={scope} documentId={documentId} /> : null}
+            {composingDraft && builder.draft !== null ? <PresetChooser family={family} presets={builder.presets} baseVariantId={draftVariantId} locale={composedLocale} expectedRevision={draftExpectedRevision} sectionCount={sections.length} scope={scope} documentId={documentId} /> : null}
           </section>
           <section data-pane="fields" aria-labelledby={fieldsHeadingId} className={paneClass("fields", selection.pane)}>
             <h2 {...{ id: fieldsHeadingId, className: HEADING_CLASS }}>{copy.builder.fields}</h2>

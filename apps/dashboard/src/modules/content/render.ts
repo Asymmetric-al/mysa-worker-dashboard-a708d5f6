@@ -3,16 +3,50 @@ import { parseDocument, type AdmittedMarkType, type AdmittedNodeType, type Conte
 const HTML_ESCAPES: Readonly<Record<string, string>> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 export const escapeHtml = (value: string): string => value.replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] ?? character);
 export const isolateValue = (value: string): string => `<bdi>${escapeHtml(value)}</bdi>`;
+// The weak and neutral runs a right-to-left sentence cannot place on its own — an address, an email address, a telephone number, a civil date, a number — in the order each is recognised, so a value keeps its own direction inside prose that runs the other way.
+const ISOLATED_RUN_PATTERNS: readonly RegExp[] = [/^(?:https?:\/\/|www\.)[^\s<>"'`]+/u, /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/u, /^\+\d[\d ().-]{4,}\d/u, /^\d{4}-\d{2}-\d{2}/u, /^(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?)/u];
+// The mark a sentence puts after a value belongs to the sentence rather than to the value: `1,250.` isolates the number and leaves the full stop in the prose around it.
+const TRAILING_MARKS = /[.,;:!?'")\]}]+$/u;
+function isolatedRunAt(text: string): string {
+  for (const pattern of ISOLATED_RUN_PATTERNS) {
+    const found = pattern.exec(text)?.[0] ?? "";
+    const value = found.replace(TRAILING_MARKS, "");
+    if (value.length > 0) return value;
+  }
+  return "";
+}
+/** A stored value's text as HTML: every weak or neutral run escapes inside an isolation element of its own, and everything between them is escaped prose. */ function isolateRuns(text: string): string {
+  const parts: string[] = [];
+  let plain = "";
+  let index = 0;
+  while (index < text.length) {
+    const rest = text.slice(index);
+    const run = isolatedRunAt(rest);
+    if (run.length === 0) {
+      plain += rest.slice(0, 1);
+      index += 1;
+      continue;
+    }
+    if (plain.length > 0) parts.push(escapeHtml(plain));
+    plain = "";
+    parts.push(`<bdi>${escapeHtml(run)}</bdi>`);
+    index += run.length;
+  }
+  if (plain.length > 0) parts.push(escapeHtml(plain));
+  return parts.join("");
+}
+/** One database-driven value, escaped and isolated as a whole from the direction of the prose around it, with each weak or neutral run inside it isolated in its turn: a nested `<bdi>` is valid phrasing content. */ const isolateStoredValue = (text: string): string => `<bdi>${isolateRuns(text)}</bdi>`;
 export type RenderMediaMode = "inline" | "links-only";
 export type RenderRenditionPurpose = "display" | "playback" | "poster" | "captions" | "transcript";
 export type RenderRendition = { readonly src: string; readonly purpose: RenderRenditionPurpose };
 export type RenderRenditions = Readonly<Record<string, RenderRendition>>;
-/** One placement as the renderer meets it: its own words, the rendition identities the read supplied for it, and the section it was composed into. */
-export type RenderMediaPlacement = {
+/** One placement as the renderer meets it: its own words, the rendition identities the read supplied for it, and the section it was composed into. */ export type RenderMediaPlacement = {
   readonly placementId: string;
   readonly kind: "image" | "video";
   readonly altText: string;
   readonly caption?: string;
+  readonly credit?: string;
+  readonly language?: string;
   readonly posterId?: string;
   readonly captionsId?: string;
   readonly captionsLanguage?: string;
@@ -20,7 +54,7 @@ export type RenderMediaPlacement = {
   readonly transcriptId?: string;
   readonly sectionElement?: string | null;
 };
-export type RenderOptions = { readonly media?: RenderMediaMode; readonly placements?: readonly RenderMediaPlacement[]; readonly renditions?: RenderRenditions };
+export type RenderOptions = { readonly media?: RenderMediaMode; readonly placements?: readonly RenderMediaPlacement[]; readonly renditions?: RenderRenditions; readonly lang?: string };
 export type RenderResult = { readonly status: "rendered"; readonly html: string } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
 type HtmlNodeRender = (props: NodeProps<JSONNodeType, string | string[]>) => string;
 type HtmlMarkRender = (props: MarkProps<JSONMarkType, string | string[], JSONNodeType>) => string;
@@ -44,7 +78,7 @@ const NODE_RENDERERS = {
   blockquote: ({ children }) => `<blockquote>${joinChildren(children)}</blockquote>`,
   codeBlock: ({ children }) => `<pre><code>${joinChildren(children)}</code></pre>`,
   hardBreak: () => "<br>",
-  text: ({ node }) => escapeHtml(textOf(node)),
+  text: ({ node }) => isolateStoredValue(textOf(node)),
 } satisfies Record<AdmittedNodeType | "doc", HtmlNodeRender>;
 function linkHref(mark: JSONMarkType): string | undefined {
   const href = mark.attrs?.href;
@@ -86,18 +120,31 @@ function transcriptLink(renditions: RenderRenditions, placement: RenderMediaPlac
 function inlineMedia(src: string, renditions: RenderRenditions, placement: RenderMediaPlacement): string {
   if (placement.kind === "image") return `<img src="${escapeHtml(src)}" alt="${escapeHtml(placement.altText)}">`;
   const poster = renditionAt(renditions, placement.posterId, "poster");
-  // A transcript is a reading alternative beside the player and never inside it: `video` admits only `track` and `source` children, so the link is appended under the player in the same figure.
-  return `<video controls src="${escapeHtml(src)}"${poster === undefined ? "" : ` poster="${escapeHtml(poster)}"`}>${captionTrack(renditions, placement)}</video>${transcriptLink(renditions, placement)}`;
+  // The player is named by the placement's own text alternative: a `<video>` with no accessible name is a control a screen reader announces as nothing, and the transcript beside it states the same alternative in words. A transcript is a reading alternative beside the player and never inside it: `video` admits only `track` and `source` children, so the link is appended under the player in the same figure.
+  return `<video controls aria-label="${escapeHtml(placement.altText)}" src="${escapeHtml(src)}"${poster === undefined ? "" : ` poster="${escapeHtml(poster)}"`}>${captionTrack(renditions, placement)}</video>${transcriptLink(renditions, placement)}`;
 }
-const linkedMedia = (src: string, placement: RenderMediaPlacement): string => `<a href="${escapeHtml(src)}" rel="noopener noreferrer">${escapeHtml(placement.altText.length > 0 ? placement.altText : src)}</a>`;
+const linkedMedia = (src: string, placement: RenderMediaPlacement): string => `<a href="${escapeHtml(src)}" rel="noopener noreferrer">${isolateStoredValue(placement.altText.length > 0 ? placement.altText : src)}</a>`;
+// A placement states the caption, the credit of the work and the language it is in wherever it holds them, in the words the video player already uses for a credit and a language — the credit bare, the language as `Language: <tag>` — so a placement reads the same way in the preview as in the editor. Each is one database-driven value, escaped and isolated from the prose around it.
+const LANGUAGE_LABEL = "Language:";
+function figcaptionOf(placement: RenderMediaPlacement): string {
+  const parts: string[] = [];
+  const caption = placement.caption?.trim() ?? "";
+  if (caption.length > 0) parts.push(isolateStoredValue(caption));
+  const credit = placement.credit?.trim() ?? "";
+  if (credit.length > 0) parts.push(isolateStoredValue(credit));
+  const language = placement.language?.trim() ?? "";
+  if (language.length > 0) parts.push(`${LANGUAGE_LABEL} ${isolateStoredValue(language)}`);
+  return parts.length === 0 ? "" : `<figcaption>${parts.join(" ")}</figcaption>`;
+}
 function renderPlacement(placement: RenderMediaPlacement, media: RenderMediaMode, renditions: RenderRenditions): string {
   const parts: string[] = [];
   const main = renditionAt(renditions, placement.placementId, placement.kind === "image" ? "display" : "playback");
-  if (main === undefined) parts.push(`<p>${escapeHtml(placement.altText)}</p>`);
+  // With no rendition to play, the placement states its text alternative in the player's place, and that sentence is a stored value too, so it keeps its own direction inside the prose around it.
+  if (main === undefined) parts.push(`<p>${isolateStoredValue(placement.altText)}</p>`);
   else if (media === "links-only") parts.push(linkedMedia(main, placement));
   else parts.push(inlineMedia(main, renditions, placement));
-  const caption = placement.caption;
-  if (caption !== undefined && caption.trim().length > 0) parts.push(`<figcaption>${escapeHtml(caption)}</figcaption>`);
+  const figcaption = figcaptionOf(placement);
+  if (figcaption.length > 0) parts.push(figcaption);
   return `<figure>${parts.join("")}</figure>`;
 }
 const asJsonNode = (node: ContentBlockNode): JSONNodeType => node as JSONNodeType;
@@ -110,13 +157,19 @@ const PRESENTATION_CLASSES: { readonly [Choice in keyof PresentationChoice]: Rea
   imageFit: { cover: "content-image-fit-cover", contain: "content-image-fit-contain" },
 };
 const presentationClasses = (presentation: PresentationChoice): string => [PRESENTATION_CLASSES.treatment[presentation.treatment], PRESENTATION_CLASSES.layout[presentation.layout], PRESENTATION_CLASSES.alignment[presentation.alignment], PRESENTATION_CLASSES.imageFit[presentation.imageFit]].join(" ");
-/** One section's field values, escaped, in the order the catalogue's own keys sort in. */
-const sectionParagraphs = (section: ContentSection): readonly string[] =>
+// A blank line in a saved value separates one paragraph from the next, which is what the field's own help text promises a writer, so the value is rendered as the paragraphs it states instead of as one block holding the newlines.
+const PARAGRAPH_BREAK = /\r?\n[ \t]*\r?\n/u;
+/** One section's field values, escaped and isolated, in the order the catalogue's own keys sort in: one paragraph per blank-line-separated part, and the parts in the author's own order. */ const sectionParagraphs = (section: ContentSection): readonly string[] =>
   Object.keys(section.fields)
     .sort()
     .flatMap((key) => {
       const value = section.fields[key];
-      return value === undefined || value.trim().length === 0 ? [] : [`<p>${escapeHtml(value)}</p>`];
+      if (value === undefined || value.trim().length === 0) return [];
+      return value
+        .split(PARAGRAPH_BREAK)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0)
+        .map((part) => `<p>${isolateStoredValue(part)}</p>`);
     });
 /** One rendered section: its declared direction where it differs from the document's, the four admitted choices as classes beside the section's own frame, its text, and the media composed into it. */
 function renderSection(section: ContentSection, documentDirection: ContentDirection, paragraphs: readonly string[], media: readonly string[]): string {
@@ -126,8 +179,7 @@ function renderSection(section: ContentSection, documentDirection: ContentDirect
 }
 function composeDocument(document: ContentDocumentJson, options: RenderOptions): string {
   const placements = options.placements ?? [];
-  // A section is rendered when it states text of its own or holds a placement: an image or video section states its words in the placement rather
-  // than in a field, so its media belongs in its own frame instead of at the end of the document, detached from the section it was composed into.
+  // A section is rendered when it states text of its own or holds a placement: an image or video section states its words in the placement rather than in a field, so its media belongs in its own frame instead of at the end of the document, detached from the section it was composed into.
   const sections = document.sections.map((section) => ({ section, paragraphs: sectionParagraphs(section) })).filter((entry) => entry.paragraphs.length > 0 || placements.some((placement) => placement.sectionElement === entry.section.element));
   const inSections = sections.map(() => [] as string[]);
   const trailing: string[] = [];
@@ -142,7 +194,10 @@ function composeDocument(document: ContentDocumentJson, options: RenderOptions):
   const parts: string[] = [renderProse(document)];
   sections.forEach((entry, index) => parts.push(renderSection(entry.section, document.direction, entry.paragraphs, inSections[index] ?? [])));
   parts.push(...trailing);
-  return `<article dir="${document.direction}">${parts.join("")}</article>`;
+  // The block declares the language of the content it holds beside the direction of that content, so assistive technology reading the article alone is told both; a caller that knows no language states none rather than inventing one.
+  const language = (options.lang ?? "").trim();
+  const langAttribute = language.length === 0 ? "" : ` lang="${escapeHtml(language)}"`;
+  return `<article dir="${document.direction}"${langAttribute}>${parts.join("")}</article>`;
 }
 export function renderToHtml(input: unknown, options: RenderOptions = {}): RenderResult {
   const parsed = parseDocument(input);

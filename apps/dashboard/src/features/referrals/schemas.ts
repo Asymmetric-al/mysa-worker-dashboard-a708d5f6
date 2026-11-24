@@ -91,8 +91,7 @@ function singleValue(searchParams: Record<string, string | string[] | undefined>
   }
   return distinct[0];
 }
-/** Normalises a referral list's address parameters into the query state the read executes. */
-export function parseReferralListQuery(searchParams: Record<string, string | string[] | undefined>): ReferralListQueryParse {
+/** Normalises a referral list's address parameters into the query state the read executes. */ export function parseReferralListQuery(searchParams: Record<string, string | string[] | undefined>): ReferralListQueryParse {
   const fieldErrors: Record<string, readonly string[]> = {};
   const candidate: Record<string, unknown> = {};
   for (const key of QUERY_KEYS) {

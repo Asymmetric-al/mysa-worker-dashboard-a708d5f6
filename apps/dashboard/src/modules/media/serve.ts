@@ -46,8 +46,7 @@ export type MediaDeniedResponse = { readonly kind: "denied"; readonly status: 40
 export type MediaTombstoneResponse = { readonly kind: "tombstone"; readonly status: 404; readonly headers: Readonly<Record<string, string>>; readonly body: Uint8Array };
 export type MediaUnavailableResponse = { readonly kind: "unavailable"; readonly status: 503; readonly headers: Readonly<Record<string, string>>; readonly body: Uint8Array; readonly source: MediaOriginalReference; readonly message: string };
 export type MediaReadResult = MediaReadableResponse | MediaRangeNotSatisfiableResponse | MediaDeniedResponse | MediaTombstoneResponse | MediaUnavailableResponse;
-/** Decides one media request: the response to send, or the refusal to send instead. */
-export function assertReadable(assetId: string, rendition: MediaSizedRendition | null, resolvedAuthorisation: ResolvedMediaAuthorisation): MediaReadResult {
+/** Decides one media request: the response to send, or the refusal to send instead. */ export function assertReadable(assetId: string, rendition: MediaSizedRendition | null, resolvedAuthorisation: ResolvedMediaAuthorisation): MediaReadResult {
   if (resolvedAuthorisation === null || resolvedAuthorisation === undefined) return deny();
   if (!isServablePurpose(resolvedAuthorisation.requestedPurpose)) return deny();
   if (resolvedAuthorisation.allowed !== true) return deny();

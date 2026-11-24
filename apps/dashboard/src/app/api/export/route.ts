@@ -9,8 +9,7 @@ export const dynamic = "force-dynamic";
 const CLIENT_CLOSED_REQUEST = 499;
 // Nobody is left to read a body, and a caller that walked away has not left a source outage behind: answering the shared outcome conversion would report an `unknown` or `unavailable` export that never failed.
 const cancelledResponse = (): Response => new Response(null, { status: CLIENT_CLOSED_REQUEST });
-/** Takes the query the body states out of the application as a CSV file: answers `envelope` with it, or `invalid`, `denied`, `unavailable` or `unknown`, and writes no record. Stops computing as soon as the caller that asked for the file has gone. */
-async function exportQuery(request: Request): Promise<Response> {
+/** Takes the query the body states out of the application as a CSV file: answers `envelope` with it, or `invalid`, `denied`, `unavailable` or `unknown`, and writes no record. Stops computing as soon as the caller that asked for the file has gone. */ async function exportQuery(request: Request): Promise<Response> {
   const parsed = exportRequestSchema.safeParse(await jsonBodyOf(request));
   if (!parsed.success) return toResponse(refusedRead(READ_ATTEMPT, parsed.error));
   const { query } = parsed.data;

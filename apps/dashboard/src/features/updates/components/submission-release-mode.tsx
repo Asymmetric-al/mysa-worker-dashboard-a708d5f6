@@ -1,6 +1,5 @@
 "use client";
-/** The one control that records how a submission is to be released: publish only, or publish and notify now. */
-import { useId, type ReactElement } from "react";
+/** The one control that records how a submission is to be released: publish only, or publish and notify now. */ import { useId, type ReactElement } from "react";
 import { FormFieldGroup } from "@/components/form-field";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/cn";

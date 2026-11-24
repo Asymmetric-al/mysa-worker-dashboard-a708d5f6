@@ -2,8 +2,7 @@
 import type { reads } from "@/modules/data-service";
 import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT, clampPageSize } from "@/modules/support/report";
 import { isResolvableTimeZone, parseCivilDate } from "@/modules/time/civil";
-/** The roster's 50-row default and 200-row ceiling, named from the window the service itself applies, so the pager offers the sizes the read serves. */
-export { PAGE_SIZE_CAP as ROSTER_PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT as ROSTER_PAGE_SIZE_DEFAULT };
+/** The roster's 50-row default and 200-row ceiling, named from the window the service itself applies, so the pager offers the sizes the read serves. */ export { PAGE_SIZE_CAP as ROSTER_PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT as ROSTER_PAGE_SIZE_DEFAULT };
 type RosterReadQuery = NonNullable<Parameters<typeof reads.partners.findPartners>[0]>;
 type RosterReadSort = NonNullable<RosterReadQuery["sort"]>;
 const URL_PARAM = { search: "q", facet: "facet", sort: "sort", page: "page", size: "size", columns: "columns", currency: "currency", from: "from", to: "to", timeZone: "timeZone" } as const;
@@ -14,13 +13,10 @@ const RANGE_SEPARATOR = "..";
 const LIST_SEPARATOR = ",";
 const COLUMN_SHOWN = "1";
 const COLUMN_HIDDEN = "0";
-/** The orderings the read executes, stated from its own vocabulary: any other ordering is left to the read's own default rather than sent as one it would refuse. */
-const ROSTER_SORT_FIELDS = ["displayName", "kind", "stage", "favourite", "lastActivityOn"] as const satisfies readonly RosterReadSort["field"][];
-/** The values selected inside one facet, keyed by the facet's identifier: facets combine with AND and the values of one facet with OR. */
-export type RosterFacetSelection = Readonly<Record<string, readonly string[]>>;
+/** The orderings the read executes, stated from its own vocabulary: any other ordering is left to the read's own default rather than sent as one it would refuse. */ const ROSTER_SORT_FIELDS = ["displayName", "kind", "stage", "favourite", "lastActivityOn"] as const satisfies readonly RosterReadSort["field"][];
+/** The values selected inside one facet, keyed by the facet's identifier: facets combine with AND and the values of one facet with OR. */ export type RosterFacetSelection = Readonly<Record<string, readonly string[]>>;
 export type RosterSort = { readonly field: string; readonly direction: "asc" | "desc" };
-/** The period the roster's giving figures are read over, as the two civil days the read states: civil days stay civil, so the period is never turned into an instant in a zone nobody chose. */
-export type RosterPeriod = { readonly from: string; readonly to: string };
+/** The period the roster's giving figures are read over, as the two civil days the read states: civil days stay civil, so the period is never turned into an instant in a zone nobody chose. */ export type RosterPeriod = { readonly from: string; readonly to: string };
 export type RosterQueryState = {
   readonly search: string;
   readonly facets: RosterFacetSelection;
@@ -46,8 +42,7 @@ export type RosterRequestParams = {
 };
 export type RosterSearchParams = Pick<URLSearchParams, "get" | "getAll">;
 const isSortDirection = (value: string): value is RosterSort["direction"] => SORT_DIRECTIONS.some((direction) => direction === value);
-/** The ordering as the read states it, or nothing at all when its field or its direction is one the read does not admit. */
-function readSortOf(sort: RosterSort | null): RosterReadSort | null {
+/** The ordering as the read states it, or nothing at all when its field or its direction is one the read does not admit. */ function readSortOf(sort: RosterSort | null): RosterReadSort | null {
   const field = ROSTER_SORT_FIELDS.find((admitted) => admitted === sort?.field);
   const direction = SORT_DIRECTIONS.find((admitted) => admitted === sort?.direction);
   return field === undefined || direction === undefined ? null : { field, direction };
@@ -77,10 +72,8 @@ export function clampRosterQuery(state: RosterQueryState): RosterQueryState {
   }
   return Object.freeze({ search: state.search.trim(), facets: Object.freeze(facets), sort: readSortOf(state.sort), page: usablePage(state.page), pageSize: clampPageSize(state.pageSize), columnVisibility: Object.freeze(columnVisibility), ...givingScopeOf(state.currency, state.period, state.timeZone) });
 }
-/** A whole number a URL stated, or nothing at all — a parameter that is not one states no page rather than page one. */
-const wholeNumber = (value: string | null): number | null => (value === null || !/^\d{1,9}$/u.test(value) ? null : Number(value));
-/** The facet selection a URL states: every `facetId:value` pair, with a malformed pair carrying no facet or no value dropped. */
-function facetSelectionOf(expressions: readonly string[]): RosterFacetSelection {
+/** A whole number a URL stated, or nothing at all — a parameter that is not one states no page rather than page one. */ const wholeNumber = (value: string | null): number | null => (value === null || !/^\d{1,9}$/u.test(value) ? null : Number(value));
+/** The facet selection a URL states: every `facetId:value` pair, with a malformed pair carrying no facet or no value dropped. */ function facetSelectionOf(expressions: readonly string[]): RosterFacetSelection {
   const selection: Record<string, readonly string[]> = {};
   for (const expression of expressions) {
     const separator = expression.indexOf(VALUE_SEPARATOR);
@@ -92,16 +85,14 @@ function facetSelectionOf(expressions: readonly string[]): RosterFacetSelection 
   }
   return selection;
 }
-/** The ordering a URL states: a field and its direction together, or nothing — the read refuses either one alone. */
-function sortOf(value: string | null): RosterSort | null {
+/** The ordering a URL states: a field and its direction together, or nothing — the read refuses either one alone. */ function sortOf(value: string | null): RosterSort | null {
   const separator = value === null ? -1 : value.indexOf(VALUE_SEPARATOR);
   if (separator < 1 || separator === (value ?? "").length - 1) return null;
   const field = (value ?? "").slice(0, separator);
   const direction = (value ?? "").slice(separator + 1);
   return isSortDirection(direction) ? { field, direction } : null;
 }
-/** The column visibility a URL states, kept only for the columns this surface offers when it names them. */
-function columnVisibilityOf(value: string | null, admittedColumnKeys?: readonly string[]): Readonly<Record<string, boolean>> {
+/** The column visibility a URL states, kept only for the columns this surface offers when it names them. */ function columnVisibilityOf(value: string | null, admittedColumnKeys?: readonly string[]): Readonly<Record<string, boolean>> {
   if (value === null || value === "") return {};
   const admitted = admittedColumnKeys === undefined ? null : new Set(admittedColumnKeys);
   const columnVisibility: Record<string, boolean> = {};
@@ -116,8 +107,7 @@ function columnVisibilityOf(value: string | null, admittedColumnKeys?: readonly 
   }
   return columnVisibility;
 }
-/** The period a URL states: both ends together, because one date is not a range — the clamp keeps it only when the calendar holds both and the start is not after the end. */
-const periodOf = (from: string | null, to: string | null): RosterPeriod | null => (from === null || to === null ? null : { from, to });
+/** The period a URL states: both ends together, because one date is not a range — the clamp keeps it only when the calendar holds both and the start is not after the end. */ const periodOf = (from: string | null, to: string | null): RosterPeriod | null => (from === null || to === null ? null : { from, to });
 /** Reads the roster's query state out of the URL a surface is showing, so a deep link, a saved view and the browser's own back navigation all address one query — the giving scope included, so a return visit reads its figures over the currency and period the address states rather than the read's own default. A facet key the read no longer admits is kept rather than dropped: reporting it is what lets a drifted saved view be repaired instead of silently losing a filter. */
 export const parseRosterQuery = (params: RosterSearchParams, admittedColumnKeys?: readonly string[]): RosterQueryState =>
   clampRosterQuery({
@@ -180,8 +170,7 @@ export function rosterReadQuery(state: RosterQueryState): RosterReadQuery {
     ...(query.timeZone === null ? {} : { timeZone: query.timeZone }),
   };
 }
-/** The canonical form of a query state, columns and giving scope included: two states that would ask the same question, show the same columns and read the same figures produce one string, and a saved view's drift is read from it. */
-export function rosterQuerySignature(state: RosterQueryState): string {
+/** The canonical form of a query state, columns and giving scope included: two states that would ask the same question, show the same columns and read the same figures produce one string, and a saved view's drift is read from it. */ export function rosterQuerySignature(state: RosterQueryState): string {
   const query = clampRosterQuery(state);
   const facets = Object.keys(query.facets)
     .map((facetKey) => `${facetKey}=${(query.facets[facetKey] ?? []).join("|")}`)

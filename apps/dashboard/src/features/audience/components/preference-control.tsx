@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState, type ReactElement } from "react";
 import { mayReplay, useReviewedMutation } from "@/components/action-review";
 import { hasSettled } from "@/components/attempt";
+import { factFrame } from "@/components/fact-list";
 import { FormFieldGroup } from "@/components/form-field";
 import OperationResult, { type ReceiptHeadingLevel } from "@/components/operation-result";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -30,6 +31,7 @@ const CONTROL_COPY = {
 const FIELD_LABELS: Readonly<Record<string, string>> = { membershipId: "Membership", choice: "Choice", languagePreference: "Language" };
 const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
 const TERM_CLASS = "text-muted-foreground";
+const Fact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-2", termClassName: TERM_CLASS, valueClassName: "min-w-0" });
 export type PreferenceControlProps = {
   readonly scope: Scope;
   readonly membershipId: string;
@@ -92,16 +94,8 @@ export default function PreferenceControl({ scope, membershipId, publisherId, pu
           return (
             <div className="flex min-w-0 flex-col gap-3">
               <dl className="flex min-w-0 flex-col gap-1 text-sm sm:flex-row sm:flex-wrap sm:gap-x-6">
-                <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-                  <dt className={TERM_CLASS}>{CONTROL_COPY.publisherTerm}</dt>
-                  <dd className="min-w-0">
-                    <bdi className="mono-identifier min-w-0 wrap-anywhere">{publisherId}</bdi>
-                  </dd>
-                </div>
-                <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-                  <dt className={TERM_CLASS}>{CONTROL_COPY.purposeTerm}</dt>
-                  <dd className="min-w-0">{purposeLabelOf(purpose)}</dd>
-                </div>
+                <Fact term={CONTROL_COPY.publisherTerm} value={<bdi className="mono-identifier min-w-0 wrap-anywhere">{publisherId}</bdi>} />
+                <Fact term={CONTROL_COPY.purposeTerm} value={purposeLabelOf(purpose)} />
               </dl>
               <div className="flex min-w-0 flex-wrap items-center gap-3">
                 <Switch id={`${group.legendId}-switch`} checked={selection === "immediate"} disabled={disabled || pending} aria-labelledby={group.legendId} aria-describedby={describedBy === "" ? undefined : describedBy} onCheckedChange={(checked) => void choose(checked ? "immediate" : "off")} />

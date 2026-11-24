@@ -1,5 +1,4 @@
-/** Criterion 21 — reachability and commands: every destination the application serves is one a person can reach by operating the shell. */
-import { execFileSync } from "node:child_process";
+/** Criterion 21 — reachability and commands: every destination the application serves is one a person can reach by operating the shell. */ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
@@ -60,8 +59,7 @@ const EXPECTED_ROUTES: readonly string[] = [
 ];
 const DOCUMENTED_ROOT_SCRIPTS: readonly string[] = ["dev", "build", "typecheck", "lint", "test", "reset", "seed:workload", "fixtures:media", "lines"];
 const DOCUMENTED_APPLICATION_SCRIPTS: readonly string[] = ["dev", "build", "typecheck", "lint", "test"];
-/** The provider variables this release must start without, named exactly. */
-const ABSENT_PROVIDER_VARIABLES: readonly string[] = [
+/** The provider variables this release must start without, named exactly. */ const ABSENT_PROVIDER_VARIABLES: readonly string[] = [
   "RESEND_API_KEY",
   "RESEND_WEBHOOK_SECRET",
   "INNGEST_EVENT_KEY",
@@ -119,8 +117,7 @@ async function navigationTargetsOn(page: Page): Promise<readonly string[]> {
     .toBe(true);
   return settled;
 }
-/** One reading of the page's visible internal addresses, de-duplicated and in a stable order. */
-async function internalAddressesOn(page: Page): Promise<readonly string[]> {
+/** One reading of the page's visible internal addresses, de-duplicated and in a stable order. */ async function internalAddressesOn(page: Page): Promise<readonly string[]> {
   const hrefs = await page
     .locator("a[href]")
     .filter({ visible: true })
@@ -188,8 +185,7 @@ async function sweepTheShell(page: Page, templates: readonly string[]): Promise<
     }
     return true;
   }
-  /** Follows every link this page offers that leads somewhere new, stepping back to this page between each. */
-  async function explore(from: string): Promise<void> {
+  /** Follows every link this page offers that leads somewhere new, stepping back to this page between each. */ async function explore(from: string): Promise<void> {
     for (const href of await navigationTargetsOn(page)) {
       if (!isNewDestination(pathnameOf(href))) continue;
       await followAnchor(page, href);
@@ -287,8 +283,7 @@ function describeCommandFailure(error: unknown): string {
   const tail = (value: unknown, limit: number): string => (typeof value === "string" && value.trim() !== "" ? value.trim().slice(-limit) : "");
   return [status, typeof failure["message"] === "string" ? failure["message"] : "", tail(failure["stderr"], 4_000), tail(failure["stdout"], 2_000)].filter((part) => part !== "").join(" — ");
 }
-/** Runs one documented command in the application directory, failing with what it said if it does not exit 0. */
-function runDocumentedCommand(args: readonly string[]): void {
+/** Runs one documented command in the application directory, failing with what it said if it does not exit 0. */ function runDocumentedCommand(args: readonly string[]): void {
   try {
     execFileSync("bun", [...args], { cwd: APPLICATION_DIRECTORY, encoding: "utf8", timeout: COMMAND_TIMEOUT_MS, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" } });
   } catch (error) {

@@ -2,10 +2,8 @@ import type { z } from "zod";
 import { outcomeFromError, refusedRead, toResponse, type MutationOutcome, type ReadResult } from "@/modules/data-service";
 import type { FieldMessages } from "@/modules/data-service/outcome";
 /** The marker a read that reached no mutation reports under: a read makes no operation identity of its own. */ export const READ_ATTEMPT = "read";
-/** One URL judged by a read's own grammar: the value the read takes, or the per-field refusal the caller has to correct. */
-export type ReadGrammar<Value> = (search: URLSearchParams) => { readonly value: Value } | { readonly refusal: z.ZodError | FieldMessages };
-/** The grammar one Zod schema and its raw-parameter reader make: a request the schema refuses is answered with its own messages, keyed by field path. */
-export function readGrammar<S extends z.ZodType>(schema: S, raw: (search: URLSearchParams) => unknown): ReadGrammar<z.output<S>> {
+/** One URL judged by a read's own grammar: the value the read takes, or the per-field refusal the caller has to correct. */ export type ReadGrammar<Value> = (search: URLSearchParams) => { readonly value: Value } | { readonly refusal: z.ZodError | FieldMessages };
+/** The grammar one Zod schema and its raw-parameter reader make: a request the schema refuses is answered with its own messages, keyed by field path. */ export function readGrammar<S extends z.ZodType>(schema: S, raw: (search: URLSearchParams) => unknown): ReadGrammar<z.output<S>> {
   return (search) => {
     const parsed = schema.safeParse(raw(search));
     return parsed.success ? { value: parsed.data } : { refusal: parsed.error };
@@ -18,11 +16,9 @@ export function readJudgement<Value>(parse: (search: URLSearchParams) => { reado
     return parsed.ok ? { value: parsed.value } : { refusal: parsed.error };
   };
 }
-/** How one read transport writes an answer: the envelope, denial, refusal or outage as JSON, or that same body under the headers its own path states. */
-export type ReadResponder = (result: MutationOutcome | ReadResult<unknown>) => Response;
+/** How one read transport writes an answer: the envelope, denial, refusal or outage as JSON, or that same body under the headers its own path states. */ export type ReadResponder = (result: MutationOutcome | ReadResult<unknown>) => Response;
 const jsonResponse: ReadResponder = (result) => toResponse(result);
-/** The responder a read uses where its answer must state that it may not be cached, so a still-open import proposal or check-in is never served from a copy. */
-export const NO_STORE_RESPONSE: ReadResponder = (result) => toResponse(result, { headers: { "cache-control": "no-store" } });
+/** The responder a read uses where its answer must state that it may not be cached, so a still-open import proposal or check-in is never served from a copy. */ export const NO_STORE_RESPONSE: ReadResponder = (result) => toResponse(result, { headers: { "cache-control": "no-store" } });
 /** Answers one read attempt: the service's own envelope or refusal, and against a throw the outcome that names a store fault or a lost acknowledgement rather than escaping the boundary. */
 export async function readResponse(marker: string, read: () => Promise<ReadResult<unknown>>, respond: ReadResponder = jsonResponse): Promise<Response> {
   try {

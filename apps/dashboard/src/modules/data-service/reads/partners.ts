@@ -37,8 +37,7 @@ const CONTACT_METHOD_AVAILABILITY_LABELS: Readonly<Record<"any-permitted" | "non
 const ACTIVITY_LABELS: Readonly<Record<"recorded" | "none-recorded", string>> = { recorded: "Activity recorded", "none-recorded": "No activity recorded" };
 const TASK_STATE_LABELS: Readonly<Record<"open" | "overdue" | "no-date", string>> = { open: "Open task", overdue: "Overdue task", "no-date": "Task without a due date" };
 const GIVING_PRESENCE_LABELS: Readonly<Record<"recorded" | "none-recorded", string>> = { recorded: "A gift is recorded", "none-recorded": "No gift is recorded" };
-/** Whether one stored record is an archived private preparation: the roster is a working list, and an archived preparation is its one deliberate omission. */
-const isArchivedPreparation = (record: StoredPartnerRecord): boolean => record.archived === true;
+/** Whether one stored record is an archived private preparation: the roster is a working list, and an archived preparation is its one deliberate omission. */ const isArchivedPreparation = (record: StoredPartnerRecord): boolean => record.archived === true;
 const NO_STATED_CAPABILITIES: readonly string[] = Object.freeze([]);
 const STORE_UNAVAILABLE_GUIDANCE = "This session's records could not be read, so no list, count or amount is shown rather than an empty one. Retry the read; if it keeps failing, reset the seeded development data.";
 const CALENDAR_SOURCE: SourceReference = { system: "time-zone-database", reference: "calendar" };
@@ -53,12 +52,7 @@ export type PartnerFacetValue = { readonly id: string; readonly label: string; r
 export type PartnerFacetState = "available" | "unavailable";
 export type PartnerFacet = { readonly id: PartnerFacetId; readonly labelKey: PartnerFacetId; readonly operator: "OR"; readonly multi: boolean; readonly state: PartnerFacetState; readonly options: readonly PartnerFacetValue[]; readonly disabledReason?: string; readonly source?: SourceReference };
 export type PartnerGivingSelection = { readonly currency?: string; readonly period?: { readonly from: string; readonly to: string }; readonly timeZone?: string };
-export interface PartnerRosterQuery extends PartnerGivingSelection {
-  readonly search?: string;
-  readonly applied?: Readonly<Record<string, readonly string[]>>;
-  readonly sort?: { readonly field: PartnerSortField; readonly direction: PartnerSortDirection };
-  readonly page?: { readonly index: number; readonly size?: number };
-}
+export type PartnerRosterQuery = PartnerGivingSelection & { readonly search?: string; readonly applied?: Readonly<Record<string, readonly string[]>>; readonly sort?: { readonly field: PartnerSortField; readonly direction: PartnerSortDirection }; readonly page?: { readonly index: number; readonly size?: number } };
 export type PartnerRosterRecord = Pick<StoredPartnerRecord, "partnerId" | "kind" | "displayName" | "tags" | "favourite" | "stage" | "audience" | "revision"> & { readonly archived: boolean };
 export type PartnerRosterGivingScope = { readonly periodLabel: string; readonly coverage: Coverage; readonly currencies: readonly string[] };
 export type PartnerRosterRow = { readonly partner: PartnerRosterRecord; readonly contactMethodKinds: readonly ContactMethodKind[]; readonly initiativeIds: readonly string[] } & { readonly referralStatus: PartnerReferralStatus | null; readonly openTaskCount: number; readonly overdueTaskCount: number } & {
@@ -159,8 +153,7 @@ function mayReadPartner(context: PartnerReadContext, record: PartnerRecord): boo
   const target: AuthorizationTarget = { kind: "partner", scope: context.scope, audience: record.audience, authorPrincipalId: record.audience === "private" ? context.document.context.principalId : null };
   return canView(context.session, target).allowed;
 }
-/** Every record this module enumerates: the seeded document's own records, then the generated workload's partners it does not already state, each still to be admitted by the scope check. */
-function partnerRecordsOf(context: PartnerReadContext): readonly StoredPartnerRecord[] {
+/** Every record this module enumerates: the seeded document's own records, then the generated workload's partners it does not already state, each still to be admitted by the scope check. */ function partnerRecordsOf(context: PartnerReadContext): readonly StoredPartnerRecord[] {
   const workload = context.workload?.partners ?? [];
   if (workload.length === 0) return context.document.partners;
   const stated = new Set(context.document.partners.map((record) => record.partnerId));
@@ -168,10 +161,7 @@ function partnerRecordsOf(context: PartnerReadContext): readonly StoredPartnerRe
 }
 /** One record by its identifier: the seeded document answers first for the ids it states and the generated workload for the rest, so an interaction, an activity filter and a private preparation all resolve a workload partner exactly as they resolve a seeded one. */
 const partnerRecordOf = (context: PartnerReadContext, partnerId: string): StoredPartnerRecord | undefined => context.document.partners.find((candidate) => candidate.partnerId === partnerId) ?? context.workload?.partners.find((candidate) => candidate.partnerId === partnerId);
-function mayReadGiving(context: PartnerReadContext): boolean {
-  const target: AuthorizationTarget = { kind: "support-subject", scope: context.scope, capabilities: NO_STATED_CAPABILITIES };
-  return canView(context.session, target).allowed;
-}
+const mayReadGiving = (context: PartnerReadContext): boolean => canView(context.session, { kind: "support-subject", scope: context.scope, capabilities: NO_STATED_CAPABILITIES }).allowed;
 const sessionInstant = (session: ResolvedSession): Temporal.Instant => instantAt(session.clockOffsetMs);
 function zoneOf(timeZone: string | undefined): string {
   const stated = timeZone === undefined ? "" : timeZone.trim();
@@ -183,8 +173,7 @@ function givingFactsOf(context: PartnerReadContext): GivingFacts | undefined {
   const commitments = record === null ? undefined : commitmentRowsOf(context.document.commitments);
   return record === null || commitments === undefined ? undefined : { record, commitments };
 }
-/** Every gift row the session holds: the seeded document's own rows, then the generated workload's rows it does not already state, so a workload partner's support history is reported over the same rows the giving ledger reports. */
-function giftRecordsOf(context: PartnerReadContext): readonly GiftRowRecord[] {
+/** Every gift row the session holds: the seeded document's own rows, then the generated workload's rows it does not already state, so a workload partner's support history is reported over the same rows the giving ledger reports. */ function giftRecordsOf(context: PartnerReadContext): readonly GiftRowRecord[] {
   const workload = context.workload?.gifts ?? [];
   if (workload.length === 0) return context.document.gifts;
   const stated = new Set(context.document.gifts.map((row) => row.giftRowId));
@@ -287,11 +276,7 @@ function rowWithin(row: GiftRow, period: { readonly from: CivilDate; readonly to
   const day = row.originalGiftOn;
   return day === undefined ? false : Temporal.PlainDate.compare(day, period.from) >= 0 && Temporal.PlainDate.compare(day, period.to) <= 0;
 }
-interface TaskFacts {
-  readonly open: number;
-  readonly overdue: number;
-  readonly undated: number;
-}
+type TaskFacts = { readonly open: number; readonly overdue: number; readonly undated: number };
 type RosterFacts = { readonly partners: readonly StoredPartnerRecord[]; readonly initiatives: readonly InitiativeRecord[] } & { readonly lastActivity: ReadonlyMap<string, string>; readonly taskFacts: ReadonlyMap<string, TaskFacts> } & {
   readonly referralStatus: ReadonlyMap<string, PartnerReferralStatus>;
   readonly initiativeIds: ReadonlyMap<string, readonly string[]>;
@@ -425,9 +410,7 @@ function flatMapPartners(records: readonly PartnerRecord[], pick: (record: Partn
 /** The values the preparation-state facet offers: every audience the authorised records are stated at, then the archived value when at least one of those records is archived. */
 const preparationStateValues = (facts: RosterFacts): readonly string[] => [...distinctInOrder(facts.partners, (record) => record.audience), ...(facts.partners.some(isArchivedPreparation) ? [ARCHIVED_PREPARATION] : [])];
 /** Whether one record carries the preparation state a `preparation-state` filter names: an archived preparation answers the archived value alone, so the audience value it left counts nothing that the working list does not hold. */
-function preparationStateMatches(record: StoredPartnerRecord, value: string): boolean {
-  return value === ARCHIVED_PREPARATION ? isArchivedPreparation(record) : record.audience === value && !isArchivedPreparation(record);
-}
+const preparationStateMatches = (record: StoredPartnerRecord, value: string): boolean => (value === ARCHIVED_PREPARATION ? isArchivedPreparation(record) : record.audience === value && !isArchivedPreparation(record));
 const PARTNER_FACET_DECLARATIONS: readonly FacetDeclaration[] = [
   { id: "contact-type", multi: true, requires: "roster", values: (facts) => closedValues(CONTACT_TYPE_LABELS)(distinctInOrder(facts.partners, (r) => r.kind)), matches: (record, value) => record.kind === value },
   { id: "preparation-state", multi: false, requires: "roster", values: (facts) => closedValues(PREPARATION_LABELS)(preparationStateValues(facts)), matches: preparationStateMatches },
@@ -481,10 +464,7 @@ function buildFacets(facts: RosterFacts): readonly PartnerFacet[] {
   }
   return facets;
 }
-interface AppliedFacet {
-  readonly declaration: FacetDeclaration;
-  readonly values: readonly string[];
-}
+type AppliedFacet = { readonly declaration: FacetDeclaration; readonly values: readonly string[] };
 type AppliedSelection = { readonly filters: readonly AppliedFacet[]; readonly applied: Readonly<Record<string, readonly string[]>> } & { readonly unapplied: readonly PartnerUnappliedFacet[] };
 function appliedSelectionOf(facts: RosterFacts, applied: PartnerRosterQuery["applied"]): AppliedSelection {
   const filters: AppliedFacet[] = [];
@@ -560,14 +540,9 @@ function compareRecords(left: PartnerRecord, right: PartnerRecord, query: Partne
   return primary !== 0 ? (sort.direction === "desc" ? -primary : primary) : tiebreak;
 }
 const RECORD_SET_COVERAGE: Coverage = { from: null, to: null, state: "complete" };
-interface EnvelopeSubject<C extends Coverage> {
-  readonly coverage: C;
-  readonly valueStates: Readonly<Record<string, RecordedValueState>>;
-  readonly actions: readonly ReadAction[];
-}
-function envelopeOf<T, C extends Coverage = Coverage>(context: PartnerReadContext, data: T, revision: string, subject: EnvelopeSubject<C>): ReadResult<ReadEnvelope<T, C>> {
-  return answerOf(context.scope, sessionInstant(context.session).toString(), { data, source: PARTNER_SOURCE, revision, coverage: subject.coverage, valueStates: subject.valueStates, actions: subject.actions });
-}
+type EnvelopeSubject<C extends Coverage> = { readonly coverage: C; readonly valueStates: Readonly<Record<string, RecordedValueState>>; readonly actions: readonly ReadAction[] };
+const envelopeOf = <T, C extends Coverage = Coverage>(context: PartnerReadContext, data: T, revision: string, subject: EnvelopeSubject<C>): ReadResult<ReadEnvelope<T, C>> =>
+  answerOf(context.scope, sessionInstant(context.session).toString(), { data, source: PARTNER_SOURCE, revision, coverage: subject.coverage, valueStates: subject.valueStates, actions: subject.actions });
 const rosterRevisionOf = (context: PartnerReadContext, partners: readonly StoredPartnerRecord[]): string => hashedRevision("roster", [`context@${context.document.context.revision}`, ...partners.map((record) => `${record.partnerId}@${record.revision}`)].sort(compareCodeUnits));
 function facetValueStatesOf(facets: readonly PartnerFacet[]): Record<string, RecordedValueState> {
   const valueStates: Record<string, RecordedValueState> = {};
@@ -879,8 +854,7 @@ export async function readInteractions(query: PartnerInteractionsQuery = {}, sou
 }
 export type PartnerRecordBody = { readonly partner: PartnerDetailData; readonly interactions: PartnerInteractionPage; readonly privatePreparation?: PartnerPrivateData };
 const COVERAGE_RANK: Readonly<Record<Coverage["state"], number>> = { complete: 0, partial: 1, unknown: 2 };
-/** Reads one partner record as the one envelope the record body renders, so no caller has to compose the three reads itself. */
-export async function readPartnerRecord(partnerId: string, query: PartnerGivingSelection = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<PartnerRecordBody>>> {
+/** Reads one partner record as the one envelope the record body renders, so no caller has to compose the three reads itself. */ export async function readPartnerRecord(partnerId: string, query: PartnerGivingSelection = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<PartnerRecordBody>>> {
   const partner = await readPartner(partnerId, query, source);
   if (partner.kind !== "envelope") return partner;
   const interactions = await readInteractions({ partnerId }, source);

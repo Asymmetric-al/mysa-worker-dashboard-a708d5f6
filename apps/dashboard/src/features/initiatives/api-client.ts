@@ -7,8 +7,7 @@ const UNREAD_RESULT_GUIDANCE = "This page could not read the result from the loc
 /** The closed set of transport paths this family may call, exactly as AAP 0.6.3 names them. */
 export const INITIATIVE_API = Object.freeze({ initiatives: "/api/initiatives", members: "/api/initiatives/members", stages: "/api/initiatives/stages", requests: "/api/initiatives/requests", response: "/api/initiatives/requests/response", close: "/api/initiatives/close", reopen: "/api/initiatives/reopen" } as const);
 export type InitiativeApiPath = (typeof INITIATIVE_API)[keyof typeof INITIATIVE_API];
-/** Submits one named change to the initiative route it belongs to and answers with exactly one of the eight mutation outcomes: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`. */
-export async function postMutation<P>(path: InitiativeApiPath, input: MutationInput<P>): Promise<MutationOutcome> {
+/** Submits one named change to the initiative route it belongs to and answers with exactly one of the eight mutation outcomes: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`. */ export async function postMutation<P>(path: InitiativeApiPath, input: MutationInput<P>): Promise<MutationOutcome> {
   let body: string;
   try {
     body = JSON.stringify(input);
@@ -23,24 +22,20 @@ export async function postMutation<P>(path: InitiativeApiPath, input: MutationIn
     return { outcome: "unknown", operationId: input.operationId };
   }
   const parsed = parseJson(text);
-  if (parsed !== null && isOutcome(parsed.value)) return parsed.value;
-  return { outcome: "unknown", operationId: input.operationId };
+  return parsed !== null && isOutcome(parsed.value) ? parsed.value : { outcome: "unknown", operationId: input.operationId };
 }
 /** Whether a parsed body carries the frame every read envelope the service owns states: its `data`, the scope, source, coverage and value states it ran under, its revision and as-of instant, and its advisory actions. `data`'s own shape is never checked here: this transport is generic over `T`, so the caller owns its payload type. */
-function isEnvelopeFrame(value: unknown): value is ReadEnvelope<unknown> {
-  return (
-    isRecord(value) &&
-    "data" in value &&
-    isRecord(value.scope) &&
-    isRecord(value.source) &&
-    isNonEmptyString(value.revision) &&
-    isNonEmptyString(value.asOf) &&
-    isRecord(value.coverage) &&
-    isRecord(value.valueStates) &&
-    Array.isArray(value.actions) &&
-    value.actions.every((action: unknown) => isRecord(action) && typeof action.name === "string" && typeof action.available === "boolean")
-  );
-}
+const isEnvelopeFrame = (value: unknown): value is ReadEnvelope<unknown> =>
+  isRecord(value) &&
+  "data" in value &&
+  isRecord(value.scope) &&
+  isRecord(value.source) &&
+  isNonEmptyString(value.revision) &&
+  isNonEmptyString(value.asOf) &&
+  isRecord(value.coverage) &&
+  isRecord(value.valueStates) &&
+  Array.isArray(value.actions) &&
+  value.actions.every((action: unknown) => isRecord(action) && typeof action.name === "string" && typeof action.available === "boolean");
 /** Reads one initiative result under the scope and query state the caller supplies, and answers with the outcomes the read produces: `{ kind: "envelope", envelope }`, a denial, the refusal of a request it does not admit, or the outage. A status-200 body is admitted by its frame, so a body that carries none of the envelope's members is an outage rather than an envelope. */
 export async function readEnvelope<T>(path: InitiativeApiPath, params: Readonly<Record<string, string | number | undefined>>): Promise<ReadResult<T>> {
   const query = new URLSearchParams();

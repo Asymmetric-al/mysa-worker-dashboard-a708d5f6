@@ -12,15 +12,12 @@ import { INTRODUCED_BY_COPY, LIST_COPY } from "../copy";
 import { sourceReferenceSchema, sourceZoneSchema } from "../schemas";
 import { ReferralIntroductionForm } from "./referral-introduction-form";
 const COMPOSER_SECTION_ID = "record-introduction";
-/** The address of this composer's own section, stated once so the control a surface offers and the section it lands on cannot drift apart. */
-export const INTRODUCTION_COMPOSER_ANCHOR = `#${COMPOSER_SECTION_ID}`;
+/** The address of this composer's own section, stated once so the control a surface offers and the section it lands on cannot drift apart. */ export const INTRODUCTION_COMPOSER_ANCHOR = `#${COMPOSER_SECTION_ID}`;
 const PARTNER_FIELD = "partnerId"; // The field names a refusal is anchored to are the payload's own paths, so a provenance refusal lands on the control that states the value rather than on the form.
-/** One partner the composing route offers for selection, and the candidate read it supplies: the eligible partners themselves, or the reason it could not enumerate them. */
-export type ReferralIntroductionCandidate = { readonly partnerId: string; readonly displayName: string };
+/** One partner the composing route offers for selection, and the candidate read it supplies: the eligible partners themselves, or the reason it could not enumerate them. */ export type ReferralIntroductionCandidate = { readonly partnerId: string; readonly displayName: string };
 export type ReferralIntroductionCandidates = { readonly state: "available"; readonly partners: readonly ReferralIntroductionCandidate[] } | { readonly state: "unavailable"; readonly source: SourceReference };
 export type ReferralIntroductionComposerProps = { readonly scope: Scope; readonly expectedRevision: string; readonly candidates: ReferralIntroductionCandidates; readonly className?: string };
-/** Where each part of the record's provenance is stated, so the controls and the gated form read from one shape. */
-type ProvenanceValues = { readonly system: string; readonly reference: string; readonly sourceZone: string };
+/** Where each part of the record's provenance is stated, so the controls and the gated form read from one shape. */ type ProvenanceValues = { readonly system: string; readonly reference: string; readonly sourceZone: string };
 const NO_PROVENANCE: ProvenanceValues = { system: "", reference: "", sourceZone: "" };
 const NO_PARTNERS: readonly ReferralIntroductionCandidate[] = [];
 const COMPOSER_COPY = {
@@ -49,8 +46,7 @@ const PROVENANCE_FIELDS = [
   { key: "reference", path: "sourceReference.reference", label: COMPOSER_COPY.referenceLabel, help: COMPOSER_COPY.referenceHelp, width: "sm:max-w-96", part: COMPOSER_COPY.referencePart },
   { key: "sourceZone", path: "sourceZone", label: COMPOSER_COPY.zoneLabel, help: COMPOSER_COPY.zoneHelp, width: "sm:max-w-60", part: COMPOSER_COPY.zonePart },
 ] as const;
-/** The messages a reference pair's refusal states, keyed by the field each one is about, in the schema's own words. */
-function referenceRefusalMessages(parsed: ReturnType<typeof sourceReferenceSchema.safeParse>): Readonly<Record<string, string | undefined>> {
+/** The messages a reference pair's refusal states, keyed by the field each one is about, in the schema's own words. */ function referenceRefusalMessages(parsed: ReturnType<typeof sourceReferenceSchema.safeParse>): Readonly<Record<string, string | undefined>> {
   if (parsed.success) return {};
   const messages: Record<string, string | undefined> = {};
   for (const issue of parsed.error.issues) {
@@ -59,8 +55,7 @@ function referenceRefusalMessages(parsed: ReturnType<typeof sourceReferenceSchem
   }
   return messages;
 }
-/** The parts the record still needs, as one sentence in the order the controls are read. */
-function stillNeededSentence(parts: readonly string[]): string | null {
+/** The parts the record still needs, as one sentence in the order the controls are read. */ function stillNeededSentence(parts: readonly string[]): string | null {
   if (parts.length === 0) return null;
   const last = parts[parts.length - 1] ?? "";
   return COMPOSER_COPY.needed(parts.length === 1 ? last : `${parts.slice(0, -1).join(", ")} and ${last}`);

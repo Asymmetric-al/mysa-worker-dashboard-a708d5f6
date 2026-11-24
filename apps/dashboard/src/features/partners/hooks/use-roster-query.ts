@@ -14,8 +14,7 @@ export { ROSTER_PAGE_SIZE_CAP, ROSTER_PAGE_SIZE_DEFAULT, clampRosterQuery, parse
 export type { RosterFacetSelection, RosterQueryState, RosterRequestParams, RosterSearchParams, RosterSort } from "../query/roster-query";
 export const PARTNERS_READ_PATH = "/api/partners";
 export const ROSTER_QUERY_PARAM = "job";
-/** The three named reads this file issues, each a closed literal that dispatches to exactly one service read. */
-export const ROSTER_READ_JOB = { roster: "roster", facets: "facets", savedViews: "saved-views" } as const;
+/** The three named reads this file issues, each a closed literal that dispatches to exactly one service read. */ export const ROSTER_READ_JOB = { roster: "roster", facets: "facets", savedViews: "saved-views" } as const;
 export type RosterReadJob = (typeof ROSTER_READ_JOB)[keyof typeof ROSTER_READ_JOB];
 const READ_PARAM = { search: "search", facet: "facet", sort: "sort", direction: "direction", page: "page", pageSize: "pageSize", currency: "currency", from: "from", to: "to", timeZone: "timeZone" } as const;
 /** One page of the roster, mirroring the `data` of the roster read: its rows, the read's own whole-result count, and the window they are a page of. */
@@ -62,8 +61,7 @@ const isSavedViewList = (value: unknown): boolean => Array.isArray(value) && val
 /** The giving scope a read is asked with, as the four members the wire names: an absent end or zone is held as nothing and written as nothing, so a read that asks for no scope is asked for the read's own default rather than one nobody chose. */
 type GivingScope = Readonly<Record<"currency" | "from" | "to" | "timeZone", string>>;
 const givingScopeOf = (request: RosterRequestParams): GivingScope => ({ currency: request.currency ?? "", from: request.from ?? "", to: request.to ?? "", timeZone: request.timeZone ?? "" });
-/** Writes a giving scope into an address, stating only the members it holds: the read admits a period of two days, so a half scope is never sent as one it would refuse. */
-function writeGivingScope(search: URLSearchParams, scope: GivingScope): void {
+/** Writes a giving scope into an address, stating only the members it holds: the read admits a period of two days, so a half scope is never sent as one it would refuse. */ function writeGivingScope(search: URLSearchParams, scope: GivingScope): void {
   if (scope.currency !== "") search.set(READ_PARAM.currency, scope.currency);
   if (scope.from !== "" && scope.to !== "") {
     search.set(READ_PARAM.from, scope.from);
@@ -71,8 +69,7 @@ function writeGivingScope(search: URLSearchParams, scope: GivingScope): void {
   }
   if (scope.timeZone !== "") search.set(READ_PARAM.timeZone, scope.timeZone);
 }
-/** The address of one roster read job: the job's own name, the parameters only the roster job is asked with, and the giving scope its giving figures and its filter counts are read over. */
-function readUrl(job: RosterReadJob, params: RosterRequestParams | null): string {
+/** The address of one roster read job: the job's own name, the parameters only the roster job is asked with, and the giving scope its giving figures and its filter counts are read over. */ function readUrl(job: RosterReadJob, params: RosterRequestParams | null): string {
   const search = new URLSearchParams();
   search.set(ROSTER_QUERY_PARAM, job);
   if (params !== null) {
@@ -88,8 +85,7 @@ function readUrl(job: RosterReadJob, params: RosterRequestParams | null): string
   }
   return `${PARTNERS_READ_PATH}?${search.toString()}`;
 }
-/** The facet set's own address: the facets job asked with the giving scope and nothing else, because the set describes every record that scope admits rather than the page, search or filter the roster happens to be showing. */
-function facetsUrl(scope: GivingScope): string {
+/** The facet set's own address: the facets job asked with the giving scope and nothing else, because the set describes every record that scope admits rather than the page, search or filter the roster happens to be showing. */ function facetsUrl(scope: GivingScope): string {
   const search = new URLSearchParams();
   search.set(ROSTER_QUERY_PARAM, ROSTER_READ_JOB.facets);
   writeGivingScope(search, scope);
@@ -99,8 +95,7 @@ const wholeResultTotal = (page: RosterPageWindow<unknown>): number | null => (Nu
 const scopeIsResolved = (scope: Scope): boolean => [scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId].every((identifier) => typeof identifier === "string" && identifier !== "");
 /** Whether two scopes are the same authority: the four identifiers the read runs under, compared one by one. */
 const sameScope = (left: Scope, right: Scope): boolean => left.organizationId === right.organizationId && left.ministryId === right.ministryId && left.supportSubjectId === right.supportSubjectId && left.principalId === right.principalId;
-/** Whether two requests ask the read for the same answer: every member compared, so the search, a selection, the ordering, the page window and the giving scope are one question rather than two. */
-function sameRequest(left: RosterRequestParams, right: RosterRequestParams): boolean {
+/** Whether two requests ask the read for the same answer: every member compared, so the search, a selection, the ordering, the page window and the giving scope are one question rather than two. */ function sameRequest(left: RosterRequestParams, right: RosterRequestParams): boolean {
   const leftFacets = left.facet ?? [];
   const rightFacets = right.facet ?? [];
   return (

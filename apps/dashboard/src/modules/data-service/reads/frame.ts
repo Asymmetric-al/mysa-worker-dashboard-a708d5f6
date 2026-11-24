@@ -21,22 +21,13 @@ export type OpenedSession = { readonly ok: true; readonly session: ResolvedSessi
 export type OpenedRead = { readonly ok: true; readonly session: ResolvedSession; readonly scope: Scope; readonly instant: ScenarioInstant } | { readonly ok: false; readonly result: ReadResult<never> };
 export type StoredRead = { readonly ok: true; readonly documents: SessionDocuments } | { readonly ok: false; readonly result: ReadResult<never> };
 /** The read's denial, stated the one way every read states it. */ export const deniedRead = (reasonCode: DenialReason): ReadResult<never> => ({ kind: "denied", denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode }) });
-/** An unavailable source, logged against the job that could not read it and worded by that job's own guidance. */
-export function sourceUnavailableRead(input: { readonly job: string; readonly source: SourceReference; readonly guidance: string }): ReadResult<never> {
+/** An unavailable source, logged against the job that could not read it and worded by that job's own guidance. */ export function sourceUnavailableRead(input: { readonly job: string; readonly source: SourceReference; readonly guidance: string }): ReadResult<never> {
   logger.sourceUnavailable({ job: input.job, source: { system: input.source.system, reference: input.source.reference } });
   return { kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT_ID, source: input.source, guidance: input.guidance }) };
 }
 /** The parts of an envelope a read states about its own answer once it has projected its data: the source it read, the revision that names what it read, and the value states and advisory actions the envelope carries. A read that states a period states its own coverage; every other read covers the whole collection. */
-export interface ReadAnswer<T, C extends Coverage = Coverage> {
-  readonly data: T;
-  readonly source: SourceReference;
-  readonly revision: string;
-  readonly coverage?: C;
-  readonly valueStates?: Readonly<Record<string, RecordedValueState>>;
-  readonly actions?: readonly ReadAction[];
-}
-/** The result a read answers with: its answer's envelope, at the scope it read in and the instant its clock states. */
-export function answerOf<T, C extends Coverage = Coverage>(scope: Scope, asOf: string, answer: ReadAnswer<T, C>): ReadResult<ReadEnvelope<T, C>> {
+export type ReadAnswer<T, C extends Coverage = Coverage> = { readonly data: T; readonly source: SourceReference; readonly revision: string; readonly coverage?: C; readonly valueStates?: Readonly<Record<string, RecordedValueState>>; readonly actions?: readonly ReadAction[] };
+/** The result a read answers with: its answer's envelope, at the scope it read in and the instant its clock states. */ export function answerOf<T, C extends Coverage = Coverage>(scope: Scope, asOf: string, answer: ReadAnswer<T, C>): ReadResult<ReadEnvelope<T, C>> {
   return { kind: "envelope", envelope: buildEnvelope<T, C>({ data: answer.data, scope, source: answer.source, revision: answer.revision, asOf, coverage: answer.coverage ?? (WHOLE_COLLECTION_COVERAGE as C), valueStates: answer.valueStates ?? {}, actions: answer.actions ?? [] }) };
 }
 /** Resolves the session a read acts for and the instant its clock states. A resolver fault is answered as the session refusal the caller names, and rethrown where the caller names none; a store fault that refused the read is named to the diagnostic stream under the job's own name. */
@@ -66,8 +57,7 @@ export async function openRead(options: { readonly job: string; readonly source?
 }
 export type DecodedStore<T> = { readonly ok: true; readonly value: T; readonly documents: SessionDocuments } | { readonly ok: false; readonly result: ReadResult<never> };
 /** The one source a read reports when the defect is the store rather than the document it holds. */ export const storeSource = (reference: string): SourceReference => ({ system: LOCAL_STORE_SYSTEM, reference });
-/** An unavailable synthetic store, named by the reference a read states for it. */
-export const storeUnavailableRead = (job: string, reference: string, guidance: string): ReadResult<never> => sourceUnavailableRead({ job, source: storeSource(reference), guidance });
+/** An unavailable synthetic store, named by the reference a read states for it. */ export const storeUnavailableRead = (job: string, reference: string, guidance: string): ReadResult<never> => sourceUnavailableRead({ job, source: storeSource(reference), guidance });
 /** Reads the session's stored documents, answering an unreadable store, a missing session and an undecodable document as the one unavailable source this read reports. */
 export async function readStoreDocument(options: { readonly session: ResolvedSession; readonly job: string; readonly source: SourceReference; readonly guidance: string; readonly absentReference?: string; readonly faultReference?: (fault: unknown) => string }): Promise<StoredRead> {
   const reference = (stated: string | undefined): SourceReference => (stated === undefined ? options.source : { system: options.source.system, reference: stated });
@@ -102,8 +92,7 @@ export type OpenedStatefulRead<T> = { readonly ok: true; readonly session: Resol
   const stored = await readDecodedState({ session: opened.session, job: options.job, source: options.sourceOf, schema: options.schema, guidance: options.guidance });
   return !stored.ok ? stored : { ok: true, session: opened.session, scope: opened.scope, instant: opened.instant, state: stored.value, documents: stored.documents };
 }
-/** One validation per document object for the schema a read decodes it with, so a read that asks for two halves of one document decodes neither twice on the same bytes. */
-export function cachedDecoder<T>(schema: z.ZodType<T>): (value: unknown) => z.ZodSafeParseResult<T> {
+/** One validation per document object for the schema a read decodes it with, so a read that asks for two halves of one document decodes neither twice on the same bytes. */ export function cachedDecoder<T>(schema: z.ZodType<T>): (value: unknown) => z.ZodSafeParseResult<T> {
   const remembered = new WeakMap<object, z.ZodSafeParseResult<T>>();
   return (value) => {
     if (typeof value !== "object" || value === null) return schema.safeParse(value);
@@ -167,8 +156,7 @@ export type PageWindow = { readonly page: number; readonly pageSize: number; rea
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
-/** One stored gift row as the report engine's own row, or nothing when a stored day it states is not a civil date, because no figure is derived from a substituted day. */
-export function giftRowOrNull(record: GiftRowRecord): GiftRow | undefined {
+/** One stored gift row as the report engine's own row, or nothing when a stored day it states is not a civil date, because no figure is derived from a substituted day. */ export function giftRowOrNull(record: GiftRowRecord): GiftRow | undefined {
   try {
     return toReportGiftRow(record);
   } catch (fault) {
@@ -184,8 +172,7 @@ export function giftRowOrNull(record: GiftRowRecord): GiftRow | undefined {
     throw fault;
   }
 }
-/** Every stored gift row converted, or nothing at all when one of them states a day this runtime cannot read: a projection states its rows whole or not at all. */
-export function giftRowsOf(records: readonly GiftRowRecord[]): readonly GiftRow[] | undefined {
+/** Every stored gift row converted, or nothing at all when one of them states a day this runtime cannot read: a projection states its rows whole or not at all. */ export function giftRowsOf(records: readonly GiftRowRecord[]): readonly GiftRow[] | undefined {
   const rows: GiftRow[] = [];
   for (const record of records) {
     const row = giftRowOrNull(record);
@@ -213,17 +200,14 @@ export function giftRowsOf(records: readonly GiftRowRecord[]): readonly GiftRow[
   }
   return `${prefix}-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
-/** The revision of a collection stated by its own revisions, which no later read can state the same way twice without the same members. */
-export function collectionRevision(family: string, members: readonly { readonly revision: string }[]): string {
-  return `${family}/${String(members.length)}/${digest(
+/** The revision of a collection stated by its own revisions, which no later read can state the same way twice without the same members. */ export const collectionRevision = (family: string, members: readonly { readonly revision: string }[]): string =>
+  `${family}/${String(members.length)}/${digest(
     members
       .map((member) => member.revision)
       .toSorted(compareCodeUnits)
       .join("\u0000"),
   )}`;
-}
-/** The projection a read states its figures from: the stored record's own projection with the generated workload's coverage and currency exponents merged over it, and its goal only where the surface that owns the goal reads it. */
-export function statedProjection(input: {
+/** The projection a read states its figures from: the stored record's own projection with the generated workload's coverage and currency exponents merged over it, and its goal only where the surface that owns the goal reads it. */ export function statedProjection(input: {
   readonly record: SupportProjectionRecord;
   readonly gifts: readonly GiftRowRecord[];
   readonly workloadGifts: readonly GiftRowRecord[];
@@ -240,11 +224,9 @@ export function statedProjection(input: {
 }
 /** The state a count is recorded as: a whole-result total is never unknown, and zero is stated as zero rather than as a value. */ export const countState = (count: number): RecordedValueState => (count === 0 ? "zero" : "value");
 /** The state a derived value is recorded as when the value it came from may itself be a subtotal. */ export const recordedStateOf = (state: ValueState): RecordedValueState => (state === "incomplete-subtotal" ? "value" : state);
-/** One advisory action, stated the way every read states it: an unavailable action always says why it is. */
-export const readAction = (name: string, available: boolean, reason = "This action is not available here."): ReadAction => (available ? { name, available } : { name, available, reason });
+/** One advisory action, stated the way every read states it: an unavailable action always says why it is. */ export const readAction = (name: string, available: boolean, reason = "This action is not available here."): ReadAction => (available ? { name, available } : { name, available, reason });
 export { storedInstantOf as instantOf } from "../projection";
-/** The currency exponents this application knows for the codes one source states, so a generated workload header merges into a stored record without inventing a precision. */
-export function knownExponentsOf(codes: readonly string[]): Record<string, number> {
+/** The currency exponents this application knows for the codes one source states, so a generated workload header merges into a stored record without inventing a precision. */ export function knownExponentsOf(codes: readonly string[]): Record<string, number> {
   const exponents: Record<string, number> = {};
   for (const code of codes) {
     const exponent = exponentOf(code);
@@ -262,5 +244,4 @@ export function knownExponentsOf(codes: readonly string[]): Record<string, numbe
   return parsed;
 }
 /** A stored civil date the record may leave unstated. */ export const statedDateOrNull = (value: string | null, field: string): CivilDate | undefined => (value === null ? undefined : statedDate(value, field));
-/** Orders two optional texts: the stated one first, then the absent, both by code unit. */
-export const compareOptionalText = (left: string | null, right: string | null): number => (left === null ? (right === null ? 0 : 1) : right === null ? -1 : compareCodeUnits(left, right));
+/** Orders two optional texts: the stated one first, then the absent, both by code unit. */ export const compareOptionalText = (left: string | null, right: string | null): number => (left === null ? (right === null ? 0 : 1) : right === null ? -1 : compareCodeUnits(left, right));

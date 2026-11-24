@@ -41,8 +41,7 @@ const admittedRenditionIds = (renditionIds: readonly string[] | undefined): read
 /** Decides one preview: whether the acknowledged revision of this edition may be rendered by this principal, and what that answer admits. */ export function authorisePreview(input: PreviewInput): PreviewDecision {
   const submitted: unknown = input;
   if (submitted === undefined || submitted === null) return deny("not-authorised");
-  const principalId = text(input.principal?.principalId);
-  if (principalId.length === 0) return deny("not-authorised");
+  if (text(input.principal?.principalId).length === 0) return deny("not-authorised");
   const variant: ContentVariant | null | undefined = input.variant;
   if (variant === undefined || variant === null) return deny("unavailable");
   const variantId = text(variant.variantId);

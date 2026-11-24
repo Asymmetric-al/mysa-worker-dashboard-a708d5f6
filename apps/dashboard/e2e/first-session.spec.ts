@@ -1,5 +1,4 @@
-/** Criterion 2 — **First useful session** (AAP 0.12.1) and the opening of journey 1: as the new worker, a private contact, a task and a draft each survive a reload. */
-import type { Page } from "@playwright/test";
+/** Criterion 2 — **First useful session** (AAP 0.12.1) and the opening of journey 1: as the new worker, a private contact, a task and a draft each survive a reload. */ import type { Page } from "@playwright/test";
 import { actAs, expect, expectAcceptedReceipt, expectDevelopmentData, openSurface, SEEDED_PERSONAS, test } from "../playwright.config";
 const CONTACT_NAME = "Rosa Delgado"; // The private contact this journey creates. A name is the only field it fills, which is what the criterion asks.
 const TASK_TITLE = "Send Rosa a first note";

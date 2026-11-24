@@ -1,5 +1,4 @@
-/** Proves the contact-import limits and the two rules that sit beside them (success criterion 4): every limit is decided on the file before anything is processed. */
-import { readFileSync } from "node:fs";
+/** Proves the contact-import limits and the two rules that sit beside them (success criterion 4): every limit is decided on the file before anything is processed. */ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { IMPORT_DECISION_KINDS, createDecisionSet, recordDecision, summariseDecisions, type ImportDecisionContext, type ImportDecisionInput } from "@/modules/import/decide";
 import { confirmMapping, suggestMapping, type ImportConfirmedMapping, type ImportSuggestedMapping } from "@/modules/import/map";
@@ -11,12 +10,11 @@ const field = (value: string): string => (/[",\r\n]/.test(value) ? `"${value.rep
 const csvWith = (headers: readonly string[], rows: readonly (readonly string[])[]): string => `${[headers, ...rows].map((row) => row.map(field).join(",")).join("\n")}\n`;
 const headerNames = (count: number): string[] => Array.from({ length: count }, (_value, index) => `Column ${index + 1}`);
 const rowNames = (count: number): string[] => Array.from({ length: count }, (_value, index) => `Contact ${index + 1}`);
-function singleColumnCsv(cells: readonly string[]): string {
-  return csvWith(
+const singleColumnCsv = (cells: readonly string[]): string =>
+  csvWith(
     ["Name"],
     cells.map((cell) => [cell]),
   );
-}
 function singleColumnCsvWithBlanks(cells: readonly string[], blankEvery: number): string {
   const lines: string[] = ["Name"];
   cells.forEach((cell, position) => {
@@ -80,8 +78,7 @@ it("import limits: the fixed values: states the four limits exactly as the speci
 });
 it("import limits: the fixed values: refuses an over-limit file before any row is parsed", async () => {
   const result = await checkLimits(bytesOf(singleColumnCsv(rowNames(IMPORT_MAX_DATA_ROWS + 1))));
-  const refusals = refusalsOnly(result);
-  expect(firstRefusal(refusals).code).toBe("too-many-rows");
+  expect(firstRefusal(refusalsOnly(result)).code).toBe("too-many-rows");
 });
 it("import limits: file size: accepts a file of exactly 5 MiB and refuses one byte more", async () => {
   const atLimit = exactSizeCsv(IMPORT_MAX_BYTES);

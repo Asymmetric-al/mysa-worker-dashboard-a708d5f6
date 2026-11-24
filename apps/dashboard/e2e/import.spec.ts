@@ -1,5 +1,4 @@
-/** Criterion 4 — contact import. */
-import { existsSync, writeFileSync } from "node:fs";
+/** Criterion 4 — contact import. */ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Locator, Page } from "@playwright/test";
 import { armLostAcknowledgement, clearFailurePlan, expect, repositoryRootFrom, test } from "../playwright.config";

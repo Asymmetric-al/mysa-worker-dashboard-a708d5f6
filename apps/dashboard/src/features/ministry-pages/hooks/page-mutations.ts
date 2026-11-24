@@ -28,11 +28,12 @@ export const reReadsAfterOutcome = (outcome: MutationOutcome): boolean => outcom
 export const openRevisionOf = (readRevision: string, attemptRevision: string | null, acceptedRevision: string | null): string => (readRevision === attemptRevision ? (acceptedRevision ?? readRevision) : readRevision);
 /** The revision an outcome states the record now stands at — `accepted`, `alreadyAccepted` and `unchanged` alike — and none for a refusal, which leaves the record where another writer left it. */
 export const settledRevisionOf = (outcome: MutationOutcome | null | undefined): string | null => (outcome !== null && outcome !== undefined && (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged") ? outcome.revision : null);
+/** The four fields one Page change posts, with the transport's own stop signal beside them: a signal is transport state and is never part of the mutation's payload. */ export type PageMutationVariables<P> = MutationInput<P> & { readonly signal?: AbortSignal };
 /** The family's single mutation transport: posts the four-field input to a documented handler and returns one of eight outcomes; invalidates on accepted/alreadyAccepted, re-reads on unknown. */
-export function usePageMutation<P>(config: PageMutationConfig): UseMutationResult<MutationOutcome, never, MutationInput<P>> {
+export function usePageMutation<P>(config: PageMutationConfig): UseMutationResult<MutationOutcome, never, PageMutationVariables<P>> {
   const queryClient = useQueryClient();
   const { path, invalidate } = config;
-  return useMutation<MutationOutcome, never, MutationInput<P>>({
+  return useMutation<MutationOutcome, never, PageMutationVariables<P>>({
     mutationFn: (input) => sendMutation(path, input, "This device may have lost its connection, so the request is reported as neither applied nor refused. Retry it with the same operation id: a replay returns the original result instead of repeating the effect."),
     onSuccess: (outcome) => {
       if (reReadsAfterOutcome(outcome)) reReadPrefixes(queryClient, invalidate);
@@ -67,7 +68,7 @@ export const useDuplicatePageSection = (): SectionMutation<DuplicateSectionPaylo
 export const useRemovePageSection = (): SectionMutation<RemoveSectionPayload> => useSectionChange<RemoveSectionPayload>(removeSectionInputSchema, false);
 /** `saveSectionFields`: saves one section's fields, its bounded presentation choices, or both, in the draft edition. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const useSaveSectionFields = (): SectionMutation<SaveSectionFieldsPayload> => useSectionChange<SaveSectionFieldsPayload>(saveSectionFieldsInputSchema, false);
-/** `applyPreset`: composes one catalogue preset's sections into the draft edition, producing a reviewable draft and releasing nothing. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
+/** `applyPreset`: composes the draft edition from one catalogue preset's sections, replacing the sections it held, producing a reviewable draft and releasing nothing. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const useApplyPagePreset = (): SectionMutation<applyPresetPayload> => useSectionChange<applyPresetPayload>(applyPresetInputSchema, true);
 const CREATE_VARIANT_OPERATION = "createVariant" as const;
 type RoutedCreateVariantPayload = CreateVariantPayload & { readonly operation: typeof CREATE_VARIANT_OPERATION };
@@ -114,14 +115,10 @@ function useReleaseStep<Payload, Variables extends MutationInput<Payload>>(step:
     onSuccess: (outcome: MutationOutcome, variables: Variables): void => reReadPages(queryClient, outcome, variables.scope),
   });
 }
-/** Freezes one exact revision as the candidate under review (`submitForReview`). */
-export const useSubmitPageForReview = (): UseMutationResult<MutationOutcome, never, SubmitPageForReviewVariables> => useReleaseStep<SubmitForReviewPayload, SubmitPageForReviewVariables>("submitForReview", submitForReviewInputSchema);
-/** Answers one frozen candidate with an approval (`approveCandidate`). */
-export const useApprovePageCandidate = (): UseMutationResult<MutationOutcome, never, ApprovePageCandidateVariables> => useReleaseStep<ApproveCandidatePayload, ApprovePageCandidateVariables>("approveCandidate", approveCandidateInputSchema);
-/** Answers one frozen candidate with a request for a new revision (`requestChanges`). */
-export const useRequestPageChanges = (): UseMutationResult<MutationOutcome, never, RequestPageChangesVariables> => useReleaseStep<RequestChangesPayload, RequestPageChangesVariables>("requestChanges", requestChangesInputSchema);
-/** Releases the approved candidates selected for a page (`publishVariants`). */
-export const usePublishPageVariants = (): UseMutationResult<MutationOutcome, never, PublishPageVariantsVariables> => useReleaseStep<PublishVariantsPayload, PublishPageVariantsVariables>("publishVariants", publishVariantsInputSchema);
+/** Freezes one exact revision as the candidate under review (`submitForReview`). */ export const useSubmitPageForReview = (): UseMutationResult<MutationOutcome, never, SubmitPageForReviewVariables> => useReleaseStep<SubmitForReviewPayload, SubmitPageForReviewVariables>("submitForReview", submitForReviewInputSchema);
+/** Answers one frozen candidate with an approval (`approveCandidate`). */ export const useApprovePageCandidate = (): UseMutationResult<MutationOutcome, never, ApprovePageCandidateVariables> => useReleaseStep<ApproveCandidatePayload, ApprovePageCandidateVariables>("approveCandidate", approveCandidateInputSchema);
+/** Answers one frozen candidate with a request for a new revision (`requestChanges`). */ export const useRequestPageChanges = (): UseMutationResult<MutationOutcome, never, RequestPageChangesVariables> => useReleaseStep<RequestChangesPayload, RequestPageChangesVariables>("requestChanges", requestChangesInputSchema);
+/** Releases the approved candidates selected for a page (`publishVariants`). */ export const usePublishPageVariants = (): UseMutationResult<MutationOutcome, never, PublishPageVariantsVariables> => useReleaseStep<PublishVariantsPayload, PublishPageVariantsVariables>("publishVariants", publishVariantsInputSchema);
 const REACH_PATH = "/api/pages/reach";
 type Routed<P> = P & { readonly operation: string };
 export type SetReachVariables = MutationInput<SetReachPayload>;
@@ -146,8 +143,7 @@ export function useSetPageReach(): UseMutationResult<MutationOutcome, never, Set
     onSuccess: (outcome: MutationOutcome, variables: SetReachVariables): void => reReadReach(queryClient, outcome, variables.scope, variables.payload.documentId),
   });
 }
-/** `useStopShowingPagePublicly` posts `stopShowingPublicly`: it contains every language edition of one page at one instant, and answers with the outcome the service stated. */
-export function useStopShowingPagePublicly(): UseMutationResult<MutationOutcome, never, StopShowingVariables> {
+/** `useStopShowingPagePublicly` posts `stopShowingPublicly`: it contains every language edition of one page at one instant, and answers with the outcome the service stated. */ export function useStopShowingPagePublicly(): UseMutationResult<MutationOutcome, never, StopShowingVariables> {
   const queryClient = useQueryClient();
   const transport = usePageMutation<Routed<StopShowingPubliclyPayload>>({ path: REACH_PATH });
   return useMutation<MutationOutcome, never, StopShowingVariables>({
@@ -167,8 +163,7 @@ const WITHDRAW_PAGE_OPERATION = "withdrawPage";
 const WITHDRAW_LOCALE_OPERATION = "withdrawLocale";
 type WithdrawPagePacket = WithdrawPagePayload & { readonly operation: typeof WITHDRAW_PAGE_OPERATION };
 type WithdrawLocalePacket = WithdrawLocalePayload & { readonly operation: typeof WITHDRAW_LOCALE_OPERATION };
-/** The Page whose released editions stop being served. It rides beside the payload for the cache keys and for the caller's clarity; the payload's own copy is the one posted. */
-export type WithdrawPageVariables = MutationInput<WithdrawPagePayload> & { readonly documentId: string };
+/** The Page whose released editions stop being served. It rides beside the payload for the cache keys and for the caller's clarity; the payload's own copy is the one posted. */ export type WithdrawPageVariables = MutationInput<WithdrawPagePayload> & { readonly documentId: string };
 /** The Page the edition belongs to, named so the keys re-read afterwards cover the Page it was read from. · The one language edition this withdrawal contains, named beside the payload for the caller's clarity; the payload's own copy is the one posted, and the Page's other editions keep their releases. */
 export type WithdrawLocaleVariables = MutationInput<WithdrawLocalePayload> & { readonly documentId: string; readonly variantId: string };
 const mustReRead = (outcome: MutationOutcome): boolean => reReadsAfterOutcome(outcome);
@@ -191,8 +186,7 @@ function fireAndForget<V>(submit: (variables: V) => Promise<MutationOutcome>, co
 function reportAs<Posted, V>(result: UseMutationResult<MutationOutcome, never, Posted>, variables: V | undefined, mutate: (variables: V, options?: MutateOptions<MutationOutcome, never, V, unknown>) => void, mutateAsync: (variables: V) => Promise<MutationOutcome>): UseMutationResult<MutationOutcome, never, V> {
   return { ...result, variables, mutate, mutateAsync } as UseMutationResult<MutationOutcome, never, V>;
 }
-/** Withdraws every released edition of one Page (`withdrawPage`), answering `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export function useWithdrawPage(): UseMutationResult<MutationOutcome, never, WithdrawPageVariables> {
+/** Withdraws every released edition of one Page (`withdrawPage`), answering `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */ export function useWithdrawPage(): UseMutationResult<MutationOutcome, never, WithdrawPageVariables> {
   const queryClient = useQueryClient();
   const transport: UseMutationResult<MutationOutcome, never, MutationInput<WithdrawPagePacket>> = usePageMutation({ path: WITHDRAW_PATH });
   const [attempted, setAttempted] = useState<WithdrawPageVariables | undefined>(undefined);
@@ -222,7 +216,7 @@ export function useWithdrawPageLocale(): UseMutationResult<MutationOutcome, neve
   return reportAs(transport, attempted, fireAndForget(submit, { client: queryClient, meta: undefined }), submit);
 }
 const MEDIA_PATH = "/api/media";
-export type PageMediaVariables<P> = MutationInput<P> & { readonly documentId: string };
+export type PageMediaVariables<P> = MutationInput<P> & { readonly documentId: string; /** The stop signal the picker holds, passed to the fetch so stopping the wait aborts this registration. */ readonly signal?: AbortSignal };
 export type PageMediaMutation<P> = UseMutationResult<MutationOutcome, never, PageMediaVariables<P>>;
 type RegisterMediaAssetRequest = RegisterMediaAssetPayload & { readonly operation: "registerMediaAsset" };
 type RemovePlacementRequest = RemovePlacementPayload & { readonly operation: "removePlacement" };
@@ -245,7 +239,7 @@ function reReadMediaPage<P>(queryClient: QueryClient, outcome: MutationOutcome, 
   if (!reReadsAfterOutcome(outcome)) return;
   void queryClient.invalidateQueries({ queryKey: pageKey(variables.scope, variables.documentId) });
 }
-/** Registers one prepared image or video as a scoped asset for a Page draft, as `registerMediaAsset`. */
+/** Registers one prepared image or video as a scoped asset for a Page draft, as `registerMediaAsset`. A carried stop signal aborts the request, which then answers `unknown` so the Page is read again rather than the draft being left unstated. */
 export function useRegisterPageMediaAsset(): PageMediaMutation<RegisterMediaAssetPayload> {
   const queryClient = useQueryClient();
   const transport = usePageMutation({ path: MEDIA_PATH });
@@ -254,14 +248,13 @@ export function useRegisterPageMediaAsset(): PageMediaMutation<RegisterMediaAsse
       const body = checkBody(registerMediaAssetInputSchema, variables);
       if (!body.ok) return body.outcome;
       const request: MutationInput<RegisterMediaAssetRequest> = { ...body.input, payload: { operation: "registerMediaAsset", ...body.input.payload } };
-      return transport.mutateAsync(request);
+      return transport.mutateAsync({ ...request, ...(variables.signal === undefined ? {} : { signal: variables.signal }) });
     },
     onSuccess: (outcome, variables) => reReadMediaPage(queryClient, outcome, variables),
     retry: false,
   });
 }
-/** Detaches one placement from a Page draft, as `removePlacement`; no asset is deleted and no release is withdrawn, because a removal is neither. */
-export function useRemovePagePlacement(): PageMediaMutation<RemovePlacementPayload> {
+/** Detaches one placement from a Page draft, as `removePlacement`; no asset is deleted and no release is withdrawn, because a removal is neither. */ export function useRemovePagePlacement(): PageMediaMutation<RemovePlacementPayload> {
   const queryClient = useQueryClient();
   const transport = usePageMutation({ path: MEDIA_PATH });
   return useMutation<MutationOutcome, never, PageMediaVariables<RemovePlacementPayload>>({

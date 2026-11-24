@@ -3,7 +3,9 @@ import { useCallback } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { ZodType } from "zod";
 import { useReviewedMutation, type UseReviewedMutationResult } from "@/components/action-review";
+import { readJsonBody } from "@/lib/read-transport";
 import { assertNever } from "@/lib/result";
+import type { StoppableRequest } from "@/lib/read-transport";
 import type { MutationInput, Scope } from "@/modules/data-service";
 import { invalid, isOutcome, unavailable, unknown, type MutationOutcome } from "@/modules/data-service/outcome";
 import {
@@ -66,19 +68,11 @@ const TRANSPORT_GUIDANCE = "The request did not complete, so this change is repo
 const MISSING_HANDLER_STATUSES: ReadonlySet<number> = new Set<number>([404, 405]);
 const BASE64_CHUNK_BYTES = 49_152;
 const sourceOf = (endpoint: string, name: UpdatesMutationName): { readonly system: string; readonly reference: string } => ({ system: "data-service", reference: `${endpoint}#${name}` });
-async function readJsonBody(answer: Response): Promise<unknown> {
-  try {
-    return await answer.json();
-  } catch {
-    return undefined;
-  }
-}
 async function base64Of(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const parts: string[] = [];
   for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK_BYTES) {
-    const chunk = bytes.subarray(offset, Math.min(offset + BASE64_CHUNK_BYTES, bytes.length));
-    parts.push(btoa(String.fromCharCode(...chunk)));
+    parts.push(btoa(String.fromCharCode(...bytes.subarray(offset, Math.min(offset + BASE64_CHUNK_BYTES, bytes.length)))));
   }
   return parts.join("");
 }
@@ -102,13 +96,12 @@ function jobsToRevalidate<P>(outcome: MutationOutcome, invalidates: readonly Upd
       return assertNever(outcome, "Unhandled mutation outcome");
   }
 }
-async function revalidateUpdates(queryClient: QueryClient, scope: Scope, jobs: readonly UpdatesReadJob[]): Promise<void> {
-  await Promise.all(jobs.map((job) => queryClient.invalidateQueries({ queryKey: updateQueryKey(scope, job) })));
-}
+const revalidateUpdates = async (queryClient: QueryClient, scope: Scope, jobs: readonly UpdatesReadJob[]): Promise<void> => void (await Promise.all(jobs.map((job) => queryClient.invalidateQueries({ queryKey: updateQueryKey(scope, job) }))));
 /** One named mutation as the transport takes it: its own name and endpoint, the schema its payload is judged by, the reads it invalidates and the request body it sends. */
 type UpdatesMutationConfig<P> = { readonly name: UpdatesMutationName; readonly endpoint: string; readonly schema: ZodType<P>; readonly invalidates: readonly UpdatesReadJob[] | ((payload: P) => readonly UpdatesReadJob[]); readonly request: (payload: P) => unknown };
-async function runUpdatesMutation<P>(queryClient: QueryClient, config: UpdatesMutationConfig<P>, input: MutationInput<P>): Promise<MutationOutcome> {
+async function runUpdatesMutation<P>(queryClient: QueryClient, config: UpdatesMutationConfig<P>, input: MutationInput<P> & StoppableRequest): Promise<MutationOutcome> {
   const { endpoint, invalidates, name, request, schema } = config;
+  const signal = input.signal; // Transport state, held apart from the body built below, so it can never be carried to the service.
   const checked = schema.safeParse(input.payload);
   if (!checked.success) return invalid({ operationId: input.operationId, fields: checked.error });
   let body: unknown;
@@ -119,8 +112,17 @@ async function runUpdatesMutation<P>(queryClient: QueryClient, config: UpdatesMu
   }
   let answer: Response;
   try {
-    answer = await fetch(endpoint, { method: "POST", credentials: "same-origin", cache: "no-store", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: body }) });
+    answer = await fetch(endpoint, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ operationId: input.operationId, scope: input.scope, expectedRevision: input.expectedRevision, payload: body }),
+      ...(signal === undefined ? {} : { signal }),
+    });
   } catch {
+    // A stopped request is not an outage of the source: the answer may exist, so it is reported as the lost acknowledgement the caller re-reads on, which is what keeps the draft's real state on screen after the wait was stopped.
+    if (signal?.aborted === true) return unknown({ operationId: input.operationId });
     return unavailable({ operationId: input.operationId, source: sourceOf(endpoint, name), guidance: TRANSPORT_GUIDANCE });
   }
   const answered = await readJsonBody(answer);
@@ -135,14 +137,13 @@ async function runUpdatesMutation<P>(queryClient: QueryClient, config: UpdatesMu
 }
 function useUpdatesMutation<P>(name: UpdatesMutationName, schema: ZodType<P>, request: (payload: P) => unknown, invalidates: readonly UpdatesReadJob[] | ((payload: P) => readonly UpdatesReadJob[]) = UPDATES_MUTATION_INVALIDATIONS[name]): UseReviewedMutationResult<P> {
   const queryClient = useQueryClient();
-  const submit = useCallback((input: MutationInput<P>): Promise<MutationOutcome> => runUpdatesMutation(queryClient, { name, endpoint: UPDATES_MUTATION_ENDPOINTS[name], schema, invalidates, request }, input), [queryClient, name, schema, invalidates, request]);
+  const submit = useCallback((input: MutationInput<P> & StoppableRequest): Promise<MutationOutcome> => runUpdatesMutation(queryClient, { name, endpoint: UPDATES_MUTATION_ENDPOINTS[name], schema, invalidates, request }, input), [queryClient, name, schema, invalidates, request]);
   return useReviewedMutation<P>(submit);
 }
 const asGiven = <P>(payload: P): P => payload;
 async function registerMediaAssetBody(payload: RegisterMediaAssetPayload): Promise<unknown> {
   const { altText, caption, credit, language, transcript } = payload.placement;
-  // The poster and the caption track are the two members the service prepares as their own renditions, so the body carries
-  // the files themselves: the poster's bytes through the same chunked encoder as the video, and the WebVTT text as text.
+  // The poster and the caption track are the two members the service prepares as their own renditions, so the body carries the files themselves: the poster's bytes through the same chunked encoder as the video, and the WebVTT text as text.
   const poster = payload.poster === undefined ? undefined : { bytesBase64: await base64Of(payload.poster.file), name: payload.poster.file.name, altText: payload.poster.altText ?? altText };
   const captions = payload.captions === undefined ? undefined : { vtt: await payload.captions.file.text(), language: payload.captions.language, ...(payload.captions.label === undefined ? {} : { label: payload.captions.label }) };
   return {

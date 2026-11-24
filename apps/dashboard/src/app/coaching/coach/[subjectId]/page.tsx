@@ -23,28 +23,25 @@ function cutoffOf(duration: SubjectDuration): { readonly instant: string; readon
   const instant = duration.boundInstant ?? duration.cutoffInstant;
   return instant === null ? null : { instant, zone: duration.frozenZone ?? "" };
 }
-function checkInsOf(items: readonly SharedCheckIn[]) {
-  return items.map((item) => ({
+const checkInsOf = (items: readonly SharedCheckIn[]) =>
+  items.map((item) => ({
     checkInId: item.revisionId,
     sharedAt: item.sharedAt,
     questions: item.questions.map((question, index) => {
       const paired = item.answers.find((answer) => answer.questionOrder === question.order);
-      const positioned = item.answers[index];
-      return { wording: question.wording, answer: paired?.text ?? positioned?.text ?? "" };
+      return { wording: question.wording, answer: paired?.text ?? item.answers[index]?.text ?? "" };
     }),
   }));
-}
 function duePrecisionOf(dueDate: DueDate): "date" | "approximate" | "unknown" {
   if (dueDate === null || dueDate.kind === "undated") return "unknown";
   return dueDate.precision === "approximate" || dueDate.precision === "unknown" ? dueDate.precision : "date";
 }
 const dueDateOf = (dueDate: DueDate): string | null => (dueDate !== null && dueDate.kind === "dated" ? dueDate.date : null);
-function taskSummariesOf(items: readonly SharedTaskSummary[]) {
-  return items.map((item) => {
+const taskSummariesOf = (items: readonly SharedTaskSummary[]) =>
+  items.map((item) => {
     const base = { shareId: item.shareId, dueOn: dueDateOf(item.dueDate), duePrecision: duePrecisionOf(item.dueDate), status: item.status ?? "" };
     return item.state === "shared" ? { ...base, state: "shared" as const, reviewedDescription: item.description ?? "" } : { ...base, state: item.state, reviewedDescription: null };
   });
-}
 const figureOf = (entry: TargetProgress) => ({ periodLabel: `${entry.start} to ${entry.endInclusive} · ${MEASURE_COPY[entry.measure].label}`, value: entry.count, valueState: entry.countState });
 type Goal = Extract<SubjectModule, { readonly module: "support-goal" }>["goal"];
 type ReceivedFigure = Extract<SubjectModule, { readonly module: "support-results" }>["received"][number];

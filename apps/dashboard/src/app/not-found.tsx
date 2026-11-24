@@ -10,8 +10,7 @@ const COPY = {
   helpStated: ", where each job and where it starts is stated.",
 } as const;
 export const metadata: Metadata = { title: PAGE_TITLE };
-/** The surface a missing address renders: the product's one page title at the page-title scale, and the two destinations that begin again — because a missing address is still a page, and states its heading like every other. */
-export default function NotFoundPage(): ReactElement {
+/** The surface a missing address renders: the product's one page title at the page-title scale, and the two destinations that begin again — because a missing address is still a page, and states its heading like every other. */ export default function NotFoundPage(): ReactElement {
   return (
     <PageColumn>
       <PageHeading title={PAGE_TITLE} paragraphs={[COPY.missing]} />

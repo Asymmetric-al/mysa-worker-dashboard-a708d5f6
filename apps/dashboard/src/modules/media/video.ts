@@ -38,8 +38,7 @@ export async function inspectVideo(input: VideoInput): Promise<VideoInspectionRe
   const admission = await admit(input.bytes);
   return !admission.ok ? admission : { ok: true, profileCheck: profileCheckOf(admission.detail), rotation: admission.detail.rotation };
 }
-/** Copies an admitted upload into a tag-free playback rendition without re-encoding it, verifies the result carries neither tags nor a re-encoded codec, and returns it with that verification. */
-export async function preparePlaybackRendition(input: VideoInput): Promise<VideoPreparationResult> {
+/** Copies an admitted upload into a tag-free playback rendition without re-encoding it, verifies the result carries neither tags nor a re-encoded codec, and returns it with that verification. */ export async function preparePlaybackRendition(input: VideoInput): Promise<VideoPreparationResult> {
   const admission = await admit(input.bytes);
   if (!admission.ok) return admission;
   const { detail } = admission;

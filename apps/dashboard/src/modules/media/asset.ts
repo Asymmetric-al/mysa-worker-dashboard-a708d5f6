@@ -30,10 +30,7 @@ export interface MediaRendition {
 export type MediaRefusalCode = ImagePreparationRefusal["code"] | VideoRefusal["code"] | "kind-mismatch" | "alt-text-required" | "invalid-captions" | "invalid-transcript" | "use-acceptance-entry-point" | "unsupported-rendition-purpose";
 export type MediaRefusal = { readonly state: "rejected"; readonly code: MediaRefusalCode; readonly message: string; readonly action?: string };
 export type MediaAcceptanceInput<S extends MediaAssetScope> = { readonly assetId: string; readonly scope: S; readonly sourceOriginalRef: MediaOriginalReference; readonly bytes: Uint8Array; readonly sourceName?: string; readonly variant?: string };
-export interface AcceptImageInput<S extends MediaAssetScope> extends MediaAcceptanceInput<S> {
-  readonly altText: string;
-  readonly caption?: string;
-}
+export type AcceptImageInput<S extends MediaAssetScope> = MediaAcceptanceInput<S> & { readonly altText: string; readonly caption?: string };
 export type AcceptVideoInput<S extends MediaAssetScope> = MediaAcceptanceInput<S>;
 export interface MediaAcceptanceSuccess<S extends MediaAssetScope> {
   readonly state: "ready";
@@ -51,8 +48,7 @@ export type MediaAcceptanceResult<S extends MediaAssetScope = MediaAssetScope> =
 export type PrepareRenditionInput = { readonly assetId: string; readonly purpose: MediaRenditionPurpose; readonly bytes: Uint8Array; readonly altText?: string; readonly sourceName?: string; readonly variant?: string };
 export type MediaRenditionSuccess = { readonly state: "ready"; readonly assetId: string; readonly rendition: MediaRendition; readonly altText?: string };
 export type MediaRenditionResult = MediaRenditionSuccess | MediaRefusal;
-/** Accepts one still image: types it by content, requires its alternative text, and returns the display rendition. */
-export async function acceptImage<S extends MediaAssetScope>(input: AcceptImageInput<S>): Promise<MediaAcceptanceResult<S>> {
+/** Accepts one still image: types it by content, requires its alternative text, and returns the display rendition. */ export async function acceptImage<S extends MediaAssetScope>(input: AcceptImageInput<S>): Promise<MediaAcceptanceResult<S>> {
   const detected = await detectKind(input.bytes);
   if (detected !== null && isVideoKind(detected)) return refuse("kind-mismatch", "This file is a video, so it cannot be accepted as an image.", "Choose a JPEG, PNG or WebP image, or add the video as a video placement.");
   const altText = trimmedOrEmpty(input.altText);
@@ -75,8 +71,7 @@ export async function acceptImage<S extends MediaAssetScope>(input: AcceptImageI
     ...(caption === undefined ? {} : { caption }),
   };
 }
-/** Accepts one video: types it by content, gates the admitted profile, and returns the tag-free playback rendition. */
-export async function acceptVideo<S extends MediaAssetScope>(input: AcceptVideoInput<S>): Promise<MediaAcceptanceResult<S>> {
+/** Accepts one video: types it by content, gates the admitted profile, and returns the tag-free playback rendition. */ export async function acceptVideo<S extends MediaAssetScope>(input: AcceptVideoInput<S>): Promise<MediaAcceptanceResult<S>> {
   const detected = await detectKind(input.bytes);
   if (detected !== null && isImageKind(detected)) return refuse("kind-mismatch", "This file is a still image, so it cannot be accepted as a video.", "Choose an MP4 (H.264 video with AAC audio) or a WebM (VP8 or VP9 video with Vorbis or Opus audio).");
   const inspection = await inspectVideo({ bytes: input.bytes });
@@ -162,12 +157,11 @@ function decodeUtf8(bytes: Uint8Array): string | null {
 }
 const encodeUtf8 = (text: string): Uint8Array => UTF8_ENCODER.encode(text);
 const stripLeadingByteOrderMark = (text: string): string => (text.startsWith(BYTE_ORDER_MARK) ? text.slice(BYTE_ORDER_MARK.length) : text);
-function carriesNonTextBytes(text: string): boolean {
-  return [...text].some((character) => {
+const carriesNonTextBytes = (text: string): boolean =>
+  [...text].some((character) => {
     const code = character.codePointAt(0) ?? 0;
     return code < END_OF_C0_CONTROLS && !TEXT_CONTROL_CODES.includes(code);
   });
-}
 const splitLines = (text: string): string[] => text.split(LINE_BREAK);
 const firstNonBlankLine = (lines: readonly string[]): string | null => lines.map((line) => line.trim()).find((line) => line.length > 0) ?? null;
 const isWebVttHeaderLine = (line: string): boolean => line === WEBVTT_HEADER || line.startsWith(`${WEBVTT_HEADER} `) || line.startsWith(`${WEBVTT_HEADER}\t`);

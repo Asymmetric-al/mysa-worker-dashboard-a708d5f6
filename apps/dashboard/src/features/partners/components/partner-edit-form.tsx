@@ -2,7 +2,8 @@
 import { useForm } from "@tanstack/react-form";
 import Link from "next/link";
 import { useCallback, useId, useRef, useState, type FormEvent, type ReactElement } from "react";
-import { outcomeNotice, useAttemptedMutation, type OutcomeNoticeCopy } from "@/components/attempt";
+import { hasSettled, outcomeNotice, useAttemptedMutation, type OutcomeNoticeCopy } from "@/components/attempt";
+import { useUnsavedWork } from "@/components/context-switch-guard";
 import { FormField, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import OperationResult from "@/components/operation-result";
 import StateNotice from "@/components/state-notice";
@@ -41,6 +42,11 @@ const RELATIONSHIP_LABEL_DESCRIPTION = "The relationship word recorded against t
 const RESTRICTIONS_LEGEND = "Restrictions";
 const UNCONFIRMED_NOTE = "Saving is paused until the result above is checked, because this attempt may already have changed the record. Checking it reads what happened and applies nothing.";
 const SAVE_NOTE = "Saving changes the permitted fields of this record. It sends no message, records no interaction, subscribes no one and creates no financial record.";
+const UNSAVED_WORK_DESCRIPTION = "This record's permitted fields have been edited on this screen and not saved yet.";
+const SAVE_BLOCKED_PENDING = "A save of this record is already in flight, so nothing was sent again. Nothing you typed has been discarded: choose Save and switch once that save has settled.";
+const SAVE_BLOCKED_UNCONFIRMED = "The last attempt to save this record may already have changed it, and its result has to be checked before another save is sent. Nothing you typed has been discarded: check the result on the form, then choose Save and switch again.";
+const SAVE_BLOCKED_FIELDS = "Saving cannot start while a field on this form states what it needs, so nothing was sent and nothing you typed has been discarded. Correct the field the form names, then choose Save and switch again.";
+const SAVE_NOT_SETTLED = "The save did not settle and the context was not switched, so nothing you typed has been discarded: ";
 const BACK_TO_RECORD_LABEL = "Back to the record";
 const EDITS_UNAVAILABLE_TITLE = "Contact edits are unavailable here";
 const EDITS_UNAVAILABLE_BODY = "This record does not admit a permitted-field change in the current session and scope, so no field is offered and nothing was changed. A refusal here says nothing about what exists anywhere else.";
@@ -77,14 +83,24 @@ function payloadOf(values: EditFormValues, record: PartnerRecord, partnerRef: st
     stage: label === "" ? null : label,
   };
 }
+/** Whether two sets of edited values describe the same change: every value a save sends is compared in order, and the row keys that only identify a rendered row are not. */ function sameEditValues(left: EditFormValues, right: EditFormValues): boolean {
+  if (left.displayName !== right.displayName || left.givenName !== right.givenName || left.familyName !== right.familyName || left.relationshipLabel !== right.relationshipLabel) return false;
+  const sameNames = left.additionalNames.length === right.additionalNames.length && left.additionalNames.every((row, index) => row.value === right.additionalNames[index]?.value);
+  const sameMethods =
+    left.contactMethods.length === right.contactMethods.length &&
+    left.contactMethods.every((row, index) => {
+      const other = right.contactMethods[index];
+      return other !== undefined && row.kind === other.kind && row.value === other.value && row.permitted === other.permitted;
+    });
+  return sameNames && sameMethods;
+}
 function restrictionCarryProblem(record: PartnerRecord): string | null {
   const unrepresentable = record.restrictions.findIndex((restriction) => !restrictionEditSchema.safeParse(restriction).success);
   if (unrepresentable === -1) return null;
   return `Restriction ${String(unrepresentable + 1)} on this record carries no label or no detail, so this edit cannot carry it through unchanged. Nothing was changed: correct that restriction first, because saving without it would drop a restriction rather than preserve it.`;
 }
 const NO_REFUSAL: FieldErrorLookup = { byField: {}, form: [], count: 0 };
-/** The form field a path a local refusal can name belongs to, so its message is stated only once that field has been edited; `null` where this form offers no control for the path. */
-function formFieldOf(path: string): string | null {
+/** The form field a path a local refusal can name belongs to, so its message is stated only once that field has been edited; `null` where this form offers no control for the path. */ function formFieldOf(path: string): string | null {
   if (path === DISPLAY_NAME_FIELD) return "displayName";
   if (path === GIVEN_NAME_FIELD) return "givenName";
   if (path === FAMILY_NAME_FIELD) return "familyName";
@@ -107,8 +123,7 @@ function localRefusalOf(values: EditFormValues, record: PartnerRecord, partnerRe
   const form = editedFields.length === 0 ? [] : refusal.form;
   return { byField, form, count: Object.keys(byField).length + form.length };
 }
-/** One message per path: what this form states before it sends, beside everything the last attempt settled with, so a refusal the record's own schema names is never lost or stated twice. */
-function mergedFieldErrors(local: FieldErrorLookup, settled: FieldErrorLookup | null): FieldErrorLookup | null {
+/** One message per path: what this form states before it sends, beside everything the last attempt settled with, so a refusal the record's own schema names is never lost or stated twice. */ function mergedFieldErrors(local: FieldErrorLookup, settled: FieldErrorLookup | null): FieldErrorLookup | null {
   if (settled === null) return local.count === 0 ? null : local;
   const byField: Record<string, readonly string[]> = {};
   for (const path of new Set([...Object.keys(local.byField), ...Object.keys(settled.byField)])) {
@@ -186,12 +201,8 @@ function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: Con
         <p className="type-group-title">What to do with your input</p>
         <p className="type-supporting text-pretty">{CONFLICT_CHOICE_BODY}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" className="min-h-target max-w-full whitespace-normal" onClick={() => onApplyMine(outcome.currentRevision)}>
-            Apply my changes
-          </Button>
-          <Button type="button" variant="outline" className="min-h-target max-w-full whitespace-normal" onClick={onDiscardMine}>
-            Discard mine
-          </Button>
+          <Button {...{ type: "button", className: "min-h-target max-w-full whitespace-normal", onClick: () => onApplyMine(outcome.currentRevision) }}>Apply my changes</Button>
+          <Button {...{ type: "button", variant: "outline", className: "min-h-target max-w-full whitespace-normal", onClick: onDiscardMine }}>Discard mine</Button>
         </div>
       </div>
     </section>
@@ -237,19 +248,29 @@ function OutcomeRegion({ outcome, partnerRef, fieldLabels, onApplyMine, onDiscar
     </div>
   );
 }
-/** The permitted-field edit body for one partner record. */
-export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, className }: PartnerEditFormProps): ReactElement {
+type UnsavedWorkRegistrationProps = { readonly active: boolean; readonly save: () => Promise<void>; readonly discard: () => void };
+/** Registers this form's unsaved work with the shell while the form holds changes no save has settled, so a context switch offers to save or discard them. */ function UnsavedWorkRegistration({ active, save, discard }: UnsavedWorkRegistrationProps): null {
+  useUnsavedWork(active ? { description: UNSAVED_WORK_DESCRIPTION, save, discard } : null);
+  return null;
+}
+/** The permitted-field edit body for one partner record. */ export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, className }: PartnerEditFormProps): ReactElement {
   const record = envelope.data.partner;
-  const headingId = useId();
-  const namesHeadingId = useId();
-  const methodsHeadingId = useId();
-  const actionNoteId = useId();
+  const [headingId, namesHeadingId, methodsHeadingId, actionNoteId] = [useId(), useId(), useId(), useId()];
   const availability = editsAdmitted(envelope);
   const [startingValues] = useState<EditFormValues>(() => valuesOf(record));
+  const [savedValues, setSavedValues] = useState<EditFormValues>(startingValues);
   const rowSequence = useRef({ additional: startingValues.additionalNames.length, methods: startingValues.contactMethods.length });
   const form = useForm({ defaultValues: startingValues });
   const { submit } = useSaveContactEdits(partnerRef);
-  const edits = useAttemptedMutation<SaveContactEditsPayload>(submit, onSettled);
+  const submittedValues = useRef<EditFormValues | null>(null);
+  const settleSaved = useCallback(
+    (settled: MutationOutcome): void => {
+      if (hasSettled(settled) && submittedValues.current !== null) setSavedValues(submittedValues.current);
+      onSettled?.(settled);
+    },
+    [onSettled],
+  );
+  const edits = useAttemptedMutation<SaveContactEditsPayload>(submit, settleSaved);
   const { outcome, pending: isPending, reset: resetEdits } = edits;
   const carryProblem = restrictionCarryProblem(record);
   const setValues = useCallback(
@@ -259,8 +280,13 @@ export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, 
     },
     [form],
   );
+  const submitValues = (values: EditFormValues, expectedRevision: string): Promise<MutationOutcome> => {
+    // The values an attempt carries are recorded only when it is the attempt that starts, because a save submitted while another is in flight reuses that one rather than sending these values.
+    if (!isPending) submittedValues.current = values;
+    return edits.submit({ scope: envelope.scope, expectedRevision, payload: payloadOf(values, record, partnerRef) });
+  };
   const replaySameWork = (): void => void edits.retry();
-  const applyMine = (currentRevision: string): void => void edits.submit({ scope: envelope.scope, expectedRevision: currentRevision, payload: payloadOf(form.state.values, record, partnerRef) });
+  const applyMine = (currentRevision: string): void => void submitValues(form.state.values, currentRevision);
   const discardMine = (): void => {
     setValues(valuesOf(record));
     edits.reset();
@@ -284,19 +310,39 @@ export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, 
   );
   const settledFieldErrors = edits.fieldErrors;
   const unconfirmed = outcome !== null && outcome.outcome === "unknown";
+  const saveFromGuard = async (values: EditFormValues): Promise<void> => {
+    if (isPending) throw new Error(SAVE_BLOCKED_PENDING);
+    if (unconfirmed) throw new Error(SAVE_BLOCKED_UNCONFIRMED);
+    if (carryProblem !== null) throw new Error(carryProblem);
+    if (localRefusalOf(values, record, partnerRef, editedFieldNames(form.state.fieldMeta)).count > 0) throw new Error(SAVE_BLOCKED_FIELDS);
+    switch ((await submitValues(values, envelope.revision)).outcome) {
+      case "accepted":
+      case "alreadyAccepted":
+      case "unchanged":
+        return;
+      case "conflict":
+        throw new Error(`${SAVE_NOT_SETTLED}the record changed after this page was read, so the form states the conflict beside your values.`);
+      case "denied":
+        throw new Error(`${SAVE_NOT_SETTLED}this session is not permitted to save this record.`);
+      case "invalid":
+        throw new Error(`${SAVE_NOT_SETTLED}a field on the form was refused, and the form states which one.`);
+      case "unavailable":
+        throw new Error(`${SAVE_NOT_SETTLED}the source behind this record could not be reached, and the form offers the same retry.`);
+      case "unknown":
+        throw new Error(`${SAVE_NOT_SETTLED}whether the save was applied is not known, and the form offers the check that answers it.`);
+    }
+  };
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (isPending || unconfirmed || carryProblem !== null) return;
     const values = form.state.values;
     if (localRefusalOf(values, record, partnerRef, editedFieldNames(form.state.fieldMeta)).count > 0) return;
-    void edits.submit({ scope: envelope.scope, expectedRevision: envelope.revision, payload: payloadOf(values, record, partnerRef) });
+    void submitValues(values, envelope.revision);
   };
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="partner-edit-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="type-section-title">
-          Edit permitted fields
-        </h2>
+        <h2 {...{ id: headingId, className: "type-section-title" }}>Edit permitted fields</h2>
         <p className="type-supporting text-pretty">Only the fields this record permits you to change are shown, and each one is saved against the revision this page read.</p>
         <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-supporting">
           <span>{REVISION_LABEL}</span>
@@ -323,12 +369,11 @@ export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, 
                 const fieldErrors = mergedFieldErrors(localRefusal, settledFieldErrors);
                 return (
                   <>
+                    <UnsavedWorkRegistration active={!sameEditValues(values, savedValues)} save={() => saveFromGuard(values)} discard={discardMine} />
                     <form.Field name="displayName">{(field) => <TextField field={field} name={DISPLAY_NAME_FIELD} label={DISPLAY_NAME_LABEL} description={DISPLAY_NAME_DESCRIPTION} error={fieldErrors?.byField[DISPLAY_NAME_FIELD]} required onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
                     <div className="flex min-w-0 flex-col gap-4">
                       <div className="flex min-w-0 flex-col gap-1">
-                        <h3 id={namesHeadingId} className="type-subsection-title">
-                          Name parts
-                        </h3>
+                        <h3 {...{ id: namesHeadingId, className: "type-subsection-title" }}>Name parts</h3>
                         <p className="type-supporting text-pretty">Optional. A record may be known by one name only, and a part you leave blank is stored as absent rather than as an empty name.</p>
                       </div>
                       <form.Field name="givenName">{(field) => <TextField field={field} name={GIVEN_NAME_FIELD} label={GIVEN_NAME_LABEL} error={fieldErrors?.byField[GIVEN_NAME_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}</form.Field>

@@ -29,3 +29,5 @@ export function mediaStateReason(state: MediaPreparationState, refusal?: MediaRe
   if (state !== "rejected") return STATE_REASONS[state];
   return refusal === undefined ? REJECTED_WITHOUT_REFUSAL : refusal.action === undefined ? { label: refusal.message } : { label: refusal.message, action: refusal.action };
 }
+/** What a registration is refused with when the placement states no alternative text: the sentence names the medium it is about, states that nothing was placed, and names the action that fixes it. */
+export const altTextRequired = (kind: "image" | "video"): string => `${kind === "image" ? "An image" : "A video"} needs alternative text describing what it shows before it can be placed, so describe it and choose the file again.`;

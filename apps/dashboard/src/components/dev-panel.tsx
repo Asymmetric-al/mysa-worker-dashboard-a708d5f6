@@ -2,6 +2,7 @@
 import { useCallback, useId, useRef, useState, type ReactElement } from "react";
 import ActionReview, { type ActionReviewProps, type MutationSubmit } from "@/components/action-review";
 import { hasSettled, mayReplay } from "@/components/attempt";
+import { factFrame } from "@/components/fact-list";
 import OperationResult from "@/components/operation-result";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,11 +29,7 @@ type ClockUnit = (typeof CLOCK_UNITS)[number];
 type ClockUnitId = ClockUnit["id"];
 const DESCENDING_UNITS: readonly ClockUnit[] = [...CLOCK_UNITS].reverse();
 const clockUnitFor = (id: string): ClockUnit | undefined => CLOCK_UNITS.find((unit) => unit.id === id);
-function joinWords(parts: readonly string[]): string {
-  if (parts.length === 0) return "no time at all";
-  if (parts.length === 1) return parts[0] ?? "";
-  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1] ?? ""}`;
-}
+const joinWords = (parts: readonly string[]): string => (parts.length === 0 ? "no time at all" : parts.length === 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1] ?? ""}`);
 function describeOffset(milliseconds: number): string {
   if (!Number.isFinite(milliseconds)) return "an unreadable offset";
   if (milliseconds === 0) return "no offset, so the clock sits at the seed instant";
@@ -44,8 +41,7 @@ function describeOffset(milliseconds: number): string {
     remaining -= count * unit.milliseconds;
     parts.push(`${String(count)} ${count === 1 ? unit.singular : unit.plural}`);
   }
-  const direction = milliseconds > 0 ? "ahead of" : "before";
-  return `${joinWords(parts)} ${direction} the seed instant`;
+  return `${joinWords(parts)} ${milliseconds > 0 ? "ahead of" : "before"} the seed instant`;
 }
 type ClockAmount = { readonly unit: ClockUnit; readonly amount: number; readonly offset: number };
 function clockProblem(value: string, unitId: ClockUnitId, noun: string, minimum: number | null): ClockAmount | string {
@@ -55,13 +51,9 @@ function clockProblem(value: string, unitId: ClockUnitId, noun: string, minimum:
   if (amount === null) return `Enter a whole number of ${unit.plural}, with no decimal point or separator.`;
   if (minimum !== null && amount < minimum) return `Advancing moves the clock forward, so enter at least one ${unit.singular}.`;
   const offset = amount * unit.milliseconds;
-  if (!Number.isSafeInteger(offset)) return `That many ${unit.plural} is further than the clock can carry.`;
-  return { unit, amount, offset };
+  return !Number.isSafeInteger(offset) ? `That many ${unit.plural} is further than the clock can carry.` : { unit, amount, offset };
 }
-function zoneOf(iso: string): string {
-  if (iso.endsWith("Z") || iso.endsWith("z")) return "UTC";
-  return /([+-]\d{2}:\d{2})$/.exec(iso)?.[1] ?? "UTC";
-}
+const zoneOf = (iso: string): string => (iso.endsWith("Z") || iso.endsWith("z") ? "UTC" : (/([+-]\d{2}:\d{2})$/.exec(iso)?.[1] ?? "UTC"));
 function describeInstantWords(iso: string): string | null {
   const milliseconds = Date.parse(iso);
   if (!Number.isFinite(milliseconds)) return null;
@@ -96,6 +88,7 @@ const CLOCK_BOUNDARY_SENTENCE = "Every boundary is evaluated when a read or a co
 const CLOCK_IMMEDIATE_SENTENCE = "Nothing here is scheduled. There is no run-at time, no timer and no background job, so advancing " + "is an immediate act and the only two controls that move time are the two below.";
 const ARMED_DISARM_SENTENCE = "Disarm this plan before arming another: exactly one failure is active at a time, and the " + "development route refuses a second arming rather than replacing this one.";
 const CLOCK_FIELD_CLASS = "flex min-w-0 flex-col gap-2";
+const ClockFact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-0.5", termClassName: "text-muted-foreground", valueClassName: "min-w-0 text-pretty" });
 const OFFSET_HINT = "Units are elapsed time: a day here is 24 hours, and no unit on this panel is a calendar day. A negative offset places the instant before the seed.";
 const ADVANCE_HINT = "Advancing moves the instant forward by elapsed time only. 24 hours reaches the notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which is where both are refused.";
 const chooseClockUnit = (value: string, select: (unit: ClockUnitId) => void): void => {
@@ -153,15 +146,12 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
     </fieldset>
   );
 }
-/** The development runtime's one control surface: scenario, clock, failure modes and reset. */
-export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, onSetFailurePlan, reset, className }: DevPanelProps): ReactElement {
+/** The development runtime's one control surface: scenario, clock, failure modes and reset. */ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, onSetFailurePlan, reset, className }: DevPanelProps): ReactElement {
   const idPrefix = useId();
   const titleId = `${idPrefix}-title`;
   const introId = `${idPrefix}-intro`;
   const scenarioSelectId = `${idPrefix}-scenario-select`;
   const scenarioHintId = `${idPrefix}-scenario-hint`;
-  const offsetBase = `${idPrefix}-offset`;
-  const advanceBase = `${idPrefix}-advance`;
   const targetHintId = `${idPrefix}-target-hint`;
   const [result, setResult] = useState<DevPanelResult | null>(null);
   const [pending, setPending] = useState<DevPanelAction | null>(null);
@@ -235,7 +225,6 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
     void runAction("disarm-failure", "No failure is armed", () => onSetFailurePlan(null));
   };
   const receiptHeading = result !== null && hasSettled(result.outcome) ? result.settledHeading : null;
-  const receiptRetry = result !== null && mayReplay(result.outcome) ? retryLastAttempt : undefined;
   return (
     <section data-slot="dev-panel" aria-labelledby={titleId} aria-describedby={introId} aria-busy={busy ? true : undefined} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
@@ -258,7 +247,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
       {busy ? <output className="block type-supporting text-pretty">{"Applying that change to this development session and waiting for the answer."}</output> : null}
       {result === null ? null : (
         <div data-slot="dev-panel-result" data-action={result.action} className="min-w-0">
-          <OperationResult outcome={result.outcome} heading={receiptHeading ?? undefined} headingLevel={3} onRetrySameWork={receiptRetry} />
+          <OperationResult outcome={result.outcome} heading={receiptHeading ?? undefined} headingLevel={3} onRetrySameWork={result !== null && mayReplay(result.outcome) ? retryLastAttempt : undefined} />
         </div>
       )}
       <Card className="min-w-0">
@@ -304,32 +293,23 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           <dl className="flex min-w-0 flex-col gap-3 text-sm">
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <dt className="text-muted-foreground">Scenario instant</dt>
-              <dd className="min-w-0 text-pretty">
-                {derivedWords === null ? null : `${derivedWords}. `}
-                <bdi className="mono-identifier wrap-anywhere">{clock.derivedInstant}</bdi>
-              </dd>
-            </div>
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <dt className="text-muted-foreground">Seed instant</dt>
-              <dd className="min-w-0 text-pretty">
-                {seedWords === null ? null : `${seedWords}. `}
-                <bdi className="mono-identifier wrap-anywhere">{clock.seedInstant}</bdi>
-              </dd>
-            </div>
-            <div className="flex min-w-0 flex-col gap-0.5">
-              <dt className="text-muted-foreground">Offset from the seed instant</dt>
-              <dd className="min-w-0 text-pretty">
-                {describeOffset(clock.offsetMilliseconds)} <bdi className="mono-identifier tabular-figures text-muted-foreground">({String(clock.offsetMilliseconds)} ms)</bdi>
-              </dd>
-            </div>
+            <ClockFact term="Scenario instant">
+              {derivedWords === null ? null : `${derivedWords}. `}
+              <bdi className="mono-identifier wrap-anywhere">{clock.derivedInstant}</bdi>
+            </ClockFact>
+            <ClockFact term="Seed instant">
+              {seedWords === null ? null : `${seedWords}. `}
+              <bdi className="mono-identifier wrap-anywhere">{clock.seedInstant}</bdi>
+            </ClockFact>
+            <ClockFact term="Offset from the seed instant">
+              {describeOffset(clock.offsetMilliseconds)} <bdi className="mono-identifier tabular-figures text-muted-foreground">({String(clock.offsetMilliseconds)} ms)</bdi>
+            </ClockFact>
           </dl>
           <p className="type-supporting text-pretty">{CLOCK_BOUNDARY_SENTENCE}</p>
           <p className="type-supporting text-pretty">{CLOCK_IMMEDIATE_SENTENCE}</p>
           <Separator />
-          <ClockField legend="Set the offset from the seed instant" field="Offset" idBase={offsetBase} value={offsetValue} unit={offsetUnit} error={offsetError} hint={OFFSET_HINT} action="Set the clock offset" onChange={setOffsetValue} onUnit={setOffsetUnit} onAction={applyClockOffset} disabled={busy} />
-          <ClockField legend="Advance the clock" field="Advance by" idBase={advanceBase} minimum={1} value={advanceValue} unit={advanceUnit} error={advanceError} hint={ADVANCE_HINT} action="Advance the clock" onChange={setAdvanceValue} onUnit={setAdvanceUnit} onAction={advanceClock} disabled={busy} />
+          <ClockField legend="Set the offset from the seed instant" field="Offset" idBase={`${idPrefix}-offset`} value={offsetValue} unit={offsetUnit} error={offsetError} hint={OFFSET_HINT} action="Set the clock offset" onChange={setOffsetValue} onUnit={setOffsetUnit} onAction={applyClockOffset} disabled={busy} />
+          <ClockField legend="Advance the clock" field="Advance by" idBase={`${idPrefix}-advance`} minimum={1} value={advanceValue} unit={advanceUnit} error={advanceError} hint={ADVANCE_HINT} action="Advance the clock" onChange={setAdvanceValue} onUnit={setAdvanceUnit} onAction={advanceClock} disabled={busy} />
         </CardContent>
       </Card>
       <Card className="min-w-0">

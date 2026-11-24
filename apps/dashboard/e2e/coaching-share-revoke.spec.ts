@@ -1,5 +1,4 @@
-/** Criterion 16 — voluntary coaching: what a coach is invited to, may read, and loses. */
-import type { Locator, Page } from "@playwright/test";
+/** Criterion 16 — voluntary coaching: what a coach is invited to, may read, and loses. */ import type { Locator, Page } from "@playwright/test";
 import { test, expect, actAs, devStateOf, isRecord, newAttemptId, operateDevControl, parseJson, setClock, type JsonRecord } from "../playwright.config"; // The development-session cookie is the whole of the identity this application authorises a request as, and the reset restores the seeded world the assertions name. Both are the runner's own, read from it rather than repeated here, so this file cannot silently act as an identity or a seed the runner no longer means.
 const WORKER_SESSION = "established-worker";
 const COACH_SESSION = "coach"; // The coach admitted read-only to exactly the modules and periods the worker switched on.
@@ -371,8 +370,7 @@ test("reports one admitted module's source as unavailable while the other admitt
   await page.goto(`/coaching/coach/${FINANCIAL_GRANT}`);
   await expect(page.locator("main").getByText("Unavailable right now", { exact: true })).toHaveCount(0);
 });
-/** The task-summary surface's own words: the read and the changes it admits, the states a share passes through, and the one description this journey writes. */
-const SUMMARY = {
+/** The task-summary surface's own words: the read and the changes it admits, the states a share passes through, and the one description this journey writes. */ const SUMMARY = {
   path: "/api/coaching/taskshare",
   maxCodePoints: 240,
   statusWords: { open: "Open", completed: "Completed", reopened: "Reopened", cancelled: "Cancelled" } as Readonly<Record<string, string>>,
@@ -501,7 +499,7 @@ test("shares one task's summary under a reviewed description a coach reads, hold
   await expect(removedRow, "The stopped share is stated as no longer shared, not dropped from the list without a word.").toBeVisible();
   await expect(removedRow).toHaveAttribute("data-state", "removed");
   await expect(removedRow.getByText(SUMMARY.removedSentence, { exact: true })).toBeVisible();
-  await expect(shareList.getByRole("button", { name: /^Stop sharing: /u }), "A stopped share offers no stop control of its own.").toHaveCount(0);
+  await expect(shareList.getByRole("button", { name: new RegExp(`^Stop sharing: task summary ${chosenTaskId}`, "u") }), "The share this journey stopped offers no stop control of its own.").toHaveCount(0);
   await page.goto("/work");
   await page.getByRole("tab", { name: SUMMARY.allList }).click();
   await expect(page.getByRole("button", { name: `Actions for ${SUMMARY.revisedTitle}` }), "Stopping a summary leaves the task itself on the list, with its own title.").toBeVisible();
