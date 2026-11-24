@@ -4,8 +4,8 @@ import { parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from 
 import { REPEAT_PROFILES, admitSuccessor, applyThisAndFuture, missedPlan, nextOccurrences, validateSeriesRule, type RepeatProfile, type RuleRevision, type SeriesEnd, type SeriesOccurrence, type SeriesRule, type SeriesRulePatch, type SeriesState } from "@/modules/time/recurrence";
 import { canEdit, type ResolvedSession, type ScopeDecision } from "../authorize";
 import { principalIdSchema, recordRevisionSchema, taskRecordSchema, taskSeriesRecordSchema, type MutationInput, type PrincipalId, type Scope, type SeriesEndRecord, type SeriesRuleRecord, type SeriesRuleRevisionRecord, type TaskKind, type TaskRecord, type TaskRecordStatus, type TaskSeriesRecord } from "../envelope";
-import { openMutation, refuseDenied, runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
-import { CORRUPT_DOCUMENT_FAULT, type MutationOutcome, type MutationResult, type PerItemResult } from "../outcome";
+import { openMutation, refuseDenied, refuseInvalid, runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
+import { CORRUPT_DOCUMENT_FAULT, type FieldMessages, type MutationOutcome, type MutationResult, type PerItemResult } from "../outcome";
 const WORDS = {
   titleRequired: "Give this task a title, because a title is the one thing a task cannot do without.",
   titleTooLong: "Shorten the title to a phrase, so it reads at a glance in a list.",
@@ -40,6 +40,7 @@ const WORDS = {
   firstDueDateRequired: "Choose the first due date the repeat counts from.",
   planningTimeZoneRequired: "Choose the planning time zone, so a display change never moves these dates.",
   effectiveFromRequired: "Choose the date this change takes effect from, so the dates before it keep the rule they were planned under.",
+  effectiveFromNotProspective: "Choose a boundary the plan has not already reached, so this change revises only the dates from that boundary onward and no completed date is replanned.",
   resolutionRequired: "Choose one of the three resolutions for a plan that needs review: keep this occurrence, move the next date forward, or stop the series.",
   unfinishedWorkInvalid: "Choose what happens to the unfinished work when the series stops: keep it, or cancel it.",
   cancellationNotConfirmed: "Confirm the cancellation, because it is a deliberate act about this task.",
@@ -770,6 +771,8 @@ function applyEditOccurrence({ docs, session, operationId }: MutationContext, pa
   return { changed: true, revision: next.revision, result: { series: seriesView(series), occurrence: taskView(next) }, changedIds: [next.taskId] };
 }
 export type EditThisAndFutureResult = { readonly series: SeriesView; readonly occurrence: TaskView | null; readonly effectiveFrom: string; readonly revisionId: string; readonly preview: SeriesPreviewView | null };
+/** The domain's own per-field messages, carried into a refusal keyed by field path rather than restated at this boundary. */
+const fieldMessagesOf = (fields: Readonly<Record<string, string>>): FieldMessages => Object.fromEntries(Object.entries(fields).map(([field, message]) => [field, [message]]));
 /** Revises the plan from an explicit boundary onward, leaving everything before it untouched. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const editThisAndFuture = async (input: MutationInput<EditThisAndFuturePayload>, options?: TaskMutationOptions): Promise<MutationOutcome> =>
   runWorkMutation<EditThisAndFuturePayload, EditThisAndFutureResult>(input, options, editThisAndFutureSchema, "editThisAndFuture", "series", { readCurrent: (documents, payload) => seriesTarget(documents, payload.seriesId), apply: applyEditThisAndFuture });
@@ -797,9 +800,12 @@ function applyEditThisAndFuture({ docs, session, operationId }: MutationContext,
     ...(statedEnd === undefined ? {} : { end: statedEnd }),
   };
   const edit = applyThisAndFuture({ revisions, from: effectiveFrom, patch, lastCompletedOn: lastCompletedDate(occurrences) });
-  if (edit.status === "refused") return { changed: false };
+  // A boundary the plan has already reached is a rejected input, not a no-op: it would replan completed history, so the refusal names the field that stated it, and only an edit that changes nothing to a prospective plan answers `unchanged`.
+  if (edit.status === "refused") return refuseInvalid(operationId, { effectiveFrom: [WORDS.effectiveFromNotProspective] });
+  // The merged rule is the whole plan this change would leave behind, so it is checked as a rule and refused with the domain's own messages: a field the payload did not state can still make the merged rule one this domain does not admit.
   const merged = edit.revision.rule;
-  if (validateSeriesRule(merged).status === "invalid") return { changed: false };
+  const admitted = validateSeriesRule(merged);
+  if (admitted.status === "invalid") return refuseInvalid(operationId, fieldMessagesOf(admitted.fields));
   const storedRule = toRuleRecord(merged);
   const revisionRecord: SeriesRuleRevisionRecord = { revisionId: newRecordId("series-revision"), effectiveFrom: serialiseCivilDate(edit.revision.effectiveFrom), rule: storedRule };
   const drafted: TaskSeriesRecord = { ...series, title: payload.title ?? series.title, currentRule: storedRule, effectiveRevisions: [...series.effectiveRevisions, revisionRecord] };

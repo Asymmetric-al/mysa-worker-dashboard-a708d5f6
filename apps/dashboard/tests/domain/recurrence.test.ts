@@ -300,9 +300,19 @@ it("this occurrence and this-and-future are two different changes: creates a pro
 });
 it("this occurrence and this-and-future are two different changes: refuses a boundary that is not prospective, so completed history cannot be re-planned", async () => {
   const { created, before } = await completedWeeklyRound();
-  const refused = outcomeOf(await mutations.series.editThisAndFuture(inputOf({ seriesId: created.seriesId, effectiveFrom: SEED_DAY, profile: "everyNWeeks", interval: 2 }, before.revision), source()));
-  expect(refused.outcome).toBe("unchanged");
+  const refused = invalidOutcomeOf(await mutations.series.editThisAndFuture(inputOf({ seriesId: created.seriesId, effectiveFrom: SEED_DAY, profile: "everyNWeeks", interval: 2 }, before.revision), source()), "editThisAndFuture at a boundary the plan has already reached");
+  expect(Object.keys(refused.fields)).toEqual(["effectiveFrom"]);
   expect((await seriesEnvelopeOf(created.seriesId)).data.effectiveRevisions).toHaveLength(1);
+});
+it("this occurrence and this-and-future are two different changes: refuses a merged rule the domain rejects at the field that makes it invalid, instead of reporting that nothing needed changing", async () => {
+  const created = await createWeeklySeries("Weekly call round", SEED_DAY);
+  const before = await seriesEnvelopeOf(created.seriesId);
+  const refused = invalidOutcomeOf(await mutations.series.editThisAndFuture(inputOf({ seriesId: created.seriesId, effectiveFrom: WEEK_AFTER_SEED_DAY, end: { kind: "on-date", on: "2026-11-01" } }, before.revision), source()), "editThisAndFuture ending the series before its first due date");
+  expect(Object.keys(refused.fields)).toEqual(["end"]);
+  expect(refused.fields.end?.[0]).toBe("Choose an end date on or after the first due date.");
+  const after = await seriesEnvelopeOf(created.seriesId);
+  expect(after.revision).toBe(before.revision);
+  expect(after.data.effectiveRevisions).toHaveLength(1);
 });
 it("pausing, resuming and stopping a series: pauses future admission while the outstanding occurrence keeps its state, and resumes without a backfill", async () => {
   const created = await createWeeklySeries("Weekly call round", SEED_DAY);
