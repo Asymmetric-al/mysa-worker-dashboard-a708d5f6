@@ -4,17 +4,27 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink } from "@/components/ui/pagination";
 import { cn } from "@/lib/cn";
+import { countFormatOf } from "@/lib/count-format";
 const DEFAULT_PAGE_SIZE_OPTIONS: readonly number[] = [50, 200];
 const SMALLEST_DEFAULT_PAGE_SIZE = 50;
 const LARGEST_DEFAULT_PAGE_SIZE = 200;
 const PAGE_WINDOW_LIMIT = 7;
-const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 type PageToken = number | "gap";
-/** Props of {@link PaginationBar}. */
-export type PaginationBarProps = { total: number; page: number; pageSize: number; pageSizeOptions?: readonly number[]; onPageChange: (page: number) => void; onPageSizeChange: (size: number) => void; itemNoun: string; disabled?: boolean; className?: string };
-/** The only paging control in the application. */
-export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageChange, onPageSizeChange, itemNoun, disabled = false, className }: PaginationBarProps) {
+/** Props of {@link PaginationBar}. */ export type PaginationBarProps = {
+  total: number;
+  page: number;
+  pageSize: number;
+  pageSizeOptions?: readonly number[];
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
+  itemNoun: string;
+  disabled?: boolean;
+  className?: string;
+  /** The interface locale this pager groups its counts in, stated by the route that composes it; left off, the application default interface locale applies. */ readonly locale?: string;
+};
+/** The only paging control in the application. */ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageChange, onPageSizeChange, itemNoun, disabled = false, className, locale }: PaginationBarProps) {
   const pageSizeFieldId = useId();
+  const formatCount = countFormatOf(locale); // One formatter for this render, in the interface locale the composing route states.
   const totalCount = Number.isFinite(total) ? Math.max(0, Math.trunc(total)) : 0;
   const options = normalisePageSizeOptions(pageSizeOptions);
   const currentPageSize = clampPageSize(pageSize, options);
@@ -22,7 +32,7 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
   const currentPage = clampPage(page, pageCount);
   const firstRow = totalCount === 0 ? 0 : (currentPage - 1) * currentPageSize + 1;
   const lastRow = Math.min(currentPage * currentPageSize, totalCount);
-  const countText = totalCount === 0 ? `Showing 0 of 0 ${itemNoun}` : `Showing ${countFormat.format(firstRow)}\u2013${countFormat.format(lastRow)} of ${countFormat.format(totalCount)} ${itemNoun}`;
+  const countText = totalCount === 0 ? `Showing 0 of 0 ${itemNoun}` : `Showing ${formatCount.format(firstRow)}\u2013${formatCount.format(lastRow)} of ${formatCount.format(totalCount)} ${itemNoun}`;
   function requestPage(requested: number): void {
     if (disabled) return;
     const nextPage = clampPage(requested, pageCount);
@@ -52,7 +62,7 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
           <NativeSelect id={pageSizeFieldId} className="w-20" value={String(currentPageSize)} disabled={disabled} onChange={(event) => requestPageSize(Number(event.currentTarget.value))}>
             {options.map((option) => (
               <NativeSelectOption key={option} value={String(option)}>
-                {countFormat.format(option)}
+                {formatCount.format(option)}
               </NativeSelectOption>
             ))}
           </NativeSelect>
@@ -73,8 +83,8 @@ export function PaginationBar({ total, page, pageSize, pageSizeOptions, onPageCh
                   </PaginationItem>
                 ) : (
                   <PaginationItem key={token}>
-                    <PaginationLink isActive={token === currentPage} aria-label={`Page ${countFormat.format(token)} of ${countFormat.format(pageCount)}`} aria-disabled={disabled || undefined} onClick={() => requestPage(token)}>
-                      {countFormat.format(token)}
+                    <PaginationLink isActive={token === currentPage} aria-label={`Page ${formatCount.format(token)} of ${formatCount.format(pageCount)}`} aria-disabled={disabled || undefined} onClick={() => requestPage(token)}>
+                      {formatCount.format(token)}
                     </PaginationLink>
                   </PaginationItem>
                 ),

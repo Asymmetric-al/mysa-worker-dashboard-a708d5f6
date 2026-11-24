@@ -41,7 +41,6 @@ const RELATIONSHIP_LABEL_DESCRIPTION = "The relationship word recorded against t
 const RESTRICTIONS_LEGEND = "Restrictions";
 const UNCONFIRMED_NOTE = "Saving is paused until the result above is checked, because this attempt may already have changed the record. Checking it reads what happened and applies nothing.";
 const SAVE_NOTE = "Saving changes the permitted fields of this record. It sends no message, records no interaction, subscribes no one and creates no financial record.";
-const LOCAL_REFUSAL_NOTE = "Saving cannot start while a field above states what it needs. Nothing you typed has been discarded.";
 const BACK_TO_RECORD_LABEL = "Back to the record";
 const EDITS_UNAVAILABLE_TITLE = "Contact edits are unavailable here";
 const EDITS_UNAVAILABLE_BODY = "This record does not admit a permitted-field change in the current session and scope, so no field is offered and nothing was changed. A refusal here says nothing about what exists anywhere else.";
@@ -94,7 +93,6 @@ function formFieldOf(path: string): string | null {
   if (path === RELATIONSHIP_LABEL_FIELD) return "relationshipLabel";
   return null;
 }
-/** The form fields the worker has edited, read from the form's own field metadata. */
 const editedFieldNames = (fieldMeta: Readonly<Partial<Record<string, { readonly isDirty: boolean }>>>): readonly string[] => Object.keys(fieldMeta).filter((name) => fieldMeta[name]?.isDirty === true);
 /** The refusal the payload this form would send already carries, read from the one schema the change is saved through before anything is sent: a message for a field the worker has not edited is withheld so a pristine form states nothing, and a message the schema states for the form itself is stated once any field has been edited. */
 function localRefusalOf(values: EditFormValues, record: PartnerRecord, partnerRef: string, editedFields: readonly string[]): FieldErrorLookup {
@@ -159,34 +157,30 @@ function AdditionalNameField({ index, row, errors, onChange, onRemove }: Additio
     </div>
   );
 }
-function RestrictionsBlock({ record }: { readonly record: PartnerRecord }): ReactElement {
-  return (
-    <section aria-label={RESTRICTIONS_LEGEND} className="flex min-w-0 flex-col gap-2">
-      <h3 className="type-subsection-title">{RESTRICTIONS_LEGEND}</h3>
-      <p className="type-supporting text-pretty">A restriction is a limit the source recorded, and this form changes none of them. Each one is carried through this edit exactly as it is stored, so an edit to another field can never drop a restriction the form does not mention.</p>
-      {record.restrictions.length === 0 ? (
-        <p className="type-supporting text-pretty">No restriction is recorded for this record, so this edit carries none.</p>
-      ) : (
-        <ul className="flex min-w-0 list-disc flex-col gap-2 ps-4 text-sm">
-          {record.restrictions.map((restriction, index) => (
-            <li key={`${restriction.kind}-${String(index)}`} className="min-w-0 text-pretty">
-              <span className="font-medium">{restriction.kind.trim() === "" ? "A restriction with no label is recorded on this record." : restriction.kind}</span>
-              {restriction.detail.trim() === "" ? null : <span className="text-muted-foreground">{` — ${restriction.detail}`}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
+const RestrictionsBlock = ({ record }: { readonly record: PartnerRecord }): ReactElement => (
+  <section aria-label={RESTRICTIONS_LEGEND} className="flex min-w-0 flex-col gap-2">
+    <h3 className="type-subsection-title">{RESTRICTIONS_LEGEND}</h3>
+    <p className="type-supporting text-pretty">A restriction is a limit the source recorded, and this form changes none of them. Each one is carried through this edit exactly as it is stored, so an edit to another field can never drop a restriction the form does not mention.</p>
+    {record.restrictions.length === 0 ? (
+      <p className="type-supporting text-pretty">No restriction is recorded for this record, so this edit carries none.</p>
+    ) : (
+      <ul className="flex min-w-0 list-disc flex-col gap-2 ps-4 text-sm">
+        {record.restrictions.map((restriction, index) => (
+          <li key={`${restriction.kind}-${String(index)}`} className="min-w-0 text-pretty">
+            <span className="font-medium">{restriction.kind.trim() === "" ? "A restriction with no label is recorded on this record." : restriction.kind}</span>
+            {restriction.detail.trim() === "" ? null : <span className="text-muted-foreground">{` — ${restriction.detail}`}</span>}
+          </li>
+        ))}
+      </ul>
+    )}
+  </section>
+);
 type ConflictPanelProps = { readonly outcome: Extract<MutationOutcome, { readonly outcome: "conflict" }>; readonly fieldLabels: Readonly<Record<string, string | undefined>>; readonly onApplyMine: (currentRevision: string) => void; readonly onDiscardMine: () => void };
 function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: ConflictPanelProps): ReactElement {
   const titleId = useId();
   return (
     <section data-slot="partner-edit-conflict" data-reason={outcome.reason} aria-labelledby={titleId} className="flex min-w-0 flex-col gap-3">
-      <h3 id={titleId} className="type-subsection-title sr-only">
-        {FORM_OUTCOME_COPY.conflict.title}
-      </h3>
+      <h3 {...{ id: titleId, className: "type-subsection-title sr-only" as const }}>{FORM_OUTCOME_COPY.conflict.title}</h3>
       <OperationResult outcome={outcome} headingLevel={4} fieldLabels={fieldLabels} />
       <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
         <p className="type-group-title">What to do with your input</p>
@@ -203,23 +197,19 @@ function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: Con
     </section>
   );
 }
-function AcceptedNote({ partnerRef, revision }: { readonly partnerRef: string; readonly revision: string }): ReactElement {
-  return (
-    <div data-slot="partner-edit-accepted" className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
-      <p className="type-group-title">This record now stands at the revision below</p>
-      <p className="type-supporting text-pretty">The change was applied once, and this receipt stays on the page as the record of it.</p>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
-        <span className="text-muted-foreground">{REVISION_LABEL}</span>
-        <bdi className="mono-identifier wrap-anywhere">{revision}</bdi>
-      </p>
-      <p className="min-w-0">
-        <Link href={recordHref(partnerRef)} data-slot="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal")}>
-          {BACK_TO_RECORD_LABEL}
-        </Link>
-      </p>
-    </div>
-  );
-}
+const AcceptedNote = ({ partnerRef, revision }: { readonly partnerRef: string; readonly revision: string }): ReactElement => (
+  <div data-slot="partner-edit-accepted" className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
+    <p className="type-group-title">This record now stands at the revision below</p>
+    <p className="type-supporting text-pretty">The change was applied once, and this receipt stays on the page as the record of it.</p>
+    <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
+      <span className="text-muted-foreground">{REVISION_LABEL}</span>
+      <bdi className="mono-identifier wrap-anywhere">{revision}</bdi>
+    </p>
+    <p className="min-w-0">
+      <Link {...{ href: recordHref(partnerRef), "data-slot": "button" as const, className: cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal") }}>{BACK_TO_RECORD_LABEL}</Link>
+    </p>
+  </div>
+);
 type OutcomeRegionProps = {
   readonly outcome: MutationOutcome;
   readonly partnerRef: string;
@@ -381,9 +371,7 @@ export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, 
                     </div>
                     <div className="flex min-w-0 flex-col gap-4">
                       <div className="flex min-w-0 flex-col gap-1">
-                        <h3 id={methodsHeadingId} className="type-subsection-title">
-                          {CONTACT_METHODS_LEGEND}
-                        </h3>
+                        <h3 {...{ id: methodsHeadingId, className: "type-subsection-title" as const }}>{CONTACT_METHODS_LEGEND}</h3>
                         <p className="type-supporting text-pretty">{CONTACT_METHODS_HELP}</p>
                         <p className="type-supporting text-pretty">{CONTACT_METHODS_IDENTITY_NOTE}</p>
                       </div>
@@ -422,14 +410,10 @@ export default function PartnerEditForm({ partnerRef, envelope, onSettled, dir, 
                     <div className="flex min-w-0 flex-col gap-2">
                       {unconfirmed ? null : (
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button type="submit" disabled={isPending || carryProblem !== null || localRefusal.count > 0} aria-describedby={actionNoteId} className="min-h-target max-w-full whitespace-normal">
-                            {isPending ? "Saving the changes" : "Save these changes"}
-                          </Button>
+                          <Button {...{ type: "submit" as const, disabled: isPending || carryProblem !== null || localRefusal.count > 0, "aria-describedby": actionNoteId, className: "min-h-target max-w-full whitespace-normal" as const }}>{isPending ? "Saving the changes" : "Save these changes"}</Button>
                         </div>
                       )}
-                      <p id={actionNoteId} className="type-supporting text-pretty">
-                        {unconfirmed ? UNCONFIRMED_NOTE : localRefusal.count > 0 ? LOCAL_REFUSAL_NOTE : SAVE_NOTE}
-                      </p>
+                      <p {...{ id: actionNoteId, className: "type-supporting text-pretty" as const }}>{unconfirmed ? UNCONFIRMED_NOTE : localRefusal.count > 0 ? "Saving cannot start while a field above states what it needs. Nothing you typed has been discarded." : SAVE_NOTE}</p>
                     </div>
                   </>
                 );

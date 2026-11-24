@@ -1,4 +1,4 @@
-/** Proves the recurring-outcome bucket model: exactly five outcomes, the first-class `outside-partition` value that keeps evidence which is unknown or stale out of them, and the structural rules a … */
+/** Proves the recurring-outcome bucket model: exactly five outcomes, the first-class `outside-partition` value that keeps evidence which is unknown or stale out of them, and the structural rules a sixth bucket cannot satisfy. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { reads } from "@/modules/data-service";
 import type { SessionSource } from "@/modules/data-service/authorize";
@@ -29,28 +29,26 @@ async function seededCommitmentRows(): Promise<readonly CommitmentRowFigure[]> {
   if (commitments.length !== total) throw new Error(`The commitments read returned ${String(commitments.length)} rows of ${String(total)}, so a page window would hide rows this case is meant to inspect.`); // The window the read returns is the whole seeded list, so no row the seed states is left unexamined.
   return commitments;
 }
-describe("the bucket vocabulary", () => {
-  it("closes the partition at exactly five outcomes", () => {
-    expect(buckets.PARTITION_BUCKETS).toHaveLength(5);
-    expect([new Set(buckets.PARTITION_BUCKETS).size, [...buckets.PARTITION_BUCKETS]]).toEqual([5, ["received", "processing", "upcoming", "recovery-needs-attention", "not-received"]]); // A duplicate would hold the count at five while one outcome went missing.
-  });
-  it("exports outside-partition as a first-class value that is no sixth outcome", () => {
-    expect(buckets.OUTSIDE_PARTITION).toBe("outside-partition");
-    expect<string[]>([...buckets.PARTITION_BUCKETS]).not.toContain(buckets.OUTSIDE_PARTITION);
-    expect(buckets.isInPartition(buckets.OUTSIDE_PARTITION)).toBe(false); // Set membership and the grouping question both answer "no", so the value is a real state rather than a leftover string that happens to be spelled out somewhere.
-  });
-  it("labels all six values with distinct reader-facing text", () => {
-    expect(ALL_BUCKETS).toHaveLength(6);
-    expect(new Set(ALL_BUCKETS).size).toBe(6);
-    expect(Object.keys(buckets.BUCKET_LABELS).sort()).toEqual([...ALL_BUCKETS].sort()); // Every value carries a label and nothing else does, so a seventh value cannot arrive without this count or this key set changing.
-    const labels = ALL_BUCKETS.map((bucket) => buckets.BUCKET_LABELS[bucket]);
-    for (const label of labels) {
-      expect(label.trim()).not.toBe("");
-      expect(label).toMatch(/\p{L}/u);
-      expect(label).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(|var\(--|\b(?:bg|text|border)-/iu);
-    }
-    expect(new Set(labels).size).toBe(6);
-  });
+it("the bucket vocabulary: closes the partition at exactly five outcomes", () => {
+  expect(buckets.PARTITION_BUCKETS).toHaveLength(5);
+  expect([new Set(buckets.PARTITION_BUCKETS).size, [...buckets.PARTITION_BUCKETS]]).toEqual([5, ["received", "processing", "upcoming", "recovery-needs-attention", "not-received"]]); // A duplicate would hold the count at five while one outcome went missing.
+});
+it("the bucket vocabulary: exports outside-partition as a first-class value that is no sixth outcome", () => {
+  expect(buckets.OUTSIDE_PARTITION).toBe("outside-partition");
+  expect<string[]>([...buckets.PARTITION_BUCKETS]).not.toContain(buckets.OUTSIDE_PARTITION);
+  expect(buckets.isInPartition(buckets.OUTSIDE_PARTITION)).toBe(false); // Set membership and the grouping question both answer "no", so the value is a real state rather than a leftover string that happens to be spelled out somewhere.
+});
+it("the bucket vocabulary: labels all six values with distinct reader-facing text", () => {
+  expect(ALL_BUCKETS).toHaveLength(6);
+  expect(new Set(ALL_BUCKETS).size).toBe(6);
+  expect(Object.keys(buckets.BUCKET_LABELS).sort()).toEqual([...ALL_BUCKETS].sort()); // Every value carries a label and nothing else does, so a seventh value cannot arrive without this count or this key set changing.
+  const labels = ALL_BUCKETS.map((bucket) => buckets.BUCKET_LABELS[bucket]);
+  for (const label of labels) {
+    expect(label.trim()).not.toBe("");
+    expect(label).toMatch(/\p{L}/u);
+    expect(label).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|oklch\(|var\(--|\b(?:bg|text|border)-/iu);
+  }
+  expect(new Set(labels).size).toBe(6);
 });
 const PLACEMENTS: readonly { readonly placed: string; readonly observed: buckets.RecurringEvidence["observed"]; readonly expected: buckets.RecurringBucket }[] = [
   { placed: "a settled occurrence in Received", observed: "settled", expected: "received" },
@@ -83,54 +81,48 @@ describe("evidence that cannot be placed", () => {
     }
   });
 });
-describe("what a bucket does not say", () => {
-  it("offers no retry affordance and no debt shape on a not-received occurrence", () => {
-    const bucketState = buckets.bucketFor({ observed: "not-received" });
-    expect(bucketState).toBe("not-received");
-    expect(typeof bucketState).toBe("string"); // The classification is a string primitive, so it holds no field at all; the scan below covers the two places an affordance could still appear here — the row a badge renders and the module — and the case at the end of this file covers the row the read path builds.
-    const row = commitmentRow({ kind: "fixed-total", cadence: "annual", bucketState, fixedTotal: { promised: usd(120_000), fulfilled: usd(40_000), released: usd(0), remaining: usd(80_000) } });
-    expect(keysDeep(row).filter((key) => AFFORDANCE_OR_DEBT.test(key))).toEqual([]); // Asserted on the row a badge renders, at any depth: a nested retry or owed field would let the surface offer an action this application never performs, and would read a missing collection as the donor's debt.
-    expect(Object.keys(buckets).filter((name) => AFFORDANCE_OR_DEBT.test(name))).toEqual([]); // And on the module's own surface, so no helper can add the affordance beside the vocabulary.
-  });
-  it("returns only the bucket, never a money total", () => {
-    const classifications = ALL_EVIDENCE.map((observed) => buckets.bucketFor({ observed }));
-    expect(classifications).toHaveLength(ALL_EVIDENCE.length);
-    for (const bucket of classifications) {
-      expect(typeof bucket).toBe("string");
-      expect(ALL_BUCKETS).toContain(bucket);
-      expect(bucket).not.toMatch(/\d/);
-    }
-  });
+it("what a bucket does not say: offers no retry affordance and no debt shape on a not-received occurrence", () => {
+  const bucketState = buckets.bucketFor({ observed: "not-received" });
+  expect(bucketState).toBe("not-received");
+  expect(typeof bucketState).toBe("string"); // The classification is a string primitive, so it holds no field at all; the scan below covers the two places an affordance could still appear here — the row a badge renders and the module — and the case at the end of this file covers the row the read path builds.
+  const row = commitmentRow({ kind: "fixed-total", cadence: "annual", bucketState, fixedTotal: { promised: usd(120_000), fulfilled: usd(40_000), released: usd(0), remaining: usd(80_000) } });
+  expect(keysDeep(row).filter((key) => AFFORDANCE_OR_DEBT.test(key))).toEqual([]); // Asserted on the row a badge renders, at any depth: a nested retry or owed field would let the surface offer an action this application never performs, and would read a missing collection as the donor's debt.
+  expect(Object.keys(buckets).filter((name) => AFFORDANCE_OR_DEBT.test(name))).toEqual([]); // And on the module's own surface, so no helper can add the affordance beside the vocabulary.
 });
-describe("the five measures stay five", () => {
-  it("exposes no monthly-equivalent and no gift measure", () => {
-    expect(Object.keys(buckets).filter((name) => /monthly|equivalent|gift|donation|averag|total/i.test(name))).toEqual([]);
-    expect(commitmentRow().monthlyEquivalentFromSource).toBeUndefined(); // A monthly equivalent exists only where the source calculated it: a row built without one carries none, because averaging received gifts would state a measure this module cannot know.
-  });
-  it("refuses to give a received gift a commitment bucket", () => {
-    // A commitment is not received money and a received gift is not a commitment outcome, so the evidence vocabulary holds no gift member and asking for one is a programming error rather than a sixth bucket.
-    expect(() => buckets.bucketFor({ observed: "gift-received" } as unknown as buckets.RecurringEvidence)).toThrow(/gift-received/);
-    expect(buckets.bucketFor({ observed: "settled" })).toBe("received");
-  });
-  it("groups outside-partition apart from the five outcomes", () => {
-    const inPartition = ALL_BUCKETS.filter((bucket) => buckets.isInPartition(bucket));
-    const outsidePartition = ALL_BUCKETS.filter((bucket) => !buckets.isInPartition(bucket));
-    expect(inPartition).toHaveLength(5); // The grouping covers all six values with no overlap, so no surface can imply a sixth in-partition badge by grouping an unplaced row together with the five.
-    expect([[...inPartition], [...outsidePartition]]).toEqual([[...buckets.PARTITION_BUCKETS], [buckets.OUTSIDE_PARTITION]]);
-  });
+it("what a bucket does not say: returns only the bucket, never a money total", () => {
+  const classifications = ALL_EVIDENCE.map((observed) => buckets.bucketFor({ observed }));
+  expect(classifications).toHaveLength(ALL_EVIDENCE.length);
+  for (const bucket of classifications) {
+    expect(typeof bucket).toBe("string");
+    expect(ALL_BUCKETS).toContain(bucket);
+    expect(bucket).not.toMatch(/\d/);
+  }
 });
-describe("the row the read path builds", () => {
-  /** The words that would state a measure taken from gifts — a donation, or an average of receipts — which no commitment row may carry. */
-  it("states a bucket the module names, and no retry affordance, debt shape, gift measure or monthly equivalent", async () => {
-    const rows = await seededCommitmentRows();
-    expect(new Set(rows.map((row) => row.bucket))).toEqual(new Set(buckets.RECURRING_BUCKETS)); // The seeded commitments cover every value, so the scans below reach a row in each state rather than whichever rows the seed happens to list first.
-    for (const row of rows) {
-      expect(typeof row.bucket).toBe("string"); // The bucket is the module's own value, labelled and partitioned by the module, so a field set added inside the read path cannot state a seventh value or carry a badge of its own.
-      expect(buckets.RECURRING_BUCKETS).toContain(row.bucket);
-      expect([row.inPartition, row.bucketLabel]).toEqual([buckets.isInPartition(row.bucket), buckets.BUCKET_LABELS[row.bucket]]);
-      // A retry affordance or a debt shape anywhere in the row, at any depth, would offer an action this application never performs and would read a missing collection as the donor's debt.
-      expect([keysDeep(row).filter((key) => AFFORDANCE_OR_DEBT.test(key)), keysDeep(row).filter((key) => /gift|donation|averag/i.test(key))]).toEqual([[], []]);
-      expect(row.monthlyEquivalent).toBeNull(); // No seeded commitment states a source monthly equivalent, so a figure here would be one the read averaged rather than the qualified calculation the model permits. The field itself legitimately stays, carrying null.
-    }
-  });
+it("the five measures stay five: exposes no monthly-equivalent and no gift measure", () => {
+  expect(Object.keys(buckets).filter((name) => /monthly|equivalent|gift|donation|averag|total/i.test(name))).toEqual([]);
+  expect(commitmentRow().monthlyEquivalentFromSource).toBeUndefined(); // A monthly equivalent exists only where the source calculated it: a row built without one carries none, because averaging received gifts would state a measure this module cannot know.
+});
+it("the five measures stay five: refuses to give a received gift a commitment bucket", () => {
+  // A commitment is not received money and a received gift is not a commitment outcome, so the evidence vocabulary holds no gift member and asking for one is a programming error rather than a sixth bucket.
+  expect(() => buckets.bucketFor({ observed: "gift-received" } as unknown as buckets.RecurringEvidence)).toThrow(/gift-received/);
+  expect(buckets.bucketFor({ observed: "settled" })).toBe("received");
+});
+it("the five measures stay five: groups outside-partition apart from the five outcomes", () => {
+  const inPartition = ALL_BUCKETS.filter((bucket) => buckets.isInPartition(bucket));
+  const outsidePartition = ALL_BUCKETS.filter((bucket) => !buckets.isInPartition(bucket));
+  expect(inPartition).toHaveLength(5); // The grouping covers all six values with no overlap, so no surface can imply a sixth in-partition badge by grouping an unplaced row together with the five.
+  expect([[...inPartition], [...outsidePartition]]).toEqual([[...buckets.PARTITION_BUCKETS], [buckets.OUTSIDE_PARTITION]]);
+});
+/** The words that would state a measure taken from gifts — a donation, or an average of receipts — which no commitment row may carry. */
+it("the row the read path builds: states a bucket the module names, and no retry affordance, debt shape, gift measure or monthly equivalent", async () => {
+  const rows = await seededCommitmentRows();
+  expect(new Set(rows.map((row) => row.bucket))).toEqual(new Set(buckets.RECURRING_BUCKETS)); // The seeded commitments cover every value, so the scans below reach a row in each state rather than whichever rows the seed happens to list first.
+  for (const row of rows) {
+    expect(typeof row.bucket).toBe("string"); // The bucket is the module's own value, labelled and partitioned by the module, so a field set added inside the read path cannot state a seventh value or carry a badge of its own.
+    expect(buckets.RECURRING_BUCKETS).toContain(row.bucket);
+    expect([row.inPartition, row.bucketLabel]).toEqual([buckets.isInPartition(row.bucket), buckets.BUCKET_LABELS[row.bucket]]);
+    // A retry affordance or a debt shape anywhere in the row, at any depth, would offer an action this application never performs and would read a missing collection as the donor's debt.
+    expect([keysDeep(row).filter((key) => AFFORDANCE_OR_DEBT.test(key)), keysDeep(row).filter((key) => /gift|donation|averag/i.test(key))]).toEqual([[], []]);
+    expect(row.monthlyEquivalent).toBeNull(); // No seeded commitment states a source monthly equivalent, so a figure here would be one the read averaged rather than the qualified calculation the model permits. The field itself legitimately stays, carrying null.
+  }
 });

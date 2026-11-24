@@ -1,7 +1,6 @@
 /** Key-driven redaction for diagnostics and for every denial path. */
 import { isRecord } from "@/lib/guards";
-/** The single replacement marker, so a redacted cell is recognisable in a diagnostic and distinguishable from an empty string. */
-export const REDACTED = "[redacted]";
+/** The single replacement marker, so a redacted cell is recognisable in a diagnostic and distinguishable from an empty string. */ export const REDACTED = "[redacted]";
 /** The key names a `denied` outcome must never reveal, grouped by the evidence the denial has to withhold: */
 export const DENIAL_VALUE_KEYS: readonly string[] = Object.freeze([
   "exists", // Existence and size evidence.
@@ -58,7 +57,7 @@ function redactWith<T>(value: T, rule: RedactionRule): T {
     return value;
   }
 }
-/** Replaces the value of every key in `DENIAL_VALUE_KEYS`, at any depth, with `REDACTED`; every denial path applies this before an outcome leaves the service, so a denied read carries no. */
+/** Replaces the value of every key in `DENIAL_VALUE_KEYS`, at any depth, with `REDACTED`; every denial path applies this before an outcome leaves the service, so a denied read carries no value it must not disclose. */
 export function redactDenial<T>(value: T): T {
   return redactWith(value, DENIAL_RULE);
 }

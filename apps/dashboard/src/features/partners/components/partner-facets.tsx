@@ -12,7 +12,6 @@ const NO_DESCRIPTORS: readonly PartnerFacetDescriptor[] = Object.freeze([]);
 const isPartnerFacetKey = (identifier: string): identifier is PartnerFacetKey => Object.prototype.hasOwnProperty.call(FACET_LABELS, identifier);
 const facetLabelOf = (key: PartnerFacetKey | null, facet: RosterFacetSummary): string => (key !== null ? FACET_LABELS[key] : facet.labelKey.trim() || facet.id);
 const facetValueLabelOf = (key: PartnerFacetKey | null, option: RosterFacetValueSummary): string => (key === null ? undefined : FACET_VALUE_LABELS[key][option.id]) ?? (option.label.trim() || option.id);
-const disabledReasonOf = (facet: RosterFacetSummary): string => facet.disabledReason?.trim() ?? "";
 /** The descriptors the toolbar renders, built only from the facets this envelope admits. */
 export function buildPartnerFacetDescriptors(facetsEnvelope: RosterFacetsEnvelope | null): readonly PartnerFacetDescriptor[] {
   if (facetsEnvelope === null) return NO_DESCRIPTORS;
@@ -20,7 +19,7 @@ export function buildPartnerFacetDescriptors(facetsEnvelope: RosterFacetsEnvelop
   for (const facet of facetsEnvelope.data) {
     const key = isPartnerFacetKey(facet.id) ? facet.id : null;
     const values: FacetValueSpec[] = facet.options.map((option) => ({ id: option.id, label: facetValueLabelOf(key, option), count: option.count, countState: option.countState }));
-    const disabledReason = disabledReasonOf(facet);
+    const disabledReason = facet.disabledReason?.trim() ?? "";
     descriptors.push({ id: facet.id, key, label: facetLabelOf(key, facet), values, multi: facet.multi, ...(disabledReason === "" ? {} : { disabledReason }) });
   }
   return descriptors;

@@ -15,9 +15,7 @@ export default function DiscardConfirmation({ title, body, keepEditingLabel, dis
           <Button ref={keepEditingRef} type="button" variant="outline" size="sm" onClick={onKeepEditing}>
             {keepEditingLabel}
           </Button>
-          <Button type="button" variant="destructive" size="sm" onClick={onDiscard}>
-            {discardLabel}
-          </Button>
+          <Button {...{ type: "button", variant: "destructive", size: "sm", onClick: onDiscard }}>{discardLabel}</Button>
         </span>
       </AlertDescription>
     </Alert>

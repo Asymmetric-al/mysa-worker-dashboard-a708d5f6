@@ -6,18 +6,14 @@ import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const MESSAGES = { operationRequired: "State which reach change this request makes as payload.operation: setReach or stopShowingPublicly.", bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload." } as const;
-type SetReachPayload = Parameters<typeof mutations.pages.setReach>[1]["payload"];
-type StopShowingPubliclyPayload = Parameters<typeof mutations.pages.stopShowingPublicly>[1]["payload"];
 type Routed<P> = P & { readonly operation: string };
-const setReachBodySchema = mutationInputSchema(z.custom<Routed<SetReachPayload>>());
-const stopShowingPubliclyBodySchema = mutationInputSchema(z.custom<Routed<StopShowingPubliclyPayload>>());
+const setReachBodySchema = mutationInputSchema(z.custom<Routed<Parameters<typeof mutations.pages.setReach>[1]["payload"]>>());
+const stopShowingPubliclyBodySchema = mutationInputSchema(z.custom<Routed<Parameters<typeof mutations.pages.stopShowingPublicly>[1]["payload"]>>());
 const REACH_OPERATIONS = ["setReach", "stopShowingPublicly"] as const;
-type ReachOperation = (typeof REACH_OPERATIONS)[number];
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(REACH_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
 const WRITES = {
   setReach: (raw, { operationId, sessionId }) => dispatch(setReachBodySchema, raw, operationId, "operation", (input) => mutations.pages.setReach(sessionId, input)),
   stopShowingPublicly: (raw, { operationId, sessionId }) => dispatch(stopShowingPubliclyBodySchema, raw, operationId, "operation", (input) => mutations.pages.stopShowingPublicly(sessionId, input)),
-} satisfies Readonly<Record<ReachOperation, ClaimedWrite>>;
-/** One named reach change, selected by `payload.operation`. */
+} satisfies Readonly<Record<(typeof REACH_OPERATIONS)[number], ClaimedWrite>>;
 const setPageReach = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: setPageReach });

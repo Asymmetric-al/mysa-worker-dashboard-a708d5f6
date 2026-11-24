@@ -6,17 +6,13 @@ const MONTH_END_TITLE = "Month-end support review";
 const MISSED_PLAN_SERIES = "series-missed-plan-review"; // The plan carrying several dates that passed without an action.
 const MISSED_PLAN_TITLE = "Monday review of the working list";
 const PLANNING_ZONE = "Europe/London";
-const SERIES_ENDPOINT = "/api/series";
-const planPath = (seriesId: string): string => `/work/series/${encodeURIComponent(seriesId)}`;
-const TASK_LIST_PATH = `/api/tasks?list=all&displayTimeZone=${encodeURIComponent(PLANNING_ZONE)}&pageSize=200`;
 const TASK_PAGE_SIZE = 200; // How many rows that read admits on one page, mirrored from the documented cap so a truncated answer is refused rather than counted.
 const PLAN_REVIEW_HEADING = "Plan needs review";
-const CLOSED_PROFILES = ["Does not repeat", "Weekly", "Every N weeks", "Monthly on day N", "Every N months on day N"];
 const FUTURE_PLAN = { title: "QA smoke repeated plan", firstDue: "2027-01-31", endOn: "2027-06-30", profile: "Monthly on day N", ruleLabel: "Monthly on day 31", revisedProfile: "Every N months on day N", revisedRuleLabel: "Every 2 months on day 15" } as const; // The plan this file creates through that section: a monthly rule whose first due date is still ahead of the scenario's today, which is the case a prospective revision has to be presented a boundary for. The profile names are what the closed chooser states; the rule labels are what the plan itself states, with the rule's own numbers.
 const AWAITING_ACTION: ReadonlySet<string> = new Set<string>(["open", "reopened"]);
 type PlanSnapshot = { readonly revision: string; readonly scope: JsonRecord; readonly data: JsonRecord }; // One plan's read, as the envelope the surface is rendered from: its revision, its facts and the actions it published.
 async function readPlan(page: Page, seriesId: string): Promise<PlanSnapshot> {
-  const answer = await page.request.get(`${SERIES_ENDPOINT}?seriesId=${encodeURIComponent(seriesId)}`);
+  const answer = await page.request.get(`/api/series?seriesId=${encodeURIComponent(seriesId)}`);
   const body = await jsonOf(answer, `GET /api/series?seriesId=${seriesId}`);
   return { revision: stringAt(body, ["revision"], "The plan's own revision"), scope: recordAt(body, ["scope"], "The scope the plan was read in"), data: recordAt(body, ["data"], "The plan's facts") };
 }
@@ -25,7 +21,7 @@ async function postPlanMutation(page: Page, authority: PlanSnapshot, payload: Js
   return jsonOf(answer, `POST /api/series ${String(payload.mutation)}`);
 }
 async function readOccurrences(page: Page, seriesId: string): Promise<readonly JsonRecord[]> {
-  const answer = await page.request.get(TASK_LIST_PATH); // Every occurrence of one plan, as the task list the application itself reads states it.
+  const answer = await page.request.get(`/api/tasks?list=all&displayTimeZone=${encodeURIComponent(PLANNING_ZONE)}&pageSize=200`); // Every occurrence of one plan, as the task list the application itself reads states it.
   const body = await jsonOf(answer, "GET /api/tasks");
   const total = numberAt(body, ["data", "total"], "The task list's total");
   const pageCount = numberAt(body, ["data", "pageCount"], "The task list's page count");
@@ -41,7 +37,7 @@ function statusOn(rows: readonly JsonRecord[], dueOn: string): string | undefine
 }
 const awaitingAnswer = (rows: readonly JsonRecord[]): readonly JsonRecord[] => rows.filter((row) => AWAITING_ACTION.has(stringAt(row, ["status"], "An occurrence's recorded status")));
 async function openPlan(page: Page, seriesId: string, title: string): Promise<void> {
-  await page.goto(planPath(seriesId)); // Opens one plan's own surface and waits for its record body to state the plan's title.
+  await page.goto(`/work/series/${encodeURIComponent(seriesId)}`); // Opens one plan's own surface and waits for its record body to state the plan's title.
   await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
 }
 const previewSection = (page: Page): Locator => page.locator('[data-slot="series-plan-preview"]');
@@ -79,7 +75,7 @@ test("a plan states its closed rule, one actionable date among previews, and the
   const chosenProfile = profiles.locator('[data-slot="select-value"]');
   await expect(chosenProfile, "A longer closed choice, so the profile is the styled Select: a combobox whose trigger states the chosen profile's own label, and a listbox holding exactly the five profiles in the order the closed rule offers them").toHaveText("Monthly on day N");
   await profiles.click();
-  await expect(page.getByRole("listbox").getByRole("option")).toHaveText([...CLOSED_PROFILES]);
+  await expect(page.getByRole("listbox").getByRole("option")).toHaveText(["Does not repeat", "Weekly", "Every N weeks", "Monthly on day N", "Every N months on day N"]);
   await page.keyboard.press("Escape");
   await expect(page.locator('[data-slot="select-content"]')).toBeHidden();
   await expect(chosenProfile).toHaveText("Monthly on day N");

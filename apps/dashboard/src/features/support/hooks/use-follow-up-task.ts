@@ -5,7 +5,6 @@ import { refreshJobs, sendMutation, useAttemptIdentity } from "@/lib/read-transp
 import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import { invalid, type MutationOutcome } from "@/modules/data-service/outcome";
 import { followUpTaskPayloadSchema, type FollowUpTaskInput, type FollowUpTaskPayload } from "../schemas";
-const TASKS_ENDPOINT = "/api/tasks";
 const REFRESHED_JOBS = ["tasks", "agenda"] as const;
 const OFFLINE_GUIDANCE = "This device reported no connection, so the request did not leave from here. Reconnect and submit this same follow-up again: it keeps this attempt's identity, so a request that had already arrived is answered with its original result rather than creating the task twice.";
 export type FollowUpTaskVariables = { readonly scope: Scope; readonly expectedRevision: string; readonly payload: FollowUpTaskInput; readonly operationId?: string };
@@ -19,7 +18,7 @@ export type FollowUpTaskMutation = UseMutationResult<MutationOutcome, Error, Fol
       const parsed = followUpTaskPayloadSchema.safeParse(variables.payload);
       if (!parsed.success) return invalid({ operationId, fields: parsed.error });
       const request: MutationInput<FollowUpTaskPayload> = { operationId, scope: variables.scope, expectedRevision: variables.expectedRevision, payload: parsed.data };
-      return sendMutation(TASKS_ENDPOINT, request, OFFLINE_GUIDANCE);
+      return sendMutation("/api/tasks", request, OFFLINE_GUIDANCE);
     },
     onSuccess: async (outcome: MutationOutcome, variables: FollowUpTaskVariables): Promise<void> => await refreshJobs(queryClient, outcome, scopeKey(variables.scope), REFRESHED_JOBS),
   });

@@ -25,8 +25,7 @@ function payloadRelativeFields(fields: FieldMessages): FieldMessages {
   return Object.fromEntries(messages);
 }
 const requestRefusal = (outcome: InvalidOutcome, headers: Headers): Response => NextResponse.json({ ...outcome, fields: payloadRelativeFields(outcome.fields) }, { status: REQUEST_REFUSAL_STATUS, headers });
-/** Turns an outcome — or a read result — into the one HTTP response a Route Handler returns. */
-export function toResponse(input: MutationOutcome | ReadResult<unknown>, init?: { headers?: HeadersInit }): Response {
+/** Turns an outcome — or a read result — into the one HTTP response a Route Handler returns. */ export function toResponse(input: MutationOutcome | ReadResult<unknown>, init?: { headers?: HeadersInit }): Response {
   const headers = new Headers(init?.headers);
   headers.set("content-type", "application/json; charset=utf-8");
   if (isReadResult(input)) {

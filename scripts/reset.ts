@@ -4,9 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ResetSummary } from "../apps/dashboard/src/modules/dev-runtime/reset";
 const LABEL_WIDTH = 16;
 class UsageError extends Error {}
-interface ParsedArguments {
-  readonly json: boolean;
-}
+type ParsedArguments = { readonly json: boolean };
 const REPOSITORY_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const PATH_COMPONENT = "[A-Za-z0-9._@%+-]+";
 const ABSOLUTE_PATH = new RegExp(`(^|[\\s("'\`=:])/(?:${PATH_COMPONENT}/)*${PATH_COMPONENT}`, "g");
@@ -71,16 +69,13 @@ function countAndIds(ids: readonly string[]): string {
   return sortedIds.length === 0 ? "0" : `${String(sortedIds.length)}  ${sortedIds.join(", ")}`;
 }
 /** The human-readable block, in the order the reset is read: what was seeded, what went, then the anchor. */
-function formatSummary(summary: ResetSummary): string {
-  return (
-    "Development data reset — deterministic seed restored\n" +
-    summaryLine("seeded sessions", countAndIds(summary.seededSessions)) +
-    summaryLine("removed sessions", countAndIds(summary.removedSessions)) +
-    summaryLine("partners", String(summary.partners)) +
-    summaryLine("seed instant", summary.seedInstant) +
-    summaryLine("clock offset", `${String(summary.clockOffsetMs)} ms (must be 0)`)
-  );
-}
+const formatSummary = (summary: ResetSummary): string =>
+  "Development data reset — deterministic seed restored\n" +
+  summaryLine("seeded sessions", countAndIds(summary.seededSessions)) +
+  summaryLine("removed sessions", countAndIds(summary.removedSessions)) +
+  summaryLine("partners", String(summary.partners)) +
+  summaryLine("seed instant", summary.seedInstant) +
+  summaryLine("clock offset", `${String(summary.clockOffsetMs)} ms (must be 0)`);
 /** The same values as one line, in the field order `ResetSummary` declares, for machine-readable evidence. */
 const formatJson = (summary: ResetSummary): string => `${JSON.stringify({ seededSessions: [...summary.seededSessions].sort(), removedSessions: [...summary.removedSessions].sort(), partners: summary.partners, seedInstant: summary.seedInstant, clockOffsetMs: summary.clockOffsetMs })}\n`;
 /** What separates a restored world from a command that merely exited: the clock is back at the seed instant, something was seeded, and the seeded sessions hold partners. */

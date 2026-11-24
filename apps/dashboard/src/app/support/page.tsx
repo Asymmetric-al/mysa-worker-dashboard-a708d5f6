@@ -12,8 +12,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: "The support overview could not be read", action: { label: "Try this read again", href: "/support" } },
   refused: { title: "This overview's request was refused", body: "The overview states no filter of its own, so the request this page makes is the read's own default one; a request the read refuses is answered here rather than thrown, and the source behind it did not fail." },
 };
-/** The Support overview: one read, one snapshot, and an honest notice in place of the figures when the read does not answer with an envelope. */
-export default async function SupportOverviewPage(): Promise<ReactElement> {
+/** The Support overview: one read, one snapshot, and an honest notice in place of the figures when the read does not answer with an envelope. */ export default async function SupportOverviewPage(): Promise<ReactElement> {
   return readPageOf(
     () => reads.support.readSupportOverview(),
     { notice: NOTICE_COPY, heading: { title: PAGE_TITLE } },

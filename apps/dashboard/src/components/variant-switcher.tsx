@@ -11,7 +11,6 @@ import type { ContentLocale } from "@/modules/content/locale";
 import { VARIANT_AUDIENCES, variantKeyAllowed, type VariantAudience, type VariantFamily } from "@/modules/content/variant";
 /** The word and tone of each audience a variant may serve, declared once in {@link AUDIENCE_STATUS} and named here for the surfaces that already import it. */
 export const AUDIENCE_WORDS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = AUDIENCE_STATUS;
-const NO_EDITION_NOTICE = "No edition you are permitted to read is listed here.";
 export type VariantTab = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: ContentLocale; readonly lifecycle: ContentLifecycleState; readonly staleSince?: string };
 export type VariantSwitcherProps = { readonly family: VariantFamily; readonly variants: readonly VariantTab[]; readonly activeVariantId: string; readonly onSelect: (variantId: string) => void; readonly label: string; readonly className?: string };
 function audienceRank(audience: VariantAudience): number {
@@ -52,8 +51,7 @@ function spokenNameOf(variant: VariantTab): string {
   const endonym = languageNameOf(variant.locale.tag);
   return `${audience}, ${endonym}, ${lifecycleWordOf(variant.lifecycle)}`;
 }
-/** The one audience-variant and edition selector. */
-export function VariantSwitcher({ family, variants, activeVariantId, onSelect, label, className }: VariantSwitcherProps): ReactNode {
+/** The one audience-variant and edition selector. */ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, label, className }: VariantSwitcherProps): ReactNode {
   const labelId = useId();
   const selectId = useId();
   const announcementId = useId();
@@ -69,7 +67,7 @@ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, l
     return (
       <div data-slot="variant-switcher" data-family={family} data-no-editions="true" className={cn("flex min-w-0 flex-col gap-2", className)}>
         <span className="text-start text-sm leading-none font-medium">{label}</span>
-        <p className="type-supporting text-start text-pretty wrap-anywhere">{NO_EDITION_NOTICE}</p>
+        <p className="type-supporting text-start text-pretty wrap-anywhere">{"No edition you are permitted to read is listed here."}</p>
       </div>
     );
   }

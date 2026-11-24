@@ -2,8 +2,7 @@
 import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { STEPS, stepAnnouncement, type ImportStepId } from "../copy";
-type ImportStepperProps = { readonly current: ImportStepId; readonly completed: readonly ImportStepId[]; readonly onReopen: (step: ImportStepId) => void };
-export default function ImportStepper({ current, completed, onReopen }: ImportStepperProps) {
+export default function ImportStepper({ current, completed, onReopen }: { readonly current: ImportStepId; readonly completed: readonly ImportStepId[]; readonly onReopen: (step: ImportStepId) => void }) {
   const foundPosition = STEPS.findIndex((step) => step.id === current);
   const currentPosition = foundPosition === -1 ? 0 : foundPosition;
   return (

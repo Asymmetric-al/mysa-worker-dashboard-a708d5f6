@@ -103,9 +103,7 @@ function ProtectedNotice({ href }: { readonly href?: string }): ReactElement {
       {destinationProblemOf(link) === undefined ? (
         <>
           <p>
-            <a className="inline-flex min-h-6 items-center font-medium text-primary inline-link" href={link}>
-              {"Open the protected Update"}
-            </a>
+            <a {...{ className: "inline-flex min-h-6 items-center font-medium text-primary inline-link", href: link }}>{"Open the protected Update"}</a>
           </p>
           <p className="type-supporting">{PROTECTED_NOTICE_COPY.linkStatement}</p>
         </>

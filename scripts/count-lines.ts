@@ -5,10 +5,7 @@ const LIMIT = 100000;
 const USAGE = "usage: bun scripts/count-lines.ts\n";
 const ROOT = path.join(import.meta.dir, "..");
 class UsageError extends Error {}
-interface WcReport {
-  tracked: number;
-  totals: number[];
-}
+type WcReport = { tracked: number; totals: number[] };
 /** The command line takes no arguments: what this command runs is the request's verbatim pipeline and the 100,000-line limit is fixed, so there is no option to accept — `--help` included. */
 function parseArguments(argv: readonly string[]): void {
   if (argv.length > 0) throw new UsageError(`count-lines takes no arguments, and received: ${argv.join(" ")}`);

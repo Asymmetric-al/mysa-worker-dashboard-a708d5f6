@@ -28,7 +28,6 @@ const PAGE_COPY = {
   firstPage: "Read the first page",
   lastPage: "Read the last page",
 } as const;
-/** One problem an address or a read states: the field the reader corrects, and what to correct about it. */
 interface Problem {
   readonly field: string;
   readonly message: string;
@@ -39,8 +38,7 @@ const problemsOfIssues = (issues: readonly { readonly path?: readonly PropertyKe
 const problemsOfFields = (fields: Readonly<Record<string, readonly string[]>>): readonly Problem[] => Object.entries(fields).flatMap(([field, messages]) => messages.map((message) => ({ field, message })));
 /** The problems as the one line a refusal notice shows: `field: message`, once per problem, in the order the refusal stated them. */
 const problemTextOf = (problems: readonly Problem[]): string => problems.map((problem) => `${problem.field}: ${problem.message}`).join(" ");
-/** The address's own parameters with the page a notice opens, so a way out of a page the result does not hold keeps the filters the reader stated. */
-function hrefOfPage(stated: SearchParams, page: number): string {
+/** The address's own parameters with the page a notice opens, so a way out of a page the result does not hold keeps the filters the reader stated. */ function hrefOfPage(stated: SearchParams, page: number): string {
   const params = new URLSearchParams(searchSuffixOf(stated));
   params.set(GIFTS_PARAM.page, String(page));
   return `${LEDGER_HREF}?${params.toString()}`;

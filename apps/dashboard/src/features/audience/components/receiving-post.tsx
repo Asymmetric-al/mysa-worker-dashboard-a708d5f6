@@ -18,7 +18,6 @@ import { EditionTombstone } from "./edition-tombstone";
 import { ServerHtml } from "./message-reader";
 type PostData = ReceivingPostEnvelope["data"];
 type PostRendition = PostData["renditions"][number];
-type PostAudience = NonNullable<PostData["audience"]>;
 type DenialSource = NonNullable<StateNoticeProps["source"]>;
 type DenialCode = NonNullable<StateNoticeProps["reasonCode"]>;
 const LABELS = {
@@ -37,7 +36,7 @@ const LABELS = {
   unavailableTitle: "This edition cannot be read at the moment",
   refusedTitle: "This request was refused",
 } as const;
-const AUDIENCE_WORDS: Readonly<Record<PostAudience, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
+const AUDIENCE_WORDS: Readonly<Record<NonNullable<PostData["audience"]>, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
 const HEADING_TAGS: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
 /** The one type scale's heading utility for each level, so this surface's heading takes the measure of the level the composing page gives it rather than one fixed size. */
 const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
@@ -57,7 +56,6 @@ const REFUSAL_SURFACES: Readonly<Record<PreviewDenialReason, (requestedLocale: s
   withdrawn: () => ({ kind: "withdrawn" }),
   unavailable: () => ({ kind: "unavailable", source: undefined, guidance: RECEIVING_POST_COPY.denialNotices.unavailable }),
 };
-const refusalSurface = (reason: PreviewDenialReason, requestedLocale: string): PostSurface | undefined => (!Object.hasOwn(REFUSAL_SURFACES, reason) ? undefined : REFUSAL_SURFACES[reason](requestedLocale));
 const refusalMessages = (fields: Readonly<Record<string, readonly string[]>>): readonly string[] => [
   ...new Set(
     Object.keys(fields)
@@ -66,7 +64,7 @@ const refusalMessages = (fields: Readonly<Record<string, readonly string[]>>): r
   ),
 ];
 function postSurface(result: ReadResult<ReceivingPostEnvelope>, refusal: { readonly reason: PreviewDenialReason; readonly requestedLocale: string } | undefined): PostSurface {
-  const decided = refusal === undefined ? undefined : refusalSurface(refusal.reason, refusal.requestedLocale);
+  const decided = refusal === undefined ? undefined : ((reason: PreviewDenialReason, requestedLocale: string): PostSurface | undefined => (!Object.hasOwn(REFUSAL_SURFACES, reason) ? undefined : REFUSAL_SURFACES[reason](requestedLocale)))(refusal.reason, refusal.requestedLocale);
   if (decided !== undefined) return decided;
   switch (result.kind) {
     case "denied":
@@ -81,7 +79,6 @@ function postSurface(result: ReadResult<ReceivingPostEnvelope>, refusal: { reado
     }
   }
 }
-const audienceWordOf = (audience: PostData["audience"]): StatusBadgeSpec | undefined => (audience === null ? undefined : Object.hasOwn(AUDIENCE_WORDS, audience) ? AUDIENCE_WORDS[audience] : { label: audience, tone: "muted" });
 type MediaGroup = { readonly assetId: string; readonly playback: PostRendition | undefined; readonly poster: PostRendition | undefined; readonly captions: readonly PostRendition[]; readonly state: PostRendition["state"] };
 function groupRenditions(renditions: readonly PostRendition[]): readonly MediaGroup[] {
   const grouped = new Map<string, { playback?: PostRendition; poster?: PostRendition; captions: PostRendition[]; state: PostRendition["state"] }>();
@@ -117,14 +114,13 @@ const UnavailableSurface = ({ source, guidance, headingLevel, onRetry }: { reado
   <StateNotice kind="unavailable" title={LABELS.unavailableTitle} description={guidance} source={source} retry={{ label: LABELS.retry, onClick: onRetry }} headingLevel={headingLevel} />
 );
 const RefusedSurface = ({ messages, headingLevel }: { readonly messages: readonly string[]; readonly headingLevel: NoticeHeadingLevel }): ReactElement => <StateNotice kind="refused" title={LABELS.refusedTitle} description={messages.length === 0 ? undefined : messages.join(" ")} headingLevel={headingLevel} />;
-type RenderedPostProps = { readonly data: PostData; readonly asOf: string; readonly persona: string; readonly headingLevel: NoticeHeadingLevel; readonly onRefresh: () => void };
-function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: RenderedPostProps): ReactElement {
+function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: { readonly data: PostData; readonly asOf: string; readonly persona: string; readonly headingLevel: NoticeHeadingLevel; readonly onRefresh: () => void }): ReactElement {
   const titleId = useId();
   const servedTag = data.servedLocale?.tag.trim() ?? "";
   const direction = data.servedLocale?.direction ?? "ltr";
   const requested = data.requestedLocale.trim();
   const fallback = data.fallbackOccurred && requested.length > 0 && requested !== servedTag;
-  const audience = audienceWordOf(data.audience);
+  const audience = ((audience: PostData["audience"]): StatusBadgeSpec | undefined => (audience === null ? undefined : Object.hasOwn(AUDIENCE_WORDS, audience) ? AUDIENCE_WORDS[audience] : { label: audience, tone: "muted" }))(data.audience);
   const publishedAt = data.publishedAt?.trim() ?? "";
   // A group is stated here when this reading cannot play it: its playback rendition is absent, or the source that rendition points at could not be read.
   const unplayableVideos = groupRenditions(data.renditions).filter((group) => (group.playback === undefined ? group.poster !== undefined || group.captions.length > 0 : group.state === "unavailable"));
@@ -133,9 +129,7 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: Rendered
     <DirectionProvider direction={direction}>
       <article data-slot="receiving-post" data-fallback={fallback ? "true" : "false"} aria-labelledby={titleId} className="flex min-w-0 flex-col gap-4 text-start">
         <header className="flex min-w-0 flex-col gap-2">
-          <Heading id={titleId} dir={direction} className={cn(HEADING_SCALE[headingLevel], "break-words text-balance")}>
-            {(data.title ?? "").trim().length === 0 ? LABELS.headingFallback : (data.title ?? "").trim()}
-          </Heading>
+          <Heading {...{ id: titleId, dir: direction, className: cn(HEADING_SCALE[headingLevel], "break-words text-balance") }}>{(data.title ?? "").trim().length === 0 ? LABELS.headingFallback : (data.title ?? "").trim()}</Heading>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {audience === undefined ? null : <StatusBadge label={audience.label} tone={audience.tone} srPrefix={LABELS.audience} />}
             {servedTag.length === 0 ? null : <StatusBadge label={servedTag} srPrefix={LABELS.servedLanguage} />}
@@ -160,17 +154,8 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: Rendered
         {unplayableVideos.map((group) => {
           // A group whose source is down is stated in words and offers the retry this surface re-reads with, and is given none of the addresses it cannot fetch: its poster and its caption track stay unrequested.
           const unreadable = group.state === "unavailable";
-          return (
-            <VideoPlayer
-              key={group.assetId}
-              title={LABELS.videoTitle}
-              poster={unreadable ? undefined : group.poster?.path}
-              captions={unreadable ? undefined : group.captions.map((track) => ({ src: track.path, srcLang: servedTag.length === 0 ? LABELS.undeterminedLanguage : servedTag, label: LABELS.captions }))}
-              state="unavailable"
-              direction={direction}
-              onRetry={onRefresh}
-            />
-          );
+          const captions = unreadable ? undefined : group.captions.map((track) => ({ src: track.path, srcLang: servedTag.length === 0 ? LABELS.undeterminedLanguage : servedTag, label: LABELS.captions }));
+          return <VideoPlayer key={group.assetId} title={LABELS.videoTitle} poster={unreadable ? undefined : group.poster?.path} captions={captions} state="unavailable" direction={direction} onRetry={onRefresh} />;
         })}
         <footer className="flex min-w-0 flex-col gap-2">
           {fallback ? <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.languageFallbackStatement(requested, servedTag)}</p> : null}
@@ -185,9 +170,7 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: Rendered
 const PreferencesEntryPoint = (): ReactElement => (
   <footer data-slot="receiving-post-preferences" className="mt-4 flex min-w-0 flex-col gap-1.5">
     <p className={NOTE_CLASS}>{PREFERENCES_ENTRY_COPY.description}</p>
-    <Link href="/preview/preferences" className="inline-link inline-flex min-h-6 max-w-full items-center break-words text-start hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-      {PREFERENCES_ENTRY_COPY.linkLabel}
-    </Link>
+    <Link {...{ href: "/preview/preferences", className: "inline-link inline-flex min-h-6 max-w-full items-center break-words text-start hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" }}>{PREFERENCES_ENTRY_COPY.linkLabel}</Link>
   </footer>
 );
 /** Props of {@link ReceivingPost}. */ export interface ReceivingPostProps {
@@ -199,8 +182,7 @@ const PreferencesEntryPoint = (): ReactElement => (
   readonly headingLevel?: NoticeHeadingLevel;
   readonly className?: string;
 }
-type SurfaceContext = { readonly persona: string; readonly headingLevel: NoticeHeadingLevel; readonly refresh: () => void };
-function surfaceView(surface: PostSurface, context: SurfaceContext): ReactElement {
+function surfaceView(surface: PostSurface, context: { readonly persona: string; readonly headingLevel: NoticeHeadingLevel; readonly refresh: () => void }): ReactElement {
   switch (surface.kind) {
     case "rendered":
       return <RenderedPost data={surface.data} asOf={surface.asOf} persona={context.persona} headingLevel={context.headingLevel} onRefresh={context.refresh} />;

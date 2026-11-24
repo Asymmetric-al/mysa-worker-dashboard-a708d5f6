@@ -1,9 +1,8 @@
 /** Criterion 17 — Variants and localization. */
 import type { Locator, Page } from "@playwright/test";
-import { test, expect, actAs, armLostAcknowledgement, clearFailurePlan, devStateOf, fieldAt, jsonOf, stringAt, type ResetScope } from "../playwright.config";
+import { test, expect, actAs, armLostAcknowledgement, clearFailurePlan, devStateOf, fieldAt, jsonOf, stringAt } from "../playwright.config";
 const UPDATE = "doc-update-autumn";
 const EDITION = { enPublic: "variant-update-autumn-en-public", enSupporters: "variant-update-autumn-en-approved-supporter", frPublic: "variant-update-autumn-fr-public", arPublic: "variant-update-autumn-ar-public" } as const;
-const LOCALES = ["en", "fr", "ar"] as const;
 const ARABIC = "ar";
 /** The revisions, releases and instants the deterministic seed states, quoted so a comparison names what it expected. */
 const SEEDED = {
@@ -73,7 +72,6 @@ async function updateRevisionOf(page: Page): Promise<string> {
   const body = await jsonOf(await page.request.get(`/api/updates?documentId=${encodeURIComponent(UPDATE)}`), "GET /api/updates"); // The revision of the Update as the variant overview read states it, which is the revision a release presents.
   return stringAt(body, ["revision"], "The Update's revision");
 }
-const actingScopeOf = async (page: Page): Promise<ResetScope> => (await devStateOf(page.request)).scope;
 async function submitForReview(page: Page, variantId: string, revisionId: string, mode: ReleaseMode = RELEASE_MODE.publishOnly): Promise<void> {
   await page.goto(editorPath(variantId)); // Submits one edition's saved draft for review through the editor's own step, at the mode the journey needs.
   const editor = page.locator(`[data-slot="editor-shell"][data-edition="${variantId}"]`);
@@ -153,13 +151,12 @@ async function releaseNotifyingEdition(page: Page, variantId: string, localeName
 const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 const editionCell = (page: Page, variantId: string): Locator => page.locator(`[data-slot="edition-cell"][data-variant-id="${variantId}"]`);
 /** The value of one fact in a definition list, matched by the label the cell states for it. */
-function factValueOf(scope: Locator, label: string): Locator {
-  return scope
+const factValueOf = (scope: Locator, label: string): Locator =>
+  scope
     .locator("dt")
     .filter({ hasText: new RegExp(`^${escaped(label)}$`, "u") })
     .first()
     .locator("xpath=following-sibling::dd[1]");
-}
 const lifecycleOfCell = (cell: Locator): Locator => cell.locator('[data-slot="draft-status"]');
 async function identityFactOf(cell: Locator, word: string, subject: string): Promise<string> {
   const stated = (await factValueOf(cell, "Published revision").innerText()).trim(); // One identity one edition's publication facts state under a word of its own: the revision it publishes, or the publication that holds it.
@@ -213,7 +210,7 @@ test("each language edition of an Update is its own variant with its own draft, 
   const reviewOffer = page.locator("section").filter({ has: page.getByRole("heading", { name: COPY.reviewOffer, exact: true }) });
   await expect(reviewOffer).toContainText("1 edition awaiting a release");
   await expect(reviewOffer.getByRole("link", { name: COPY.reviewLink, exact: true })).toHaveAttribute("href", reviewPath(SEEDED.arCandidate));
-  expect(await optionValuesOf(page.locator('[data-slot="locale-switcher"]').getByLabel("Language", { exact: true }))).toEqual([...LOCALES]);
+  expect(await optionValuesOf(page.locator('[data-slot="locale-switcher"]').getByLabel("Language", { exact: true }))).toEqual(["en", "fr", "ar"]);
   await expect(page.locator('[data-slot="variant-switcher"]').getByText("Edition", { exact: true }).first()).toBeVisible();
   await page.goto("/pages/doc-page-harbour-youth"); // The family rule is a real difference between the two families: a Page's editions are public locale editions, so its builder offers a language and no audience choice at all. The pairing an Update admits — public and approved supporters — is therefore never offered where the family does not hold
   const builder = page.locator('[data-slot="page-builder"]');
@@ -361,7 +358,7 @@ test("a release whose acknowledgement was lost is recovered by replaying the sam
   expect(publicationAfterAttempt).not.toBe(publicationBefore);
   const mode = (await releaseRowOf(page, EDITION.frPublic).getAttribute("data-mode"))?.trim() ?? ""; // The recovery is the same attempt replayed, and the application answers with the result it stored rather than releasing a second time. The surface offers the check and no resend, so replaying this one recorded attempt is the recovery itself: it carries the selection the release review submitted — the revision its candidate froze, and the mode that edition's own row stated — under the identity the receipt named.
   if (mode === "") throw new Error("The release review stated no mode for the French edition, so the replayed attempt would not be the one that was made.");
-  const replayInput = { operationId: operation, scope: await actingScopeOf(page), expectedRevision: await updateRevisionOf(page), payload: { documentId: UPDATE, variants: [{ variantId: EDITION.frPublic, revisionId: restoredDraft, mode }] } };
+  const replayInput = { operationId: operation, scope: (await devStateOf(page.request)).scope, expectedRevision: await updateRevisionOf(page), payload: { documentId: UPDATE, variants: [{ variantId: EDITION.frPublic, revisionId: restoredDraft, mode }] } };
   expect(fieldAt(await jsonOf(await page.request.post("/api/publish", { data: replayInput }), "POST /api/publish (same attempt replayed)"), "outcome")).toBe("alreadyAccepted");
   await openOverview(page);
   expect(await publicationIdOf(editionCell(page, EDITION.frPublic))).toBe(publicationAfterAttempt);

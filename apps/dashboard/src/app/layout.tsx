@@ -43,8 +43,7 @@ async function readContextAdmissions(): Promise<readonly AdmittedContext[]> {
   if (chooser.kind !== "envelope") return NO_ADMISSIONS;
   return chooser.envelope.data.groups.flatMap((group) => group.ministries.map((ministry) => ({ organizationId: group.organizationId, organizationLabel: group.organizationLabel, ministryId: ministry.ministryId, ministryLabel: ministry.ministryLabel, supportSubjectId: ministry.supportSubjectId })));
 }
-/** The root segment layout. */
-export default async function RootLayout({ children }: { readonly children: ReactNode }): Promise<ReactElement> {
+/** The root segment layout. */ export default async function RootLayout({ children }: { readonly children: ReactNode }): Promise<ReactElement> {
   const [{ scope, admissionState, contextRevision }, contextAdmissions] = await Promise.all([readShellAdmission(), readContextAdmissions()]);
   const developmentControls = isDevelopment();
   return (

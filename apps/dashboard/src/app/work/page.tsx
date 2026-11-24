@@ -13,22 +13,17 @@ import { reads } from "@/modules/data-service";
 import { PAGE_SIZE_DEFAULT, REPORT_DEFAULT_TIME_ZONE } from "@/modules/support/report";
 import { PageColumn, PageHeading, ReadNotices, paramOf, type ReadNoticeCopy, type SearchParams } from "../page-frame";
 type TaskListsResult = Awaited<ReturnType<typeof reads.work.listTasks>>;
-type PartnersResult = Awaited<ReturnType<typeof reads.partners.findPartners>>;
-type InitiativesResult = Awaited<ReturnType<typeof reads.outreach.readInitiatives>>;
 export const dynamic = "force-dynamic";
 const PAGE_TITLE = "Work";
 export const metadata: Metadata = { title: PAGE_TITLE };
 const TASK_LIST_KEYS = ["today", "upcoming", "overdue", "all", "undated"] as const satisfies readonly TaskListKey[];
 /** This surface's agenda address, named once so the link and any other reference to it state one address. */
-const AGENDA_HREF = "/work/agenda";
 /** The agenda link's treatment: the same shape a task row gives its own link, so one link style serves this surface — at least 24 CSS px tall (WCAG 2.5.8) and carrying the one inline-link underline, so the affordance is never carried by colour alone. */
-const AGENDA_LINK_CLASS = "inline-flex min-h-6 max-w-full items-center break-words inline-link hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const DISPLAY_TIME_ZONE = REPORT_DEFAULT_TIME_ZONE;
 const TASK_PAGE_SIZE = PAGE_SIZE_DEFAULT;
 const LINK_CHOICE_PAGE_SIZE = PAGE_SIZE_DEFAULT;
 const FIRST_PAGE = 0;
 const FIRST_INITIATIVE_PAGE = 1;
-const PARTNER_PARAM = "partnerId";
 const PAGE_COPY = {
   lede: "The five task lists over the one task model this workspace keeps: today, upcoming, overdue, all and undated. Each row states its own status, the day it stands at and the records it is linked to, and completing a task records that the work was closed and says nothing about contact, payment or a message.",
   zone: `Every date on this page is judged in ${DISPLAY_TIME_ZONE}, because a server render cannot know the display time zone this browser chose in Settings; the lists re-read in that same zone, so no date here is judged in two.`,
@@ -44,7 +39,7 @@ async function readLists(): Promise<Readonly<Record<TaskListKey, TaskListsResult
   const answers = await Promise.all(TASK_LIST_KEYS.map((list) => reads.work.listTasks({ list, displayTimeZone: DISPLAY_TIME_ZONE, pageSize: TASK_PAGE_SIZE })));
   return Object.fromEntries(TASK_LIST_KEYS.map((list, index) => [list, answers[index]])) as Readonly<Record<TaskListKey, TaskListsResult>>;
 }
-function linkChoicesOf(partners: PartnersResult, initiatives: InitiativesResult): TaskLinkChoices | undefined {
+function linkChoicesOf(partners: Awaited<ReturnType<typeof reads.partners.findPartners>>, initiatives: Awaited<ReturnType<typeof reads.outreach.readInitiatives>>): TaskLinkChoices | undefined {
   if (partners.kind === "unavailable") return { status: "unavailable", source: partners.unavailable.source, guidance: partners.unavailable.guidance };
   if (initiatives.kind === "unavailable") return { status: "unavailable", source: initiatives.unavailable.source, guidance: initiatives.unavailable.guidance };
   if (partners.kind !== "envelope" || initiatives.kind !== "envelope") return undefined;
@@ -65,12 +60,12 @@ export default async function WorkPage({ searchParams }: { readonly searchParams
   const linkChoices = linkChoicesOf(partners, initiatives);
   const partnerLabels = partnerLabelsOf(partners.kind === "envelope" ? partners.envelope.data.rows : []);
   const primary = lists.all;
-  const initialValues = initialValuesOf(paramOf(stated, PARTNER_PARAM), linkChoices);
+  const initialValues = initialValuesOf(paramOf(stated, "partnerId"), linkChoices);
   return (
     <PageColumn>
       <PageHeading title={PAGE_TITLE} paragraphs={[PAGE_COPY.lede, PAGE_COPY.zone]} />
       <p className="type-body">
-        <Link href={AGENDA_HREF} className={AGENDA_LINK_CLASS}>
+        <Link href={"/work/agenda"} className={"inline-flex min-h-6 max-w-full items-center break-words inline-link hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"}>
           {PAGE_COPY.agendaLink}
         </Link>
       </p>

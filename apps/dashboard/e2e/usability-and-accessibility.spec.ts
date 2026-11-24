@@ -1,4 +1,4 @@
-/** Criterion 20 — usability and recovery: the retained jobs complete at 320 CSS pixels with the keyboard alone, at */
+/** Criterion 20 — usability and recovery: the retained jobs complete at 320 CSS pixels with the keyboard alone, at 200 % zoom and with reduced motion. */
 import { fileURLToPath } from "node:url";
 import {} from "@axe-core/playwright"; // AA tag set once and reuses that judgement rather than keeping a second copy of it. The types come from `@playwright/test`, which is what the runner is built on.
 import type { Locator, Page } from "@playwright/test";
@@ -25,7 +25,6 @@ import {
   type JsonRecord,
   type PersonaName,
 } from "../playwright.config";
-const NEW_WORKER: PersonaName = "new-worker";
 const ESTABLISHED_WORKER: PersonaName = "established-worker";
 const SEEDED_PARTNER_ID = "partner-jo-mbeki";
 const SEEDED_PARTNER_NAME = "Jo Mbeki";
@@ -35,11 +34,10 @@ const INTERACTION_DATE = "2026-11-18";
 const INTERACTION_ROLE = "Spoke on the phone with me";
 const EDITED_DISPLAY_NAME = "Jo Mbeki (Harbour)";
 const EDITED_GIVEN_NAME = "Josephine";
-const SEEDED_UPDATE_ID = "doc-update-autumn";
-const SEEDED_VARIANT_ID = "variant-update-autumn-en-public";
 const IMAGE_FIXTURE_PATH = fileURLToPath(new URL("../public/fixtures/media/IMG_20260814-harbour-youth-group.jpg", import.meta.url)); // The committed fixture the picker is handed: a real JPEG whose own filename and EXIF must never reach the output.
 const IMAGE_ALT_TEXT = "Six young people around a table in the church hall";
 const TYPED_PROSE = "We met on Friday and shared a meal together.";
+/** The longest any control may animate with motion suppressed, in seconds. */ const MOTION_CEILING_SECONDS = 0.05;
 const TYPED_ELSEWHERE = "The second tab wrote this line about the harbour meal."; // The line a second tab saves, which is what leaves a first tab holding a revision the record has moved past.
 const TYPED_STALE = "The first tab wrote this line before the record moved on."; // The line the first tab writes against the revision it read, so its save is genuinely refused as a conflict.
 const TYPED_AFTER_RECOVERY = "The line written after the conflict was recovered."; // The two edits that follow the recovery, each of which must reach the service.
@@ -48,17 +46,14 @@ const ROUTES = {
   partners: "/partners",
   work: "/work",
   matrixReport: "/support/reports/matrix",
-  editor: `/communication/${SEEDED_UPDATE_ID}/${SEEDED_VARIANT_ID}`,
+  editor: "/communication/doc-update-autumn/variant-update-autumn-en-public",
   partnerRecord: `/partners/${SEEDED_PARTNER_ID}`,
   partnerEdit: `/partners/${SEEDED_PARTNER_ID}/edit`,
   interactionForm: `/partners/${SEEDED_PARTNER_ID}/interactions/new`,
 } as const;
-const NARROW_VIEWPORT = { width: 320, height: 800 } as const;
 const ZOOM_VIEWPORT = { width: 640, height: 400 } as const;
 const DESKTOP_VIEWPORT = { width: 1280, height: 800 } as const;
-const MOTION_CEILING_SECONDS = 0.05;
 const TAB_SWEEP_STEPS = 40; // How many `Tab` presses a sweep takes before it gives up, so a surface that traps focus is reported rather than hung on.
-const ZOOM_TAB_SWEEP_STEPS = 96;
 const ZOOM_TAB_LAST_STOP = "Rows per page";
 const ROSTER_SEARCH_TEXT = "mbeki"; // The text the zoomed roster is searched with, so the list is proved operable rather than merely reachable at that zoom.
 const conflictOn = (name: string): JsonRecord => ({ mode: "conflict", target: { kind: "mutation", name } });
@@ -68,7 +63,7 @@ async function openPartnerEdit(page: Page): Promise<{ readonly form: Locator; re
   return { form, displayName: form.getByRole("textbox", { name: /^Display name/u }), givenName: form.getByRole("textbox", { name: /^Given name/u }) };
 }
 test.describe("at 320 CSS pixels, with motion suppressed", () => {
-  test.use({ viewport: NARROW_VIEWPORT });
+  test.use({ viewport: { width: 320, height: 800 } });
   test("the shell and the roster meet the target-size floor, and no control animates past the reader's preference", async ({ page }, testInfo) => {
     await page.goto(ROUTES.partners);
     await expect(page.getByRole("heading", { name: "Partners", level: 1 }), "The narrow layout reaches the roster through the shell's own navigation.").toBeVisible();
@@ -96,7 +91,7 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
     await expectDevelopmentData(page, "The partner roster");
   });
   test.describe("the new worker's first session", () => {
-    test.use({ persona: NEW_WORKER }); // The identity criterion 2 names: a workspace with no gifts, goal, subscription or integration, so the two jobs below are the first things this worker does rather than edits of seeded work.
+    test.use({ persona: "new-worker" }); // The identity criterion 2 names: a workspace with no gifts, goal, subscription or integration, so the two jobs below are the first things this worker does rather than edits of seeded work.
     test("the first session's two jobs complete with the keyboard alone: a private contact from a name, and a one-off task", async ({ page }, testInfo) => {
       await page.goto(ROUTES.partners);
       await expect(page.getByRole("heading", { name: "Partners", level: 1 })).toBeVisible();
@@ -252,7 +247,7 @@ test.describe("at 200 % zoom", () => {
     await expectNoHorizontalPageScroll(page, "The partner roster at 200 % zoom");
     await expectTextNotClipped(page.locator('[data-slot="query-toolbar"]'), "The roster toolbar at 200 % zoom");
     await expectTargetSizeFloor(page, page.locator('[data-slot="query-toolbar"]'), "The roster toolbar at 200 % zoom", testInfo);
-    const stops = await sweepTabOrder(page, "The partner roster at 200 % zoom", ZOOM_TAB_SWEEP_STEPS, ZOOM_TAB_LAST_STOP); // At this zoom the shell is below its 768 px breakpoint, so the sweep's stops are the surface's own controls: each is proved visible and unobscured by the sweep itself, and the families of control the job needs are named in the order they must come.
+    const stops = await sweepTabOrder(page, "The partner roster at 200 % zoom", 96, ZOOM_TAB_LAST_STOP); // At this zoom the shell is below its 768 px breakpoint, so the sweep's stops are the surface's own controls: each is proved visible and unobscured by the sweep itself, and the families of control the job needs are named in the order they must come.
     await testInfo.attach("tab order — partner roster at 200 % zoom", { body: JSON.stringify({ stops }, null, 2), contentType: "application/json" });
     const reachable: readonly { readonly name: string; readonly control: string }[] = [
       { name: "Search", control: "the roster's search field" },

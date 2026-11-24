@@ -42,7 +42,6 @@ function textAt(value: unknown, member: string): string | undefined {
   return typeof found === "string" && found.length > 0 ? found : undefined;
 }
 const setClockTo = async (page: Page, instant: string): Promise<void> => setClock(page.request, instant); // Stands this session's scenario clock at one absolute instant, which is how a boundary is reached exactly.
-const advanceClockBy = (page: Page, bySeconds: number): Promise<JsonRecord> => operateDevControl(page.request, "advanceClock", { bySeconds });
 const setScenarioTo = (page: Page, scenarioId: string): Promise<JsonRecord> => operateDevControl(page.request, "setScenario", { scenarioId });
 const scalarCount = (text: string): number => [...text].length;
 async function fillUntilCounted(field: Locator, value: string, counter: Locator): Promise<void> {
@@ -102,19 +101,18 @@ test("records an invitation that names the person, the ministry, the five unsele
   // The press below has to read the payload the field now holds, so the surface is awaited past the refusal the earlier press recorded and past the date it lacked: the review states the date only once the values the payload is built from carry it.
   await expect(refusal, "The date the field holds replaces the refusal the earlier press recorded").toHaveCount(0);
   await expect(review.getByText("2027-01-31", { exact: true }), "The review states the date the field holds, so the press below reads the payload that carries it").toBeVisible();
-  // A press that reaches the handler before the field's own render is made against the earlier state and refused, while a repeat under the same reviewed intent replays that attempt rather than recording a second invitation: so the press is repeated only while the review still states no result.
-  const saved = review.getByRole("heading", { name: "Saved", exact: true });
+  // The receipt belongs to the attempt that submitted it, and an accepted save advances the revision the review step presents, so the step re-bases on the new one: the durable proof is the accepted outcome plus the relationship the re-read lists, never the receipt, which stands only until that re-read lands. A press that reaches the handler before the field's own render is refused, so the press is repeated only until the service answers it accepted — never after, because past the advance a further press would begin a second attempt with its own identity rather than replay the first.
+  let recorded: unknown = null;
   await expect(async () => {
-    if ((await saved.count()) === 0) {
-      const record = review.getByRole("button", { name: "Record invitation" });
-      await expect(record).toBeEnabled({ timeout: 10_000 });
-      await record.click();
-    }
-    await expect(saved).toBeVisible({ timeout: 10_000 });
+    const answering = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/coaching" && response.request().method() === "POST", { timeout: 10_000 });
+    const record = review.getByRole("button", { name: "Record invitation" });
+    await expect(record).toBeEnabled({ timeout: 10_000 });
+    await record.click();
+    recorded = parseJson(await (await answering).text());
+    expect(recorded, "Recording the invitation is one accepted change to the coaching records, reported as such by the service's own outcome.").toMatchObject({ outcome: "accepted" });
   }).toPass({ timeout: 20_000 });
-  await expect(review.getByRole("heading", { name: "Saved", exact: true })).toBeVisible();
-  await expect(review.getByText(/^coaching-grant-\S+$/u)).toBeVisible();
-  await expect(review.getByText("This step is complete for this attempt, and the result below is its record. Changing what this step would apply begins a new attempt with its own identity.")).toBeVisible();
+  const created = createdIdOf(recorded);
+  await expect(page.locator(`[data-slot="coaching-relationship"][data-grant="${created}"]`), "The invitation was recorded, and the relationship it created is the one the surface now lists under that grant.").toBeVisible();
   await expect(form.getByText("Recording an invitation reached the first of the four outcomes above and no further: identity verification, deliberate acceptance and live access have not happened.")).toBeVisible();
 });
 test("shows a coach only the modules switched on and offers no write of any kind, while the worker's own work stays untouched", async ({ page }) => {
@@ -154,8 +152,7 @@ test("shows a coach only the modules switched on and offers no write of any kind
   await page.goto(`/coaching/coach/${PRIMARY_GRANT}`);
   await expect(page.getByRole("tab")).toHaveText(["Targets", "Check-ins"]);
   for (const moduleName of UNSHARED_MODULES) for (const absent of [page.getByRole("tab", { name: moduleName }), page.getByText(moduleName, { exact: true })]) await expect(absent).toHaveCount(0);
-  await expect(page.getByText(/my own wording/u), "A private target label the worker wrote is never disclosed to a coach; A private target label belongs to the worker and is never disclosed, so half of it is not on this page either").toHaveCount(0);
-  await expect(page.getByText(/my own wording/u), "A private target label the worker wrote is never disclosed to a coach").toHaveCount(0);
+  await expect(page.getByText(/my own wording/u), "A private target label the worker wrote belongs to the worker and is never disclosed to a coach, so neither the label nor half of it is on this page either").toHaveCount(0);
   await expect(page.locator("main").getByRole("cell", { name: "0 (Zero)" }).first(), "A recorded zero is drawn as a zero and named as one: it is not an empty period, and it is not hidden").toBeVisible();
   const coachMain = page.locator("main");
   await expect(coachMain.getByRole("button", { name: /edit|comment|assign|remind|complete|reopen|export|impersonate/iu }), "No coach write exists here: no control edits, comments, assigns, reminds, completes, reopens or exports, and the one action the coach identity holds is their own departure").toHaveCount(0);
@@ -273,7 +270,7 @@ test("admits a coach one second before the frozen cutoff, denies the read at the
   await setClockTo(page, "2026-12-30T23:59:59Z");
   await page.goto(`/coaching/coach/${PRIMARY_GRANT}`);
   await expect(page.getByRole("tab")).toHaveText(["Targets", "Check-ins"]);
-  await advanceClockBy(page, 1); // At the cutoff the very same read is refused — as it would be if a stored status still looked live, because the bound is evaluated when the read runs and not when a label was written.
+  await operateDevControl(page.request, "advanceClock", { bySeconds: 1 }); // At the cutoff the very same read is refused — as it would be if a stored status still looked live, because the bound is evaluated when the read runs and not when a label was written.
   await page.goto(`/coaching/coach/${PRIMARY_GRANT}`);
   const coachMain = page.locator("main");
   await expect(coachMain.getByText("This request is not permitted in the current scope and session.")).toBeVisible();
@@ -417,8 +414,7 @@ test("shares one task's summary under a reviewed description a coach reads, hold
   expect(candidateIds.length, "The worker's own work is what a summary is shared from, so the read states at least one task.; The candidate set is taken from the read the page itself composes, so this assertion follows the store the runner seeded rather than a list of titles written into this file").toBeGreaterThan(0);
   expect(candidateIds, "Every candidate the read states names the task it is.").not.toContain("");
   expect(codePointLimit, "The read states the reviewed-description limit the surface counts a description against.").toBe(SUMMARY.maxCodePoints);
-  await expect(selector.getByText(SUMMARY.noCandidate), "The surface offers the worker's own tasks, so it states no empty arm.; A summary is shared from work this worker already has: the empty arm belongs to a session with no task at all").toHaveCount(0);
-  await expect(selector.getByText(SUMMARY.noCandidate), "The surface offers the worker's own tasks, so it states no empty arm.").toHaveCount(0);
+  await expect(selector.getByText(SUMMARY.noCandidate), "A summary is shared from work this worker already has, so the surface offers the worker's own tasks and states no empty arm.").toHaveCount(0);
   const choice = selector.getByRole("combobox", { name: SUMMARY.choice, exact: true });
   const options = choice.locator("option");
   await expect(options, "One choice per candidate the read states, beside the placeholder that means no choice yet.").toHaveCount(candidateIds.length + 1);
@@ -452,11 +448,8 @@ test("shares one task's summary under a reviewed description a coach reads, hold
   await expect(review.getByText(SUMMARY.descriptionText, { exact: true }), "The review states the description it would share.").toBeVisible();
   await review.getByRole("button", { name: SUMMARY.confirm }).click();
   await expect(review.getByRole("heading", { name: "Saved", exact: true }), "The share is written once, and its own receipt says so.").toBeVisible();
-  const shareReceipt = await review
-    .getByText(/^coaching-task-share-\S+$/u)
-    .first()
-    .innerText();
-  const createdShareId = shareReceipt.trim();
+  const shareReceipt = review.getByText(/^coaching-task-share-\S+$/u).first();
+  const createdShareId = (await shareReceipt.innerText()).trim();
   const afterShare = await readTaskShares(page);
   const shares = isRecord(afterShare) && isRecord(afterShare.data) && Array.isArray(afterShare.data.shares) ? afterShare.data.shares : [];
   const shareOfTask = shares.filter((share) => isRecord(share) && share.taskId === chosenTaskId);
@@ -512,4 +505,44 @@ test("shares one task's summary under a reviewed description a coach reads, hold
   await page.goto("/work");
   await page.getByRole("tab", { name: SUMMARY.allList }).click();
   await expect(page.getByRole("button", { name: `Actions for ${SUMMARY.revisedTitle}` }), "Stopping a summary leaves the task itself on the list, with its own title.").toBeVisible();
+});
+test("accepts a pending invitation on the coach's own page with the keyboard, and the relationship it opens is the one the portfolio then lists", async ({ page }) => {
+  await actAs(page, WORKER_SESSION); // The worker records the invitation through the same transport the sharing surface composes, because what this journey judges is the coach's deliberate acceptance rather than the invitation form.
+  const { scope, revision } = await devStateOf(page.request); // The authority the invitation is recorded under, read as the identity the cookie jar holds rather than written into this file.
+  const payload = { coachPrincipalId: COACH_PRINCIPAL, organizationId: scope.organizationId, ministryId: scope.ministryId, modules: { "support-goal": false, "support-results": false, targets: false, "check-ins": false, "task-summaries": false }, duration: { kind: "through-date", shareThroughDate: "2026-12-31" } }; // Every module is recorded as switched off when an invitation is created, because the choice is made once the person has accepted.
+  const issued = await page.request.post("/api/coaching", { data: { operationId: newAttemptId(), scope, expectedRevision: revision, payload } });
+  const grantId = createdIdOf(parseJson(await issued.text())); // The invitation this journey addresses is the identity the service reported creating, so no later read has to guess which one it made.
+  await actAs(page, COACH_SESSION);
+  await page.goto("/coaching/coach");
+  await expect(page.locator(`a[href="/coaching/coach/${grantId}"]`), "An invitation is not a relationship: until it is accepted, the portfolio holds no address for it.").toHaveCount(0);
+  const portfolio = await page.request.get(PORTFOLIO_PATH); // The read the coach page itself composes, so the block below is judged against what the read advertises rather than a shape written into this file.
+  const read = parseJson(await portfolio.text());
+  const pending = isRecord(read) && isRecord(read.data) && Array.isArray(read.data.pendingInvitations) ? read.data.pendingInvitations : [];
+  const stated = pending.find((candidate) => isRecord(candidate) && candidate.grantId === grantId);
+  if (!isRecord(stated)) throw new Error(`The read the coach page composes states no invitation awaiting this coach, so nothing on the page could ask for a decision: ${JSON.stringify(read).slice(0, 300)}.`);
+  const ministries = Array.isArray(stated.ministries) ? stated.ministries.flatMap((entry) => (isRecord(entry) && typeof entry.ministryId === "string" ? [entry.ministryId] : [])) : [];
+  const durationLabel = textAt(stated, "durationLabel");
+  expect(ministries.length, "The invitation names the ministry it was made in, by the identifier the worker's own admission records state.").toBeGreaterThan(0);
+  if (durationLabel === undefined) throw new Error(`The invitation the read states carries no duration wording, so the page cannot name the duration it was made for: ${JSON.stringify(stated).slice(0, 300)}.`);
+  const acceptance = page.locator('[data-slot="coach-acceptance"]');
+  const facts = page.locator('[data-slot="coach-acceptance-invitation"]'); // The facts the invitation names, kept apart from the review step below them, which repeats the recipient, the ministry and the duration beside the control that accepts them.
+  await expect(acceptance, "An invitation the read advertises is rendered as the coach's own acceptance block, rather than the page deciding there is nothing to accept.").toBeVisible();
+  await expect(facts.getByText(grantId, { exact: true }), "The block names the invitation it asks about.").toBeVisible();
+  for (const ministryId of ministries) await expect(facts.getByText(ministryId, { exact: true }), "The block names the ministry the invitation was made in.").toBeVisible();
+  await expect(facts.getByText(durationLabel, { exact: true }), "The block names the duration the invitation was made for, in the domain's own wording.").toBeVisible();
+  await acceptance.getByRole("button", { name: "Accept this invitation" }).focus();
+  await page.keyboard.press("Enter"); // The control is reached and operated from the keyboard alone, so a deliberate acceptance is not a pointer-only act.
+  const confirmation = page.locator('[role="alertdialog"]');
+  await expect(confirmation, "Accepting is confirmed in a dialog of its own, so the decision is made twice before it is recorded.").toBeVisible();
+  await confirmation.getByRole("button", { name: "Accept this invitation" }).focus();
+  await page.keyboard.press("Enter");
+  // An accepted invitation stops awaiting a decision, so the page re-reads and the block that carried the receipt is replaced by the relationship the read now reports. The journey therefore judges the acceptance on that record — the invitation gone from the read and the relationship present in it — rather than on a receipt that stands only until the re-read lands.
+  await expect(page.locator('[data-slot="coach-acceptance"]'), "Once accepted, the invitation no longer awaits a decision, so the block that carried the decision is gone.").toHaveCount(0);
+  const after = await page.request.get(PORTFOLIO_PATH);
+  const afterRead = parseJson(await after.text());
+  const afterData = isRecord(afterRead) && isRecord(afterRead.data) ? afterRead.data : {};
+  expect(Array.isArray(afterData.pendingInvitations) ? afterData.pendingInvitations : undefined, "The read the page composes holds no invitation once it has been accepted.").toEqual([]);
+  const listed = Array.isArray(afterData.subjects) ? afterData.subjects.filter((subject) => isRecord(subject) && subject.grantId === grantId) : [];
+  expect(listed.length, "The acceptance itself is what opened the relationship: the grant the invitation named is the one the coach's read now discloses.").toBe(1);
+  await expect(page.locator(`a[href="/coaching/coach/${grantId}"]`), "The acceptance opened the relationship, and the portfolio lists it under the grant the invitation was made by.").toHaveCount(1);
 });

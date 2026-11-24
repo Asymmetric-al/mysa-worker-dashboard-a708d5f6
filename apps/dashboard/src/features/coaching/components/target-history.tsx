@@ -17,12 +17,9 @@ export type TargetHistoryProps = {
   readonly className?: string;
 };
 type Version = TargetHistoryProps["versions"][number];
-type ClosedPeriod = TargetHistoryProps["closedPeriods"][number];
-type ClosedPeriodState = ClosedPeriod["state"];
-type VersionStateCopy = { readonly label: string; readonly tone: StatusTone };
-const VERSION_STATE_COPY: Readonly<Record<Version["state"], VersionStateCopy>> = { open: { label: "Current", tone: "info" }, closed: { label: "Closed", tone: "neutral" } };
+const VERSION_STATE_COPY: Readonly<Record<Version["state"], { readonly label: string; readonly tone: StatusTone }>> = { open: { label: "Current", tone: "info" }, closed: { label: "Closed", tone: "neutral" } };
 type ClosedPeriodCopy = { readonly word: string | null; readonly tone: StatusTone; readonly sentence: string | null; readonly showsFigure: boolean };
-const CLOSED_PERIOD_COPY: Readonly<Record<ClosedPeriodState, ClosedPeriodCopy>> = {
+const CLOSED_PERIOD_COPY: Readonly<Record<TargetHistoryProps["closedPeriods"][number]["state"], ClosedPeriodCopy>> = {
   recorded: { word: null, tone: "neutral", sentence: null, showsFigure: true },
   "zero-recorded": { word: TARGET_STATE_COPY["zero-recorded"].label, tone: "muted", sentence: TARGET_STATE_COPY["zero-recorded"].description, showsFigure: true },
   paused: { word: TARGET_STATE_COPY.paused.label, tone: "caution", sentence: TARGET_STATE_COPY.paused.description, showsFigure: true },
@@ -66,7 +63,7 @@ function MeasuredAgainstVersion({ version }: { readonly version: Version | undef
 }
 type NoRowsNoticeProps = { readonly source: SourceReference | null; readonly emptyTitle: string; readonly emptyDescription: string };
 const NoRowsNotice = ({ source, emptyTitle, emptyDescription }: NoRowsNoticeProps): ReactElement => {
-  return source !== null ? <StateNotice kind="unavailable" title={"This history cannot be read right now"} description={COACHING_COPY.targets.unavailable} source={source} headingLevel={3} /> : <StateNotice kind="empty" title={emptyTitle} description={emptyDescription} headingLevel={3} />;
+  return source !== null ? <StateNotice kind="unavailable" title="This history cannot be read right now" description={COACHING_COPY.targets.unavailable} source={source} headingLevel={3} /> : <StateNotice kind="empty" title={emptyTitle} description={emptyDescription} headingLevel={3} />;
 };
 export default function TargetHistory({ versions, closedPeriods, locale, unavailable = null, className }: TargetHistoryProps): ReactElement {
   const versionsHeadingId = useId();
@@ -76,9 +73,9 @@ export default function TargetHistory({ versions, closedPeriods, locale, unavail
   return (
     <section className={cn("flex min-w-0 flex-col gap-4", className)} data-interface-locale={locale}>
       <p className="type-supporting text-balance">{TARGET_VERSION_GUARANTEE}</p>
-      <Panel titleId={versionsHeadingId} headingLevel={2} title={"Version history"} description={"Each version is the plan in force from its first date until the day before the next version begins, so a period falls inside exactly one of them."}>
+      <Panel titleId={versionsHeadingId} headingLevel={2} title="Version history" description="Each version is the plan in force from its first date until the day before the next version begins, so a period falls inside exactly one of them.">
         {versionsNewestFirst.length === 0 ? (
-          <NoRowsNotice source={unreadableSource} emptyTitle={"No version recorded yet"} emptyDescription={"A target records its first version on the date it is set, and every later change to the quantity, the measure or the calendar start records another one from the date it takes effect."} />
+          <NoRowsNotice source={unreadableSource} emptyTitle="No version recorded yet" emptyDescription="A target records its first version on the date it is set, and every later change to the quantity, the measure or the calendar start records another one from the date it takes effect." />
         ) : (
           <ul aria-labelledby={versionsHeadingId} className="flex min-w-0 flex-col gap-4">
             {versionsNewestFirst.map((version, index) => {
@@ -102,9 +99,9 @@ export default function TargetHistory({ versions, closedPeriods, locale, unavail
           </ul>
         )}
       </Panel>
-      <Panel titleId={periodsHeadingId} headingLevel={2} title={"Closed periods"} description={"A period appears here once its calendar has completed, with the version it was measured against and the figure that version's measure recorded."}>
+      <Panel titleId={periodsHeadingId} headingLevel={2} title="Closed periods" description="A period appears here once its calendar has completed, with the version it was measured against and the figure that version's measure recorded.">
         {closedPeriods.length === 0 ? (
-          <NoRowsNotice source={unreadableSource} emptyTitle={"No closed period yet"} emptyDescription={"Periods of this target are still running, so none has closed and none has a settled figure. A closed period appears here with the version it was measured against once its calendar completes."} />
+          <NoRowsNotice source={unreadableSource} emptyTitle="No closed period yet" emptyDescription="Periods of this target are still running, so none has closed and none has a settled figure. A closed period appears here with the version it was measured against once its calendar completes." />
         ) : (
           <ul aria-labelledby={periodsHeadingId} className="flex min-w-0 flex-col gap-4">
             {closedPeriods.map((period, index) => {

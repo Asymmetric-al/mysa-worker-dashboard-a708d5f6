@@ -12,11 +12,9 @@ import { taskListColumns } from "./task-lists";
 type AgendaEnvelope = Extract<AgendaResult, { readonly kind: "envelope" }>["envelope"];
 type AgendaDays = AgendaEnvelope["data"]["days"];
 type AgendaRow = AgendaDays[number]["items"][number];
-type PageWindow = { readonly page: number; readonly pageSize: number };
 const WORK_HREF = "/work";
 const NO_SORT: RecordListQueryState["sort"] = [];
 const DEFAULT_COLUMN_VISIBILITY: RecordListQueryState["columnVisibility"] = {};
-const LOADING_LINES = 4;
 const SURFACE_CLASS = "flex min-w-0 flex-col gap-4";
 const HEADING_CLASS = "type-section-title flex min-w-32 flex-wrap items-baseline gap-x-2 break-words text-pretty";
 const MUTED_CLASS = "type-supporting";
@@ -87,7 +85,6 @@ function dayCellNode(cell: DayCell | undefined): ReactNode {
     </h2>
   );
 }
-const withoutSorting = (column: RecordListColumnDef<AgendaRow>): RecordListColumnDef<AgendaRow> => ({ ...column, enableSorting: false });
 interface AgendaBodyProps {
   readonly scope: Scope;
   readonly envelope: AgendaEnvelope;
@@ -105,7 +102,7 @@ function AgendaBody({ scope, envelope, partnerLabels, columnVisibility, onQueryS
     const listColumns: RecordListColumnDef<AgendaRow>[] = [dayColumn];
     for (const column of taskListColumns({ partnerLabels })) {
       if (column.id === "dueOn") continue;
-      listColumns.push(withoutSorting(column));
+      listColumns.push(((column: RecordListColumnDef<AgendaRow>): RecordListColumnDef<AgendaRow> => ({ ...column, enableSorting: false }))(column));
     }
     return listColumns;
   }, [layout, partnerLabels]);
@@ -124,7 +121,7 @@ function AgendaBody({ scope, envelope, partnerLabels, columnVisibility, onQueryS
 type AgendaProps = { readonly scope: Scope; readonly envelope: AgendaEnvelope; readonly partnerLabels: Readonly<Record<string, string>>; readonly className?: string };
 /** One agenda for one context: the read the route already made, the window a worker widens or pages into, and the read's own refusals stated in their own words. */ export default function Agenda({ scope, envelope, partnerLabels, className }: AgendaProps): ReactElement {
   const router = useRouter();
-  const [window, setWindow] = useState<PageWindow>({ page: envelope.data.page, pageSize: envelope.data.pageSize });
+  const [window, setWindow] = useState<{ readonly page: number; readonly pageSize: number }>({ page: envelope.data.page, pageSize: envelope.data.pageSize });
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>(DEFAULT_COLUMN_VISIBILITY);
   const query = useMemo<AgendaQuery>(() => ({ displayTimeZone: envelope.data.displayTimeZone, page: window.page, pageSize: window.pageSize }), [envelope.data.displayTimeZone, window.page, window.pageSize]);
   const seed = sameWindow(envelope, query) ? envelope : undefined; // The window the server already read, when it is the one on screen: seeding the read with it means mounting the agenda asks for nothing the page has already read, and a window the worker pages into is still asked for.
@@ -141,7 +138,7 @@ type AgendaProps = { readonly scope: Scope; readonly envelope: AgendaEnvelope; r
   function content(): ReactNode {
     if (reading === undefined) {
       if (read.isError) return <StateNotice kind="unavailable" headingLevel={2} title={FAILED_COPY.title} description={FAILED_COPY.body} retry={{ label: RETRY_LABEL, onClick: refresh }} />;
-      return <StateNotice kind="loading" headingLevel={2} title="Reading the dated agenda" loadingLines={LOADING_LINES} />;
+      return <StateNotice kind="loading" headingLevel={2} title="Reading the dated agenda" loadingLines={4} />;
     }
     switch (reading.kind) {
       case "envelope":

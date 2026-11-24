@@ -44,16 +44,19 @@ function coverageBounds(coverage: Coverage): ReactNode {
   if (to !== null) return <>Stated coverage ends at {isoValue(to)}, with no start the source states.</>;
   return null;
 }
+const RangeCardHeader = (): ReactElement => (
+  <CardHeader>
+    <CardTitle>
+      <h2 className="type-section-title">{FINANCIAL_RANGE_COPY.heading}</h2>
+    </CardTitle>
+    <CardDescription>{FINANCIAL_RANGE_COPY.purpose}</CardDescription>
+  </CardHeader>
+);
 export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale }: FinancialRangeReviewProps): ReactElement {
   if (range === null) {
     return (
       <Card dir="ltr">
-        <CardHeader>
-          <CardTitle>
-            <h2 className="type-section-title">{FINANCIAL_RANGE_COPY.heading}</h2>
-          </CardTitle>
-          <CardDescription>{FINANCIAL_RANGE_COPY.purpose}</CardDescription>
-        </CardHeader>
+        <RangeCardHeader />
         <CardContent className="flex flex-col items-start gap-2">
           <Badge variant="outline">Not shared</Badge>
           <p className="type-supporting break-words">No financial range has been shared with a coach yet. Choose the dates and review them on this page first: nothing from your support view becomes readable to a coach until you do.</p>
@@ -67,12 +70,7 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
   const reviewed = reviewedAt ?? null;
   return (
     <Card dir="ltr">
-      <CardHeader>
-        <CardTitle>
-          <h2 className="type-section-title">{FINANCIAL_RANGE_COPY.heading}</h2>
-        </CardTitle>
-        <CardDescription>{FINANCIAL_RANGE_COPY.purpose}</CardDescription>
-      </CardHeader>
+      <RangeCardHeader />
       <CardContent className="flex flex-col gap-4">
         <figure className="flex flex-col gap-2">
           <figcaption className="flex flex-wrap items-center justify-between gap-2 text-sm font-medium">

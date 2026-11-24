@@ -17,16 +17,14 @@ export type ImportSkipDecisionInput = { readonly kind: "skip"; readonly rowNumbe
 export type ImportUnresolvedDecisionInput = { readonly kind: "unresolved"; readonly rowNumber: number };
 export type ImportDecisionInput = ImportCreateDecisionInput | ImportReuseDecisionInput | ImportSkipDecisionInput | ImportUnresolvedDecisionInput;
 export type ImportDecisionEcho = { readonly kind: ImportDecisionKind; readonly rowNumber: number; readonly corrections: readonly ImportCellCorrectionInput[]; readonly candidate: ImportMatchReference | null; readonly reason: string };
-/** The one input shape a client posts for a decision of this kind, carrying only the members that kind takes. */
-const DECISION_INPUT_BUILDERS: Readonly<Record<ImportDecisionKind, (echo: ImportDecisionEcho) => ImportDecisionInput>> = {
+/** The one input shape a client posts for a decision of this kind, carrying only the members that kind takes. */ const DECISION_INPUT_BUILDERS: Readonly<Record<ImportDecisionKind, (echo: ImportDecisionEcho) => ImportDecisionInput>> = {
   create: (echo) => ({ kind: "create", rowNumber: echo.rowNumber, corrections: echo.corrections }),
   reuse: (echo) => (echo.candidate === null ? { kind: "unresolved", rowNumber: echo.rowNumber } : { kind: "reuse", rowNumber: echo.rowNumber, candidate: { ...echo.candidate }, corrections: echo.corrections }),
   skip: (echo) => ({ kind: "skip", rowNumber: echo.rowNumber, reason: echo.reason }),
   unresolved: (echo) => ({ kind: "unresolved", rowNumber: echo.rowNumber }),
 };
 export const decisionInputOf = (echo: ImportDecisionEcho): ImportDecisionInput => DECISION_INPUT_BUILDERS[echo.kind](echo);
-/** The input that records a decision this import already holds, so a read publishes exactly what acceptance takes. */
-export const recordedDecisionInputOf = (decision: ImportRowDecision): ImportDecisionInput =>
+/** The input that records a decision this import already holds, so a read publishes exactly what acceptance takes. */ export const recordedDecisionInputOf = (decision: ImportRowDecision): ImportDecisionInput =>
   decisionInputOf({
     kind: decision.kind,
     rowNumber: decision.rowNumber,
@@ -70,8 +68,7 @@ function hashRound(text: string, seed: number, prime: number): number {
 const hex8 = (value: number): string => value.toString(16).padStart(8, "0");
 const checksumOf = (text: string): string => `${FINGERPRINT_TAG}-${hex8(hashRound(text, SECOND_SEED, SECOND_PRIME))}${hex8(hashRound(text, FNV_OFFSET, FNV_PRIME))}`;
 const framedPart = (part: string): string => `${part.length}:${part}`;
-/** The content fingerprint of a parsed file: its headers and every cell in row order, each length framed, hashed once here. */
-export function fingerprintOf(file: ParsedCsvFile): ImportFileFingerprint {
+/** The content fingerprint of a parsed file: its headers and every cell in row order, each length framed, hashed once here. */ export function fingerprintOf(file: ParsedCsvFile): ImportFileFingerprint {
   const parts: string[] = [framedPart(String(file.headers.length)), ...file.headers.map((header) => framedPart(header)), framedPart(String(file.rows.length))];
   for (const row of file.rows) {
     parts.push(framedPart(String(row.rowNumber)));
@@ -83,8 +80,7 @@ export function fingerprintOf(file: ParsedCsvFile): ImportFileFingerprint {
 export const createDecisionSet = (file: ParsedCsvFile): ImportDecisionSet => ({ fingerprint: fingerprintOf(file), decisions: [] });
 const sameFingerprint = (left: ImportFileFingerprint, right: ImportFileFingerprint): boolean => left.checksum === right.checksum && left.columnCount === right.columnCount && left.dataRowCount === right.dataRowCount;
 const contextRefusal = (set: ImportDecisionSet, context: ImportDecisionContext): ImportDecisionRefusal | null => staleFileRefusal(set, context.file) ?? contextMismatchRefusal(context);
-/** Null when the set describes this exact file, and the `file-changed` refusal when it does not. */
-export function staleFileRefusal(set: ImportDecisionSet, file: ParsedCsvFile): ImportDecisionRefusal | null {
+/** Null when the set describes this exact file, and the `file-changed` refusal when it does not. */ export function staleFileRefusal(set: ImportDecisionSet, file: ParsedCsvFile): ImportDecisionRefusal | null {
   const current = fingerprintOf(file);
   if (sameFingerprint(set.fingerprint, current)) return null;
   const recorded = set.fingerprint;
@@ -185,9 +181,8 @@ function checkCorrections(input: readonly ImportCellCorrectionInput[], row: Pars
   for (const columnNumber of [...byColumn.keys()].sort((left, right) => left - right)) {
     const value = byColumn.get(columnNumber);
     if (value === undefined) continue;
-    if (columnNumber > row.cells.length) {
+    if (columnNumber > row.cells.length)
       return refusedCorrection("correction-target-unknown", row.rowNumber, [columnNumber], `Column ${columnNumber} is not a cell of row ${row.rowNumber}, which holds ${row.cells.length} cell(s) while the header names ${context.file.headers.length} column(s). Correct a cell the row actually has.`);
-    }
     const fieldId = fieldAtColumn(context.mapping, columnNumber);
     if (fieldId === null) {
       const header = headerAt(context.file.headers, columnNumber);
@@ -259,8 +254,7 @@ type PreservedColumnTally = { columnNumber: number; header: string; reason: Impo
 export function summariseDecisions(set: ImportDecisionSet, context: ImportDecisionContext): ImportSummaryResult {
   const refused = contextRefusal(set, context);
   if (refused !== null) return { ok: false, refusal: refused };
-  const decisionByRow = new Map<number, ImportRowDecision>();
-  for (const decision of set.decisions) decisionByRow.set(decision.rowNumber, decision);
+  const decisionByRow = new Map<number, ImportRowDecision>(set.decisions.map((decision) => [decision.rowNumber, decision]));
   const kindCounts: Record<ImportDecisionKind, number> = { create: 0, reuse: 0, skip: 0, unresolved: 0 };
   const blockedCounts = new Map<ImportBlockingReasonCode, number>();
   const correctionCounts = new Map<ImportFieldId, number>();
@@ -277,13 +271,12 @@ export function summariseDecisions(set: ImportDecisionSet, context: ImportDecisi
     const blockedReasons = blockedReasonsOf(effective, decision, context.candidates);
     for (const reason of blockedReasons) blockedCounts.set(reason, (blockedCounts.get(reason) ?? 0) + 1);
     const correctedFields: ImportFieldId[] = [];
-    if (decision !== undefined && (decision.kind === "create" || decision.kind === "reuse")) {
+    if (decision !== undefined && (decision.kind === "create" || decision.kind === "reuse"))
       for (const correction of decision.corrections) {
         correctionCount += 1;
         correctionCounts.set(correction.fieldId, (correctionCounts.get(correction.fieldId) ?? 0) + 1);
         if (!correctedFields.includes(correction.fieldId)) correctedFields.push(correction.fieldId);
       }
-    }
     restrictionsPreserved += validated.restrictions.length;
     if (decisionKind === "create" || decisionKind === "reuse") restrictionsCarried += validated.restrictions.length;
     tallyPreservedColumns(preservedColumns, validated);

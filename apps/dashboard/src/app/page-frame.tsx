@@ -5,8 +5,7 @@ import type { DenialReason, ReadResult } from "@/modules/data-service/outcome";
 import type { SourceReference } from "@/lib/ids";
 /** A read that produced no envelope: a denial, an outage behind the records, or a request the route itself refused. Structurally the three arms of every service read. */
 export type ReadRefusal = { readonly kind: "denied"; readonly denied: { readonly reasonCode: DenialReason } } | { readonly kind: "unavailable"; readonly unavailable: { readonly guidance: string; readonly source: SourceReference } } | { readonly kind: "refused"; readonly refused: unknown };
-/** What one page states for each refusal arm — its own title, the sentence it adds, the recovery it offers where one exists — and the heading level its notice nests at. */
-export type ReadNoticeCopy = {
+/** What one page states for each refusal arm — its own title, the sentence it adds, the recovery it offers where one exists — and the heading level its notice nests at. */ export type ReadNoticeCopy = {
   readonly headingLevel: NoticeHeadingLevel;
   readonly denied: { readonly title: string; readonly body?: string; readonly action?: NoticeAction };
   readonly unavailable: { readonly title: string; readonly body?: string; readonly action?: NoticeAction };
@@ -22,8 +21,7 @@ export function ReadNotices({ failure, copy, className }: { readonly failure: Re
 /** The page column every route renders its content in: one min-width-zero flex column, the gaps the pages have always used, and text that starts on the leading edge of whichever direction the content is read in. */
 export const PageColumn = ({ children, gap = 6 }: { readonly children: ReactNode; readonly gap?: 4 | 6 }): ReactElement => <div className={gap === 4 ? "flex min-w-0 flex-col gap-4 text-start" : "flex min-w-0 flex-col gap-6 text-start"}>{children}</div>;
 export type PageHeadingContent = { readonly title: string; readonly paragraphs?: readonly string[] };
-/** The heading block a page opens with: the one `h1` of the route and the sentences that state what the surface holds. */
-export const PageHeading = ({ title, paragraphs }: PageHeadingContent): ReactElement => (
+/** The heading block a page opens with: the one `h1` of the route and the sentences that state what the surface holds. */ export const PageHeading = ({ title, paragraphs }: PageHeadingContent): ReactElement => (
   <div className="flex min-w-0 flex-col gap-2">
     <h1 className="type-page-title text-pretty wrap-anywhere">{title}</h1>
     {(paragraphs ?? []).map((paragraph) => (
@@ -44,8 +42,7 @@ export const PageSurface = ({ headingId, title, dir, children }: { readonly head
 );
 /** The frame a page states around its own surface: its words for the three refusal arms, the heading block it opens with, and the column gaps its content and its refusal lay out at. */
 export type PageFrame = { readonly notice: ReadNoticeCopy; readonly heading?: PageHeadingContent; readonly gap?: 4 | 6; readonly refusalGap?: 4 | 6 };
-/** The level a refusal nests at inside a page that states its own title: the heading the page keeps, with the refusal stated beneath it. */
-const NESTED_NOTICE_LEVEL: NoticeHeadingLevel = 2;
+/** The level a refusal nests at inside a page that states its own title: the heading the page keeps, with the refusal stated beneath it. */ const NESTED_NOTICE_LEVEL: NoticeHeadingLevel = 2;
 /** A read that produced no envelope, stated inside the page column the route would have rendered its content in, so a refusal is never an empty surface. A route that states its own page title keeps it on a refusal too, with the notice beneath it; a route whose title is the record it could not read states the notice's own title as the page heading, at the page-title scale. */
 export const pageRefusalOf = (failure: ReadRefusal, copy: ReadNoticeCopy, gap: 4 | 6 = 6, heading?: PageHeadingContent): ReactElement => (
   <PageColumn gap={gap}>
@@ -53,8 +50,7 @@ export const pageRefusalOf = (failure: ReadRefusal, copy: ReadNoticeCopy, gap: 4
     <ReadNotices failure={failure} copy={heading === undefined ? copy : { ...copy, headingLevel: NESTED_NOTICE_LEVEL }} />
   </PageColumn>
 );
-/** An envelope a read answered with, exactly as the page's own success branch receives it. */
-export type AnsweredEnvelope<Envelope> = Extract<ReadResult<Envelope>, { readonly kind: "envelope" }>;
+/** An envelope a read answered with, exactly as the page's own success branch receives it. */ export type AnsweredEnvelope<Envelope> = Extract<ReadResult<Envelope>, { readonly kind: "envelope" }>;
 /** The one page frame: one service read, the heading block, and the page's own surface rendered from the envelope that read answered with — or, where it answered with none, the page's own words for that refusal. */
 export async function readPageOf<Envelope>(read: () => Promise<ReadResult<Envelope>>, frame: PageFrame, surface: (answered: AnsweredEnvelope<Envelope>) => ReactNode): Promise<ReactElement> {
   const result = await read();
@@ -66,8 +62,7 @@ export async function readPageOf<Envelope>(read: () => Promise<ReadResult<Envelo
     </PageColumn>
   );
 }
-/** The URL's own parameter record, as Next 16 hands a page or a handler its search parameters. */
-export type SearchParams = Readonly<Record<string, string | string[] | undefined>>;
+/** The URL's own parameter record, as Next 16 hands a page or a handler its search parameters. */ export type SearchParams = Readonly<Record<string, string | string[] | undefined>>;
 /** One parameter's first value as the address states it, unread: a repeated parameter is read once, and no list is treated as a decision the caller made. */
 export const firstValueOf = (value: string | string[] | undefined): string | undefined => (Array.isArray(value) ? value[0] : value);
 /** One parameter's first value with the blank reading an absent parameter has, so a value the surface reads as no choice stays the service's own default. */
@@ -75,8 +70,7 @@ export function paramOf(searchParams: SearchParams, name: string): string | unde
   const stated = firstValueOf(searchParams[name])?.trim() ?? "";
   return stated === "" ? undefined : stated;
 }
-/** A stated whole number of at most nine digits, or `undefined` where the caller stated none or stated something this route cannot read as a count. */
-export function wholeNumberOf(value: string | undefined): number | undefined {
+/** A stated whole number of at most nine digits, or `undefined` where the caller stated none or stated something this route cannot read as a count. */ export function wholeNumberOf(value: string | undefined): number | undefined {
   if (value === undefined || !/^\d{1,9}$/u.test(value)) return undefined;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : undefined;

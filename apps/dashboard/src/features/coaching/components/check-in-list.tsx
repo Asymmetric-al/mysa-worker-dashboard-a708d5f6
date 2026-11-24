@@ -15,10 +15,8 @@ import { CHECK_IN_STATE_COPY, COACHING_COPY } from "../copy";
 import { useCheckIns } from "../hooks/use-coaching";
 import { Panel } from "./panel";
 import { storedDayText } from "./sharing-summary";
-type CheckInsResult = NonNullable<ReturnType<typeof useCheckIns>["data"]>;
-type CheckInsEnvelope = Extract<CheckInsResult, { readonly kind: "envelope" }>["envelope"];
+type CheckInsEnvelope = Extract<NonNullable<ReturnType<typeof useCheckIns>["data"]>, { readonly kind: "envelope" }>["envelope"];
 type CheckInRow = CheckInsEnvelope["data"]["checkIns"][number];
-type CheckInPage = CheckInsEnvelope["data"]["page"];
 export type CheckInListProps = { readonly initialQuery: RecordListQueryState; readonly scope: Scope; readonly locale: string; readonly onOpen?: (checkInId: string) => void };
 const PAGE_SIZES: readonly number[] = [25, 100];
 const DEFAULT_PAGE_SIZE = 25;
@@ -26,7 +24,6 @@ const FIRST_PAGE = 1;
 const NO_ROWS: readonly CheckInRow[] = [];
 const NOTICE_HEADING_LEVEL = 3;
 const LOADING_LINES = 6;
-const RETRY_LABEL = "Try again";
 const DETAIL_TITLE = "Check-in";
 const DETAIL_KIND = "Check-in";
 const STATE_SR_PREFIX = "Check-in state";
@@ -64,20 +61,18 @@ function CheckInDateCell({ row }: { readonly row: CheckInRow }): ReactElement {
     </time>
   );
 }
-function QuestionSetCount({ count, where }: { readonly count: number; readonly where: "draft" | "shared" }): ReactElement {
-  return (
-    <span className={cn("min-w-0", count === 0 && MUTED_LINE_CLASS)}>
-      {count === 0 ? (
-        "No questions"
-      ) : (
-        <>
-          <bdi className="tabular-figures">{count}</bdi> {count === 1 ? "question" : "questions"}{" "}
-        </>
-      )}{" "}
-      in {where === "draft" ? "the private draft" : "the shared revision"}
-    </span>
-  );
-}
+const QuestionSetCount = ({ count, where }: { readonly count: number; readonly where: "draft" | "shared" }): ReactElement => (
+  <span className={cn("min-w-0", count === 0 && MUTED_LINE_CLASS)}>
+    {count === 0 ? (
+      "No questions"
+    ) : (
+      <>
+        <bdi className="tabular-figures">{count}</bdi> {count === 1 ? "question" : "questions"}{" "}
+      </>
+    )}{" "}
+    in {where === "draft" ? "the private draft" : "the shared revision"}
+  </span>
+);
 const QuestionSetsCell = ({ row }: { readonly row: CheckInRow }): ReactElement => (
   <span className="flex min-w-0 flex-col gap-0.5">
     {row.privateDraft === null ? null : <QuestionSetCount count={row.privateDraft.questions.length} where="draft" />}
@@ -122,7 +117,7 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
   const read = useCheckIns(scope, { ...(readPage === 0 ? {} : { page: readPage }), pageSize: queryState.pageSize });
   const result = read.data;
   const envelope = result !== undefined && result.kind === "envelope" ? result.envelope : undefined;
-  const page: CheckInPage | undefined = envelope === undefined ? undefined : envelope.data.page;
+  const page: CheckInsEnvelope["data"]["page"] | undefined = envelope === undefined ? undefined : envelope.data.page;
   const rows: readonly CheckInRow[] = envelope === undefined ? NO_ROWS : envelope.data.checkIns;
   const listedQuery: RecordListQueryState = { sort: [], page: page === undefined ? queryState.page : page.index + FIRST_PAGE, pageSize: page === undefined ? queryState.pageSize : page.size, columnVisibility: queryState.columnVisibility };
   const selectedRow = useMemo(() => rows.find((row) => row.checkInId === selectedId) ?? null, [rows, selectedId]);
@@ -163,7 +158,7 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
     [openCheckIn],
   );
   const retry = {
-    label: RETRY_LABEL,
+    label: "Try again",
     onClick: () => {
       void read.refetch();
     },
@@ -194,7 +189,7 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
     <StateNotice kind="loading" title={COACHING_COPY.checkIns.heading} headingLevel={NOTICE_HEADING_LEVEL} loadingLines={LOADING_LINES} />
   ) : (
     <>
-      <RecordList label={"Check-in history"} columns={columns} rows={rows} rowCount={page.total} queryState={listedQuery} onQueryStateChange={handleQueryStateChange} getRowId={getRowId} rowActions={rowActions} itemNoun={"check-ins"} pageSizeOptions={PAGE_SIZES} isLoading={read.isFetching} />
+      <RecordList label={"Check-in history"} columns={columns} rows={rows} rowCount={page.total} queryState={listedQuery} onQueryStateChange={handleQueryStateChange} getRowId={getRowId} rowActions={rowActions} itemNoun={"check-ins"} pageSizeOptions={PAGE_SIZES} isLoading={read.isFetching} locale={locale} />
       <Separator />
       <div className="flex min-w-0 flex-col gap-1">
         <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{"A check-in's writing is not reproduced in this list: a row states the day, the captured question set and whether a revision is shared, and the words themselves are read only in the check-in itself."}</p>
@@ -204,9 +199,7 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
   );
   return (
     <section data-slot="check-in-list" data-interface-locale={locale} className="flex min-w-0 flex-col gap-4">
-      <Panel headingLevel={2} titleClassName="text-balance" title={COACHING_COPY.checkIns.heading} description={COACHING_COPY.checkIns.purpose} contentClassName="flex min-w-0 flex-col gap-3">
-        {content}
-      </Panel>
+      <Panel {...{ headingLevel: 2, titleClassName: "text-balance", title: COACHING_COPY.checkIns.heading, description: COACHING_COPY.checkIns.purpose, contentClassName: "flex min-w-0 flex-col gap-3" }}>{content}</Panel>
       <SidePanel open={selectedRow !== null} onOpenChange={handleOpenChange} variant={isMobile ? "phone" : "desktop"} title={selectedRow === null ? DETAIL_TITLE : `${DETAIL_TITLE}, ${checkInDayLabelOf(selectedRow)}`} detail={detailOf(selectedRow)} />
     </section>
   );

@@ -48,28 +48,18 @@ export type PlanNeedsReviewPanelProps = {
   readonly className?: string;
 };
 const RESOLUTION_FIELD = "resolution";
-const OCCURRENCE_FIELD = "occurrenceId";
 const RESOLUTION_GROUP_LEGEND = "How this plan continues";
-const APPLY_LABEL = "Apply this resolution";
-const DISMISS_LABEL = "Close";
 const NEXT_DATE_LABEL = "Next date this rule produces";
-const SETTLED_HEADING = "This plan's review is settled";
-const SETTLED_SENTENCE = "The plan is no longer awaiting a decision, so no resolution is offered here: the result of the one you applied stands below as its record.";
-const OUTAGE_TITLE = "The series could not be read";
 const OUTAGE_DESCRIPTION = "The recurring series this review belongs to could not be read, so no resolution is offered over facts that are not here. Nothing has been changed by opening this panel.";
-const UNPREPARED_TITLE = "This review could not be prepared";
-const SERIES_STATUS_SR_PREFIX = "Series status";
 const COUNT_CLASS = "tabular-figures font-medium text-foreground";
 const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
 const SERIES_STATE_TONES: Readonly<Record<SeriesState, StatusTone>> = { active: "positive", paused: "caution", stopped: "neutral" };
-const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { [RESOLUTION_FIELD]: RESOLUTION_GROUP_LEGEND, [OCCURRENCE_FIELD]: "The date this review covers" };
+const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { [RESOLUTION_FIELD]: RESOLUTION_GROUP_LEGEND, ["occurrenceId"]: "The date this review covers" };
 const RESOLUTION_REVIEW: Readonly<Record<MissedPlanResolution, { readonly consequential: boolean; readonly namesNextDate: boolean }>> = {
   "keep-this-occurrence": { consequential: false, namesNextDate: false },
   "move-next-date-forward": { consequential: false, namesNextDate: true },
   "stop-series": { consequential: true, namesNextDate: false },
 };
-const isPlanResolution = (value: unknown): value is MissedPlanResolution => typeof value === "string" && (MISSED_PLAN_RESOLUTION_ORDER as readonly string[]).includes(value);
-const isTerminalOutcome = (outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
 /** Why a resolution is not admissible for this series, or `undefined` when it is. The envelope's own reason wins; without one, a series that is not admitting dates states its own condition, and the resolution is never remapped. */
 export function inadmissibleReason(facts: PlanNeedsReviewFacts, resolution: MissedPlanResolution): string | undefined {
   const stated = facts.notAdmissible?.[resolution];
@@ -134,12 +124,12 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
     const target = returnTo.current;
     if (target !== null && target.isConnected) target.focus();
   }, [onDismiss]);
-  if (readOutage !== undefined) return <StateNotice kind="unavailable" headingLevel={headingLevel} title={OUTAGE_TITLE} description={OUTAGE_DESCRIPTION} source={readOutage.source} retry={readOutage.retry} className={className} />;
+  if (readOutage !== undefined) return <StateNotice kind="unavailable" headingLevel={headingLevel} title="The series could not be read" description={OUTAGE_DESCRIPTION} source={readOutage.source} retry={readOutage.retry} className={className} />;
   if (!facts.planNeedsReview && settled === null) return null;
   const prepared = selected === null ? null : resolveMissedPlanSchema.safeParse({ occurrenceId, resolution: selected });
   const unprepared = prepared === null || prepared.success ? [] : prepared.error.issues.map((issue) => issue.message);
   const liveInput: Omit<MutationInput<ResolveMissedPlanPayload>, "operationId"> | null = prepared === null || !prepared.success ? null : { scope, expectedRevision: facts.revision, payload: prepared.data };
-  const input = settled !== null && isTerminalOutcome(settled) && submitted !== null && selected !== null && submitted.payload.resolution === selected ? submitted : liveInput;
+  const input = settled !== null && ((outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged")(settled) && submitted !== null && selected !== null && submitted.payload.resolution === selected ? submitted : liveInput;
   const staleAfterStop = settled !== null && facts.state === "stopped" && (settled.outcome === "conflict" || settled.outcome === "unchanged");
   const stateReason = facts.state === "active" ? undefined : facts.state === "paused" ? PAUSED_NOTE : STOPPED_NOTE;
   const offered = MISSED_PLAN_RESOLUTION_ORDER.filter((resolution) => inadmissibleReason(facts, resolution) === undefined);
@@ -147,26 +137,20 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
   const nextNominalDate = facts.nextNominalDate ?? null;
   const title = seriesTitle?.trim() ?? "";
   const reviewLevel = headingLevel === 2 ? 3 : 4;
+  const cardTitle = facts.planNeedsReview ? PLAN_NEEDS_REVIEW_HEADING : "This plan's review is settled";
+  const headerExtra = (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <StatusBadge label={SERIES_STATE_LABELS[facts.state]} tone={SERIES_STATE_TONES[facts.state]} srPrefix="Series status" />
+      {title === "" ? null : (
+        <p className="min-w-0 text-sm wrap-anywhere">
+          <bdi>{title}</bdi>
+        </p>
+      )}
+    </div>
+  );
   return (
     <section dir={dir} aria-labelledby={headingId} aria-busy={submitting ? true : undefined} data-slot="plan-needs-review-panel" data-plan-state={facts.planNeedsReview ? "needs-review" : "settled"} className={cn("flex min-w-0 flex-col gap-4", className)}>
-      <SectionCard
-        title={facts.planNeedsReview ? PLAN_NEEDS_REVIEW_HEADING : SETTLED_HEADING}
-        headingLevel={headingLevel}
-        headingId={headingId}
-        headerClassName="flex min-w-0 flex-col gap-2"
-        cardClassName="min-w-0"
-        contentClassName="flex min-w-0 flex-col gap-4"
-        headerExtra={
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <StatusBadge label={SERIES_STATE_LABELS[facts.state]} tone={SERIES_STATE_TONES[facts.state]} srPrefix={SERIES_STATUS_SR_PREFIX} />
-            {title === "" ? null : (
-              <p className="min-w-0 text-sm wrap-anywhere">
-                <bdi>{title}</bdi>
-              </p>
-            )}
-          </div>
-        }
-      >
+      <SectionCard {...{ title: cardTitle, headingLevel, headingId, headerClassName: "flex min-w-0 flex-col gap-2", cardClassName: "min-w-0", contentClassName: "flex min-w-0 flex-col gap-4", headerExtra }}>
         {facts.planNeedsReview ? (
           <>
             <p className={SENTENCE_CLASS}>{PLAN_NEEDS_REVIEW_EXPLANATION}</p>
@@ -181,14 +165,14 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
             )}
           </>
         ) : (
-          <p className={SENTENCE_CLASS}>{SETTLED_SENTENCE}</p>
+          <p className={SENTENCE_CLASS}>{"The plan is no longer awaiting a decision, so no resolution is offered here: the result of the one you applied stands below as its record."}</p>
         )}
         {facts.planNeedsReview && offered.length === 0 ? <p className={SENTENCE_CLASS}>{stateReason}</p> : null}
         {facts.planNeedsReview && offered.length > 0 ? (
           <FormFieldGroup legend={RESOLUTION_GROUP_LEGEND} name={RESOLUTION_FIELD} description={MISSED_PLAN_RESOLUTION_REQUIRED_MESSAGE} error={refusals?.byField[RESOLUTION_FIELD]} required>
             {(group) => {
               const onResolutionChange = (next: string): void => {
-                if (!isPlanResolution(next) || submitting) return;
+                if (!((value: unknown): value is MissedPlanResolution => typeof value === "string" && (MISSED_PLAN_RESOLUTION_ORDER as readonly string[]).includes(value))(next) || submitting) return;
                 setSelected(next);
               };
               return (
@@ -222,7 +206,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
         ) : null}
         {unprepared.length === 0 ? null : (
           <Alert variant="destructive">
-            <AlertTitle>{UNPREPARED_TITLE}</AlertTitle>
+            <AlertTitle>{"This review could not be prepared"}</AlertTitle>
             <AlertDescription>
               <ul className="flex list-disc flex-col gap-1 ps-4">
                 {unprepared.map((message) => (
@@ -247,7 +231,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
             <ActionReview<ResolveMissedPlanPayload>
               title={MISSED_PLAN_RESOLUTION_LABELS[selected]}
               description={<ReviewedResolution resolution={selected} missedDateCount={facts.missedDateCount} nextNominalDate={nextNominalDate} />}
-              confirmLabel={APPLY_LABEL}
+              confirmLabel="Apply this resolution"
               consequential={RESOLUTION_REVIEW[selected].consequential}
               input={input}
               submit={submit}
@@ -261,7 +245,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
         {onDismiss === undefined ? null : (
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" className={BUTTON_WRAP_CLASS} disabled={submitting} onClick={dismiss}>
-              {DISMISS_LABEL}
+              {"Close"}
             </Button>
           </div>
         )}

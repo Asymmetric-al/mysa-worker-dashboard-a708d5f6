@@ -6,7 +6,7 @@ import StateNotice from "@/components/state-notice";
 import StatusBadge, { COACHING_STATUS, statusBadgeProps } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { MODULE_KEYS, type GrantLifecycleState, type ModuleKey } from "@/modules/coaching/grant";
+import { MODULE_KEYS, type ModuleKey } from "@/modules/coaching/grant";
 import type { Scope } from "@/modules/data-service/envelope";
 import { COACHING_COPY, GRANT_STATE_COPY, MODULE_COPY } from "../copy";
 import { useCoachPortfolio } from "../hooks/use-coaching";
@@ -18,14 +18,12 @@ const COACHING_DEFAULT_PAGE_SIZE = 25;
 const COACHING_MAX_PAGE_SIZE = 100;
 const COACHING_PAGE_SIZES: readonly number[] = [COACHING_DEFAULT_PAGE_SIZE, COACHING_MAX_PAGE_SIZE];
 const FIRST_PAGE = 1;
-const RETRY_LABEL = "Try again";
 const COLUMN_LABELS = { worker: "Worker", ministry: "Ministry", modules: "Shared with you", access: "Access", ends: "Access ends" } as const;
 const MUTED_TEXT_CLASS = "type-supporting text-pretty";
 const IDENTITY_STATEMENT =
   "A row names the worker by the identity this read reports and by nothing else: a matching name, address or email establishes neither identity nor authority. No private note, check-in answer, task description, amount or donor appears on this page, and no relationship is compared with another.";
 function windowOf<T>(items: readonly T[], page: number, pageSize: number): { readonly items: readonly T[]; readonly page: number } {
-  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
-  const current = Number.isFinite(page) ? Math.min(Math.max(FIRST_PAGE, Math.trunc(page)), pageCount) : FIRST_PAGE;
+  const current = Number.isFinite(page) ? Math.min(Math.max(FIRST_PAGE, Math.trunc(page)), Math.max(1, Math.ceil(items.length / pageSize))) : FIRST_PAGE;
   const firstIndex = (current - FIRST_PAGE) * pageSize;
   return { items: items.slice(firstIndex, firstIndex + pageSize), page: current };
 }
@@ -34,15 +32,11 @@ function moduleKeysOf(subject: PortfolioSubject): readonly ModuleKey[] {
   const admitted = new Set(subject.admittedModules.map((entry) => entry.module));
   return MODULE_KEYS.filter((key) => admitted.has(key));
 }
-const accessWordOf = (subject: PortfolioSubject): GrantLifecycleState => (subject.duration.openAtRead ? "active" : "expired");
 const RIGHT_TO_LEFT_PRIMARY_SUBTAGS: ReadonlySet<string> = new Set(["ar", "arc", "ckb", "dv", "fa", "he", "ks", "ku", "ps", "sd", "ug", "ur", "yi"]);
-function directionOfLocale(locale: string): "ltr" | "rtl" {
-  const primary = locale.trim().toLowerCase().split(/[-_]/)[0] ?? "";
-  return RIGHT_TO_LEFT_PRIMARY_SUBTAGS.has(primary) ? "rtl" : "ltr";
-}
+const directionOfLocale = (locale: string): "ltr" | "rtl" => (RIGHT_TO_LEFT_PRIMARY_SUBTAGS.has(locale.trim().toLowerCase().split(/[-_]/)[0] ?? "") ? "rtl" : "ltr");
 const subjectHref = (subjectId: string): string => `/coaching/coach/${encodeURIComponent(subjectId)}`;
 const SubjectCell = ({ subject, onOpen }: { readonly subject: PortfolioSubject; readonly onOpen: ((subjectId: string) => void) | undefined }): ReactElement => (
-  <Link href={subjectHref(subject.grantId)} className={"inline-flex min-h-6 items-center rounded-sm font-medium inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"} onClick={() => onOpen?.(subject.grantId)}>
+  <Link href={subjectHref(subject.grantId)} className="inline-flex min-h-6 items-center rounded-sm font-medium inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" onClick={() => onOpen?.(subject.grantId)}>
     <bdi className="mono-identifier">{subject.workerPrincipalId}</bdi>
   </Link>
 );
@@ -52,7 +46,7 @@ function ModulesCell({ subject }: { readonly subject: PortfolioSubject }): React
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {keys.map((key) => (
-        <Badge key={key} variant="secondary" className={"h-auto max-w-full whitespace-normal"}>
+        <Badge key={key} variant="secondary" className="h-auto max-w-full whitespace-normal">
           <bdi>{MODULE_COPY[key].name}</bdi>
         </Badge>
       ))}
@@ -60,9 +54,9 @@ function ModulesCell({ subject }: { readonly subject: PortfolioSubject }): React
   );
 }
 function AccessCell({ subject }: { readonly subject: PortfolioSubject }): ReactElement {
-  const state = accessWordOf(subject);
+  const state = subject.duration.openAtRead ? "active" : "expired";
   const copy = GRANT_STATE_COPY[state];
-  return <StatusBadge label={copy.label} tone={statusBadgeProps(COACHING_STATUS, state).tone} srPrefix={"Access"} />;
+  return <StatusBadge label={copy.label} tone={statusBadgeProps(COACHING_STATUS, state).tone} srPrefix="Access" />;
 }
 function AccessEndsCell({ subject }: { readonly subject: PortfolioSubject }): ReactElement {
   const { duration } = subject;
@@ -113,7 +107,7 @@ export default function CoachPortfolio({ initialQuery, scope, locale, onOpen }: 
     [onOpen],
   );
   const retry = {
-    label: RETRY_LABEL,
+    label: "Try again",
     onClick: () => {
       void portfolio.refetch();
     },
@@ -146,7 +140,8 @@ export default function CoachPortfolio({ initialQuery, scope, locale, onOpen }: 
           queryState={{ sort: [], page: visiblePage.page, pageSize: queryState.pageSize, columnVisibility: queryState.columnVisibility }}
           onQueryStateChange={handleQueryStateChange}
           getRowId={(subject) => subject.grantId}
-          itemNoun={"relationships"}
+          itemNoun="relationships"
+          locale={locale}
           pageSizeOptions={COACHING_PAGE_SIZES}
         />
         <p className="max-w-prose text-xs text-pretty text-muted-foreground">{IDENTITY_STATEMENT}</p>

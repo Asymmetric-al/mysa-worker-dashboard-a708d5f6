@@ -11,31 +11,8 @@ import { readCommitments, readExport, readGifts, readGoal, readReport, readSuppo
 import { listTasks, readAgenda, readSeries } from "./reads/tasks";
 import { confirmMembership, setPreference, signupForPurpose, unsubscribe } from "./mutations/audience";
 import { acceptInvitation, editTarget, endCoaching, endTarget, inviteCoach, leaveCoaching, pauseTarget, revokeGrant, saveCheckIn, saveTarget, setModule, shareCheckIn, shareTaskSummary, stopTaskShare, updateSharedCheckIn, withdrawCheckIn } from "./mutations/coaching";
-import {
-  addSection,
-  applyPreset,
-  approveCandidate,
-  createVariant,
-  duplicateSection,
-  moveSection,
-  publishVariants,
-  registerMediaAsset,
-  rejectCandidate,
-  removePlacement,
-  removeSection,
-  replacePlacement,
-  requestChanges,
-  requestNotification,
-  restoreRevisionAsDraft,
-  saveDraft,
-  saveSectionFields,
-  setReach,
-  stopShowingPublicly,
-  submitForReview,
-  withdrawLocale,
-  withdrawPage,
-  withdrawUpdate,
-} from "./mutations/content";
+import { addSection, applyPreset, approveCandidate, createVariant, duplicateSection, moveSection, publishVariants, registerMediaAsset, rejectCandidate, removePlacement, removeSection, replacePlacement, requestChanges, requestNotification, restoreRevisionAsDraft, saveDraft } from "./mutations/content";
+import { saveSectionFields, setReach, stopShowingPublicly, submitForReview, withdrawLocale, withdrawPage, withdrawUpdate } from "./mutations/content";
 import { advanceClock, resetSeed, selectContext, setClock, setFailurePlan, setScenario } from "./mutations/dev";
 import { acceptImportRows, cancelImport, proposeImport, setRowDecision } from "./mutations/import";
 import { addMembers, closeInitiative, continueReferral, createInitiative, draftRequest, presentRequest, recordIntroduction, recordRequestResponse, removeMember, reopenInitiative, returnMember, setStage } from "./mutations/outreach";

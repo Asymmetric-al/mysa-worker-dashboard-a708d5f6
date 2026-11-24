@@ -12,18 +12,12 @@ type CheckInsEnvelope = Extract<Awaited<ReturnType<typeof reads.coaching.readChe
 type CheckInRow = CheckInsEnvelope["data"]["checkIns"][number];
 type TaskSharesEnvelope = Extract<Awaited<ReturnType<typeof reads.coaching.readTaskShares>>, { readonly kind: "envelope" }>["envelope"];
 type TaskShareRow = TaskSharesEnvelope["data"]["shares"][number];
-/** One task the read offers for sharing a summary of, in the read's own projection. */
-type TaskSummaryCandidateRow = TaskSharesEnvelope["data"]["candidates"][number];
+/** One task the read offers for sharing a summary of, in the read's own projection. */ type TaskSummaryCandidateRow = TaskSharesEnvelope["data"]["candidates"][number];
 type CheckInRevisionView = NonNullable<CheckInRow["privateDraft"]>;
-type CheckInQuestionView = CheckInRevisionView["questions"][number];
-type CheckInAnswerView = CheckInRevisionView["answers"][number];
-type CheckInsQuery = Parameters<typeof reads.coaching.readCheckIns>[0];
 const PAGE_TITLE = COACHING_COPY.checkIns.heading;
 export const metadata: Metadata = { title: PAGE_TITLE };
 const INTERFACE_LOCALE = "en-GB";
 const TASK_SHARE_REGION_TITLE = "Shared task summaries";
-const PAGE_PARAM = "page";
-const PAGE_SIZE_PARAM = "pageSize";
 const FIRST_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 25;
 const ADDRESS_NUMBER = /^[1-9][0-9]*$/u;
@@ -36,7 +30,7 @@ function positiveIntegerOf(stated: string | undefined): number | undefined {
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 /** One saved revision as the editor reads it: the captured questions with the answer written beside each, and the answers that belong to no question, which hold no position and are kept rather than dropped. */
-function bodyOf(questions: readonly CheckInQuestionView[], answers: readonly CheckInAnswerView[]): CheckInBody {
+function bodyOf(questions: readonly CheckInRevisionView["questions"][number][], answers: readonly CheckInRevisionView["answers"][number][]): CheckInBody {
   const ordered = [...questions].sort((one, two) => one.order - two.order);
   const answerFor = new Map<number, string>();
   const unassignedAnswers: string[] = [];
@@ -84,7 +78,8 @@ function taskShareEntryOf(share: TaskShareRow, taskStatus: TaskShareListEntry["t
     dueOn: due !== null && due.kind === "dated" ? due.date : null,
     duePrecision: due !== null && due.kind === "dated" ? duePrecisionOf(due.precision) : "unknown",
     taskStatus,
-    sharedAt: null,
+    // The instant the summary was reviewed is the share's own recorded instant, because the review and the share are one write, so the row states the day it was shared rather than reporting that no share date was recorded.
+    sharedAt: share.reviewedAt,
   };
 }
 /** One task the read offers, in the selector's own vocabulary: the civil day the read states is handed on as that day, and a task with no due date states no day at all rather than a precision nothing supports. */
@@ -111,9 +106,9 @@ const noticeCopyOf = (title: string): ReadNoticeCopy => ({ headingLevel: NOTICE_
 /** The worker's check-ins and shared task summaries: one page window, two reads, and the family's own surfaces rendering them. */
 export default async function CheckInsPage({ searchParams }: { readonly searchParams: Promise<SearchParams> }): Promise<ReactElement> {
   const stated = await searchParams;
-  const addressPage = positiveIntegerOf(paramOf(stated, PAGE_PARAM)) ?? FIRST_PAGE;
-  const addressPageSize = positiveIntegerOf(paramOf(stated, PAGE_SIZE_PARAM));
-  const query: CheckInsQuery = { page: addressPage - FIRST_PAGE, ...(addressPageSize === undefined ? {} : { pageSize: addressPageSize }) };
+  const addressPage = positiveIntegerOf(paramOf(stated, "page")) ?? FIRST_PAGE;
+  const addressPageSize = positiveIntegerOf(paramOf(stated, "pageSize"));
+  const query: Parameters<typeof reads.coaching.readCheckIns>[0] = { page: addressPage - FIRST_PAGE, ...(addressPageSize === undefined ? {} : { pageSize: addressPageSize }) };
   const [checkIns, taskShares] = await Promise.all([reads.coaching.readCheckIns(query), reads.coaching.readTaskShares(query)]);
   const initialQuery = { sort: [], page: addressPage, pageSize: addressPageSize ?? DEFAULT_PAGE_SIZE, columnVisibility: {} };
   const rows = checkIns.kind === "envelope" ? checkIns.envelope.data.checkIns : NO_CHECK_INS;

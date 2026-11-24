@@ -1,7 +1,7 @@
 "use client";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
-import { useCallback, useId, useState, type ReactElement, type ReactNode } from "react";
+import { useCallback, useId, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import ActionReview from "@/components/action-review";
 import { ChoiceGroup } from "@/components/choice-group";
 import FormField, { civilDateConvention, fieldErrorsFromInvalid, FormFieldGroup } from "@/components/form-field";
@@ -97,9 +97,7 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="referral-introduction-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="type-section-title">
-          {INTRODUCED_BY_COPY.sectionHeading}
-        </h2>
+        <h2 {...{ id: headingId, className: "type-section-title" }}>{INTRODUCED_BY_COPY.sectionHeading}</h2>
         <p className="type-supporting text-pretty">{INTRODUCED_BY_COPY.formHelp}</p>
       </div>
       <form.Subscribe selector={(state) => state.values}>
@@ -112,22 +110,13 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
               <FormField name={DATE_FIELD} label={INTRODUCED_BY_COPY.originalIntroductionOnLabel} description={`${dateHelp} ${civilDateConvention(values[DATE_FIELD])}`} error={fieldErrors?.byField[DATE_FIELD]} required={dateIsKnown}>
                 {(control) => (
                   <form.Field name={DATE_FIELD}>
-                    {(dateField) => (
-                      <Input
-                        id={control.id}
-                        type="date"
-                        value={dateField.state.value}
-                        disabled={!dateIsKnown}
-                        aria-describedby={control.describedBy}
-                        aria-invalid={control.invalid ? true : undefined}
-                        aria-required={control.required ? true : undefined}
-                        onChange={(event) => {
-                          dateField.handleChange(event.currentTarget.value);
-                          clearRefusal();
-                        }}
-                        className="w-full sm:max-w-60"
-                      />
-                    )}
+                    {(dateField) => {
+                      const onDateChange = (event: ChangeEvent<HTMLInputElement>): void => {
+                        dateField.handleChange(event.currentTarget.value);
+                        clearRefusal();
+                      };
+                      return <Input id={control.id} type="date" value={dateField.state.value} disabled={!dateIsKnown} aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} aria-required={control.required ? true : undefined} onChange={onDateChange} className="w-full sm:max-w-60" />;
+                    }}
                   </form.Field>
                 )}
               </FormField>

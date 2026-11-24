@@ -38,34 +38,21 @@ export interface CheckInEditorProps {
   readonly unavailable?: { readonly source: SourceReference } | null;
   readonly className?: string;
 }
-/** The facts one reviewed write submitted, held so its review keeps describing the change that was made: which review took it, with the scope, revision and payload it presented and without the identity the attempt minted for itself. */
 type HeldWrite =
   | { readonly review: "share"; readonly input: Omit<MutationInput<CheckInSharePayload>, "operationId"> }
   | { readonly review: "update"; readonly input: Omit<MutationInput<CheckInUpdateSharedPayload>, "operationId"> }
   | { readonly review: "withdraw"; readonly input: Omit<MutationInput<CheckInWithdrawPayload>, "operationId"> };
-/** One held write and the outcome that settled it: the receipt a review keeps on screen, complete only once its own attempt has answered. */
 type HeldReceipt = { readonly write: HeldWrite; readonly outcome: MutationOutcome | null };
-const SAVE_LABEL = "Save private draft";
-const SAVING_LABEL = "Saving the private draft";
-const AUTOSAVE_PAUSE_MS = 800;
-const DRAFT_SAVING_SENTENCE = "Saving the private draft. Nothing you wrote is cleared while it saves.";
 const DRAFT_UNSAVED_SENTENCE = "Not saved yet: this draft holds changes the saved private revision does not, and autosave writes them as soon as writing pauses.";
+const AUTOSAVE_PAUSE_MS = 800;
 const DRAFT_SAVED_SENTENCE = "Saved: this draft matches the private revision the source holds, so autosave has nothing left to write.";
 const QUESTION_LABEL = "Question";
 const ANSWER_LABEL = "Answer";
-const ADD_BLANK_SENTENCE = "A question needs words before it joins the set: write it above and add it again.";
 const COMPLETION_LABEL = "Draft completion";
-const NOT_SHARED_LABEL = "Not shared";
-const SHARED_NONE_SENTENCE = "No revision is shared, so a coach can read nothing from this check-in yet.";
-const SHARED_DIFFERS_SENTENCE = "Your private draft and the shared revision hold different text, and the shared revision changes only through Update shared check-in.";
 const SHARED_SAME_SENTENCE = "Your private draft and the shared revision hold the same text.";
 const UNASSIGNED_DRAFT_SENTENCE =
   "These answers belong to no question in the captured set, so they are kept exactly as you saved them: this editor writes answers beside their questions, and there is nowhere here to change them. Saving the private draft keeps them, and sharing a check-in copies the saved private draft as it stands.";
 const UNASSIGNED_SHARED_SENTENCE = "These answers belong to no question in the captured question set, and they came into this revision with the private draft it was shared from. Updating the shared check-in sends the answers written beside these questions, so they are not part of that update.";
-const UNASSIGNED_SHARE_SENTENCE = "These answers belong to no question in the captured set: this share sends the saved private draft as it stands, so they stay with it rather than beside a question.";
-const NO_ANSWER_SENTENCE = "No answer yet.";
-const UNSAVED_IDENTITY = "no-revision";
-const CHANGE_KEY_REVISION = "check-in-change";
 const EMPTY_ANSWERS: readonly string[] = [];
 const scalarCount = (text: string): number => Array.from(text).length;
 const PATH_POSITION = /\[(\d+)\]/u;
@@ -126,9 +113,7 @@ function focusSentence(target: FocusTarget, scalars: number): string {
   return `${noun} ${target.position + 1} is ${scalars} of ${limit} characters.`;
 }
 const signatureOf = (questions: readonly string[], answers: readonly string[]): string => JSON.stringify([questions, answers]);
-/** The answers one saved revision holds, in the sequence the source stores them: each question's answer by its position, then the answers that belong to no question. */
 const answerSequenceOf = (body: CheckInBody): readonly CheckInAnswer[] => [...body.questions.map((_, position) => ({ questionOrder: position, text: body.answers[position] ?? "" })), ...body.unassignedAnswers.map((text) => ({ questionOrder: null, text }))];
-/** The comparison the check-in read makes between a saved private draft and a shared revision: every answer's question and its exact text, in order. */
 const answerSequenceTextOf = (answers: readonly CheckInAnswer[]): string => answers.map((answer) => `${answer.questionOrder}:${answer.text}`).join("\u0000");
 const sameWordings = (left: readonly string[], right: readonly string[]): boolean => left.length === right.length && left.every((wording, index) => wording === right[index]);
 const requestOf = (questions: readonly EditorQuestion[], answers: readonly string[]): CheckInPayload => ({ questions: questions.map((question, index) => ({ wording: question.wording, order: index })), answers: questions.map((_, index) => ({ questionOrder: index, text: answers[index] ?? "" })) });
@@ -179,11 +164,8 @@ function QuestionRow({ position, wording, answer, wordingRefusal, answerRefusal,
     </div>
   );
 }
-const ANSWER_LIST_CLASS = "flex min-w-0 list-decimal flex-col gap-2 ps-4";
-const SHARED_REVISION_LIST_CLASS = "flex min-w-0 list-decimal flex-col gap-3 ps-4";
-type AnswerListProps = { readonly questions: readonly string[]; readonly answers: readonly string[]; readonly keyPrefix: string; readonly listClassName?: string; readonly muted?: boolean };
 /** One ordered read of a question set, written once: the shared revision, the review of what sharing makes readable and the review of an update state the same pairs, so all three render this list. */
-const AnswerList = ({ questions, answers, keyPrefix, listClassName = ANSWER_LIST_CLASS, muted = false }: AnswerListProps): ReactElement => (
+const AnswerList = ({ questions, answers, keyPrefix, listClassName = "flex min-w-0 list-decimal flex-col gap-2 ps-4", muted = false }: { readonly questions: readonly string[]; readonly answers: readonly string[]; readonly keyPrefix: string; readonly listClassName?: string; readonly muted?: boolean }): ReactElement => (
   <ol className={listClassName}>
     {questions.map((question, position) => {
       const answer = answers[position] ?? "";
@@ -192,15 +174,14 @@ const AnswerList = ({ questions, answers, keyPrefix, listClassName = ANSWER_LIST
           <span className="block font-medium wrap-anywhere">
             <bdi>{question}</bdi>
           </span>
-          <span className={cn("block wrap-anywhere", muted && "text-muted-foreground")}>{answer.trim() === "" ? NO_ANSWER_SENTENCE : <bdi>{answer}</bdi>}</span>
+          <span className={cn("block wrap-anywhere", muted && "text-muted-foreground")}>{answer.trim() === "" ? "No answer yet." : <bdi>{answer}</bdi>}</span>
         </li>
       );
     })}
   </ol>
 );
-type UnassignedAnswersProps = { readonly answers: readonly string[]; readonly keyPrefix: string };
 /** The answers a revision holds that belong to no question in its captured set: they hold no position, so this editor reads them here rather than writing them beside a question. */
-const UnassignedAnswers = ({ answers, keyPrefix }: UnassignedAnswersProps): ReactElement => (
+const UnassignedAnswers = ({ answers, keyPrefix }: { readonly answers: readonly string[]; readonly keyPrefix: string }): ReactElement => (
   <ul className="flex min-w-0 list-disc flex-col gap-1 ps-4 text-sm text-muted-foreground">
     {answers.map((answer, position) => (
       <li key={`${keyPrefix}-unassigned-${String(position)}`} className="wrap-anywhere">
@@ -221,7 +202,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
   const limitsId = useId();
   const completionId = useId();
   const refusalId = useId();
-  const identity = revisions.draft?.revisionId ?? revisions.shared?.revisionId ?? UNSAVED_IDENTITY;
+  const identity = revisions.draft?.revisionId ?? revisions.shared?.revisionId ?? "no-revision";
   const [text, setText] = useState<EditorText>(() => ({ identity, questions: seededQuestions(props), answers: seededAnswers(props) }));
   const [draftQuestion, setDraftQuestion] = useState("");
   const [addRefusal, setAddRefusal] = useState<string | null>(null);
@@ -298,7 +279,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
   const addWrittenQuestion = (): void => {
     const wording = draftQuestion.trim();
     if (wording === "") {
-      setAddRefusal(ADD_BLANK_SENTENCE);
+      setAddRefusal("A question needs words before it joins the set: write it above and add it again.");
       return;
     }
     const id = `written-question-${writtenQuestions.current}`;
@@ -342,7 +323,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
   const heldUpdate = receiptHeld ? submittedUpdate : null;
   const heldWithdraw = receiptHeld ? submittedWithdraw : null;
   // The change one review applies, apart from the revision the surface presented and the shared revision it names: the re-read after an applied change advances both, so a receipt keyed on either would leave the screen for a change nobody made here. The answers a review would send are the change itself, so editing them withholds the receipt exactly as the review step says.
-  const changeKeyOf = (payload: unknown): string => intentKeyOf({ scope, expectedRevision: CHANGE_KEY_REVISION, payload });
+  const changeKeyOf = (payload: unknown): string => intentKeyOf({ scope, expectedRevision: "check-in-change", payload });
   const answersKeyOf = (payload: { readonly checkInId: string; readonly questions: readonly string[]; readonly answers: readonly string[] }): string => changeKeyOf({ checkInId: payload.checkInId, questions: payload.questions, answers: payload.answers });
   // What each review presents: the facts its held receipt submitted while that receipt stands, the facts of an attempt still in flight, and the live facts otherwise, falling back to the submitted facts so a receipt already in hand never leaves the screen with the block that offered it. The route re-read after an applied change hands this surface a new revision — and, for a share or a withdrawal, a check-in that no longer offers the review at all — so a review presenting the live facts would drop its receipt and re-arm its confirm button for a change nobody made.
   const shareInput = heldFacts(heldShare, liveShare, answersKeyOf) ?? (share.isPending ? submittedShare : (liveShare ?? submittedShare));
@@ -441,7 +422,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
     );
   return (
     <section aria-labelledby={headingId} data-slot="check-in-editor" data-interface-locale={locale} data-check-in-state={state} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
-      <Panel titleId={headingId} headingLevel={2} title={"Write a check-in"} description={COACHING_COPY.checkIns.purpose} descriptionClassName="text-pretty wrap-anywhere" cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
+      <Panel titleId={headingId} headingLevel={2} title="Write a check-in" description={COACHING_COPY.checkIns.purpose} descriptionClassName="text-pretty wrap-anywhere" cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-col gap-2" aria-labelledby={limitsId}>
           <h3 {...{ id: limitsId, className: "type-subsection-title" }}>{"The limits this check-in works within"}</h3>
           <ul className="flex min-w-0 list-disc flex-col gap-1 ps-4 text-sm text-pretty text-muted-foreground">
@@ -466,7 +447,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
           </p>
         )}
       </Panel>
-      {unavailable === null ? null : <StateNotice kind="unavailable" title={"This check-in cannot be read right now"} description={COACHING_COPY.checkIns.unavailable} source={unavailable.source} headingLevel={3} />}
+      {unavailable === null ? null : <StateNotice kind="unavailable" title="This check-in cannot be read right now" description={COACHING_COPY.checkIns.unavailable} source={unavailable.source} headingLevel={3} />}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="wrap-anywhere">
@@ -522,7 +503,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
           <Separator />
           <div className="flex min-w-0 flex-col gap-3">
             <h4 className="type-group-title">{"Add a question"}</h4>
-            <FormField label={"The question you want to answer"} name="checkin-new-question" description={"Write it in your own words, or take one of the offered questions below."}>
+            <FormField label="The question you want to answer" name="checkin-new-question" description="Write it in your own words, or take one of the offered questions below.">
               {(field) => <Input id={field.id} name="checkin-new-question" value={draftQuestion} autoComplete="off" aria-describedby={field.describedBy} onChange={(event) => setDraftQuestion(event.target.value)} />}
             </FormField>
             <div className="flex flex-wrap items-center gap-2">
@@ -551,8 +532,8 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
           <Separator />
           <div className="flex min-w-0 flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Button {...{ type: "button", onClick: submitSave, disabled: !canSave || save.isPending, "aria-describedby": canSave ? undefined : refusalId }}>{save.isPending ? SAVING_LABEL : SAVE_LABEL}</Button>
-              <output className="text-sm text-pretty text-muted-foreground wrap-anywhere">{save.isPending ? DRAFT_SAVING_SENTENCE : dirty ? DRAFT_UNSAVED_SENTENCE : DRAFT_SAVED_SENTENCE}</output>
+              <Button {...{ type: "button", onClick: submitSave, disabled: !canSave || save.isPending, "aria-describedby": canSave ? undefined : refusalId }}>{save.isPending ? "Saving the private draft" : "Save private draft"}</Button>
+              <output className="text-sm text-pretty text-muted-foreground wrap-anywhere">{save.isPending ? "Saving the private draft. Nothing you wrote is cleared while it saves." : dirty ? DRAFT_UNSAVED_SENTENCE : DRAFT_SAVED_SENTENCE}</output>
             </div>
             {save.data === undefined ? null : <OperationResult outcome={save.data} headingLevel={4} fieldLabels={fieldLabelsOf(questions.length)} {...(saveReplayable ? { onRetrySameWork: submitSave } : {})} />}
           </div>
@@ -563,17 +544,17 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
           <CardTitle className="wrap-anywhere">
             <h3 className="type-subsection-title flex min-w-0 flex-wrap items-center gap-2">
               {"The shared revision"}
-              <Badge variant={sharedWithdrawn ? "outline" : "secondary"}>{sharedCopy === null ? NOT_SHARED_LABEL : sharedCopy.label}</Badge>
+              <Badge variant={sharedWithdrawn ? "outline" : "secondary"}>{sharedCopy === null ? "Not shared" : sharedCopy.label}</Badge>
             </h3>
           </CardTitle>
-          <CardDescription className="text-pretty wrap-anywhere">{sharedCopy === null ? SHARED_NONE_SENTENCE : sharedCopy.description}</CardDescription>
+          <CardDescription className="text-pretty wrap-anywhere">{sharedCopy === null ? "No revision is shared, so a coach can read nothing from this check-in yet." : sharedCopy.description}</CardDescription>
         </CardHeader>
         {shared === null ? null : (
           <CardContent className="flex min-w-0 flex-col gap-3">
             <p className="type-body">
               {"Shared on"} <bdi className="mono-identifier">{storedDayText(shared.sharedAt)}</bdi>.
             </p>
-            <AnswerList questions={shared.body.questions} answers={shared.body.answers} keyPrefix="shared" listClassName={SHARED_REVISION_LIST_CLASS} muted />
+            <AnswerList questions={shared.body.questions} answers={shared.body.answers} keyPrefix="shared" listClassName="flex min-w-0 list-decimal flex-col gap-3 ps-4" muted />
             {unassignedShared.length === 0 ? null : (
               <div className="flex min-w-0 flex-col gap-2">
                 <h4 className="type-group-title">{"Answers that belong to no question"}</h4>
@@ -581,7 +562,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
                 <p className="type-supporting text-pretty wrap-anywhere">{UNASSIGNED_SHARED_SENTENCE}</p>
               </div>
             )}
-            {sharedDiffers === null ? null : <p className="type-supporting text-pretty wrap-anywhere">{sharedDiffers ? SHARED_DIFFERS_SENTENCE : SHARED_SAME_SENTENCE}</p>}
+            {sharedDiffers === null ? null : <p className="type-supporting text-pretty wrap-anywhere">{sharedDiffers ? "Your private draft and the shared revision hold different text, and the shared revision changes only through Update shared check-in." : SHARED_SAME_SENTENCE}</p>}
             {sharedWithdrawn ? <p className="type-supporting text-pretty wrap-anywhere">{"A withdrawn revision cannot be shared again, so a new check-in would carry anything you want a coach to read next."}</p> : null}
           </CardContent>
         )}
@@ -589,7 +570,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
       {savedBody === null || shared !== null || effectiveCheckInId !== null ? null : <p className="type-supporting text-pretty wrap-anywhere">{"The check-in's own identity is not known here yet, so sharing has to start from its list rather than from this view."}</p>}
       {shareInput === null ? null : (
         <ActionReview<CheckInSharePayload>
-          title={"Share this check-in with your coach"}
+          title="Share this check-in with your coach"
           description={
             <div className="flex min-w-0 flex-col gap-2">
               <p className="text-pretty">{"The revision that will be shared"}</p>
@@ -597,14 +578,14 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
               {savedBody === null || savedBody.unassignedAnswers.length === 0 ? null : (
                 <div className="flex min-w-0 flex-col gap-1">
                   <UnassignedAnswers answers={savedBody.unassignedAnswers} keyPrefix="share" />
-                  <p className="text-pretty">{UNASSIGNED_SHARE_SENTENCE}</p>
+                  <p className="text-pretty">{"These answers belong to no question in the captured set: this share sends the saved private draft as it stands, so they stay with it rather than beside a question."}</p>
                 </div>
               )}
               {dirty ? <p className="text-pretty">{"This shares the saved private revision, so the changes still unsaved above are not part of it."}</p> : null}
             </div>
           }
           consequence={<p className="type-supporting text-pretty wrap-anywhere">{"Sharing makes the saved private revision readable by the named coach, for the duration this relationship was accepted with. It sends no notification, records no interaction and creates no task."}</p>}
-          confirmLabel={"Share with coach"}
+          confirmLabel="Share with coach"
           headingLevel={3}
           input={shareInput}
           submit={submitShare}
@@ -621,10 +602,10 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
       )}
       {updateInput === null ? null : (
         <ActionReview<CheckInUpdateSharedPayload>
-          title={"Update the shared check-in"}
+          title="Update the shared check-in"
           description={<AnswerList questions={questions.map((question) => question.wording)} answers={answers} keyPrefix="update" />}
           consequence={<p className="type-supporting text-pretty wrap-anywhere">{"The answers below become the shared revision, which is the only way a shared check-in changes. This step does not save your private draft."}</p>}
-          confirmLabel={"Update shared check-in"}
+          confirmLabel="Update shared check-in"
           headingLevel={3}
           input={updateInput}
           submit={submitUpdate}
@@ -632,7 +613,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
         />
       )}
       {withdrawInput === null ? null : (
-        <ActionReview<CheckInWithdrawPayload> title={STOP_EFFECT_COPY["withdraw-check-in"].title} description={<WithdrawEffects />} consequence={<WithdrawEffects />} confirmLabel={"Withdraw shared check-in"} consequential headingLevel={3} input={withdrawInput} submit={submitWithdraw} onSettled={settleWithdrawal} />
+        <ActionReview<CheckInWithdrawPayload> title={STOP_EFFECT_COPY["withdraw-check-in"].title} description={<WithdrawEffects />} consequence={<WithdrawEffects />} confirmLabel="Withdraw shared check-in" consequential headingLevel={3} input={withdrawInput} submit={submitWithdraw} onSettled={settleWithdrawal} />
       )}
     </section>
   );

@@ -11,8 +11,7 @@ const MAX_OUTCOME_LENGTH = 40;
 const MAX_JOB_LENGTH = 64;
 const MAX_SYSTEM_LENGTH = 32;
 const MAX_REFERENCE_LENGTH = 128;
-/** The marker a field carries when the value it held is outside the bound this line states for it: the attempt stays attributable rather than the whole line disappearing. */
-const REDACTED = "redacted";
+/** The marker a field carries when the value it held is outside the bound this line states for it: the attempt stays attributable rather than the whole line disappearing. */ const REDACTED = "redacted";
 const isBoundedIdentifier = (value: unknown, maxLength: number): value is string => typeof value === "string" && value.length > 0 && value.length <= maxLength;
 const isBoundedDuration = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
 const boundedIdentifier = (value: unknown, maxLength: number): string => (isBoundedIdentifier(value, maxLength) ? value : REDACTED);
@@ -26,8 +25,7 @@ function writeDiagnosticLine(record: Record<string, unknown>): void {
   if (typeof process === "undefined" || typeof process.stdout?.write !== "function") return;
   process.stdout.write(`${JSON.stringify(record)}\n`);
 }
-/** The two-event diagnostics writer. */
-export const logger = {
+/** The two-event diagnostics writer. */ export const logger = {
   mutation: (entry: MutationLogEntry): void => {
     try {
       // Each field is copied out of the entry in a fixed order, so a caller that passes extra properties cannot widen the line and its key order is stable. A field outside its bound states a fixed marker instead of the line being dropped: a diagnostic never disappears because of what it was asked to describe.

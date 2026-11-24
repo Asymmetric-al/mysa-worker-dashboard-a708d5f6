@@ -66,8 +66,7 @@ function fieldMessagesFromIssues(error: ZodError): FieldMessages {
   }
   return Object.fromEntries(messages);
 }
-/** Answers that the payload failed validation, with per-field messages and no side effect. */
-export function invalid(input: { operationId: string; fields: FieldMessages | ZodError }): InvalidOutcome {
+/** Answers that the payload failed validation, with per-field messages and no side effect. */ export function invalid(input: { operationId: string; fields: FieldMessages | ZodError }): InvalidOutcome {
   const fields = input.fields instanceof ZodError ? fieldMessagesFromIssues(input.fields) : input.fields;
   return { outcome: "invalid", operationId: echoedOperationId(input.operationId), fields };
 }
@@ -75,8 +74,7 @@ export function invalid(input: { operationId: string; fields: FieldMessages | Zo
 export const refusedRead = (operationId: string, fields: FieldMessages | ZodError): ReadResult<never> => ({ kind: "refused", refused: invalid({ operationId, fields }) });
 /** Answers that the source behind the work is down. */
 export const unavailable = (input: { operationId: string; source: SourceReference; guidance: string }): UnavailableOutcome => ({ outcome: "unavailable", operationId: echoedOperationId(input.operationId), source: input.source, guidance: input.guidance });
-/** Answers that the effect may have been applied and the acknowledgement was lost. */
-export const unknown = (input: { operationId: string }): UnknownOutcome => ({ outcome: "unknown", operationId: echoedOperationId(input.operationId) });
+/** Answers that the effect may have been applied and the acknowledgement was lost. */ export const unknown = (input: { operationId: string }): UnknownOutcome => ({ outcome: "unknown", operationId: echoedOperationId(input.operationId) });
 export const CORRUPT_DOCUMENT_FAULT = "CorruptJsonError";
 const INVALID_SESSION_FAULT = "InvalidSessionIdError";
 const SESSION_NOT_FOUND_FAULT = "SessionNotFoundError";
@@ -97,13 +95,11 @@ function storeFaultReference(error: unknown): string | undefined {
   const code = readStringProperty(error, "code");
   return code !== undefined && FILESYSTEM_FAULT_CODE.test(code) ? code : undefined;
 }
-/** Maps a store or medium fault onto the outage it is, or answers `undefined` for any other value. */
-export function unavailableFromStoreFault(operationId: string, error: unknown): UnavailableOutcome | undefined {
+/** Maps a store or medium fault onto the outage it is, or answers `undefined` for any other value. */ export function unavailableFromStoreFault(operationId: string, error: unknown): UnavailableOutcome | undefined {
   const reference = storeFaultReference(error);
   return reference === undefined ? undefined : unavailable({ operationId, source: { system: LOCAL_STORE_SYSTEM, reference }, guidance: STORE_RETRY_GUIDANCE });
 }
-/** Converts a caught value into the outcome a Route Handler may return. */
-export function outcomeFromError(operationId: string, error: unknown): MutationOutcome {
+/** Converts a caught value into the outcome a Route Handler may return. */ export function outcomeFromError(operationId: string, error: unknown): MutationOutcome {
   if (error instanceof ZodError) return invalid({ operationId, fields: error });
   if (readStringProperty(error, "name") === INVALID_SESSION_FAULT) return denied({ operationId, reasonCode: "session-unavailable" });
   if (readStringProperty(error, "name") === SESSION_NOT_FOUND_FAULT) return denied({ operationId, reasonCode: "session-unavailable" });
@@ -113,8 +109,7 @@ export function outcomeFromError(operationId: string, error: unknown): MutationO
 const DENIAL_REASON_SET: ReadonlySet<string> = new Set<string>(DENIAL_REASONS);
 const isDenialReason = (value: unknown): value is DenialReason => typeof value === "string" && DENIAL_REASON_SET.has(value);
 const isSourceReference = (value: unknown): value is SourceReference => isRecord(value) && isNonEmptyString(value.system) && isNonEmptyString(value.reference);
-/** Reports whether a parsed value is a mutation outcome. */
-export function isOutcome(value: unknown): value is MutationOutcome {
+/** Reports whether a parsed value is a mutation outcome. */ export function isOutcome(value: unknown): value is MutationOutcome {
   if (!isRecord(value)) return false;
   const kind: unknown = value.outcome;
   if (typeof kind !== "string") return false;
@@ -139,8 +134,7 @@ export function isOutcome(value: unknown): value is MutationOutcome {
       return false;
   }
 }
-/** Reports whether a parsed value is a read result: an envelope, a denial, an outage or a refused request. */
-export function isReadResult(value: unknown): value is ReadResult<unknown> {
+/** Reports whether a parsed value is a read result: an envelope, a denial, an outage or a refused request. */ export function isReadResult(value: unknown): value is ReadResult<unknown> {
   if (!isRecord(value)) return false;
   const kind: unknown = value.kind;
   if (typeof kind !== "string") return false;

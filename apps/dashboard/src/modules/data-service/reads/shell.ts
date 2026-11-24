@@ -8,46 +8,10 @@ import { instantAt } from "@/modules/time/clock";
 import { civilDateAt, parseCivilDate, serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
 import { referralWindowState } from "@/modules/time/window";
 import { assertScope, canView, type ResolvedSession } from "../authorize";
-import {
-  commitmentRowRecordSchema,
-  contentDocumentRecordSchema,
-  contentVariantRecordSchema,
-  coachingTargetRecordSchema,
-  giftRowRecordSchema,
-  importProposalRecordSchema,
-  interactionRecordSchema,
-  notificationIntentRecordSchema,
-  notificationSendResultRecordSchema,
-  partnerRecordSchema,
-  referralCycleRecordSchema,
-  sessionContextRecordSchema,
-  supportProjectionRecordSchema,
-  taskRecordSchema,
-  taskSeriesRecordSchema,
-  type AdmittedMembership,
-  type CoachingTargetRecord,
-  type CommitmentRowRecord,
-  type ContentDocumentRecord,
-  type ContentVariantRecord,
-  type Coverage,
-  type GiftRowRecord,
-  type ImportProposalRecord,
-  type InteractionRecord,
-  type NotificationIntentRecord,
-  type NotificationSendResultRecord,
-  type PartnerRecord,
-  type ReadAction,
-  type ReadEnvelope,
-  type RecordedValueState,
-  type ReferralCycleRecord,
-  type Scope,
-  type SessionContextRecord,
-  type SessionState,
-  type SupportProjectionRecord,
-  type TaskRecord,
-  type TaskSeriesRecord,
-  type ValueState,
-} from "../envelope";
+import { commitmentRowRecordSchema, contentDocumentRecordSchema, contentVariantRecordSchema, coachingTargetRecordSchema, giftRowRecordSchema, importProposalRecordSchema, interactionRecordSchema, notificationIntentRecordSchema, notificationSendResultRecordSchema, partnerRecordSchema } from "../envelope";
+import { referralCycleRecordSchema, sessionContextRecordSchema, supportProjectionRecordSchema, taskRecordSchema, taskSeriesRecordSchema } from "../envelope";
+import type { AdmittedMembership, CoachingTargetRecord, CommitmentRowRecord, ContentDocumentRecord, ContentVariantRecord, Coverage, GiftRowRecord, ImportProposalRecord, InteractionRecord, NotificationIntentRecord, NotificationSendResultRecord, PartnerRecord, ReadAction, ReadEnvelope } from "../envelope";
+import type { RecordedValueState, ReferralCycleRecord, Scope, SessionContextRecord, SessionState, SupportProjectionRecord, TaskRecord, TaskSeriesRecord, ValueState } from "../envelope";
 import type { ReadResult } from "../outcome";
 import { resolveWorlds, scopeOf } from "./audience";
 import { answerOf, deniedRead, instantOf, readAction, readDecodedState, resolveReading, sourceUnavailableRead, statedProjection, storeSource } from "./frame";
@@ -204,8 +168,7 @@ function commitmentAttentionItems(commitments: readonly CommitmentRowRecord[], c
     .sort((left, right) => compareCodeUnits(left.commitmentRowId, right.commitmentRowId))
     .map((record) => homeItem({ itemId: `commitment:${record.commitmentRowId}`, section: "attention", reason: "commitment-needs-attention", destination: `/support/commitments/${record.commitmentRowId}`, label: record.cadence, status: "needs-attention" }));
 }
-/** The delivery surface reports one named notice, so the destination that opens it must name that notice. */
-const deliveryDestinationOf = (intentId: string): string => `/communication/delivery?intentId=${encodeURIComponent(intentId)}`;
+/** The delivery surface reports one named notice, so the destination that opens it must name that notice. */ const deliveryDestinationOf = (intentId: string): string => `/communication/delivery?intentId=${encodeURIComponent(intentId)}`;
 function notificationItems(intents: readonly NotificationIntentRecord[], results: readonly NotificationSendResultRecord[], context: HomeBuildContext): readonly HomeItem[] {
   if (!canView(context.session, { kind: "content-variant", scope: context.scope }).allowed) return [];
   const resultsByIntent = new Map<string, NotificationSendResultRecord[]>();

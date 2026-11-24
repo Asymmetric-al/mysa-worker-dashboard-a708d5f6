@@ -66,76 +66,64 @@ describe("an amount whose currency has no exponent", () => {
     expect([totals, unsurmmed.map((amount) => amount.currency), unsurmmed.map((amount) => amount.minorUnits)]).toEqual([[{ currency: "USD", minorUnits: 1200 }], [UNKNOWN_CURRENCY, UNLISTED_CURRENCY], [1250, 40]]);
   });
 });
-describe("exact integer arithmetic", () => {
-  it("sums five KWD amounts into the exact integer", () => {
-    const parts = [1, 2, 3, 4, 5].map((units) => money("KWD", units));
-    const total = parts.reduce((running, part) => addMinor(running, part), money("KWD", 0));
-    expect([total.currency, total.minorUnits, Number.isInteger(total.minorUnits)]).toEqual(["KWD", 15, true]);
-  });
-  it("stays exact over a hundred repeated additions", () => {
-    let running = money("USD", 0);
-    for (let index = 0; index < 100; index += 1) running = addMinor(running, money("USD", 1));
-    expect([running.minorUnits, Number.isInteger(running.minorUnits), addMinor(money("USD", 10), money("USD", 20)).minorUnits]).toEqual([100, true, 30]);
-  });
-  it("keeps a total at the top of the safe range exact and refuses one beyond it", () => {
-    const total = addMinor(money("USD", Number.MAX_SAFE_INTEGER - 1), money("USD", 1));
-    expect([total.minorUnits, Number.isInteger(total.minorUnits), refusalCode(() => addMinor(money("USD", Number.MAX_SAFE_INTEGER), money("USD", 1)))]).toEqual([Number.MAX_SAFE_INTEGER, true, "unsafe-minor-units"]);
-  });
-  it("orders amounts through compareMinor's -1, 0 and 1, and sorts by it", () => {
-    expect([compareMinor(money("USD", 1250), money("USD", 1250)), compareMinor(money("USD", 1200), money("USD", 1250)), compareMinor(money("USD", 1250), money("USD", 1200))]).toEqual([0, -1, 1]);
-    expect([compareMinor(money("USD", Number.MAX_SAFE_INTEGER), money("USD", -Number.MAX_SAFE_INTEGER)), compareMinor(money("USD", -Number.MAX_SAFE_INTEGER), money("USD", Number.MAX_SAFE_INTEGER))]).toEqual([1, -1]); // The extremes are where a subtraction-based comparison would overflow into a wrong sign.
-    const sorted = [money("JPY", 900), money("JPY", -100), money("JPY", 0), money("JPY", 5)].sort((left, right) => compareMinor(left, right)).map((amount) => amount.minorUnits);
-    expect(sorted).toEqual([-100, 0, 5, 900]);
-  });
-  it("refuses KWD against JPY rather than truncating one to the other's exponent", () => {
-    const kwd = money("KWD", 1250);
-    const jpy = money("JPY", 1250);
-    expect([refusalCode(() => addMinor(kwd, jpy)), refusalCode(() => compareMinor(kwd, jpy)), kwd.minorUnits, jpy.minorUnits, exponentOf(kwd.currency), exponentOf(jpy.currency)]).toEqual(["currency-mismatch", "currency-mismatch", 1250, 1250, 3, 0]);
-  });
-  it("partitions a mixed-currency sum per currency and never totals across them", () => {
-    const result = sumMinor([money("USD", 500), money("EUR", 300), money("USD", 700)]);
-    expect(result.totals).toEqual([
-      { currency: "EUR", minorUnits: 300 },
-      { currency: "USD", minorUnits: 1200 },
-    ]);
-    expect([result.unsurmmed, ["total" in result, result.totals.every((total) => Number.isInteger(total.minorUnits))]]).toEqual([[], [false, true]]);
-  });
+it("exact integer arithmetic: sums five KWD amounts into the exact integer", () => {
+  const parts = [1, 2, 3, 4, 5].map((units) => money("KWD", units));
+  const total = parts.reduce((running, part) => addMinor(running, part), money("KWD", 0));
+  expect([total.currency, total.minorUnits, Number.isInteger(total.minorUnits)]).toEqual(["KWD", 15, true]);
+});
+it("exact integer arithmetic: stays exact over a hundred repeated additions", () => {
+  let running = money("USD", 0);
+  for (let index = 0; index < 100; index += 1) running = addMinor(running, money("USD", 1));
+  expect([running.minorUnits, Number.isInteger(running.minorUnits), addMinor(money("USD", 10), money("USD", 20)).minorUnits]).toEqual([100, true, 30]);
+});
+it("exact integer arithmetic: keeps a total at the top of the safe range exact and refuses one beyond it", () => {
+  const total = addMinor(money("USD", Number.MAX_SAFE_INTEGER - 1), money("USD", 1));
+  expect([total.minorUnits, Number.isInteger(total.minorUnits), refusalCode(() => addMinor(money("USD", Number.MAX_SAFE_INTEGER), money("USD", 1)))]).toEqual([Number.MAX_SAFE_INTEGER, true, "unsafe-minor-units"]);
+});
+it("exact integer arithmetic: orders amounts through compareMinor's -1, 0 and 1, and sorts by it", () => {
+  expect([compareMinor(money("USD", 1250), money("USD", 1250)), compareMinor(money("USD", 1200), money("USD", 1250)), compareMinor(money("USD", 1250), money("USD", 1200))]).toEqual([0, -1, 1]);
+  expect([compareMinor(money("USD", Number.MAX_SAFE_INTEGER), money("USD", -Number.MAX_SAFE_INTEGER)), compareMinor(money("USD", -Number.MAX_SAFE_INTEGER), money("USD", Number.MAX_SAFE_INTEGER))]).toEqual([1, -1]); // The extremes are where a subtraction-based comparison would overflow into a wrong sign.
+  const sorted = [money("JPY", 900), money("JPY", -100), money("JPY", 0), money("JPY", 5)].sort((left, right) => compareMinor(left, right)).map((amount) => amount.minorUnits);
+  expect(sorted).toEqual([-100, 0, 5, 900]);
+});
+it("exact integer arithmetic: refuses KWD against JPY rather than truncating one to the other's exponent", () => {
+  const kwd = money("KWD", 1250);
+  const jpy = money("JPY", 1250);
+  expect([refusalCode(() => addMinor(kwd, jpy)), refusalCode(() => compareMinor(kwd, jpy)), kwd.minorUnits, jpy.minorUnits, exponentOf(kwd.currency), exponentOf(jpy.currency)]).toEqual(["currency-mismatch", "currency-mismatch", 1250, 1250, 3, 0]);
+});
+it("exact integer arithmetic: partitions a mixed-currency sum per currency and never totals across them", () => {
+  const result = sumMinor([money("USD", 500), money("EUR", 300), money("USD", 700)]);
+  expect(result.totals).toEqual([
+    { currency: "EUR", minorUnits: 300 },
+    { currency: "USD", minorUnits: 1200 },
+  ]);
+  expect([result.unsurmmed, ["total" in result, result.totals.every((total) => Number.isInteger(total.minorUnits))]]).toEqual([[], [false, true]]);
 });
 describe("negating a known currency", () => {
   it.each([
-    { currency: "USD", minorUnits: 1250, expected: -1250 },
-    { currency: "KWD", minorUnits: 12_500, expected: -12_500 },
-  ])("reverses a $currency amount by exact minor units", ({ currency, minorUnits, expected }) => {
+    { currency: "USD", exponent: 2, minorUnits: 1250, expected: -1250 },
+    { currency: "KWD", exponent: 3, minorUnits: 12_500, expected: -12_500 },
+    { currency: "JPY", exponent: 0, minorUnits: 0, expected: 0 },
+    { currency: "KWD", exponent: 3, minorUnits: 1250, expected: -1250 },
+  ])("reverses a $currency amount by exact minor units, on the code's own exponent and with no negative zero", ({ currency, exponent, minorUnits, expected }) => {
     const result = negateMinor(money(currency, minorUnits));
-    expect([result.currency, result.minorUnits]).toEqual([currency, expected]);
-  });
-  it("keeps a zero JPY amount a canonical zero rather than a negative zero", () => {
-    expect(exponentOf("JPY")).toBe(0);
-    const result = negateMinor(money("JPY", 0));
-    expect(result.currency).toBe("JPY");
-    expect(Object.is(result.minorUnits, 0)).toBe(true); // `toBe(0)` would pass for `-0`, which every downstream equality on canonical minor units would then reject, so the zero is asserted through `Object.is`.
-  });
-  it("keeps a KWD amount on its own three-decimal code", () => {
-    expect(exponentOf("KWD")).toBe(3);
-    const result = negateMinor(money("KWD", 1250));
-    expect([result.currency, result.minorUnits]).toEqual(["KWD", -1250]);
+    // The zero is asserted through `Object.is`, because `toBe(0)` would pass for `-0`, which every downstream equality on canonical minor units would then reject.
+    expect([exponentOf(currency), result.currency, result.minorUnits, Object.is(result.minorUnits, expected)]).toEqual([exponent, currency, expected, true]);
   });
 });
-describe("splitting an amount", () => {
-  it("splits 100 minor units 40/60 with nothing created and nothing lost", () => {
-    const total = money("USD", 100);
-    const parts = allocateMinor(total, [40, 60]);
-    expect([parts.map((part) => part.minorUnits), [parts.every((part) => part.currency === "USD"), parts.reduce((sum, part) => sum + part.minorUnits, 0)], sumMinor(parts).totals, sumMinor(parts).unsurmmed]).toEqual([[40, 60], [true, total.minorUnits], [{ currency: "USD", minorUnits: 100 }], []]);
-  });
-  it("assigns the remainder of a three-way split rather than losing it", () => {
-    const total = money("KWD", 100);
-    const parts = allocateMinor(total, [1, 1, 1]);
-    // 100 units cannot divide into three, so one part takes the odd unit: the alternative — three parts of 33 — would drop a unit of a real gift from every surface that shows the parts.
-    expect([parts.map((part) => part.minorUnits), [parts.every((part) => part.currency === "KWD"), parts.reduce((sum, part) => sum + part.minorUnits, 0), parts.every((part) => Number.isInteger(part.minorUnits))]]).toEqual([
-      [34, 33, 33],
-      [true, total.minorUnits, true],
-    ]);
-  });
+it("splitting an amount: splits 100 minor units 40/60 with nothing created and nothing lost", () => {
+  const total = money("USD", 100);
+  const parts = allocateMinor(total, [40, 60]);
+  expect([parts.map((part) => part.minorUnits), [parts.every((part) => part.currency === "USD"), parts.reduce((sum, part) => sum + part.minorUnits, 0)], sumMinor(parts).totals, sumMinor(parts).unsurmmed]).toEqual([[40, 60], [true, total.minorUnits], [{ currency: "USD", minorUnits: 100 }], []]);
+});
+it("splitting an amount: assigns the remainder of a three-way split rather than losing it", () => {
+  const total = money("KWD", 100);
+  const parts = allocateMinor(total, [1, 1, 1]);
+  // 100 units cannot divide into three, so one part takes the odd unit: the alternative — three parts of 33 — would drop a unit of a real gift from every surface that shows the parts.
+  expect([parts.map((part) => part.minorUnits), [parts.every((part) => part.currency === "KWD"), parts.reduce((sum, part) => sum + part.minorUnits, 0), parts.every((part) => Number.isInteger(part.minorUnits))]]).toEqual([
+    [34, 33, 33],
+    [true, total.minorUnits, true],
+  ]);
 });
 describe("rendering an amount through its currency exponent", () => {
   it.each(CURRENCY_EXPONENTS)("writes $currency with exactly $exponent fractional digits", ({ currency, exponent }) => {
@@ -276,16 +264,12 @@ describe("the financial modules' source", () => {
     expect(offenders).toEqual([]); // AAP 0.8.1's rule that no floating-point arithmetic touches a financial value holds only where it is checked, and Rule 1 clause 3 asks for that check and nothing beyond it. The failure names the offending file, so the defect is a line to open rather than a hunt.
   });
 });
-describe("the test environment", () => {
-  it("loads no DOM, which is what keeps this a domain test", () => {
-    expect(typeof document).toBe("undefined"); // `tests/domain` imports the modules directly, so a component claim belongs to the Playwright specs instead. This single assertion is the folder's proof that no DOM was loaded to make one: it is the only assertion of its kind in the suite (AAP 0.11.1).
-  });
+it("the test environment: loads no DOM, which is what keeps this a domain test", () => {
+  expect(typeof document).toBe("undefined"); // `tests/domain` imports the modules directly, so a component claim belongs to the Playwright specs instead. This single assertion is the folder's proof that no DOM was loaded to make one: it is the only assertion of its kind in the suite (AAP 0.11.1).
 });
-describe("the minor-unit brand", () => {
-  it("is enforced by the compiler rather than by convention", () => {
-    // AAP 0.15.2 permits a documented, justified suppression, and this directive is the file's single one: the suppression is the assertion. If `MinorUnits` ever loses its brand the directive becomes an unused one, which is itself a compile error, so the check cannot rot.
-    // @ts-expect-error a bare number is not a branded minor-unit count
-    const unbranded: MinorUnits = 100;
-    expect(unbranded).toBe(100);
-  });
+it("the minor-unit brand: is enforced by the compiler rather than by convention", () => {
+  // AAP 0.15.2 permits a documented, justified suppression, and this directive is the file's single one: the suppression is the assertion. If `MinorUnits` ever loses its brand the directive becomes an unused one, which is itself a compile error, so the check cannot rot.
+  // @ts-expect-error a bare number is not a branded minor-unit count
+  const unbranded: MinorUnits = 100;
+  expect(unbranded).toBe(100);
 });

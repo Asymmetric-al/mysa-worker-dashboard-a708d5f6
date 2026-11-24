@@ -15,6 +15,7 @@ import type { ReadResult } from "@/modules/data-service/outcome";
 import { FACET_VALUE_LABELS } from "../copy/facets";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY, VALUE_STATE_COPY } from "../copy/states";
 import { ROSTER_PAGE_SIZE_CAP, ROSTER_PAGE_SIZE_DEFAULT, useRosterQuery, type RosterEnvelope, type RosterSort } from "../hooks/use-roster-query";
+import { tagSuggestionsOf } from "../tag-suggestions";
 import ColumnChooser, { PARTNER_COLUMN_KEYS, admittedPartnerColumns, type PartnerColumn, type PartnerColumnKey } from "./column-chooser";
 import { PartnerFacets } from "./partner-facets";
 import PartnerRecordPanel from "./partner-record-panel";
@@ -105,17 +106,15 @@ function NameCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
     </span>
   );
 }
-function ChipRun({ chips, variant }: { readonly chips: readonly { readonly key: string; readonly content: ReactNode }[]; readonly variant: "secondary" | "outline" }): ReactElement {
-  return (
-    <span className="flex min-w-0 flex-wrap items-center gap-1">
-      {chips.map((chip) => (
-        <Badge key={chip.key} variant={variant}>
-          {chip.content}
-        </Badge>
-      ))}
-    </span>
-  );
-}
+const ChipRun = ({ chips, variant }: { readonly chips: readonly { readonly key: string; readonly content: ReactNode }[]; readonly variant: "secondary" | "outline" }): ReactElement => (
+  <span className="flex min-w-0 flex-wrap items-center gap-1">
+    {chips.map((chip) => (
+      <Badge key={chip.key} variant={variant}>
+        {chip.content}
+      </Badge>
+    ))}
+  </span>
+);
 const chip = (key: string, content: ReactNode): { readonly key: string; readonly content: ReactNode } => ({ key, content });
 function ContactMethodCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
   if (row.contactMethodKinds.length === 0) return <span className="text-muted-foreground">No permitted contact method</span>;
@@ -136,15 +135,13 @@ function RelationshipCell({ row }: { readonly row: PartnerRosterRow }): ReactEle
     </span>
   );
 }
-function OpenTasksCell({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement {
-  return (
-    <span className="flex min-w-0 flex-col gap-1">
-      <StatedCount count={row.openTaskCount} noun="open" state={stateOfRowMember(states, position, "openTaskCount")} />
-      <StatedCount count={row.overdueTaskCount} noun="overdue" state={stateOfRowMember(states, position, "overdueTaskCount")} />
-      <StatedCount count={row.undatedTaskCount} noun="without a due date" state={stateOfRowMember(states, position, "undatedTaskCount")} />
-    </span>
-  );
-}
+const OpenTasksCell = ({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement => (
+  <span className="flex min-w-0 flex-col gap-1">
+    <StatedCount count={row.openTaskCount} noun="open" state={stateOfRowMember(states, position, "openTaskCount")} />
+    <StatedCount count={row.overdueTaskCount} noun="overdue" state={stateOfRowMember(states, position, "overdueTaskCount")} />
+    <StatedCount count={row.undatedTaskCount} noun="without a due date" state={stateOfRowMember(states, position, "undatedTaskCount")} />
+  </span>
+);
 function GivingCurrencyCell({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement {
   const state = stateOfRowMember(states, position, "givingCurrencies");
   const currencies = row.givingCurrencies ?? [];
@@ -177,8 +174,6 @@ const rosterColumns = (admitted: readonly PartnerColumn[], states: RecordedState
     const render = COLUMN_RENDER[column.key];
     return { id: column.key, header: column.displayName, enableSorting: SORT_FIELD_BY_COLUMN[column.key] !== undefined, accessorFn: render.accessor, cell: (context) => render.cell(context.row.original, context.row.index, states) };
   });
-const partnerRowId = (row: PartnerRosterRow): string => row.partner.partnerId;
-const partnerRowLabel = (row: PartnerRosterRow): string => nameOf(row);
 const OpenRecordAction = ({ row }: { readonly row: PartnerRosterRow }): ReactElement => (
   <Link href={partnerHref(row.partner.partnerId)} aria-label={ROSTER_COPY.openRecord(nameOf(row))} data-slot="button" className={cn(buttonVariants({ variant: "ghost", size: "icon-xs" }))}>
     <ChevronRightIcon aria-hidden="true" />
@@ -201,16 +196,14 @@ function OpenBesideAction({ row, onOpen }: { readonly row: PartnerRosterRow; rea
     </Button>
   );
 }
-function ImportFirstAction(): ReactElement {
-  return (
-    <div className="flex max-w-prose flex-col items-center gap-2">
-      <Link href="/partners/import" data-slot="button" className={cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS)}>
-        Import a contact list
-      </Link>
-      <p className="text-center text-xs text-pretty text-muted-foreground">A contact list is imported into this ministry and reviewed row by row before anything is accepted.</p>
-    </div>
-  );
-}
+const ImportFirstAction = (): ReactElement => (
+  <div className="flex max-w-prose flex-col items-center gap-2">
+    <Link href="/partners/import" data-slot="button" className={cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS)}>
+      Import a contact list
+    </Link>
+    <p className="text-center text-xs text-pretty text-muted-foreground">A contact list is imported into this ministry and reviewed row by row before anything is accepted.</p>
+  </div>
+);
 function RosterNotes({ envelope }: { readonly envelope: ReadEnvelope<unknown> }): ReactElement {
   const withheld = SURFACE_STATE_COPY.roster.withheld;
   const partial = SURFACE_STATE_COPY.roster["partial-coverage"];
@@ -238,6 +231,8 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
   const envelope = result !== undefined && result.kind === "envelope" ? result.envelope : null;
   const states = envelope === null ? null : envelope.valueStates;
   const facetsEnvelope = roster.facets.data !== undefined && roster.facets.data.kind === "envelope" ? roster.facets.data.envelope : null;
+  // The labels a record's filing surface offers are this read's own tag facet, so the record opened beside the list is handed them instead of issuing the facet read a second time.
+  const tagSuggestions = useMemo(() => tagSuggestionsOf(facetsEnvelope?.data), [facetsEnvelope]);
   const admitted = useMemo(() => admittedPartnerColumns(envelope), [envelope]);
   const columns = useMemo(() => rosterColumns(admitted, states), [admitted, states]);
   const busy = roster.roster.isFetching || roster.facets.isFetching;
@@ -293,8 +288,8 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
             columns={columns}
             rows={rows}
             rowCount={total}
-            getRowId={partnerRowId}
-            rowLabel={partnerRowLabel}
+            getRowId={(row) => row.partner.partnerId}
+            rowLabel={nameOf}
             queryState={queryState}
             onQueryStateChange={changeQueryState}
             rowActions={(row) => (
@@ -321,6 +316,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
         return <StateNotice kind="refused" headingLevel={2} title={copy.refused.title} description={copy.refused.body} />;
     }
   }
+  const panelBody = openPartnerId === null ? null : <PartnerRecordPanel scope={scope} partnerId={openPartnerId} layout={isMobile ? "sheet" : "panel"} tagSuggestions={tagSuggestions} />;
   return (
     <div data-slot="partner-roster" dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-3">
@@ -338,13 +334,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
           {envelope === null ? null : <RosterNotes envelope={envelope} />}
         </div>
         {/* Always mounted, outside the list, so a panel that closes returns focus to the row control that opened it. The body is the family's own detail body: the panel is a presentation of the record, never a second one. */}
-        <SidePanel
-          open={openPartnerId !== null}
-          onOpenChange={closePanel}
-          variant={isMobile ? "phone" : "desktop"}
-          title={openLabel === null ? ROSTER_COPY.panelTitle : `${ROSTER_COPY.panelTitle}, ${openLabel}`}
-          body={openPartnerId === null ? null : <PartnerRecordPanel scope={scope} partnerId={openPartnerId} layout={isMobile ? "sheet" : "panel"} />}
-        />
+        <SidePanel open={openPartnerId !== null} onOpenChange={closePanel} variant={isMobile ? "phone" : "desktop"} title={openLabel === null ? ROSTER_COPY.panelTitle : `${ROSTER_COPY.panelTitle}, ${openLabel}`} body={panelBody} />
       </div>
     </div>
   );

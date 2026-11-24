@@ -51,24 +51,16 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
 type PlanTextField = { readonly name: typeof QUANTITY_FIELD | typeof CALENDAR_START_FIELD | typeof PERIOD_END_FIELD | typeof PRIVATE_LABEL_FIELD; readonly type: "number" | "date" | "text"; readonly description: string; readonly className: string };
 const FIELD_ORDER = [MEASURE_FIELD, QUANTITY_FIELD, PERIOD_FIELD, CALENDAR_START_FIELD, PERIOD_END_FIELD, PRIVATE_LABEL_FIELD, HOME_PLACEMENT_FIELD] as const;
 const PERIOD_KINDS: readonly PeriodKind[] = ["weekly", "monthly", "custom"];
-const CREATE_HEADING = "Set a target";
-const EDIT_HEADING = "Change this target";
 const PLAN_HEADING = "The plan";
 const PLAN_PURPOSE = COACHING_COPY.targets.purpose;
-const REVIEW_NOTE = "Nothing is saved until you confirm it in the next step, and confirming applies this one change once.";
 const MEASURE_DESCRIPTION = "A target counts one measure at a time, and nothing is counted that you have not recorded as an activity.";
 const QUANTITY_DESCRIPTION = "A positive whole number of the measure you chose. A zero, a negative number, a fraction or an empty entry is refused with the reason rather than turned into a number you did not type.";
 const PERIOD_DESCRIPTION = "The stretch of time each count is compared over. A new target uses the weekly period.";
-const CUSTOM_START_DESCRIPTION = "The first day of the one-off period, as a calendar day with no time of day behind it. An empty first day is refused rather than filled in with today's date.";
-const CUSTOM_END_DESCRIPTION = "The last day of the one-off period, inclusive. An empty last day is refused rather than filled in with today's date.";
-const NO_CUSTOM_DATES_NOTE = "A weekly or monthly period starts on the calendar day the target is recorded, so this form asks for no start date for it. A one-off period asks for both of its dates.";
-const PRIVATE_LABEL_DESCRIPTION = "A name only you see. It is never disclosed to a coach, never exported and never part of what a coach can read; choosing one changes nothing about what is counted.";
 const HOME_PLACEMENT_DESCRIPTION = "Placement changes only what you see on Home. It creates no commitment, no reminder and no notification, and no coach can read it. The target counts the same whether it is placed or not.";
 const QUANTITY_INPUT: PlanTextField = { name: QUANTITY_FIELD, type: "number", description: QUANTITY_DESCRIPTION, className: "w-full tabular-figures sm:max-w-40" };
-const CALENDAR_START_INPUT: PlanTextField = { name: CALENDAR_START_FIELD, type: "date", description: CUSTOM_START_DESCRIPTION, className: "w-full sm:max-w-60" };
-const PERIOD_END_INPUT: PlanTextField = { name: PERIOD_END_FIELD, type: "date", description: CUSTOM_END_DESCRIPTION, className: "w-full sm:max-w-60" };
-const PRIVATE_LABEL_INPUT: PlanTextField = { name: PRIVATE_LABEL_FIELD, type: "text", description: PRIVATE_LABEL_DESCRIPTION, className: "w-full sm:max-w-96" };
-const RANGE_MESSAGE = "The last day of a one-off period must be on or after its first day.";
+const CALENDAR_START_INPUT: PlanTextField = { name: CALENDAR_START_FIELD, type: "date", description: "The first day of the one-off period, as a calendar day with no time of day behind it. An empty first day is refused rather than filled in with today's date.", className: "w-full sm:max-w-60" };
+const PERIOD_END_INPUT: PlanTextField = { name: PERIOD_END_FIELD, type: "date", description: "The last day of the one-off period, inclusive. An empty last day is refused rather than filled in with today's date.", className: "w-full sm:max-w-60" };
+const PRIVATE_LABEL_INPUT: PlanTextField = { name: PRIVATE_LABEL_FIELD, type: "text", description: "A name only you see. It is never disclosed to a coach, never exported and never part of what a coach can read; choosing one changes nothing about what is counted.", className: "w-full sm:max-w-96" };
 const isPeriodKind = (value: string): value is PeriodKind => PERIOD_KINDS.some((kind) => kind === value);
 const isTargetMeasure = (value: string): value is TargetMeasure => TARGET_MEASURES.some((measure) => measure === value);
 const WRITTEN_NUMBER = /^-?\d+(?:\.\d+)?$/u;
@@ -98,7 +90,7 @@ function rangeIssueOf(values: TargetFormValues): readonly string[] {
   const start = parseCivilDate(values.calendarStart.trim());
   const end = parseCivilDate(values.periodEnd.trim());
   if (start.status !== "parsed" || end.status !== "parsed") return [];
-  return end.date.until(start.date).sign > 0 ? [RANGE_MESSAGE] : [];
+  return end.date.until(start.date).sign > 0 ? ["The last day of a one-off period must be on or after its first day."] : [];
 }
 function refusalOf(values: TargetFormValues, target: TargetView | null): FieldErrorLookup | null {
   const plan = planOf(values);
@@ -156,7 +148,6 @@ const LIFECYCLE_ACTIONS: readonly LifecycleAction[] = [
   { key: "pause", title: "Pause this target", description: TARGET_STATE_COPY.paused.description, consequence: "Pausing changes only whether this target admits recorded progress. It sends no notice, creates no task and no commitment, and it deletes nothing.", confirmLabel: "Pause target" },
   { key: "end", title: "End this target", description: TARGET_STATE_COPY.ended.description, consequence: "Ending closes the target for good: a later change to its plan is refused rather than applied. It deletes no activity record, sends no notice, and leaves every other target untouched.", confirmLabel: "End target" },
 ];
-/** The reason one lifecycle change is withheld in the state the target stands in, or `null` when the change is offered. */
 const heldReasonOf = (action: LifecycleAction["key"], state: TargetState): string | null => (action === "pause" ? (state === "paused" ? PAUSED_PAUSE_REASON : state === "ended" ? ENDED_PAUSE_REASON : null) : state === "ended" ? END_ALREADY_ENDED_REASON : null);
 const labelOf = (field: string): string => FIELD_LABELS[field] ?? "";
 type SelectFieldProps<T extends string> = {
@@ -220,12 +211,11 @@ const InputField = ({ name, label, description, error, type, className, value, o
 const CivilDateText = ({ value }: { readonly value: string | undefined }): ReactElement => ((value ?? "").trim() === "" ? <span className="text-muted-foreground">a day you have not entered yet</span> : <bdi className="wrap-anywhere">{(value ?? "").trim()}</bdi>);
 function StateStatement({ state }: { readonly state: TargetState }): ReactElement {
   const copy = TARGET_STATE_COPY[state];
-  const statesHistoryIsKept = state === "paused" || state === "ended";
   return (
     <div className="flex min-w-0 flex-col items-start gap-2">
       <Badge variant={state === "active" ? "secondary" : "outline"}>{copy.label}</Badge>
       <p className="type-supporting text-pretty">{copy.description}</p>
-      {statesHistoryIsKept ? <p className="type-supporting text-pretty">{"Pausing and ending both keep the history: the periods that have already closed keep the version they were measured against, and no activity record is deleted."}</p> : null}
+      {state === "paused" || state === "ended" ? <p className="type-supporting text-pretty">{"Pausing and ending both keep the history: the periods that have already closed keep the version they were measured against, and no activity record is deleted."}</p> : null}
     </div>
   );
 }
@@ -249,12 +239,9 @@ const PlanRows = ({ className, rows }: { readonly className: string; readonly ro
     ))}
   </dl>
 );
-const PLAN_FACTS_CLASS = "grid min-w-0 gap-3 text-sm";
 const PLAN_ROWS_CLASS = "flex min-w-0 flex-col gap-3 text-sm";
-const PRIVATE_NOTE = "— never disclosed to a coach";
-const PLACEMENT_NOTE = "— changes only what you see";
-const privateRow = (label: string | null): PlanRow => ({ term: labelOf(PRIVATE_LABEL_FIELD), value: <PlanNote text={privateLabelText(label)} suffix={PRIVATE_NOTE} /> });
-const placementRow = (placed: boolean): PlanRow => ({ term: labelOf(HOME_PLACEMENT_FIELD), value: <PlanNote text={placementText(placed)} suffix={PLACEMENT_NOTE} /> });
+const privateRow = (label: string | null): PlanRow => ({ term: labelOf(PRIVATE_LABEL_FIELD), value: <PlanNote text={privateLabelText(label)} suffix={"— never disclosed to a coach"} /> });
+const placementRow = (placed: boolean): PlanRow => ({ term: labelOf(HOME_PLACEMENT_FIELD), value: <PlanNote text={placementText(placed)} suffix={"— changes only what you see"} /> });
 const planFactsRowsOf = (target: TargetView): readonly PlanRow[] => {
   const plan = heldPlanOf(target);
   return [
@@ -281,14 +268,12 @@ const planSummaryRowsOf = (plan: TargetSavePayload): readonly PlanRow[] => [
   placementRow(plan.homePlacement),
 ];
 const comparisonRowsOf = (plan: TargetSavePayload, target: TargetView): readonly PlanRow[] => [{ term: "The plan now", value: planSentence(heldPlanOf(target)) }, { term: "This change", value: planSentence(plan) }, privateRow(plan.privateLabel), placementRow(plan.homePlacement)];
-const PlanFacts = ({ target }: { readonly target: TargetView }): ReactElement => <PlanRows className={PLAN_FACTS_CLASS} rows={planFactsRowsOf(target)} />;
+const PlanFacts = ({ target }: { readonly target: TargetView }): ReactElement => <PlanRows className={"grid min-w-0 gap-3 text-sm"} rows={planFactsRowsOf(target)} />;
 const PlanSummary = ({ plan }: { readonly plan: TargetSavePayload }): ReactElement => <PlanRows className={PLAN_ROWS_CLASS} rows={planSummaryRowsOf(plan)} />;
 const PlanComparison = ({ plan, target }: { readonly plan: TargetSavePayload; readonly target: TargetView }): ReactElement => <PlanRows className={PLAN_ROWS_CLASS} rows={comparisonRowsOf(plan, target)} />;
 const HeldAction = ({ label, reason, descriptionId }: { readonly label: string; readonly reason: string; readonly descriptionId: string }): ReactElement => (
   <div className="flex min-w-0 flex-col gap-1.5">
-    <Button type="button" variant="outline" disabled aria-describedby={descriptionId} className="min-h-target w-fit max-w-full whitespace-normal">
-      {label}
-    </Button>
+    <Button {...{ type: "button", variant: "outline", disabled: true, "aria-describedby": descriptionId, className: "min-h-target w-fit max-w-full whitespace-normal" }}>{label}</Button>
     <p {...{ id: descriptionId, className: "type-supporting text-pretty" }}>{reason}</p>
   </div>
 );
@@ -376,7 +361,7 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
           {textField(PERIOD_END_INPUT)}
         </>
       ) : (
-        <p className="type-supporting text-pretty">{NO_CUSTOM_DATES_NOTE}</p>
+        <p className="type-supporting text-pretty">{"A weekly or monthly period starts on the calendar day the target is recorded, so this form asks for no start date for it. A one-off period asks for both of its dates."}</p>
       )}
       {textField(PRIVATE_LABEL_INPUT)}
       <form.Field name={HOME_PLACEMENT_FIELD}>
@@ -397,13 +382,13 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
   return (
     <section id="target-form" dir={dir} aria-labelledby={headingId} aria-busy={busy ? true : undefined} data-slot="target-form" data-interface-locale={locale} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 {...{ id: headingId, className: "type-section-title" }}>{creating ? CREATE_HEADING : EDIT_HEADING}</h2>
+        <h2 {...{ id: headingId, className: "type-section-title" }}>{creating ? "Set a target" : "Change this target"}</h2>
         <p className="type-supporting text-pretty">{PLAN_PURPOSE}</p>
         <p className="type-supporting text-pretty">{"A target is your own plan. A period with nothing recorded states a count of zero and says nothing about the effort you made at it, and it creates no commitment to anyone. Only the modules you switch on are ever readable by a coach."}</p>
       </div>
       {target === null ? null : <StateStatement state={target.state} />}
       {ended && target !== null ? (
-        <Panel titleId={planHeadingId} headingLevel={3} title={PLAN_HEADING} description={"This target has ended, so its plan is shown here rather than offered for change: a change to an ended target is refused instead of applied."} cardClassName="min-w-0">
+        <Panel titleId={planHeadingId} headingLevel={3} title={PLAN_HEADING} description="This target has ended, so its plan is shown here rather than offered for change: a change to an ended target is refused instead of applied." cardClassName="min-w-0">
           <PlanFacts target={target} />
         </Panel>
       ) : (
@@ -421,7 +406,7 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
                     <div className="flex flex-wrap items-center gap-2">
                       <Button {...{ type: "submit", disabled: busy, "aria-describedby": reviewNoteId, className: "min-h-target max-w-full whitespace-normal" }}>{creating ? "Review and save" : "Review the change"}</Button>
                     </div>
-                    <p {...{ id: reviewNoteId, className: "type-supporting text-pretty" }}>{reviewing ? REVIEWING_NOTE : REVIEW_NOTE}</p>
+                    <p {...{ id: reviewNoteId, className: "type-supporting text-pretty" }}>{reviewing ? REVIEWING_NOTE : "Nothing is saved until you confirm it in the next step, and confirming applies this one change once."}</p>
                   </form>
                 </Panel>
                 {reviewing && target === null ? (

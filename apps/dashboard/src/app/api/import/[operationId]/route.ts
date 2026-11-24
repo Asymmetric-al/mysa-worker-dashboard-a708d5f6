@@ -5,13 +5,11 @@ import { isReadResult, outcomeFromError, reads, refusedRead, toResponse } from "
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const UNIDENTIFIED_OPERATION = "unidentified-operation";
-type ImportOperationParams = { readonly operationId: string };
 const PAGING_PARAMETERS = ["page", "pageSize"] as const;
 type PagingParameter = (typeof PAGING_PARAMETERS)[number];
 const pagingValueSchema = z.coerce.number().int().min(1);
 const PAGING_MESSAGES: Readonly<Record<PagingParameter, string>> = { page: "page must be a positive whole number: the page to read, counting from 1.", pageSize: "pageSize must be a positive whole number: how many rows of the page to read." };
-type PagingWindow = { readonly page?: number; readonly pageSize?: number };
-type PagingAdmission = { readonly ok: true; readonly window: PagingWindow } | { readonly ok: false; readonly issues: readonly z.ZodIssue[] };
+type PagingAdmission = { readonly ok: true; readonly window: { readonly page?: number; readonly pageSize?: number } } | { readonly ok: false; readonly issues: readonly z.ZodIssue[] };
 const isPagingParameter = (name: string): name is PagingParameter => PAGING_PARAMETERS.some((parameter) => parameter === name);
 function admitPaging(search: URLSearchParams): PagingAdmission {
   const issues: z.ZodIssue[] = [];
@@ -34,7 +32,7 @@ function admitPaging(search: URLSearchParams): PagingAdmission {
   return issues.length === 0 ? { ok: true, window: stated } : { ok: false, issues };
 }
 /** Answers the proposal or the receipt this operation identity names, in the one read envelope, or the read's own `denied`, `unavailable` or `refused` — the refusal stating the identity or the window this read does not accept. */
-async function readImportReceipt(request: Request, context: { params: Promise<ImportOperationParams> }): Promise<Response> {
+async function readImportReceipt(request: Request, context: { params: Promise<{ readonly operationId: string }> }): Promise<Response> {
   let operationId: string = UNIDENTIFIED_OPERATION;
   try {
     const named: unknown = (await context.params).operationId;

@@ -10,6 +10,5 @@ const setStagePayloadSchema = z.strictObject({
   stage: z.string().min(1, "Choose a stage from the approved list, or clear the stage.").nullable(),
 });
 const setStageRequestSchema = mutationInputSchema(setStagePayloadSchema);
-/** Records one human assessment of where a working-list member stands. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 const setStage = (request: Request): Promise<Response> => writeRoute(request, setStageRequestSchema, mutations.outreach.setStage);
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: setStage });

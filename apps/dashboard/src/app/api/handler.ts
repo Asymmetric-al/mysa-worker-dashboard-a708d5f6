@@ -21,8 +21,18 @@ const joinChunks = (chunks: readonly Uint8Array[], totalBytes: number): Uint8Arr
   }
   return joined;
 };
-/** Reads one request's body up to `maxBytes`, so an over-size body is refused before any of it is parsed rather than after the whole of it is buffered: the declared `content-length` is judged first and costs no read at all, then the bytes are counted as they arrive and the stream is cancelled the moment the ceiling is passed. A body that arrives unreadable, or that is not JSON, is a request fault the caller can correct, answered `unreadable` here and as `invalid` by the body schema the transport always runs, never a thrown 500. A transport that admits only valid UTF-8 states `fatalUtf8`, so a byte sequence that is not valid UTF-8 is refused as unreadable rather than decoded with replacement characters. */
+/** The media types whose body this transport reads: JSON itself and a structured-syntax `+json` subtype, with any parameter a client appends (`; charset=utf-8`) stated after the type rather than as part of it. */
+const JSON_MEDIA_TYPE = /^application\/(?:[^;\s]+\+)?json$/i;
+/** States whether a request declares its own body as JSON: only a declared `application/json` or `+json` media type is one this transport reads, so a body a client labelled anything else — `text/plain` included — is refused rather than decoded. The two transports that read their own text for a byte ceiling of their own ask this same question, so the rule is stated once here rather than restated beside each reader. */
+export const declaresJsonBody = (request: Request): boolean => {
+  const contentType = request.headers.get("content-type");
+  if (contentType === null) return false;
+  const mediaType = contentType.split(";")[0]?.trim();
+  return mediaType !== undefined && JSON_MEDIA_TYPE.test(mediaType);
+};
+/** Reads one request's body up to `maxBytes`, so an over-size body is refused before any of it is parsed rather than after the whole of it is buffered: the declared `content-length` is judged first and costs no read at all, then the bytes are counted as they arrive and the stream is cancelled the moment the ceiling is passed. Only a body its request declares as a JSON media type is read at all, and one declared as anything else is `unreadable` before a byte of it arrives, because the declaration is what tells a JSON payload this application asked for from the same bytes sent under another label that no browser asks permission to send. A body that arrives unreadable, or that is not JSON, is a request fault the caller can correct, answered `unreadable` here and as `invalid` by the body schema the transport always runs, never a thrown 500. A transport that admits only valid UTF-8 states `fatalUtf8`, so a byte sequence that is not valid UTF-8 is refused as unreadable rather than decoded with replacement characters. */
 export async function readRequestBody(request: Request, maxBytes: number = DEFAULT_MAX_BODY_BYTES, fatalUtf8: boolean = false): Promise<RequestBodyRead> {
+  if (!declaresJsonBody(request)) return { kind: "unreadable" };
   const declaredLength = request.headers.get("content-length");
   const declaredBytes = declaredLength === null ? Number.NaN : Number(declaredLength);
   if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) return { kind: "oversized", bytes: declaredBytes, maxBytes };
@@ -53,8 +63,7 @@ export async function jsonBodyOf(request: Request): Promise<unknown> {
   const body = await readRequestBody(request);
   return body.kind === "body" ? body.value : undefined;
 }
-/** The operation id a request names, read before its envelope is judged, or {@link UNIDENTIFIED_ATTEMPT} when it names none a caller could match an answer to. */
-export function operationIdentityOf(raw: unknown): string {
+/** The operation id a request names, read before its envelope is judged, or {@link UNIDENTIFIED_ATTEMPT} when it names none a caller could match an answer to. */ export function operationIdentityOf(raw: unknown): string {
   const identity = attemptIdentitySchema.safeParse(raw);
   return identity.success && identity.data.operationId.length > 0 ? identity.data.operationId : UNIDENTIFIED_ATTEMPT;
 }

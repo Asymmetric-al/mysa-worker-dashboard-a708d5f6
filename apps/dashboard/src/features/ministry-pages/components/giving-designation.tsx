@@ -39,9 +39,7 @@ export function GivingDesignation({ binding, layout = "panel", className }: Givi
         <CardTitle className="wrap-anywhere">
           <bdi>{binding.designationLabel}</bdi>
         </CardTitle>
-        <Badge variant="secondary" className="justify-self-start">
-          {copy.giving.designationApproved}
-        </Badge>
+        <Badge {...{ variant: "secondary" as const, className: "justify-self-start" as const }}>{copy.giving.designationApproved}</Badge>
       </CardHeader>
       <CardContent className="flex flex-col gap-2">
         <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">

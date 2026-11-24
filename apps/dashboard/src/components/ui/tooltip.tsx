@@ -3,11 +3,9 @@ import * as React from "react";
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 import { cn } from "@/lib/cn";
 import { useDirection } from "@/components/ui/direction";
-/** The content id and the open state a tooltip publishes to its trigger and its popup, which is what lets the trigger name a description that exists. */
-type TooltipRelationship = { readonly contentId: string; readonly open: boolean };
+/** The content id and the open state a tooltip publishes to its trigger and its popup, which is what lets the trigger name a description that exists. */ type TooltipRelationship = { readonly contentId: string; readonly open: boolean };
 const TooltipRelationshipContext = React.createContext<TooltipRelationship | null>(null);
-/** The trigger's own references followed by the tooltip's content id, without stating an id twice and without leaving a stray space. */
-function describedByOf(callerDescription: string | undefined, contentId: string): string {
+/** The trigger's own references followed by the tooltip's content id, without stating an id twice and without leaving a stray space. */ function describedByOf(callerDescription: string | undefined, contentId: string): string {
   const references = (callerDescription ?? "").split(/\s+/).filter((reference) => reference.length > 0);
   if (!references.includes(contentId)) references.push(contentId);
   return references.join(" ");

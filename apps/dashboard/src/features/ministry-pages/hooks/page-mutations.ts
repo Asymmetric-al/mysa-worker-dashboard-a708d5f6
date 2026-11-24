@@ -39,7 +39,6 @@ export function usePageMutation<P>(config: PageMutationConfig): UseMutationResul
     },
   });
 }
-/** What one section attempt presents: the mutation envelope's four members, plus the Page whose read is re-run once the attempt settles. */
 export type SectionMutationVariables<Payload> = { readonly operationId: string; readonly scope: Scope; readonly expectedRevision: string; readonly documentId: string; readonly payload: Payload };
 type SectionMutation<Payload> = UseMutationResult<MutationOutcome, never, SectionMutationVariables<Payload>>;
 type SectionDispatch<Payload> = UseMutationResult<MutationOutcome, never, MutationInput<Payload>>;
@@ -70,17 +69,15 @@ export const useRemovePageSection = (): SectionMutation<RemoveSectionPayload> =>
 export const useSaveSectionFields = (): SectionMutation<SaveSectionFieldsPayload> => useSectionChange<SaveSectionFieldsPayload>(saveSectionFieldsInputSchema, false);
 /** `applyPreset`: composes one catalogue preset's sections into the draft edition, producing a reviewable draft and releasing nothing. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export const useApplyPagePreset = (): SectionMutation<applyPresetPayload> => useSectionChange<applyPresetPayload>(applyPresetInputSchema, true);
-const PAGES_HANDLER_PATH = "/api/pages";
 const CREATE_VARIANT_OPERATION = "createVariant" as const;
 type RoutedCreateVariantPayload = CreateVariantPayload & { readonly operation: typeof CREATE_VARIANT_OPERATION };
 function reReadAfterVariant(queryClient: QueryClient, keys: readonly (readonly unknown[])[]): void {
   for (const queryKey of keys) void queryClient.invalidateQueries({ queryKey });
 }
-const needsReRead = (outcome: MutationOutcome): boolean => reReadsAfterOutcome(outcome);
-/** `createVariant` — adds one language edition to a Page, answering exactly one of the eight outcomes: */
+/** `createVariant` — adds one language edition to a Page, answering exactly one of the eight outcomes: `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useCreatePageVariant(): UseMutationResult<MutationOutcome, never, MutationInput<CreateVariantPayload>> {
   const queryClient = useQueryClient();
-  const transport = usePageMutation({ path: PAGES_HANDLER_PATH });
+  const transport = usePageMutation({ path: "/api/pages" });
   return useMutation<MutationOutcome, never, MutationInput<CreateVariantPayload>>({
     mutationFn: async (variables) => {
       const checked = createVariantInputSchema.safeParse({ operationId: variables.operationId, scope: variables.scope, expectedRevision: variables.expectedRevision, payload: variables.payload });
@@ -89,7 +86,7 @@ export function useCreatePageVariant(): UseMutationResult<MutationOutcome, never
       return transport.mutateAsync(request);
     },
     onSuccess: (outcome, variables) => {
-      if (!needsReRead(outcome)) return;
+      if (!reReadsAfterOutcome(outcome)) return;
       reReadAfterVariant(queryClient, [pagesPrefix(variables.scope), pageKey(variables.scope, variables.payload.documentId)]);
     },
   });
@@ -104,10 +101,9 @@ const documentedBody = (variables: MutationInput<unknown>): MutationInput<unknow
 function reReadPages(queryClient: QueryClient, outcome: MutationOutcome, scope: Scope): void {
   if (reReadsAfterOutcome(outcome)) void queryClient.invalidateQueries({ queryKey: pagesPrefix(scope) });
 }
-const PAGE_RELEASE_PATH = "/api/pages/release";
 function useReleaseStep<Payload, Variables extends MutationInput<Payload>>(step: ReleaseStep, schema: ZodType<MutationInput<Payload>>): UseMutationResult<MutationOutcome, never, Variables> {
   const queryClient = useQueryClient();
-  const transport = usePageMutation({ path: PAGE_RELEASE_PATH });
+  const transport = usePageMutation({ path: "/api/pages/release" });
   return useMutation<MutationOutcome, never, Variables>({
     retry: false,
     mutationFn: async (variables: Variables): Promise<MutationOutcome> => {
@@ -136,7 +132,7 @@ function reReadReach(queryClient: QueryClient, outcome: MutationOutcome, scope: 
   void queryClient.invalidateQueries({ queryKey: pageKey(scope, documentId) });
   void queryClient.invalidateQueries({ queryKey: pagesPrefix(scope) });
 }
-/** `setReach`: gives every released edition of one page one of the three reach values, and answers with the outcome the service stated — `accepted`, `alreadyAccepted`, `unchanged`, `conflict` … */
+/** `setReach`: gives every released edition of one page one of the three reach values, and answers with the outcome the service stated — `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useSetPageReach(): UseMutationResult<MutationOutcome, never, SetReachVariables> {
   const queryClient = useQueryClient();
   const transport = usePageMutation<Routed<SetReachPayload>>({ path: REACH_PATH });
@@ -210,7 +206,7 @@ export function useWithdrawPage(): UseMutationResult<MutationOutcome, never, Wit
   };
   return reportAs(transport, attempted, fireAndForget(submit, { client: queryClient, meta: undefined }), submit);
 }
-/** Withdraws exactly one language edition of a Page (`withdrawLocale`) and leaves its siblings released, answering `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid` … */
+/** Withdraws exactly one language edition of a Page (`withdrawLocale`) and leaves its siblings released, answering `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useWithdrawPageLocale(): UseMutationResult<MutationOutcome, never, WithdrawLocaleVariables> {
   const queryClient = useQueryClient();
   const transport: UseMutationResult<MutationOutcome, never, MutationInput<WithdrawLocalePacket>> = usePageMutation({ path: WITHDRAW_PATH });
@@ -226,7 +222,6 @@ export function useWithdrawPageLocale(): UseMutationResult<MutationOutcome, neve
   return reportAs(transport, attempted, fireAndForget(submit, { client: queryClient, meta: undefined }), submit);
 }
 const MEDIA_PATH = "/api/media";
-/** The Page whose draft this write edits. */
 export type PageMediaVariables<P> = MutationInput<P> & { readonly documentId: string };
 export type PageMediaMutation<P> = UseMutationResult<MutationOutcome, never, PageMediaVariables<P>>;
 type RegisterMediaAssetRequest = RegisterMediaAssetPayload & { readonly operation: "registerMediaAsset" };

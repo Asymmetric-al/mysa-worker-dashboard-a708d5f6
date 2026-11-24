@@ -9,38 +9,9 @@ import { instantAt } from "@/modules/time/clock";
 import { civilDateAt, parseCivilDate, serialiseCivilDate, type CivilDate, type DatePrecision } from "@/modules/time/civil";
 import { newWindowEnd, referralWindowState, type MidnightResolution, type NewWindowEnd, type ReferralWindowStatus, type WindowRefusalReason } from "@/modules/time/window";
 import { assertScope, canEdit, canView, readResultOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
-import {
-  INITIATIVE_STAGES,
-  buildEnvelope,
-  initiativeMemberRecordSchema,
-  initiativeRecordSchema,
-  partnerRecordSchema,
-  project,
-  recordRevisionSchema,
-  referralCycleRecordSchema,
-  REQUEST_RESPONSE_KINDS,
-  requestRecordSchema,
-  taskRecordSchema,
-  type Coverage,
-  type InitiativeMemberRecord,
-  type InitiativeMemberState,
-  type InitiativeRecord,
-  type InitiativeState,
-  type PartnerKind,
-  type PartnerRecord,
-  type PrincipalId,
-  type ReadAction,
-  type ReadEnvelope,
-  type RecordedValueState,
-  type ReferralCycleRecord,
-  type ReferralWindowKind,
-  type RequestRecord,
-  type RequestResponseKind,
-  type Scope,
-  type TaskKind,
-  type TaskRecord,
-  type TaskRecordStatus,
-} from "../envelope";
+import { INITIATIVE_STAGES, buildEnvelope, initiativeMemberRecordSchema, initiativeRecordSchema, partnerRecordSchema, project, recordRevisionSchema, referralCycleRecordSchema, REQUEST_RESPONSE_KINDS, requestRecordSchema, taskRecordSchema } from "../envelope";
+import type { Coverage, InitiativeMemberRecord, InitiativeMemberState, InitiativeRecord, InitiativeState, PartnerKind, PartnerRecord, PrincipalId, ReadAction, ReadEnvelope, RecordedValueState, ReferralCycleRecord, ReferralWindowKind, RequestRecord, RequestResponseKind, Scope, TaskKind } from "../envelope";
+import type { TaskRecord, TaskRecordStatus } from "../envelope";
 import { LOCAL_STORE_SYSTEM, type ReadResult } from "../outcome";
 import { answerOf, deniedRead, instantOf, readStoreDocument, storeUnavailableRead } from "./frame";
 const OUTREACH_SOURCE_REFERENCE = "outreach";
@@ -83,8 +54,7 @@ async function openOutreach(job: string, source?: SessionSource): Promise<Outrea
   const parsed = outreachDocumentsSchema.safeParse(stored.documents.state);
   return parsed.success ? { ok: true, session, scope, now: instantAt(session.clockOffsetMs), documents: parsed.data } : { ok: false, result: storeUnavailableRead(job, OUTREACH_SOURCE_REFERENCE, DOCUMENT_UNREADABLE_GUIDANCE) };
 }
-/** One initiative as its two detail reads open it: the initiative itself, the partners this session may read and the documents it is stated from. */
-type InitiativeSubject =
+/** One initiative as its two detail reads open it: the initiative itself, the partners this session may read and the documents it is stated from. */ type InitiativeSubject =
   | { readonly ok: true; readonly session: ResolvedSession; readonly scope: Scope; readonly now: Temporal.Instant; readonly documents: OutreachDocuments; readonly initiative: InitiativeRecord; readonly partners: ReadonlyMap<string, PartnerRecord> }
   | { readonly ok: false; readonly result: ReadResult<never> };
 async function initiativeSubjectOf(job: string, initiativeId: string, source?: SessionSource): Promise<InitiativeSubject> {
@@ -134,8 +104,7 @@ export type InitiativeRow = { readonly initiativeId: string; readonly name: stri
 } & { readonly revision: string };
 export type InitiativeListPage = { readonly items: readonly InitiativeRow[]; readonly total: number; readonly page: number; readonly pageSize: number };
 const lifecycleOf = (initiative: InitiativeRecord): InitiativeLifecycle => (initiative.state === "closed" ? "closed" : initiative.closureDisposition === null ? "open" : "reopened");
-/** The counts a row states when none of its working list survives the readable-partner filter. */
-const NO_MEMBER_STATES: InitiativeMembershipCounts = { included: 0, removed: 0, excluded: 0 };
+/** The counts a row states when none of its working list survives the readable-partner filter. */ const NO_MEMBER_STATES: InitiativeMembershipCounts = { included: 0, removed: 0, excluded: 0 };
 /** The working-list counts of one initiative's members, over the members whose partner this session may read. */
 function memberStatesOf(members: readonly InitiativeMemberRecord[], partners: ReadonlyMap<string, PartnerRecord>): InitiativeMembershipCounts {
   const counts = { included: 0, removed: 0, excluded: 0 };
@@ -265,12 +234,9 @@ export type InitiativeHistoryRow =
   | { readonly kind: "member-state"; readonly at: string; readonly memberId: string; readonly state: InitiativeMemberState; readonly byPrincipalId: PrincipalId; readonly reason: string | null }
   | { readonly kind: "request-response"; readonly at: string; readonly requestId: string; readonly responseKind: RequestResponseKind; readonly termsVersionRef: string; readonly respondentId: string };
 export type InitiativeWorkingListPage = { readonly items: readonly InitiativeMemberRow[]; readonly total: number; readonly page: number; readonly pageSize: number };
-/** One page of a list the detail states, over the whole list it states. */
-type InitiativePageOf<T> = { readonly items: readonly T[]; readonly total: number; readonly page: number; readonly pageSize: number };
-/** One page of the Requests this initiative recorded, over the whole list of them. */
-export type InitiativeRequestsPage = InitiativePageOf<InitiativeRequestRow>;
-/** One page of the work this initiative owns, over the whole list it owns. */
-export type InitiativeNextWorkPage = InitiativePageOf<InitiativeTaskRow>;
+/** One page of a list the detail states, over the whole list it states. */ type InitiativePageOf<T> = { readonly items: readonly T[]; readonly total: number; readonly page: number; readonly pageSize: number };
+/** One page of the Requests this initiative recorded, over the whole list of them. */ export type InitiativeRequestsPage = InitiativePageOf<InitiativeRequestRow>;
+/** One page of the work this initiative owns, over the whole list it owns. */ export type InitiativeNextWorkPage = InitiativePageOf<InitiativeTaskRow>;
 /** Everything one initiative's detail presents: its overview, list, Requests, work and history. */
 export type InitiativeDetail = { readonly initiative: InitiativeRow; readonly stages: readonly InitiativeStageOption[]; readonly workingList: InitiativeWorkingListPage } & { readonly requests: InitiativeRequestsPage } & { readonly nextWork: InitiativeNextWorkPage } & {
   readonly history: readonly InitiativeHistoryRow[];
@@ -447,6 +413,17 @@ function measuredCount(count: number, denominator: number, denominatorMeaning: s
 }
 /** How one terms version accumulated across the results read's single pass: the Requests naming it, the responses bound to it, and whether any Request states it as its current terms. */
 type TermsVersionTally = { referencing: number; bound: number; current: boolean };
+/** The version a terms token names, taken from its trailing digits — the `terms-v<N>` form the composer and `storedTermsOf` produce — and 1 where the token states none, so versions order by the version they name rather than by their text. */
+function termsVersionOrdinal(termsVersion: string): number {
+  const stated = /(\d+)$/u.exec(termsVersion)?.[1];
+  return stated === undefined ? 1 : Number(stated);
+}
+/** The one terms version the results state as current: the greatest of the versions a Request now states as its terms, ordered by that version's own number and then by code unit. A version only an earlier presentation or an earlier answer names stays superseded, so two versions are never both labelled current. */
+function currentTermsVersionOf(versions: ReadonlyMap<string, TermsVersionTally>): string | null {
+  const stated = [...versions].filter(([, tally]) => tally.current).map(([termsVersion]) => termsVersion);
+  stated.sort((left, right) => termsVersionOrdinal(right) - termsVersionOrdinal(left) || compareCodeUnits(right, left));
+  return stated.at(0) ?? null;
+}
 /** Reads one initiative's results: every count as a numerator over a stated base. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readInitiativeResults(initiativeId: string, source?: SessionSource): Promise<ReadResult<ReadEnvelope<InitiativeResults>>> {
   const subject = await initiativeSubjectOf("readInitiativeResults", initiativeId, source);
@@ -488,9 +465,10 @@ export async function readInitiativeResults(initiativeId: string, source?: Sessi
     }
   }
   const responseKinds: ResponseKindResult[] = REQUEST_RESPONSE_KINDS.map((kind) => ({ kind, ...measuredCount(kind === "unanswered" ? unanswered : (responsesByKind.get(kind) ?? 0), requests.length, REQUEST_BASE) }));
+  const currentTermsVersion = currentTermsVersionOf(versions);
   const termsVersions: TermsVersionResult[] = [...versions.entries()]
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-    .map(([termsVersion, tally]) => ({ termsVersion, state: tally.current ? "current" : "superseded", requestsReferencing: tally.referencing, responses: measuredCount(tally.bound, tally.referencing, "Requests that stated or answered this terms version") }));
+    .map(([termsVersion, tally]) => ({ termsVersion, state: termsVersion === currentTermsVersion ? "current" : "superseded", requestsReferencing: tally.referencing, responses: measuredCount(tally.bound, tally.referencing, "Requests that stated or answered this terms version") }));
   const data: InitiativeResults = {
     initiative: { initiativeId: initiative.initiativeId, name: initiative.name, state: initiative.state, lifecycle: lifecycleOf(initiative), revision: initiative.revision },
     workingList: { included: measuredCount(included, rosterTotal, WORKING_LIST_BASE), removed: measuredCount(removed, rosterTotal, WORKING_LIST_BASE), excluded: measuredCount(excluded, rosterTotal, WORKING_LIST_BASE) },

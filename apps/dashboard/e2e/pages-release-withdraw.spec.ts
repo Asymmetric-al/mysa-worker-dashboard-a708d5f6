@@ -18,10 +18,7 @@ const REACH = { notPublic: "Not public", linkPublic: "Shared by link: public", l
 const GIVING_SIMULATION = "simulated giving destination; no payment is taken";
 const IMAGE_ALT_TEXT = "The youth group gathered in the church hall after a Friday meal."; // The words this file places an image with, so the placement the section states is one only this test wrote.
 const VIDEO_ALT_TEXT = "The youth group's welcome message, filmed in the hall."; // The text alternative criterion 18's video placement carries, written here so the assertion reads the record rather than the form.
-const VIDEO_CAPTION = "A short welcome for supporters";
-const VIDEO_CREDIT = "Harbour Youth";
 const VIDEO_LANGUAGE = "en"; // The media's own language, which is also the language the WebVTT track is offered in: it is never the interface's language.
-const VIDEO_TRANSCRIPT = "Hello and welcome from the youth group.";
 const VIDEO_TRACK_LABEL = "English";
 const VIDEO_FIXTURES = { media: "sample-h264.mp4", poster: "poster.jpg", captions: "sample.vtt" } as const;
 const PREPARATION_TIMEOUT_MS = 120_000; // Preparing a real MP4 is the heaviest work this application does on this device: the file is decoded, checked and re-muxed before any receipt exists.
@@ -31,7 +28,6 @@ const WRITE_RECEIPT_TIMEOUT_MS = 60_000;
 const POLLED_CLICK_TIMEOUT_MS = 2_000; // How long one attempt to choose an option may wait for the control to answer.
 const MEDIA_ROUTE = /^\/api\/media\/[A-Za-z0-9][A-Za-z0-9._:%-]*\/[A-Za-z0-9][A-Za-z0-9._:%-]*$/u; // The address every rendition is served from: a rendition of this application, never a file on a public path.
 const PAGES_INDEX = "/pages";
-const builderPath = (documentId: string): string => `/pages/${encodeURIComponent(documentId)}`;
 const discoveryIndexPath = (): string => "/preview/pages";
 const readingPath = (documentId: string, locale: string): string => `/preview/pages/${encodeURIComponent(documentId)}/${encodeURIComponent(locale)}`;
 const armLostReleaseAcknowledgement = async (page: Page): Promise<void> => armLostAcknowledgement(page.request, "publishVariants"); // Withholds the acknowledgement of a Page release: the effect and its ledger entry are stored and only the response is withheld, so the attempt leaves exactly one release behind and the recovery below is a recovery rather than a second publication.
@@ -40,12 +36,8 @@ const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, "
 const ANY_REACH_WORD = new RegExp(`(?:${escaped(REACH.notPublic)}|${escaped(REACH.linkPublic)}|${escaped(REACH.listed)})`, "u"); // Any one of the three reach words, so a released edition's row is asserted to state a reach rather than a particular one.
 const nameOfLabelAtPosition = (label: string, position: number): RegExp => new RegExp(`^${escaped(label)}\\s*,\\s*Position ${String(position)}$`, "u");
 const nameOfMove = (direction: "up" | "down", label: string, position: number): RegExp => new RegExp(`^Move ${direction} for ${escaped(label)}\\s*,\\s*Position ${String(position)}$`, "u");
-const nameOfCatalogueEntry = (label: string): RegExp => new RegExp(`^Add a section\\s*:\\s*${escaped(label)}\\s*,\\s*Position \\d+$`, "u");
-function builderLinkNameOf(title: string, familyLabel: string): RegExp {
-  return new RegExp(`^${escaped(title)}\\s*,\\s*Open the ${escaped(familyLabel)} builder$`, "u"); // The accessible name of the index row that opens a Page's builder, which names the Page and its family.
-}
+const builderLinkNameOf = (title: string, familyLabel: string): RegExp => new RegExp(`^${escaped(title)}\\s*,\\s*Open the ${escaped(familyLabel)} builder$`, "u"); // The accessible name of the index row that opens a Page's builder, which names the Page and its family.
 const BUILDER_LINK_NAME = builderLinkNameOf(PAGE_TITLE, PAGE_FAMILY_LABEL); // The two Pages the seed lays down, each by the name its own index row carries.
-const PROJECT_BUILDER_LINK_NAME = builderLinkNameOf("Harbour Youth Kitchen", PROJECT_PAGE_FAMILY_LABEL);
 const reviewLinkName = (locale: string): RegExp => new RegExp(`^Review this candidate\\s*,\\s*for the ${escaped(locale)} language edition$`, "u"); // The accessible name of the review entry one frozen candidate holds, which also names the edition it belongs to.
 const paneOf = (page: Page, pane: "outline" | "fields" | "preview") => page.locator(`[data-pane="${pane}"]`); // The three panes the builder shows on a wide screen, so an assertion names the pane it reads rather than the page.
 type SectionRead = { readonly element: string; readonly placements: readonly Record<string, unknown>[] }; // One section of the Page read: the catalogue element it was composed from, and the placements it holds, which is where a registration's own write is read back from the record.
@@ -59,12 +51,12 @@ function sectionOfType(sections: readonly SectionRead[], element: string): Secti
   return found;
 }
 async function openBuilder(page: Page): Promise<void> {
-  await page.goto(builderPath(PAGE_DOCUMENT)); // Opens one Page's builder and waits for the builder itself, which carries the family and the open edition.
+  await page.goto(`/pages/${encodeURIComponent(PAGE_DOCUMENT)}`); // Opens one Page's builder and waits for the builder itself, which carries the family and the open edition.
   await expect(builderOf(page)).toHaveAttribute("data-family", PAGE_FAMILY);
 }
 async function openProjectBuilder(page: Page): Promise<void> {
   await page.goto(PAGES_INDEX); // Opens the Project Page's builder from the Pages index row that names it, which is how a person reaches it rather than by addressing it.
-  const link = page.getByRole("link", { name: PROJECT_BUILDER_LINK_NAME });
+  const link = page.getByRole("link", { name: builderLinkNameOf("Harbour Youth Kitchen", PROJECT_PAGE_FAMILY_LABEL) });
   await expect(link).toBeVisible();
   await link.click();
   const builder = builderOf(page);
@@ -85,15 +77,14 @@ async function selectSection(page: Page, position: number, label: string): Promi
   await expect(row).toHaveAttribute("aria-current", "true");
 }
 async function addSection(page: Page, label: string): Promise<void> {
-  const entry = page.getByRole("button", { name: nameOfCatalogueEntry(label) });
+  const entry = page.getByRole("button", { name: new RegExp(`^Add a section\\s*:\\s*${escaped(label)}\\s*,\\s*Position \\d+$`, "u") });
   await entry.click();
   const catalogue = page.locator('[data-slot="family-catalogue"]');
   await expect(catalogue.getByRole("heading", { name: `Add a section: ${label}`, exact: true })).toBeVisible();
   await catalogue.getByRole("button", { name: "Add a section", exact: true }).click();
   await expect(catalogue.locator('[data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
 }
-/** Selects one radio option of a group and confirms the group states it: a section form is re-initialised whenever the read states a newer record, so a
- * choice made while that re-read lands is discarded, and the control is chosen again until it is the option the group holds. */
+/** Selects one radio option of a group and confirms the group states it: a section form is re-initialised whenever the read states a newer record, so a choice made while that re-read lands is discarded, and the control is chosen again until it is the option the group holds. */
 async function chooseOption(group: Locator, name: string): Promise<void> {
   const option = group.getByRole("radio", { name, exact: true });
   await expect(option).toBeVisible();
@@ -269,10 +260,10 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await expect(videoPicker).toBeVisible();
   await chooseFile(videoPicker, VIDEO_FIXTURES.media);
   await videoPicker.getByLabel(/^Alternative text/u).fill(VIDEO_ALT_TEXT);
-  await videoPicker.getByLabel(/^Caption(?! track)/u).fill(VIDEO_CAPTION);
-  await videoPicker.getByLabel(/^Credit/u).fill(VIDEO_CREDIT);
+  await videoPicker.getByLabel(/^Caption(?! track)/u).fill("A short welcome for supporters");
+  await videoPicker.getByLabel(/^Credit/u).fill("Harbour Youth");
   await videoPicker.getByLabel(/^Language/u).fill(VIDEO_LANGUAGE);
-  await videoPicker.getByLabel(/^Transcript/u).fill(VIDEO_TRANSCRIPT);
+  await videoPicker.getByLabel(/^Transcript/u).fill("Hello and welcome from the youth group.");
   await videoPicker.getByLabel(/^Poster image/u).setInputFiles(fixturePathOf(VIDEO_FIXTURES.poster));
   await videoPicker.getByLabel(/^Caption track/u).setInputFiles(fixturePathOf(VIDEO_FIXTURES.captions));
   await videoPicker.getByLabel(/^Track label/u).fill(VIDEO_TRACK_LABEL);
@@ -588,8 +579,6 @@ test("every reach press and the withdrawal that follow the Page's own accepted w
   await expect(dialog.getByRole("heading", { name: "Withdraw this language edition", exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Withdraw this language edition", exact: true }).click();
   await expect(step.locator('[data-slot="action-review-result"]'), "The withdrawal validates the Page's own record, so its first press presents the revision the accepted changes produced rather than a conflict attributed to someone else").toHaveAttribute("data-outcome", "accepted");
-  await expect(
-    page.locator('[data-slot="release-edition"][data-lifecycle-state="withdrawn"]').filter({ has: page.getByRole("checkbox", { name: `Language ${ENGLISH}` }) }),
-    "The withdrawal the press was accepted for is the one the re-read states: this edition is withdrawn and its sibling keeps its own release",
-  ).toHaveCount(1);
+  const withdrawnEnglish = page.locator('[data-slot="release-edition"][data-lifecycle-state="withdrawn"]').filter({ has: page.getByRole("checkbox", { name: `Language ${ENGLISH}` }) });
+  await expect(withdrawnEnglish, "The withdrawal the press was accepted for is the one the re-read states: this edition is withdrawn and its sibling keeps its own release").toHaveCount(1);
 });

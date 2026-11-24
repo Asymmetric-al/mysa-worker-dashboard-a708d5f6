@@ -32,48 +32,31 @@ export const HANDOFF_CHOICES = ["covering", "eligible-handoff"] as const;
 export type HandoffChoice = (typeof HANDOFF_CHOICES)[number];
 /** Everything the worker typed. It stays in this component's state, so a refused or unavailable attempt loses nothing (WCAG 3.3.7). */
 export type CloseInitiativeFormValues = { readonly disposition: string; readonly handoffChoice: HandoffChoice | null; readonly coveringNote: string; readonly recipient: string; readonly handoffNote: string };
-/** The values an unopened dialog holds: the disposition the envelope already records, and nothing else the worker has not written. */
-export const initialFormValues = (preservedDisposition: string | null): CloseInitiativeFormValues => ({ disposition: preservedDisposition ?? "", handoffChoice: null, coveringNote: "", recipient: "", handoffNote: "" });
+/** The values an unopened dialog holds: the disposition the envelope already records, and nothing else the worker has not written. */ export const initialFormValues = (preservedDisposition: string | null): CloseInitiativeFormValues => ({
+  disposition: preservedDisposition ?? "",
+  handoffChoice: null,
+  coveringNote: "",
+  recipient: "",
+  handoffNote: "",
+});
 const CLOSE_HEADING = CLOSURE_COPY.closeHeading;
-const CLOSE_CONFIRM_LABEL = CLOSURE_COPY.closeHeading;
-const REVISE_LABEL = "Change the details";
-const DONE_LABEL = "Done";
 const CANCEL_LABEL = "Cancel";
-const REVIEW_LABEL = "Review this closure";
-const DISPOSITION_PLACEHOLDER = "Choose a disposition";
 const DISPOSITION_LABEL = CLOSURE_COPY.dispositionLabel;
-const INITIATIVE_LABEL = "Initiative";
-const DISPOSITION_MAX_LENGTH = 200;
 const NOTE_MAX_LENGTH = 500;
+const DISPOSITION_MAX_LENGTH = 200;
 const COVERING_LEGEND = "Unfinished work";
-const COVERING_DESCRIPTION = "You state that the closure you are recording also settles this work, and say how in your own words. The work is not completed by closing.";
 const COVERING_NOTE_LABEL = "How the disposition covers this work";
-const COVERING_NOTE_DESCRIPTION = "Required. This note is recorded as the reason no handoff was needed.";
-const HANDOFF_DESCRIPTION = "The person you name becomes responsible for the unfinished work. Handing it over neither completes it nor asks anyone to accept it in this application.";
 const RECIPIENT_LABEL = "Person taking over";
-const RECIPIENT_DESCRIPTION = "Choose from the people this initiative's read states as eligible, or state the person's opaque reference exactly as the source holds it.";
 const HANDOFF_NOTE_LABEL = "What is being handed over";
-const HANDOFF_NOTE_DESCRIPTION = "Required. Say what the person taking over needs to know; this note is recorded with the closure.";
 const HANDOFF_OPTIONS: readonly { readonly choice: HandoffChoice; readonly label: string; readonly description: string }[] = [
-  { choice: "covering", label: "The disposition above covers this work", description: COVERING_DESCRIPTION },
-  { choice: "eligible-handoff", label: "Hand this work to someone else", description: HANDOFF_DESCRIPTION },
+  { choice: "covering", label: "The disposition above covers this work", description: "You state that the closure you are recording also settles this work, and say how in your own words. The work is not completed by closing." },
+  { choice: "eligible-handoff", label: "Hand this work to someone else", description: "The person you name becomes responsible for the unfinished work. Handing it over neither completes it nor asks anyone to accept it in this application." },
 ];
-const HANDOFF_CHOICE_REQUIRED = "Say how the work this initiative still owns is dealt with: covered by the disposition, or handed to someone eligible.";
-const NO_OWNED_WORK_TITLE = "No unfinished work is recorded as owned by this initiative";
 const NO_OWNED_WORK_BODY = "Nothing is handed over, because the read states no open work for this initiative. The closure records that no handoff was needed.";
-const CLOSED_ALREADY_TITLE = "This initiative is already closed";
-const CLOSED_ALREADY_BODY = "A closure is recorded, so submitting this form answers that there is nothing to change. The disposition below is the one the closure preserved.";
-const REFUSED_TITLE = "Closing is not on offer in this read";
-const DISCARD_TITLE = "Close without recording this closure?";
 const DISCARD_BODY = "The entries you typed are held only in this dialog, so closing it discards them. Nothing has been sent to the source.";
-const KEEP_EDITING_LABEL = "Keep editing";
-const DISCARD_LABEL = "Discard the entries and close";
-const SENDS_NOTHING_NOTE = "Closing sends nothing and recalls nothing: no message leaves this application in this release, so there is no third-party copy to withdraw.";
 export const NO_OWNED_WORK_REASON = "No unfinished work was recorded as owned by this initiative, so nothing was handed over.";
-const CLOSING_STATEMENTS: readonly string[] = [CLOSURE_COPY.closeHelp, CLOSURE_COPY.lateResponseNote, CLOSURE_COPY.handoffNote, INITIATIVE_STATE_COPY.closed.description, SENDS_NOTHING_NOTE];
+const CLOSING_STATEMENTS: readonly string[] = [CLOSURE_COPY.closeHelp, CLOSURE_COPY.lateResponseNote, CLOSURE_COPY.handoffNote, INITIATIVE_STATE_COPY.closed.description, "Closing sends nothing and recalls nothing: no message leaves this application in this release, so there is no third-party copy to withdraw."];
 const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", disposition: DISPOSITION_LABEL, handoff: COVERING_LEGEND, "handoff.reason": COVERING_NOTE_LABEL, "handoff.note": HANDOFF_NOTE_LABEL, "handoff.toPrincipalId": RECIPIENT_LABEL };
-const ROOT_FIELD_KEY = "_root";
-const HANDOFF_PATH_PREFIX = "handoff.";
 const FIELD_ORDER = ["disposition", "handoff", "handoff.toPrincipalId", "handoff.reason", "handoff.note", "initiativeId"] as const;
 function fieldMessagesOf(error: ZodError): Readonly<Record<string, readonly string[]>> {
   const messages: Record<string, string[]> = {};
@@ -149,28 +132,25 @@ function viewOf(envelope: ReadEnvelope<CloseInitiativeEnvelopeData>): CloseDialo
   };
 }
 const controlAria = (field: FormFieldControl): ControlAria => ({ "aria-describedby": field.describedBy, "aria-invalid": field.invalid ? true : undefined, "aria-required": field.required ? true : undefined });
-function OwnedWorkItem({ work }: { readonly work: OwnedWorkRow }): ReactElement {
-  const statusLabel = OPEN_WORK_STATUS_LABEL[work.status] ?? work.status;
-  return (
-    <li className="flex min-w-0 flex-col gap-1 rounded-lg border border-border p-2.5">
-      <span className="text-sm font-medium text-pretty break-words">{work.title}</span>
-      <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
-        <span>{statusLabel}</span>
-        <span aria-hidden="true">·</span>
-        {work.dueOn === null ? (
-          <span>No due date</span>
-        ) : (
-          <span>
-            Due <StatedInstant value={work.dueOn} />
-          </span>
-        )}
-        <span aria-hidden="true">·</span>
-        <bdi className="mono-identifier min-w-0 break-all">{work.taskId}</bdi>
-      </span>
-      <span className="text-xs text-pretty text-muted-foreground">Closing does not complete this work.</span>
-    </li>
-  );
-}
+const OwnedWorkItem = ({ work }: { readonly work: OwnedWorkRow }): ReactElement => (
+  <li className="flex min-w-0 flex-col gap-1 rounded-lg border border-border p-2.5">
+    <span className="text-sm font-medium text-pretty break-words">{work.title}</span>
+    <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <span>{OPEN_WORK_STATUS_LABEL[work.status] ?? work.status}</span>
+      <span aria-hidden="true">·</span>
+      {work.dueOn === null ? (
+        <span>No due date</span>
+      ) : (
+        <span>
+          Due <StatedInstant value={work.dueOn} />
+        </span>
+      )}
+      <span aria-hidden="true">·</span>
+      <bdi className="mono-identifier min-w-0 break-all">{work.taskId}</bdi>
+    </span>
+    <span className="text-xs text-pretty text-muted-foreground">Closing does not complete this work.</span>
+  </li>
+);
 const ClosingStatements = ({ headingId }: { readonly headingId: string }): ReactElement => (
   <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
     <h3 id={headingId} className="type-subsection-title text-pretty">
@@ -220,11 +200,11 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
     if (!parsed.success) {
       for (const [path, messages] of Object.entries(fieldMessagesOf(parsed.error))) {
         if (messages.length === 0) continue;
-        if (path === ROOT_FIELD_KEY) form.push(...messages);
-        else if (!(values.handoffChoice === null && path.startsWith(HANDOFF_PATH_PREFIX))) byField[path] = messages;
+        if (path === "_root") form.push(...messages);
+        else if (!(values.handoffChoice === null && path.startsWith("handoff."))) byField[path] = messages;
       }
     }
-    if (ownsUnfinishedWork && values.handoffChoice === null) byField.handoff = [HANDOFF_CHOICE_REQUIRED];
+    if (ownsUnfinishedWork && values.handoffChoice === null) byField.handoff = ["Say how the work this initiative still owns is dealt with: covered by the disposition, or handed to someone eligible."];
     const count = Object.keys(byField).length + form.length;
     return count === 0 ? null : { byField, form, count };
   };
@@ -283,9 +263,6 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
   const choiceAnnouncement = !ownsUnfinishedWork ? "" : values.handoffChoice === null ? "" : values.handoffChoice === "covering" ? `A field appeared: ${COVERING_NOTE_LABEL}.` : `Fields appeared: ${RECIPIENT_LABEL}, then ${HANDOFF_NOTE_LABEL}.`;
   const dispositionDescription = view.preservedDisposition === null ? CLOSURE_COPY.dispositionRequiredNote : `${CLOSURE_COPY.dispositionRequiredNote} The closure it recorded already states “${dispositionFallback(view.preservedDisposition)}”, and that value is kept here so it is never replaced silently.`;
   const dispositionRequired = !(ownsUnfinishedWork && values.handoffChoice === "eligible-handoff");
-  const coveringNoteError = errors?.byField["handoff.reason"];
-  const handoffNoteError = errors?.byField["handoff.note"];
-  const recipientError = errors?.byField["handoff.toPrincipalId"];
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent data-slot="close-initiative-dialog" data-phase={phase} className={cn("sm:max-w-lg", className)}>
@@ -298,9 +275,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
           <Separator />
           <section aria-labelledby={workHeadingId} className="flex min-w-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-baseline gap-2">
-              <h3 id={workHeadingId} className="type-subsection-title text-pretty break-words">
-                {view.name}
-              </h3>
+              <h3 {...{ id: workHeadingId, className: "type-subsection-title text-pretty break-words" }}>{view.name}</h3>
               <Badge variant={view.state === "closed" ? "secondary" : "outline"}>{INITIATIVE_STATE_COPY[view.state].label}</Badge>
             </div>
             <p className="type-supporting text-pretty">{INITIATIVE_STATE_COPY[view.state].description}</p>
@@ -323,13 +298,13 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
           <Separator />
           {view.refusal === null ? null : (
             <Alert variant="destructive" role={undefined}>
-              <AlertTitle>{REFUSED_TITLE}</AlertTitle> <AlertDescription>{view.refusal}</AlertDescription>
+              <AlertTitle>{"Closing is not on offer in this read"}</AlertTitle> <AlertDescription>{view.refusal}</AlertDescription>
             </Alert>
           )}
           {view.state === "open" ? null : (
             <Alert role={undefined}>
-              <AlertTitle>{CLOSED_ALREADY_TITLE}</AlertTitle>
-              <AlertDescription>{CLOSED_ALREADY_BODY}</AlertDescription>
+              <AlertTitle>{"This initiative is already closed"}</AlertTitle>
+              <AlertDescription>{"A closure is recorded, so submitting this form answers that there is nothing to change. The disposition below is the one the closure preserved."}</AlertDescription>
             </Alert>
           )}
           {phase === "details" ? (
@@ -348,7 +323,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                     <Input id={field.id} name="disposition" type="text" autoComplete="off" maxLength={DISPOSITION_MAX_LENGTH} value={values.disposition} {...controlAria(field)} onChange={(event) => update({ disposition: event.currentTarget.value })} />
                   ) : (
                     <NativeSelect id={field.id} name="disposition" className="w-full" value={values.disposition} {...controlAria(field)} onChange={(event) => update({ disposition: event.currentTarget.value })}>
-                      <NativeSelectOption value="">{DISPOSITION_PLACEHOLDER}</NativeSelectOption>
+                      <NativeSelectOption value="">{"Choose a disposition"}</NativeSelectOption>
                       {view.dispositions.map((option) => (
                         <NativeSelectOption key={option} value={option}>
                           {dispositionFallback(option)}
@@ -378,9 +353,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                               <RadioGroupItem id={optionId} value={option.choice} aria-label={option.label} aria-describedby={optionDescriptionId} className="mt-0.5" />
                               <span className="flex min-w-0 flex-col gap-0.5">
                                 <span className="text-sm font-medium text-pretty">{option.label}</span>
-                                <span id={optionDescriptionId} className="text-sm text-pretty text-muted-foreground">
-                                  {option.description}
-                                </span>
+                                <span {...{ id: optionDescriptionId, className: "text-sm text-pretty text-muted-foreground" }}>{option.description}</span>
                               </span>
                             </label>
                           );
@@ -389,13 +362,13 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                     )}
                   </FormFieldGroup>
                   {values.handoffChoice === "covering" ? (
-                    <FormField name="handoff.reason" label={COVERING_NOTE_LABEL} description={COVERING_NOTE_DESCRIPTION} error={coveringNoteError} required>
+                    <FormField name="handoff.reason" label={COVERING_NOTE_LABEL} description={"Required. This note is recorded as the reason no handoff was needed."} error={errors?.byField["handoff.reason"]} required>
                       {(field) => <Textarea id={field.id} value={values.coveringNote} maxLength={NOTE_MAX_LENGTH} {...controlAria(field)} onChange={(event) => update({ coveringNote: event.currentTarget.value })} />}
                     </FormField>
                   ) : null}
                   {values.handoffChoice === "eligible-handoff" ? (
                     <>
-                      <FormField name="handoff.toPrincipalId" label={RECIPIENT_LABEL} description={RECIPIENT_DESCRIPTION} error={recipientError} required>
+                      <FormField name="handoff.toPrincipalId" label={RECIPIENT_LABEL} description={"Choose from the people this initiative's read states as eligible, or state the person's opaque reference exactly as the source holds it."} error={errors?.byField["handoff.toPrincipalId"]} required>
                         {(field) =>
                           view.recipients.length === 0 ? (
                             <Input id={field.id} type="text" autoComplete="off" value={values.recipient} {...controlAria(field)} onChange={(event) => update({ recipient: event.currentTarget.value })} />
@@ -411,7 +384,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                           )
                         }
                       </FormField>
-                      <FormField name="handoff.note" label={HANDOFF_NOTE_LABEL} description={HANDOFF_NOTE_DESCRIPTION} error={handoffNoteError} required>
+                      <FormField name="handoff.note" label={HANDOFF_NOTE_LABEL} description={"Required. Say what the person taking over needs to know; this note is recorded with the closure."} error={errors?.byField["handoff.note"]} required>
                         {(field) => <Textarea id={field.id} value={values.handoffNote} maxLength={NOTE_MAX_LENGTH} {...controlAria(field)} onChange={(event) => update({ handoffNote: event.currentTarget.value })} />}
                       </FormField>
                     </>
@@ -419,18 +392,14 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                 </>
               ) : (
                 <Alert role={undefined}>
-                  <AlertTitle>{NO_OWNED_WORK_TITLE}</AlertTitle>
+                  <AlertTitle>{"No unfinished work is recorded as owned by this initiative"}</AlertTitle>
                   <AlertDescription>{NO_OWNED_WORK_BODY}</AlertDescription>
                 </Alert>
               )}
               <output className="sr-only">{choiceAnnouncement}</output>
               <DialogFooter>
-                <Button type="button" variant="outline" disabled={submitting} onClick={requestClose}>
-                  {CANCEL_LABEL}
-                </Button>
-                <Button type="submit" disabled={view.refusal !== null}>
-                  {REVIEW_LABEL}
-                </Button>
+                <Button {...{ type: "button", variant: "outline", disabled: submitting, onClick: requestClose }}>{CANCEL_LABEL}</Button>
+                <Button {...{ type: "submit", disabled: view.refusal !== null }}>{"Review this closure"}</Button>
               </DialogFooter>
             </form>
           ) : (
@@ -440,7 +409,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                 description={
                   <dl className="flex min-w-0 flex-col gap-2 text-sm">
                     <TermFact
-                      term={INITIATIVE_LABEL}
+                      term="Initiative"
                       value={
                         <>
                           <span className="text-pretty break-words">{view.name}</span> <bdi className="mono-identifier break-all">{initiativeId}</bdi>
@@ -458,7 +427,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                         )
                       }
                     />
-                    {view.ownedWork.length === 0 ? null : <TermFact term={INITIATIVE_COPY.nextWorkHeading} value={"Every item of work listed above stays outstanding when this closure is recorded."} />}
+                    {view.ownedWork.length === 0 ? null : <TermFact term={INITIATIVE_COPY.nextWorkHeading} value="Every item of work listed above stays outstanding when this closure is recorded." />}
                   </dl>
                 }
                 consequence={
@@ -468,7 +437,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                     ))}
                   </ul>
                 }
-                confirmLabel={CLOSE_CONFIRM_LABEL}
+                confirmLabel={CLOSURE_COPY.closeHeading}
                 cancelLabel={CANCEL_LABEL}
                 onCancel={revise}
                 consequential
@@ -479,27 +448,15 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
                 fieldLabels={FIELD_LABELS}
                 headingLevel={3}
               />
-              {settlement === null ? null : (
-                <p data-slot="close-settlement" data-outcome={settled?.outcome} className="type-supporting text-pretty">
-                  {settlement.note}
-                </p>
-              )}
+              {settlement === null ? null : <p {...{ "data-slot": "close-settlement", "data-outcome": settled?.outcome, className: "type-supporting text-pretty" }}>{settlement.note}</p>}
             </div>
           )}
-          {discardArmed ? <DiscardConfirmation title={DISCARD_TITLE} body={DISCARD_BODY} keepEditingLabel={KEEP_EDITING_LABEL} discardLabel={DISCARD_LABEL} onKeepEditing={() => setDiscardArmed(false)} onDiscard={closeDialog} /> : null}
+          {discardArmed ? <DiscardConfirmation title={"Close without recording this closure?"} body={DISCARD_BODY} keepEditingLabel={"Keep editing"} discardLabel={"Discard the entries and close"} onKeepEditing={() => setDiscardArmed(false)} onDiscard={closeDialog} /> : null}
         </div>
         {phase === "review" && settlement !== null ? (
           <DialogFooter>
-            {settlement.offersRevision ? (
-              <Button type="button" variant="outline" onClick={revise}>
-                {REVISE_LABEL}
-              </Button>
-            ) : null}
-            {settlement.offersDone ? (
-              <Button type="button" onClick={requestClose}>
-                {DONE_LABEL}
-              </Button>
-            ) : null}
+            {settlement.offersRevision ? <Button {...{ type: "button", variant: "outline", onClick: revise }}>{"Change the details"}</Button> : null}
+            {settlement.offersDone ? <Button {...{ type: "button", onClick: requestClose }}>{"Done"}</Button> : null}
           </DialogFooter>
         ) : null}
       </DialogContent>

@@ -72,6 +72,7 @@ export default function PreferenceControl({ scope, membershipId, publisherId, pu
     const result = await run();
     if (result !== null) adopt(result);
   };
+  const reapplyOnConflict = outcome?.outcome === "conflict" ? (): void => void settleAttempt(reapply) : undefined;
   return (
     <section
       data-slot="preference-control"
@@ -106,9 +107,7 @@ export default function PreferenceControl({ scope, membershipId, publisherId, pu
                 <Switch id={`${group.legendId}-switch`} checked={selection === "immediate"} disabled={disabled || pending} aria-labelledby={group.legendId} aria-describedby={describedBy === "" ? undefined : describedBy} onCheckedChange={(checked) => void choose(checked ? "immediate" : "off")} />
                 <span className="text-sm font-medium text-foreground">{PREFERENCE_CHOICE_COPY[selection].label}</span>
               </div>
-              <p data-slot="preference-announcement" aria-live="polite" className="sr-only">
-                {PREFERENCE_CHOICE_COPY[selection].announcement}
-              </p>
+              <p {...{ "data-slot": "preference-announcement", "aria-live": "polite", className: "sr-only" }}>{PREFERENCE_CHOICE_COPY[selection].announcement}</p>
               <ul id={choicesId} className="flex min-w-0 flex-col gap-2 text-sm">
                 {CHOICE_ORDER.map((choice) => {
                   const wording = PREFERENCE_CHOICE_COPY[choice];
@@ -138,14 +137,7 @@ export default function PreferenceControl({ scope, membershipId, publisherId, pu
         }}
       </FormFieldGroup>
       {pending || outcome === null ? null : (
-        <OperationResult
-          outcome={outcome}
-          headingLevel={headingLevel}
-          onCheckResult={outcome.outcome === "unknown" ? onCheckResult : undefined}
-          onRetrySameWork={mayReplay(outcome) ? () => void settleAttempt(retry) : undefined}
-          onReapply={outcome.outcome === "conflict" ? () => void settleAttempt(reapply) : undefined}
-          fieldLabels={FIELD_LABELS}
-        />
+        <OperationResult outcome={outcome} headingLevel={headingLevel} onCheckResult={outcome.outcome === "unknown" ? onCheckResult : undefined} onRetrySameWork={mayReplay(outcome) ? () => void settleAttempt(retry) : undefined} onReapply={reapplyOnConflict} fieldLabels={FIELD_LABELS} />
       )}
     </section>
   );

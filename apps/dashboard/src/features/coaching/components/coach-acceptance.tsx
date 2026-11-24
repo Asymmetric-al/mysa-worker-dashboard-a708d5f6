@@ -6,18 +6,20 @@ import StatusBadge, { COACHING_STATUS, statusBadgeProps, type StatusTone } from 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { MODULE_KEYS, type GrantLifecycleState, type ModuleKey } from "@/modules/coaching/grant";
+import { MODULE_KEYS, type GrantLifecycleState } from "@/modules/coaching/grant";
 import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { GRANT_STATE_COPY, MODULE_COPY, SHARING_OUTCOME_COPY, type SharingOutcomeId } from "../copy";
-import { useAcceptInvitation } from "../hooks/use-coaching";
+import { useAcceptInvitation, useCoachPortfolio } from "../hooks/use-coaching";
 import type { AcceptancePayload } from "../schemas";
 import { Panel } from "./panel";
 import { Fact, OUTCOME_STAGE_NAME, OUTCOME_STATE_FIELD, outcomeWord } from "./sharing-summary";
 import type { SharingOutcome, SharingOutcomeSet } from "./sharing-summary";
 const INVITATION_STATES = ["delivered", "superseded", "already-accepted", "expired", "revoked"] as const;
 type InvitationState = (typeof INVITATION_STATES)[number];
-type InvitationSummary = { readonly grantId: string; readonly state: InvitationState; readonly recipientDisplayName: string; readonly organizationName: string; readonly ministryName: string; readonly modules: ReadonlyArray<{ readonly key: ModuleKey }>; readonly durationLabel: string };
+// The invitation this surface states is the invitation the coach portfolio read itself answers with: only its standing is widened, so every fact below is that read's own field rather than a second shape kept in step with it here.
+type PendingInvitation = Extract<NonNullable<ReturnType<typeof useCoachPortfolio>["data"]>, { readonly kind: "envelope" }>["envelope"]["data"]["pendingInvitations"][number];
+type InvitationSummary = Omit<PendingInvitation, "state"> & { readonly state: InvitationState };
 export type CoachAcceptanceProps = { readonly invitation: InvitationSummary | null; readonly outcomes: SharingOutcomeSet; readonly scope: Scope; readonly expectedRevision: string; readonly holdsNoSubjects: boolean };
 type AcceptInput = Omit<MutationInput<AcceptancePayload>, "operationId">;
 type NoticeCopy = { readonly title: string; readonly description: string };
@@ -67,29 +69,53 @@ const NO_PENDING_INVITATION_SENTENCE = "No invitation addressed to you is awaiti
 const NO_INVITATION_COPY: NoticeCopy = { title: "No coaching invitation for this account", description: `${NO_PENDING_INVITATION_SENTENCE} Opening this page accepts nothing, and a matching email address grants nothing either.` };
 const NO_ACCEPTANCE_COPY: NoticeCopy = { title: "No invitation is waiting for your acceptance", description: `${NO_PENDING_INVITATION_SENTENCE} The access you hold as this worker's coach is what the portfolio reports, and nothing here adds to it or takes any of it away.` };
 const MUTED_TEXT_CLASS = "type-supporting text-pretty";
+// An invitation names its organization and ministry from the records the worker's own admission states; where those records carry neither a label nor an identifier, this surface says so rather than leaving the row blank.
+const NO_ORGANIZATION_SENTENCE = "The records state neither an organization label nor an organization identifier for this invitation, so neither is shown here.";
 const TRAILING_DIGITS = /(\d+)\s*$/u;
 function revisionOrdinal(revision: string): number {
   const digits = TRAILING_DIGITS.exec(revision);
   const parsed = digits === null ? Number.NaN : Number.parseInt(digits[1] ?? "", 10);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 1;
 }
+/** The ministries one invitation names, each beside its own identifier: a label alone would be a name this page matched across records, and an identifier alone names nothing a person can read. */
+const MinistryFacts = ({ ministries }: { readonly ministries: InvitationSummary["ministries"] }): ReactElement =>
+  ministries.length === 0 ? (
+    <span className={MUTED_TEXT_CLASS}>{"This invitation's record names no ministry, so none is shown here."}</span>
+  ) : (
+    <span className="flex min-w-0 flex-col gap-1">
+      {ministries.map((ministry) => (
+        <span key={ministry.ministryId} className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          {ministry.ministryLabel === null ? null : <bdi>{ministry.ministryLabel}</bdi>}
+          <bdi className="mono-identifier">{ministry.ministryId}</bdi>
+        </span>
+      ))}
+    </span>
+  );
 function InvitationFacts({ invitation, lifecycle }: { readonly invitation: InvitationSummary; readonly lifecycle: GrantLifecycleState }): ReactElement {
   const headingId = useId();
   const modulesId = useId();
-  const namedModules = MODULE_KEYS.filter((key) => invitation.modules.some((module) => module.key === key));
+  const namedModules = MODULE_KEYS.filter((key) => invitation.modules.includes(key));
   const lifecycleCopy = GRANT_STATE_COPY[lifecycle];
+  const { organizationId, organizationLabel } = invitation;
   return (
     <section aria-labelledby={headingId} data-slot="coach-acceptance-invitation" className="min-w-0">
       <Panel titleId={headingId} title={SURFACE_COPY.heading} description={SURFACE_COPY.purpose} action={<StatusBadge label={lifecycleCopy.label} tone={statusBadgeProps(COACHING_STATUS, lifecycle).tone} srPrefix="Invitation state" />} contentClassName="flex min-w-0 flex-col gap-4">
         <dl className="flex min-w-0 flex-col gap-2 text-sm">
           <Fact term={SURFACE_COPY.factTerms.recipient}>
-            <bdi className="font-medium">{invitation.recipientDisplayName}</bdi>
+            <bdi className="mono-identifier">{invitation.recipientPrincipalId}</bdi>
           </Fact>
           <Fact term={SURFACE_COPY.factTerms.organization}>
-            <bdi>{invitation.organizationName}</bdi>
+            {organizationLabel === null && organizationId === null ? (
+              <span className={MUTED_TEXT_CLASS}>{NO_ORGANIZATION_SENTENCE}</span>
+            ) : (
+              <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                {organizationLabel === null ? null : <bdi>{organizationLabel}</bdi>}
+                {organizationId === null ? null : <bdi className="mono-identifier">{organizationId}</bdi>}
+              </span>
+            )}
           </Fact>
           <Fact term={SURFACE_COPY.factTerms.ministry}>
-            <bdi>{invitation.ministryName}</bdi>
+            <MinistryFacts ministries={invitation.ministries} />
           </Fact>
           <Fact term={SURFACE_COPY.factTerms.duration}>
             <bdi>{invitation.durationLabel}</bdi>
@@ -108,7 +134,7 @@ function InvitationFacts({ invitation, lifecycle }: { readonly invitation: Invit
             <ul className="flex min-w-0 flex-wrap items-center gap-1">
               {namedModules.map((key) => (
                 <li key={key}>
-                  <Badge variant="secondary" className={"h-auto max-w-full whitespace-normal"}>
+                  <Badge variant="secondary" className="h-auto max-w-full whitespace-normal">
                     <bdi>{MODULE_COPY[key].name}</bdi>
                   </Badge>
                 </li>
@@ -176,12 +202,9 @@ export default function CoachAcceptance({ invitation, outcomes, scope, expectedR
     [mutateAsync],
   );
   // An invitation awaiting acceptance and the portfolio's own emptiness are separate facts, and this surface states each from the read's own answer: a coach whose read returned relationships reads a statement, never an empty state that claims nothing is shared.
-  if (invitation === null) {
-    return holdsNoSubjects ? <StateNotice kind="empty" headingLevel={2} title={NO_INVITATION_COPY.title} description={NO_INVITATION_COPY.description} /> : <NoAcceptanceStatement />;
-  }
+  if (invitation === null) return holdsNoSubjects ? <StateNotice kind="empty" headingLevel={2} title={NO_INVITATION_COPY.title} description={NO_INVITATION_COPY.description} /> : <NoAcceptanceStatement />;
   const state = invitation.state;
   const holdsReceipt = settled !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted" || settled.outcome === "unchanged");
-  const acceptedJustNow = settled !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted");
   const liveInput: AcceptInput = { scope, expectedRevision, payload: { grantId: invitation.grantId, invitationRevision: revisionOrdinal(expectedRevision) } };
   const input = holdsReceipt && submitted !== null ? submitted : liveInput;
   return (
@@ -196,10 +219,10 @@ export default function CoachAcceptance({ invitation, outcomes, scope, expectedR
               <p className="type-supporting">{SURFACE_COPY.acceptDescription}</p>
               <dl className="flex min-w-0 flex-col gap-1">
                 <Fact term={SURFACE_COPY.factTerms.recipient}>
-                  <bdi>{invitation.recipientDisplayName}</bdi>
+                  <bdi className="mono-identifier">{invitation.recipientPrincipalId}</bdi>
                 </Fact>
                 <Fact term={SURFACE_COPY.factTerms.ministry}>
-                  <bdi>{invitation.ministryName}</bdi>
+                  <MinistryFacts ministries={invitation.ministries} />
                 </Fact>
                 <Fact term={SURFACE_COPY.factTerms.duration}>
                   <bdi>{invitation.durationLabel}</bdi>
@@ -224,7 +247,7 @@ export default function CoachAcceptance({ invitation, outcomes, scope, expectedR
       ) : (
         <StateNotice kind="empty" headingLevel={3} title={NOTICE_COPY[state].title} description={NOTICE_COPY[state].description} />
       )}
-      {acceptedJustNow ? <p className={MUTED_TEXT_CLASS}>{SURFACE_COPY.accessNotYetSentence}</p> : null}
+      {settled !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted") ? <p className={MUTED_TEXT_CLASS}>{SURFACE_COPY.accessNotYetSentence}</p> : null}
     </div>
   );
 }

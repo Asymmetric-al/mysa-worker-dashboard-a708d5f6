@@ -8,7 +8,6 @@ import { CHOOSE_FILE_COPY, IMPORT_SIMULATION_EFFECT, LIMIT_ROWS, chosenFileSize 
 import type { ImportFileSelection } from "../hooks/use-import-journey";
 import FactRow from "./fact-row";
 /** The committed example file, served from this application's own public directory: a plain download rather than a route, so a worker with no file in hand can read what this step accepts and choosing the downloaded copy opens the same review any other file does. */
-const EXAMPLE_FILE_HREF = "/fixtures/contacts-example.csv";
 function readContentBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -68,7 +67,7 @@ export default function FileChooser({ selection, onChoose, onContinue }: FileCho
       <div className="flex min-w-0 flex-col gap-1 text-sm">
         <p className="font-medium">{CHOOSE_FILE_COPY.exampleHeading}</p>
         <p className="type-supporting text-pretty">{CHOOSE_FILE_COPY.exampleLead}</p>
-        <a href={EXAMPLE_FILE_HREF} download className="inline-flex min-h-6 items-center inline-link">
+        <a href="/fixtures/contacts-example.csv" download className="inline-flex min-h-6 items-center inline-link">
           {CHOOSE_FILE_COPY.exampleLinkLabel}
         </a>
       </div>

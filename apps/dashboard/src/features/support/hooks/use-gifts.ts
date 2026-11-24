@@ -120,8 +120,7 @@ const nonNegativeIntegerOf = (value: string | null): number | undefined => {
   return parsed === undefined || parsed < FIRST_PAGE ? undefined : parsed;
 };
 export const GIFTS_STALE_TIME_MS = 60_000;
-type GiftsServiceResult = Awaited<ReturnType<typeof reads.support.readGifts>>;
-type GiftsLedgerData = Extract<GiftsServiceResult, { kind: "envelope" }>["envelope"]["data"];
+type GiftsLedgerData = Extract<Awaited<ReturnType<typeof reads.support.readGifts>>, { kind: "envelope" }>["envelope"]["data"];
 export type GiftsEnvelope = ReadEnvelope<GiftsLedgerData, FinancialCoverage>;
 export type GiftsReadResult = ReadResult<GiftsEnvelope>;
 export type UseGiftsOptions = { readonly scope: Scope; readonly query: GiftsQuery; readonly record?: string; readonly initialEnvelope?: GiftsEnvelope };

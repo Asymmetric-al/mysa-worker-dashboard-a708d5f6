@@ -136,8 +136,7 @@ export async function checkLimits(bytes: Uint8Array, displayName = "the chosen f
   const structure = { columnCount: scannedFile.headerCells.length, dataRowCount: scannedFile.dataRecords.length, blankRowCount: scannedFile.blankRecordCount, rowFaults: [...scannedFile.rowFaults] };
   return { ok: true, file: { contentTyped: "csv-utf8", displayName, byteLength: bytes.byteLength, text: decoded.text, limits: IMPORT_LIMIT_DESCRIPTORS, structure } };
 }
-/** Reads admitted UTF-8 CSV text into ordered headers and ordered nonblank rows, refusing rather than returning an empty success when the text cannot be used. */
-export async function parseCsv(text: string): Promise<ParseCsvResult> {
+/** Reads admitted UTF-8 CSV text into ordered headers and ordered nonblank rows, refusing rather than returning an empty success when the text cannot be used. */ export async function parseCsv(text: string): Promise<ParseCsvResult> {
   const scanned = await scanCsv(text);
   if (!scanned.ok) return refused(...scanned.refusals);
   const headers = [...scanned.scan.headerCells];

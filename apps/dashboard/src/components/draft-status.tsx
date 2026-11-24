@@ -31,8 +31,7 @@ export function variantRecordOf(documentId: string, edition: LifecycleEditionFol
   // An absent pointer is omitted rather than set to `undefined`, so the record states exactly what the read stated.
   return { variantId: edition.variantId, documentId, audience: edition.audience, locale: edition.locale, ...(draft === "" ? {} : { draftRevisionId: draft }), ...(candidate === "" ? {} : { candidateId: candidate }), ...(head === "" ? {} : { releaseHeadId: head }) };
 }
-/** Derives the one lifecycle state of an edition from the records the service supplies. */
-export function lifecycleOf(variant: ContentVariant, release?: Release, evidence?: LifecycleEvidence): ContentLifecycleState {
+/** Derives the one lifecycle state of an edition from the records the service supplies. */ export function lifecycleOf(variant: ContentVariant, release?: Release, evidence?: LifecycleEvidence): ContentLifecycleState {
   const current = release !== undefined && release.variantId === variant.variantId ? release : undefined;
   if (current !== undefined) {
     if (current.withdrawnAt !== undefined) return "withdrawn";

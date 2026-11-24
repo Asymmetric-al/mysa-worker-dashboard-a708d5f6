@@ -49,7 +49,6 @@ const COVERAGE_NOTICE_TITLE: Readonly<Record<Exclude<CoverageState, "complete">,
 const UTC_ZONE = "UTC";
 const INSTANT_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: "medium", timeStyle: "medium" };
 const NOTICE_HEADING_LEVEL = 2;
-type InstantReading = { readonly formatted: string | null; readonly zone: string; readonly zoneFallback: boolean };
 function formatterFor(locale: string, timeZone: string): Intl.DateTimeFormat | null {
   try {
     return new Intl.DateTimeFormat(locale, { ...INSTANT_FORMAT, timeZone });
@@ -57,7 +56,7 @@ function formatterFor(locale: string, timeZone: string): Intl.DateTimeFormat | n
     return null;
   }
 }
-function readInstant(instant: string, timeZone: string, locale: string): InstantReading {
+function readInstant(instant: string, timeZone: string, locale: string): { readonly formatted: string | null; readonly zone: string; readonly zoneFallback: boolean } {
   const milliseconds = Date.parse(instant);
   const requested = formatterFor(locale, timeZone);
   const formatter = requested ?? formatterFor(locale, UTC_ZONE);
@@ -77,8 +76,7 @@ function refusalDescription(fields: Readonly<Record<string, readonly string[]>>)
   const messages = Object.values(fields).flat();
   return messages.length === 0 ? COPY.refused : `${COPY.refused} ${messages.join(" ")}`;
 }
-type SourceStatusCardProps = { readonly envelope: ReadEnvelope<unknown>; readonly devState: DevRuntimeState | null; readonly timeZone: string; readonly locale: string };
-function SourceStatusCard({ envelope, devState, timeZone, locale }: SourceStatusCardProps): ReactElement {
+function SourceStatusCard({ envelope, devState, timeZone, locale }: { readonly envelope: ReadEnvelope<unknown>; readonly devState: DevRuntimeState | null; readonly timeZone: string; readonly locale: string }): ReactElement {
   const reading = readInstant(envelope.asOf, timeZone, locale);
   return (
     <SectionCard title={COPY.title} description={COPY.description} contentClassName="flex min-w-0 flex-col gap-6">

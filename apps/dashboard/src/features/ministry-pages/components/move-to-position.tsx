@@ -65,11 +65,7 @@ export function MoveToPosition({ controlId, sectionId, sectionLabel, index, coun
           })}
         </DropdownMenuContent>
       </DropdownMenu>
-      {reason === null ? null : (
-        <span id={reasonId} className="text-xs text-muted-foreground">
-          {reason}
-        </span>
-      )}
+      {reason === null ? null : <span {...{ id: reasonId, className: "text-xs text-muted-foreground" as const }}>{reason}</span>}
     </div>
   );
 }

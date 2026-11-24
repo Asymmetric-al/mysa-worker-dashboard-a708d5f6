@@ -21,7 +21,6 @@ const signupPayloadSchema = z.strictObject({
   languagePreference: z.string().regex(LANGUAGE_TAG_SHAPE, "A language preference is a BCP-47 tag such as en, fr-CA or ar.").max(35, "A language tag is at most 35 characters.").optional(),
 });
 const signupRequestSchema = mutationInputSchema(signupPayloadSchema);
-/** Answers with one envelope for the publisher's audience: the four membership states, the eligible and excluded counts, every exclusion reason, and one page of members. */
 const readAudience = readRoute(
   readGrammar(audienceQuerySchema, (search) => ({ publisherId: search.get("publisherId") ?? undefined, page: search.get("page") ?? undefined, pageSize: search.get("pageSize") ?? undefined })),
   (query) => reads.audience.readAudience(query),

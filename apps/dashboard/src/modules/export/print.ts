@@ -1,4 +1,4 @@
-import { minorUnitsOf, type MinorUnits, type Money } from "@/modules/money/amount";
+import { minorUnitsOf, type MinorUnits } from "@/modules/money/amount";
 import { formatMinor } from "@/modules/money/format";
 import { REPORT_IDS, type ReportResult, type ReportRow } from "@/modules/support/report";
 import { countCellText, civilDateText, rowAmountPath, snapshotMetadata, VALUE_STATE_TEXT } from "./csv";
@@ -22,12 +22,8 @@ export type PrintModel = {
   readonly notes: readonly string[];
 };
 type PrintAlign = PrintColumn["align"];
-const REPORT_TITLE: Readonly<Record<(typeof REPORT_IDS)[number], string>> = {
-  "received-period-and-year-to-date": "Received support — period and year to date",
-  "monthly-history": "Received support — monthly history",
-  "partner-month-matrix": "Received support — partner by month",
-  "period-comparison": "Received support — period comparison",
-};
+type ReportTitle = Readonly<Record<(typeof REPORT_IDS)[number], string>>;
+const REPORT_TITLE: ReportTitle = { "received-period-and-year-to-date": "Received support — period and year to date", "monthly-history": "Received support — monthly history", "partner-month-matrix": "Received support — partner by month", "period-comparison": "Received support — period comparison" };
 const RECEIVED_MEASURE_LABEL = "Received support";
 const IN_PROGRESS_STATUS = "In progress";
 const recordedCell = (text: string): PrintCell => ({ text, accessibleLabel: null, state: "value" });
@@ -42,8 +38,7 @@ function amountCell(context: PrintCellContext): PrintCell {
 }
 function amountMinorUnitsCell(context: PrintCellContext): PrintCell {
   const state = context.stateOf(rowAmountPath(context.index));
-  const count = state === "zero" ? 0 : context.row.amount.minorUnits;
-  return { text: countCellText(count, state), accessibleLabel: state === "value" || state === "zero" || state === "incomplete-subtotal" ? null : `${VALUE_STATE_TEXT[state]}. No minor-unit count is stated for this row.`, state };
+  return { text: countCellText(state === "zero" ? 0 : context.row.amount.minorUnits, state), accessibleLabel: state === "value" || state === "zero" || state === "incomplete-subtotal" ? null : `${VALUE_STATE_TEXT[state]}. No minor-unit count is stated for this row.`, state };
 }
 function giftDateCell(context: PrintCellContext): PrintCell {
   const { row } = context;
@@ -76,8 +71,7 @@ const NO_AMOUNT_MINOR_UNITS: MinorUnits = minorUnitsOf(0);
 function printSummary(result: ReportResult, locale: string): readonly PrintSummaryLine[] {
   return result.summary.map((entry) => {
     const state = entry.received.valueState;
-    const amount: Money = { currency: entry.currency, minorUnits: entry.received.minorUnits ?? NO_AMOUNT_MINOR_UNITS };
-    const formatted = formatMinor(amount, state, locale);
+    const formatted = formatMinor({ currency: entry.currency, minorUnits: entry.received.minorUnits ?? NO_AMOUNT_MINOR_UNITS }, state, locale);
     return { label: `${RECEIVED_MEASURE_LABEL} (${entry.currency})`, text: formatted.text, accessibleLabel: formatted.accessibleLabel, state };
   });
 }
@@ -85,9 +79,8 @@ const carriesWithheldValue = (result: ReportResult): boolean => Object.values(re
 function printNotes(result: ReportResult): readonly string[] {
   const notes: string[] = [];
   if (result.rows.length !== result.total) notes.push(`This view shows ${String(result.rows.length)} of ${String(result.total)} rows; export the CSV for the complete result.`);
-  if (result.snapshot.coverage.state === "partial") {
-    notes.push("Coverage is partial: each subtotal on this page covers only the part of the period the source holds and is marked incomplete.");
-  } else if (result.snapshot.coverage.state === "unknown") notes.push("Coverage is unknown: the source did not state how much of the past this result covers, so no subtotal here is presented as a total.");
+  if (result.snapshot.coverage.state === "partial") notes.push("Coverage is partial: each subtotal on this page covers only the part of the period the source holds and is marked incomplete.");
+  else if (result.snapshot.coverage.state === "unknown") notes.push("Coverage is unknown: the source did not state how much of the past this result covers, so no subtotal here is presented as a total.");
   if (carriesWithheldValue(result)) notes.push("Some values are withheld here. They are in no total, directly or by subtraction, and none of them may be inferred from any other figure on this page.");
   for (const point of result.series) if (point.gap) notes.push(`No rows in ${point.currency} ${civilDateText(point.bucketStart)} to ${civilDateText(point.bucketEnd)} — shown as a gap, not zero.`);
   return notes;

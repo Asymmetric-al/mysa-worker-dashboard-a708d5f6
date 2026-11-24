@@ -1,18 +1,16 @@
-/** Criterion 2 — **First useful session** (AAP 0.12.1) and the opening of journey 1: as the new worker, */
+/** Criterion 2 — **First useful session** (AAP 0.12.1) and the opening of journey 1: as the new worker, a private contact, a task and a draft each survive a reload. */
 import type { Page } from "@playwright/test";
 import { actAs, expect, expectAcceptedReceipt, expectDevelopmentData, openSurface, SEEDED_PERSONAS, test } from "../playwright.config";
-const NEW_WORKER = SEEDED_PERSONAS["new-worker"];
 const CONTACT_NAME = "Rosa Delgado"; // The private contact this journey creates. A name is the only field it fills, which is what the criterion asks.
 const TASK_TITLE = "Send Rosa a first note";
 const DRAFT_TEXT = "Thank you for the welcome on Sunday. This is the first note from the youth ministry.";
 const UPDATE_DOCUMENT_ID = "doc-update-first-note"; // The seeded Update this journey writes its first draft into. The seed creates it; the spec never pastes an address to reach it.
 const ADD_PRIVATE_CONTACT = "Add a private contact";
-const UNDATED_TASK_DESTINATION = "Open Work";
 const DRAFT_EDITION = /Public English/u; // The one edition this journey writes: the seeded Update's public English edition, named by the article the matrix gives it.
 const NAV = { home: "Home", partners: "Partners", work: "Work", communication: "Communication" } as const; // The shell's own navigation, named by the labels it states rather than by an address this spec types.
 // The new worker's own session is the identity every request in this spec is authorised as. The cookie is the whole identity — the service resolves it into a principal and its admitted memberships — so the runner's own `actAs` puts it on the context and nothing here invents a scope or commits a session file.
 test.beforeEach(async ({ page }) => {
-  await actAs(page, NEW_WORKER.sessionId);
+  await actAs(page, SEEDED_PERSONAS["new-worker"].sessionId);
 });
 async function createPrivateContact(page: Page): Promise<void> {
   const form = page.getByRole("region", { name: ADD_PRIVATE_CONTACT }); // Creates one private preparation record from a name alone, through the form the roster's first action offers.
@@ -87,7 +85,7 @@ test("the new worker's private contact, undated task and Update draft are each s
   await openSurface(page, NAV.home, NAV.home);
   const unfinishedWork = page.getByRole("region", { name: /^Unfinished work/u });
   await expect(unfinishedWork.getByText("This task has no date the calendar can read, so the Work list is where its date is decided.", { exact: true })).toBeVisible();
-  await expect(unfinishedWork.getByRole("link", { name: `${TASK_TITLE} ${UNDATED_TASK_DESTINATION}`, exact: true })).toBeVisible();
+  await expect(unfinishedWork.getByRole("link", { name: `${TASK_TITLE} Open Work`, exact: true })).toBeVisible();
   await expect(unfinishedWork.getByText("Draft saved", { exact: true })).toBeVisible();
   await openSurface(page, NAV.partners, "Partners");
   await page.reload();

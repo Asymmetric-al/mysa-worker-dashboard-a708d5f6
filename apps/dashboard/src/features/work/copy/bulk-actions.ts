@@ -21,11 +21,7 @@ export const BULK_RESULT_HEADING = "Result for each selected row";
 export const BULK_MIXED_RESULT_NOTE = "Each row shows its own result and rows can differ, so read them one at a time rather than as one outcome for the whole selection.";
 export const BULK_REPLAY_NOTE = "This is the result of your earlier submission; nothing was applied a second time.";
 /** The four bulk mutations, named as the operation each browser transport carries, so a row's reason can be stated for the intent that was actually sent. */ export type BulkOperation = "bulkApplyTag" | "bulkRemoveTag" | "bulkCreateTasks" | "bulkCompleteTasks";
-/**
- * What an `unchanged` result means for one row, intent by intent: the service states its own per-row reasons when
- * any row was accepted and answers a batch that changed nothing with no rows at all, so this is the reason the
- * surface states for that batch, and every row the surface submits is one the read offered for that intent.
- */
+/** What an `unchanged` result means for one row, intent by intent: the service states its own per-row reasons when any row was accepted and answers a batch that changed nothing with no rows at all, so this is the reason the surface states for that batch, and every row the surface submits is one the read offered for that intent. */
 export const BULK_UNCHANGED_ROW_REASONS: Record<BulkOperation, string> = {
   bulkApplyTag: "This row already carried this tag when the action ran, so nothing was applied to it.",
   bulkRemoveTag: "This row did not carry this tag when the action ran, so there was nothing to remove from it.",

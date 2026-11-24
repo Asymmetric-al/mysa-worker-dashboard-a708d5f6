@@ -10,23 +10,17 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { copy } from "../copy";
 import { openRevisionOf, settledRevisionOf, useStopShowingPagePublicly, type StopShowingPayload, type StopShowingVariables } from "../hooks/page-mutations";
-/** The scope this containment is addressed to: the authority the Page read it came from ran under. */
 export type ContainmentScope = StopShowingVariables["scope"];
 type ContainmentOutcome = OperationResultProps["outcome"];
-type ContainmentInput = Omit<StopShowingVariables, "operationId">;
 const DELETES_NOTHING = "Nothing is deleted. The Page, its drafts, its review candidates and its media all stay exactly as they are; only how far the Page reaches changes.";
 const REACH_NOT_EDITORIAL = "This is a reach change and not an editorial one: it changed how far the Page reaches and nothing about its content, so no draft was tidied, no translation was corrected and no review candidate was cleared.";
-const CONTAINED_TITLE = "Every language edition is contained";
 /** The count this control acts on: a whole number of editions, or none when the caller stated nothing usable. */
 export const statedEditionCount = (editionCount: number): number => (Number.isFinite(editionCount) && editionCount > 0 ? Math.trunc(editionCount) : 0);
-const editionNoun = (count: number): string => (count === 1 ? "language edition" : "language editions");
 /** The payload this confirmation is the acknowledgement for. */
 export const containmentAcknowledgement = (documentId: string): StopShowingPayload => ({ documentId, acknowledgeContainsAllLocales: true });
-type ContainmentStatement = { readonly title: string; readonly sentences: readonly string[] };
-function containmentStatement(outcome: ContainmentOutcome, editions: number): ContainmentStatement | null {
-  if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted") {
-    return { title: CONTAINED_TITLE, sentences: [copy.stopShowingPublicly.resultSummary(editions), REACH_NOT_EDITORIAL, "On the next read, the public discovery index leaves these editions out and the direct address refuses them: open the discovery index to see the result for yourself."] };
-  }
+function containmentStatement(outcome: ContainmentOutcome, editions: number): { readonly title: string; readonly sentences: readonly string[] } | null {
+  if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted")
+    return { title: "Every language edition is contained", sentences: [copy.stopShowingPublicly.resultSummary(editions), REACH_NOT_EDITORIAL, "On the next read, the public discovery index leaves these editions out and the direct address refuses them: open the discovery index to see the result for yourself."] };
   if (outcome.outcome === "unchanged") return { title: "Nothing needed containing", sentences: ["No edition of this Page was public or listed when you confirmed, so nothing was changed and no edition's reach was altered."] };
   return null;
 }
@@ -42,7 +36,7 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
   const submit = useCallback<MutationSubmit<StopShowingPayload>>((input) => stopShowing.mutateAsync(input), [stopShowing]);
   const review = useReviewedMutation<StopShowingPayload>(submit);
   const openRevision = openRevisionOf(expectedRevision, attemptRevision, settledRevisionOf(review.outcome)); // The revision a new confirmation presents: the read's, or — until that read has landed — the revision this view's own last acceptance produced.
-  const input = useMemo<ContainmentInput>(() => ({ scope, expectedRevision: attemptRevision ?? openRevision, payload: containmentAcknowledgement(documentId) }), [scope, openRevision, attemptRevision, documentId]); // The revision this confirmation is opened against, held for the attempt: the read that follows an acceptance reports a newer one, and the result below still belongs to the attempt it made.
+  const input = useMemo<Omit<StopShowingVariables, "operationId">>(() => ({ scope, expectedRevision: attemptRevision ?? openRevision, payload: containmentAcknowledgement(documentId) }), [scope, openRevision, attemptRevision, documentId]); // The revision this confirmation is opened against, held for the attempt: the read that follows an acceptance reports a newer one, and the result below still belongs to the attempt it made.
   const current: ContainmentOutcome | null = review.reviewedIntent === intentKeyOf(input) ? review.outcome : null;
   const editions = statedEditionCount(editionCount);
   const unavailableReason = disabled ? ((disabledReason?.trim() ?? "") === "" ? "This session cannot stop showing this Page publicly." : (disabledReason?.trim() ?? "")) : editions === 0 ? "This Page has no language edition yet, so there is nothing public to stop showing." : null;
@@ -64,9 +58,7 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h3 id={titleId} className="type-subsection-title wrap-anywhere">
-              {copy.stopShowingPublicly.action}
-            </h3>
+            <h3 {...{ id: titleId, className: "type-subsection-title wrap-anywhere" as const }}>{copy.stopShowingPublicly.action}</h3>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-3">
@@ -81,7 +73,7 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
                   <AlertDialogDescription className="flex flex-col gap-2">
                     <span>{copy.stopShowingPublicly.confirmBody}</span>
                     <span>
-                      This covers all <bdi className="tabular-figures font-medium text-foreground">{String(editions)}</bdi> {editionNoun(editions)} of this Page.
+                      This covers all <bdi className="tabular-figures font-medium text-foreground">{String(editions)}</bdi> {editions === 1 ? "language edition" : "language editions"} of this Page.
                     </span>
                   </AlertDialogDescription>
                 </AlertDialogHeader>
@@ -93,19 +85,13 @@ export function StopShowingPublicly({ scope, documentId, expectedRevision, editi
                 </div>
                 <AlertDialogFooter>
                   <AlertDialogCancel>{"Cancel"}</AlertDialogCancel>
-                  <AlertDialogAction confirmVariant="destructive" onClick={confirm}>
-                    {copy.stopShowingPublicly.action}
-                  </AlertDialogAction>
+                  <AlertDialogAction {...{ confirmVariant: "destructive" as const, onClick: confirm }}>{copy.stopShowingPublicly.action}</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
           </div>
           {review.pending ? <output className="block type-supporting text-pretty wrap-anywhere">{"Stopping every language edition of this Page — working"}</output> : null}
-          {unavailableReason === null ? null : (
-            <p id={reasonId} className="type-supporting text-pretty wrap-anywhere">
-              {unavailableReason}
-            </p>
-          )}
+          {unavailableReason === null ? null : <p {...{ id: reasonId, className: "type-supporting text-pretty wrap-anywhere" as const }}>{unavailableReason}</p>}
         </CardContent>
       </Card>
       {current === null ? null : (

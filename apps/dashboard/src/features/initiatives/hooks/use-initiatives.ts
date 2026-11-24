@@ -6,7 +6,6 @@ import type { RecordListQueryState } from "@/components/record-list";
 import type { ReadEnvelope, ReadResult } from "@/modules/data-service";
 import type { InitiativeState } from "@/modules/data-service/envelope";
 import { INITIATIVE_API, readEnvelope } from "../api-client";
-const INITIATIVES_JOB = "initiatives";
 /** The two filters the list surface states and the read applies: the whole-dataset search over an initiative's name and purpose, and the initiative state. */
 export type InitiativesFilters = { readonly search?: string; readonly state?: InitiativeState };
 /** The envelope arm of a read: what a Server Component holds once `readInitiatives` answered with the list, and the seed this hook starts from. */
@@ -32,7 +31,7 @@ export function useInitiatives<D>(queryState: RecordListQueryState, initialEnvel
   const [mountedWith] = useState(request);
   const seed = request === mountedWith ? initialEnvelope : undefined;
   const read = useQuery<ReadResult<ReadEnvelope<D>>, Error>({
-    queryKey: [...scopeKey(initialEnvelope.envelope.scope), INITIATIVES_JOB, stated, queryState],
+    queryKey: [...scopeKey(initialEnvelope.envelope.scope), "initiatives", stated, queryState],
     queryFn: async () => readEnvelope<ReadEnvelope<D>>(INITIATIVE_API.initiatives, paramsOf(queryState, stated)),
     ...(seed === undefined ? {} : { initialData: seed }),
     staleTime: 0,

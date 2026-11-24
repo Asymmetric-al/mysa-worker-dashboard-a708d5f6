@@ -12,9 +12,7 @@ const ANSWER_TIMEOUT_MS = 120_000; // How long one address is given to compile a
 const RETRY_DELAY_MS = 1_000;
 type WarmUpAddress = { readonly path: string; readonly kind: "page" | "endpoint" }; // One address to warm: the path to ask the server for, and which kind of route file declares it.
 type WarmAnswer = { readonly kind: "answered"; readonly status: number } | { readonly kind: "unreachable"; readonly reason: string }; // What one attempt at an address answered: a status the server chose, or a failure to reach the server at all.
-interface WarmedAddress extends WarmUpAddress {
-  readonly status: number; // The outcome of warming one address, kept so the summary can state what the server actually answered.
-}
+type WarmedAddress = WarmUpAddress & { readonly status: number }; // The outcome of warming one address, kept so the summary can state what the server actually answered.
 const UNROUTED_SEGMENT = /^(?:\([^)]*\)|_.*|@.*)$/u; // A router segment that is part of no URL: a route group `(name)` and a private folder `_name` both exist only to organise files.
 const DYNAMIC_SEGMENT = /^\[(?:\.{3})?([^\]]+)\]$/u; // A dynamic segment, `[name]` or a catch-all `[...name]`, named without its brackets.
 const SEEDED_SEGMENT_VALUES: Readonly<Record<string, string>> = {
@@ -103,10 +101,7 @@ function acceptsConnection(origin: URL): Promise<boolean> {
     socket.setTimeout(READY_PROBE_TIMEOUT_MS, () => settle(false));
   });
 }
-function portOf(origin: URL): number {
-  if (origin.port.length > 0) return Number(origin.port);
-  return origin.protocol === "https:" ? 443 : 80;
-}
+const portOf = (origin: URL): number => (origin.port.length > 0 ? Number(origin.port) : origin.protocol === "https:" ? 443 : 80);
 async function warmEach(addresses: readonly WarmUpAddress[], origin: URL): Promise<readonly WarmedAddress[]> {
   const warmed: WarmedAddress[] = []; // Warms every address in turn, retrying one that could not be reached at all once, and failing loudly if it still cannot be.
   for (const address of addresses) {
@@ -142,8 +137,7 @@ function answersByClass(warmed: readonly WarmedAddress[]): string {
   return summary.length === 0 ? "no status" : summary.join(", ");
 }
 /** Pauses for the stated time, so the readiness poll and the single retry are spaced rather than spun. */
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => {
+const delay = (milliseconds: number): Promise<void> =>
+  new Promise((resolve) => {
     setTimeout(resolve, milliseconds);
   });
-}

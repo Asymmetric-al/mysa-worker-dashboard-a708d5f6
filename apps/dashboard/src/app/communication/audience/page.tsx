@@ -7,14 +7,9 @@ import { reads } from "@/modules/data-service";
 import { firstValueOf, type SearchParams } from "../../page-frame";
 export const metadata: Metadata = { title: "Audience" };
 type AudienceRead = typeof reads.audience.readAudience;
-type AudienceResult = Awaited<ReturnType<AudienceRead>>;
-type AudienceQueryInput = NonNullable<Parameters<AudienceRead>[0]>;
-type AudienceWithoutEnvelope = Exclude<AudienceResult, { readonly kind: "envelope" }>;
 const AUDIENCE_HREF = "/communication/audience";
 const HEADING_ID = "communication-audience-heading";
 const PARAM = { page: "page", pageSize: "pageSize" } as const;
-/** The interface locale the composed surface formats its counts in. */
-const INTERFACE_LOCALE = "en-GB";
 const PAGE_COPY = {
   heading: `${PURPOSE_LABEL["update-email"]} audience`,
   lede: "The people this publisher may reach with its Update email for this purpose, the state each membership stands in, and the reason each excluded membership is excluded. Every count, state and reason below is the read's own, and no membership on this page is contact permission, proof of an address, or a choice this view may change.",
@@ -29,12 +24,12 @@ const PAGE_COPY = {
   },
   unrecognised: { title: "This publisher's audience could not be read", body: "The read answered with a result this page does not recognise, so it is reported as the outage it may be rather than as an audience with nobody in it." },
 } as const;
-function audienceQueryOf(searchParams: SearchParams): AudienceQueryInput {
+function audienceQueryOf(searchParams: SearchParams): NonNullable<Parameters<AudienceRead>[0]> {
   const page = firstValueOf(searchParams[PARAM.page]);
   const pageSize = firstValueOf(searchParams[PARAM.pageSize]);
   return { ...(page === undefined ? {} : { page: Number(page) }), ...(pageSize === undefined ? {} : { pageSize: Number(pageSize) }) };
 }
-function AudienceNotice({ result }: { readonly result: AudienceWithoutEnvelope }): ReactElement {
+function AudienceNotice({ result }: { readonly result: Exclude<Awaited<ReturnType<AudienceRead>>, { readonly kind: "envelope" }> }): ReactElement {
   switch (result.kind) {
     case "denied":
       return <StateNotice kind="denied" headingLevel={2} title={PAGE_COPY.denied.title} description={PAGE_COPY.denied.body} reasonCode={result.denied.reasonCode} />;
@@ -59,7 +54,7 @@ export default async function CommunicationAudiencePage({ searchParams }: { read
         <p className="max-w-prose type-supporting text-pretty">{PAGE_COPY.lede}</p>
       </div>
       {result.kind === "envelope" ? (
-        <MembershipTable envelope={result.envelope} scope={result.envelope.scope} locale={INTERFACE_LOCALE} />
+        <MembershipTable envelope={result.envelope} scope={result.envelope.scope} locale={"en-GB"} />
       ) : (
         <>
           <p className="max-w-prose text-pretty type-supporting">{NOT_CONSENT_STATEMENT}</p>

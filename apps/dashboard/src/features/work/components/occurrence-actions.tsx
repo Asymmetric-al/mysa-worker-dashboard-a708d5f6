@@ -72,21 +72,16 @@ type SeriesReadEnvelope = Extract<Awaited<ReturnType<typeof reads.series.readSer
 type SeriesView = SeriesReadEnvelope["data"];
 type SeriesOccurrence = NonNullable<SeriesView["currentOccurrence"]>;
 type SeriesStateName = keyof typeof SERIES_STATE_LABELS;
-type RepeatProfileName = keyof typeof REPEAT_PROFILE_LABELS;
-type TaskKindName = keyof typeof TASK_KIND_LABELS;
 type SeriesEndKind = SeriesView["rule"]["end"]["kind"];
 type SeriesGroupHeadingLevel = 2 | 3 | 4;
-const WORK_BREADCRUMB = [{ label: "Work", href: "/work" }];
 const SERIES_STATUS_SR_PREFIX = "Series status";
 const PLANNED_TIME_PREFIX = "Planned time";
 const END_OF_SERIES_LABEL = "End";
-const PLAN_RULE_HEADING = "The plan's first due date and its end";
 const PREVIEW_DATES_NOTE =
   "These dates are what this plan's rule produces next, judged in the plan's own planning timezone rather than in the one this browser displays. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
 const SERIES_STATE_TONES: Readonly<Record<SeriesStateName, StatusTone>> = { active: "positive", paused: "caution", stopped: "neutral" };
 const GROUP_HEADING_TAG: Readonly<Record<SeriesGroupHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
-/** The one type scale's heading utility per level, so a group heading states the level its caller renders it at with the same measure on every surface. */
-const GROUP_HEADING_SCALE: Readonly<Record<SeriesGroupHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The one type scale's heading utility per level, so a group heading states the level its caller renders it at with the same measure on every surface. */ const GROUP_HEADING_SCALE: Readonly<Record<SeriesGroupHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const COMMANDS = {
   complete: { label: "Complete", receiptHeading: "Completing this date" },
   skip: { label: "Skip", receiptHeading: "Skipping this date" },
@@ -162,18 +157,16 @@ const previewReadingOf = (series: SeriesView): SeriesPreviewReading | null => {
   }
   return { status: "preview", dates, actionableOccurrenceId: actionableId, actionableDueOn: actionableDueOn.date, monthDayResolutions };
 };
-type CommandVariant = "default" | "outline" | "secondary" | "ghost" | "destructive";
-type CommandConfirmation = { readonly title: string; readonly description: ReactNode; readonly confirmLabel: string; readonly controls?: ReactNode };
 interface ReviewedCommandProps<P extends object> {
   readonly label: string;
-  readonly variant?: CommandVariant;
+  readonly variant?: "default" | "outline" | "secondary" | "ghost" | "destructive";
   readonly receiptHeading: string;
   readonly narration: ReactNode;
   readonly input: Omit<MutationInput<P>, "operationId">;
   readonly submit: MutationSubmit<P>;
   readonly withheldReason?: string | null;
   readonly admitted?: boolean;
-  readonly confirmation?: CommandConfirmation;
+  readonly confirmation?: { readonly title: string; readonly description: ReactNode; readonly confirmLabel: string; readonly controls?: ReactNode };
   readonly onCheckResult?: (() => void) | undefined;
   readonly fieldLabels?: Readonly<Record<string, string | undefined>> | undefined;
   readonly className?: string;
@@ -323,7 +316,7 @@ function CommandForm<Text extends string, Draft extends Readonly<Record<Text, st
   );
 }
 type OccurrenceText = "title" | "category" | "dueOn" | "plannedTime" | "timeZone" | "note";
-type OccurrenceDraft = Readonly<Record<OccurrenceText, string>> & { readonly kind: TaskKindName };
+type OccurrenceDraft = Readonly<Record<OccurrenceText, string>> & { readonly kind: keyof typeof TASK_KIND_LABELS };
 const OCCURRENCE_FIELDS: Readonly<Record<OccurrenceText, TextSpec<OccurrenceText>>> = {
   title: { name: "title", label: "Title", mark: "required", type: "text", autoComplete: "off" },
   dueOn: { name: "dueOn", label: DUE_DATE_LABEL, description: "A due date is a calendar date, so it stays that day wherever you are.", mark: "required", type: "date" },
@@ -332,8 +325,7 @@ const OCCURRENCE_FIELDS: Readonly<Record<OccurrenceText, TextSpec<OccurrenceText
   category: { name: "category", label: CATEGORY_LABEL, mark: "optional", type: "text", autoComplete: "off" },
   note: { name: "note", label: "Note", mark: "optional", type: "text" },
 };
-type OccurrenceEditFormProps = { readonly scope: Scope; readonly occurrence: SeriesOccurrence; readonly onClose: () => void; readonly onCheckResult?: (() => void) | undefined };
-function OccurrenceEditForm({ scope, occurrence, onClose, onCheckResult }: OccurrenceEditFormProps): ReactElement {
+function OccurrenceEditForm({ scope, occurrence, onClose, onCheckResult }: { readonly scope: Scope; readonly occurrence: SeriesOccurrence; readonly onClose: () => void; readonly onCheckResult?: (() => void) | undefined }): ReactElement {
   const { editOccurrence } = useSeriesMutations(scope);
   const draft: OccurrenceDraft = { title: occurrence.title, category: occurrence.category ?? "", dueOn: occurrence.dueOn ?? "", plannedTime: plannedTimeFieldValue(occurrence), timeZone: occurrence.timeZone ?? "", note: occurrence.note ?? "", kind: occurrence.kind };
   return (
@@ -348,16 +340,8 @@ function OccurrenceEditForm({ scope, occurrence, onClose, onCheckResult }: Occur
       initialDraft={draft}
       compose={(values) => {
         const meeting = values.kind === "meeting";
-        return {
-          occurrenceId: occurrence.taskId,
-          title: values.title,
-          category: values.category,
-          dueOn: values.dueOn,
-          kind: values.kind,
-          ...(meeting && values.plannedTime.trim() !== "" ? { plannedTime: values.plannedTime } : {}),
-          ...(meeting && values.timeZone.trim() !== "" ? { timeZone: values.timeZone } : {}),
-          note: values.note,
-        };
+        const { title, category, dueOn, kind, plannedTime, timeZone, note } = values;
+        return { occurrenceId: occurrence.taskId, title, category, dueOn, kind, ...(meeting && plannedTime.trim() !== "" ? { plannedTime } : {}), ...(meeting && timeZone.trim() !== "" ? { timeZone } : {}), note };
       }}
       judge={(payload) => judged(editOccurrenceSchema.safeParse(payload))}
       input={(payload) => ({ scope, expectedRevision: occurrence.revision, payload })}
@@ -382,7 +366,7 @@ function OccurrenceEditForm({ scope, occurrence, onClose, onCheckResult }: Occur
   );
 }
 type RevisionText = "title" | "planningTimeZone" | "interval" | "dayOfMonth" | "endOn" | "endCount";
-type RevisionDraft = Readonly<Record<RevisionText, string>> & { readonly profile: RepeatProfileName; readonly endKind: SeriesEndKind };
+type RevisionDraft = Readonly<Record<RevisionText, string>> & { readonly profile: keyof typeof REPEAT_PROFILE_LABELS; readonly endKind: SeriesEndKind };
 const REVISION_FIELDS: Readonly<Record<RevisionText, TextSpec<RevisionText>>> = {
   title: { name: "title", label: "Title", mark: "required", type: "text", autoComplete: "off" },
   planningTimeZone: { name: "planningTimeZone", label: PLANNING_TIME_ZONE_LABEL, description: PLANNING_TIME_ZONE_NOTE, mark: "required", type: "text", autoComplete: "off" },
@@ -396,8 +380,7 @@ const revisionDraftOf = ({ title, rule }: SeriesView): RevisionDraft => {
   const { end } = rule;
   return { title, planningTimeZone: rule.planningTimeZone, profile: rule.profile, interval: String(rule.interval), dayOfMonth: rule.dayOfMonth === null ? "" : String(rule.dayOfMonth), endKind: end.kind, endOn: end.kind === "on-date" ? end.on : "", endCount: end.kind === "after-count" ? String(end.count) : "" };
 };
-type FutureRevisionFormProps = { readonly scope: Scope; readonly series: SeriesView; readonly revision: string; readonly effectiveFrom: string; readonly onClose: () => void; readonly onCheckResult?: (() => void) | undefined };
-function FutureRevisionForm({ scope, series, revision, effectiveFrom, onClose, onCheckResult }: FutureRevisionFormProps): ReactElement {
+function FutureRevisionForm({ scope, series, revision, effectiveFrom, onClose, onCheckResult }: { readonly scope: Scope; readonly series: SeriesView; readonly revision: string; readonly effectiveFrom: string; readonly onClose: () => void; readonly onCheckResult?: (() => void) | undefined }): ReactElement {
   const { editThisAndFuture } = useSeriesMutations(scope);
   return (
     <CommandForm<RevisionText, RevisionDraft, EditThisAndFuturePayload>
@@ -641,7 +624,7 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
       <div className="flex min-w-0 flex-col gap-4">
         {/* The plan's own rule, stated before the dates it produces: what the plan is comes before what it produces next. */}
         <section aria-labelledby={ruleHeadingId} data-slot="series-plan-rule" className="flex min-w-0 flex-col gap-2">
-          <h3 {...{ id: ruleHeadingId, className: "type-subsection-title" }}>{PLAN_RULE_HEADING}</h3>
+          <h3 {...{ id: ruleHeadingId, className: "type-subsection-title" }}>{"The plan's first due date and its end"}</h3>
           <PlanRuleFacts rule={series.rule} />
         </section>
         {previewReading === null ? null : (
@@ -675,5 +658,5 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
       </div>
     ),
   };
-  return <RecordDetail {...{ layout: "page", className, breadcrumb: WORK_BREADCRUMB, identity, status, sections }} />;
+  return <RecordDetail {...{ layout: "page", className, breadcrumb: [{ label: "Work", href: "/work" }], identity, status, sections }} />;
 }

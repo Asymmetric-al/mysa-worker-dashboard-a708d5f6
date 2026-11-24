@@ -68,24 +68,15 @@ const MODE_RECOVERY_LESSON: Readonly<Record<FailureMode, string>> = Object.freez
   conflict: "A stale expected revision is detected rather than silently overwritten, and the change is applied only when the caller re-applies it deliberately.",
   unknown: "Recovery is re-querying the same operation id, which returns the stored result: exactly one effect exists, and uncertainty never becomes a resend.",
 });
-const DISARMED_DESCRIPTION: FailurePlanDescription = Object.freeze({
-  armed: false,
-  mode: null,
-  modeLabel: "No failure armed",
-  target: null,
-  targetNote: null,
-  armedAt: null,
-  effect: "Every read and every mutation answers from the application's own behaviour; no simulated failure is injected.",
-  recoveryLesson: "Nothing to recover: with no failure armed there is no injected outcome to reconcile.",
-});
-/** Describes the plan for the development panel, including the disarmed case. */
-export function describeFailurePlan(plan: FailurePlanDocument): FailurePlanDescription {
+const DISARMED_EFFECT = "Every read and every mutation answers from the application's own behaviour; no simulated failure is injected.";
+const DISARMED_RECOVERY_LESSON = "Nothing to recover: with no failure armed there is no injected outcome to reconcile.";
+const DISARMED_DESCRIPTION: FailurePlanDescription = Object.freeze({ armed: false, mode: null, modeLabel: "No failure armed", target: null, targetNote: null, armedAt: null, effect: DISARMED_EFFECT, recoveryLesson: DISARMED_RECOVERY_LESSON });
+/** Describes the plan for the development panel, including the disarmed case. */ export function describeFailurePlan(plan: FailurePlanDocument): FailurePlanDescription {
   if (plan === EMPTY_FAILURE_PLAN) return DISARMED_DESCRIPTION;
   const target = demonstrableTargetFor(plan.target.kind, plan.target.name);
   return { armed: true, mode: plan.mode, modeLabel: MODE_LABEL[plan.mode], target: { kind: plan.target.kind, name: plan.target.name }, targetNote: target?.note ?? null, armedAt: plan.armedAt, effect: MODE_EFFECT[plan.mode], recoveryLesson: MODE_RECOVERY_LESSON[plan.mode] };
 }
-/** Reads a plan back from its stored form, refusing rather than throwing on anything unusable. */
-export function parseFailurePlan(value: unknown): Result<FailurePlanDocument, FailurePlanRefusal> {
+/** Reads a plan back from its stored form, refusing rather than throwing on anything unusable. */ export function parseFailurePlan(value: unknown): Result<FailurePlanDocument, FailurePlanRefusal> {
   if (value === EMPTY_FAILURE_PLAN) return ok(EMPTY_FAILURE_PLAN);
   if (!isRecord(value)) return err(refuse("malformed-plan", "A stored failure plan is either the absent plan or an object carrying a mode, a target and an armed-at instant."));
   const { mode, target, armedAt } = value;
@@ -98,8 +89,7 @@ export function parseFailurePlan(value: unknown): Result<FailurePlanDocument, Fa
   if (!demonstrable.modes.includes(mode)) return err(refuse("malformed-plan", `${demonstrable.name} demonstrates ${modesWording(demonstrable)}, which is not the mode the stored plan names.`));
   return !isStoredInstant(armedAt) ? err(refuse("malformed-plan", "A stored failure plan carries the scenario instant it was armed at, written as an ISO-8601 date-time that states its offset.")) : ok({ mode, target: { kind: demonstrable.kind, name: demonstrable.name }, armedAt });
 }
-/** Reads the armed plan out of one session document, or the absent plan. */
-export function failurePlanOfDocument(document: unknown): FailurePlanDocument {
+/** Reads the armed plan out of one session document, or the absent plan. */ export function failurePlanOfDocument(document: unknown): FailurePlanDocument {
   if (!isRecord(document)) return EMPTY_FAILURE_PLAN;
   const parsed = parseFailurePlan(Reflect.get(document, "failurePlan"));
   return parsed.ok ? parsed.value : EMPTY_FAILURE_PLAN;

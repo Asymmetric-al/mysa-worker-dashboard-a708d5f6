@@ -76,8 +76,7 @@ function validateRow(row: ParsedCsvRow, context: RowContext): ImportValidatedRow
       preservedCells.push({ columnNumber, header, text: cell, reason: "rejected-value", statesConsent: false, message: `Kept exactly as it arrived so row ${row.rowNumber} can be corrected: "${trimmed}" is ${problem.what}: ${problem.detail}.` });
       return;
     }
-    const contactKind = contactKindOf(fieldId);
-    mappedCells.push({ columnNumber, header, fieldId, contactKind, value: cell });
+    mappedCells.push({ columnNumber, header, fieldId, contactKind: contactKindOf(fieldId), value: cell });
     if (fieldId === "restriction") restrictions.push({ columnNumber, header, kind: "imported-restriction", text: cell });
     if (fieldId === "tag") tags.push({ columnNumber, header, text: trimmed });
   });
@@ -204,7 +203,7 @@ const CANDIDATE_SCHEMA = z.object({
 });
 const KNOWN_FIELD_IDS: ReadonlySet<string> = new Set<string>(IMPORT_FIELD_IDS);
 type ReadCandidate = { readonly reference: ImportMatchReference; readonly visibleFields: ReadonlySet<ImportFieldId>; readonly visibleValues: ReadonlyMap<ImportFieldId, readonly string[]>; readonly reuse: ImportReuseFact };
-/** Proposes the existing contacts a row could reuse, matching only on an exactly equal contact-method value or source reference and comparing every field the mapping supplies beside the. */
+/** Proposes the existing contacts a row could reuse, matching only on an exactly equal contact-method value or source reference and comparing every field the mapping supplies beside the stored record's own value. */
 export function suggestMatches(row: ImportValidatedRow, candidates: readonly ImportMatchCandidate[]): ImportMatchProposal {
   const incoming = incomingValues(row);
   const suggestions: ImportMatchSuggestion[] = [];
@@ -214,8 +213,7 @@ export function suggestMatches(row: ImportValidatedRow, candidates: readonly Imp
     const signals = signalsFor(row, candidate);
     if (signals.length === 0) continue;
     const comparison = row.suppliedFields.map((fieldId) => compareField(fieldId, candidate, incoming));
-    const differsOn: ImportFieldId[] = [];
-    for (const field of comparison) if (field.differs === true) differsOn.push(field.fieldId);
+    const differsOn: ImportFieldId[] = comparison.filter((field) => field.differs === true).map((field) => field.fieldId);
     suggestions.push({
       reference: candidate.reference,
       signals,
@@ -266,8 +264,7 @@ function sameValues(left: readonly string[], right: readonly string[], fieldId: 
 const normaliseFor = (fieldId: ImportFieldId, value: string): string => (signalKindOf(fieldId) === "email" ? foldAsciiLower(value.trim()) : value.trim());
 const signalKindOf = (fieldId: ImportFieldId): ImportMatchSignalKind | null => MATCH_SIGNAL_FIELDS.find((candidate) => candidate.fieldId === fieldId)?.kind ?? null;
 const comparableValue = (kind: ImportMatchSignalKind, value: string): string => (kind === "email" ? foldAsciiLower(value.trim()) : value.trim());
-/** The ASCII-only fold the import compares email values with: `A`–`Z` lowercased and every other character kept exactly. */
-const foldAsciiLower = (value: string): string => value.replace(/[A-Z]/gu, (character) => character.toLowerCase());
+/** The ASCII-only fold the import compares email values with: `A`–`Z` lowercased and every other character kept exactly. */ const foldAsciiLower = (value: string): string => value.replace(/[A-Z]/gu, (character) => character.toLowerCase());
 function incomingValues(row: ImportValidatedRow): Map<ImportFieldId, string[]> {
   const byField = new Map<ImportFieldId, string[]>();
   for (const cell of row.mappedCells) {
@@ -329,8 +326,7 @@ function sharesSignal(left: ImportValidatedRow, right: ImportValidatedRow): bool
   }
   return false;
 }
-/** Flags, per row of one file, the other rows of that file it looks like: the same comparable name and no shared email address, phone number or source reference. A look-alike signal for the worker to read, never a second rule over the rows — no verdict, candidate, reference, decision or count is touched, and both rows of a pair are named.
- */
+/** Flags, per row of one file, the other rows of that file it looks like: the same comparable name and no shared email address, phone number or source reference. A look-alike signal for the worker to read, never a second rule over the rows — no verdict, candidate, reference, decision or count is touched, and both rows of a pair are named. */
 export function flagDuplicateLookingRows(rows: readonly ImportValidatedRow[]): ReadonlyMap<number, ImportDuplicateLooking> {
   const groups = new Map<string, { readonly name: string; readonly members: ImportValidatedRow[] }>();
   for (const row of rows) {

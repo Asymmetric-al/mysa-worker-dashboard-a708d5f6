@@ -5,7 +5,6 @@ import { READ_ATTEMPT, readResponse } from "../../read";
 import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-type PreviewQuery = Parameters<typeof reads.pages.readPreview>[0];
 const PREVIEW_PARAMETERS = ["variantId", "revisionId", "candidateId", "requestedLocale"] as const;
 type PreviewParameter = (typeof PREVIEW_PARAMETERS)[number];
 const PREVIEW_PARAMETER_SET: ReadonlySet<string> = new Set<string>(PREVIEW_PARAMETERS);
@@ -31,13 +30,12 @@ function unsupportedFieldsOf(search: URLSearchParams): FieldMessages {
   for (const parameter of search.keys()) if (!PREVIEW_PARAMETER_SET.has(parameter)) fields[parameter] = [MESSAGES.unsupported(parameter)];
   return fields;
 }
-/** The preview this session is authorised to see, or the refusal it is entitled to: one read envelope carrying the exact acknowledged revision, or the `denied`, `unavailable` or `invalid` outcome that names why it is not shown. */
 async function readPreview(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   const unsupported = unsupportedFieldsOf(search);
   if (Object.keys(unsupported).length > 0) return toResponse(refusedRead(READ_ATTEMPT, unsupported));
   const query = previewQuerySchema.safeParse(statedParametersOf(search));
   if (!query.success) return toResponse(refusedRead(READ_ATTEMPT, query.error));
-  return readResponse(READ_ATTEMPT, () => reads.pages.readPreview(query.data as PreviewQuery));
+  return readResponse(READ_ATTEMPT, () => reads.pages.readPreview(query.data as Parameters<typeof reads.pages.readPreview>[0]));
 }
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPreview });

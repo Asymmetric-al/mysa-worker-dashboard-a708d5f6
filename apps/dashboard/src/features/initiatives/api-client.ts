@@ -2,12 +2,8 @@ import { isNonEmptyString, isRecord } from "@/lib/guards";
 import { READ_ATTEMPT_ID } from "@/lib/read-transport";
 import type { MutationInput, MutationOutcome, ReadEnvelope, ReadResult } from "@/modules/data-service";
 import { isOutcome } from "@/modules/data-service/outcome";
-const TRANSPORT_SYSTEM = "data-service-transport";
-const NO_RESPONSE_REFERENCE = "no-response";
-const UNREADABLE_BODY_REFERENCE = "unreadable-body";
 const UNEXPECTED_BODY_REFERENCE = "unexpected-body";
 const UNREAD_RESULT_GUIDANCE = "This page could not read the result from the local data service. Nothing was changed, because a read has no effect to repeat, so the same request can be tried again.";
-const UNENCODABLE_PAYLOAD_MESSAGE = "This change could not be encoded for sending, so nothing was sent. Check the entered values and try again.";
 /** The closed set of transport paths this family may call, exactly as AAP 0.6.3 names them. */
 export const INITIATIVE_API = Object.freeze({ initiatives: "/api/initiatives", members: "/api/initiatives/members", stages: "/api/initiatives/stages", requests: "/api/initiatives/requests", response: "/api/initiatives/requests/response", close: "/api/initiatives/close", reopen: "/api/initiatives/reopen" } as const);
 export type InitiativeApiPath = (typeof INITIATIVE_API)[keyof typeof INITIATIVE_API];
@@ -17,7 +13,7 @@ export async function postMutation<P>(path: InitiativeApiPath, input: MutationIn
   try {
     body = JSON.stringify(input);
   } catch {
-    return { outcome: "invalid", operationId: input.operationId, fields: { payload: [UNENCODABLE_PAYLOAD_MESSAGE] } };
+    return { outcome: "invalid", operationId: input.operationId, fields: { payload: ["This change could not be encoded for sending, so nothing was sent. Check the entered values and try again."] } };
   }
   let text: string;
   try {
@@ -57,10 +53,10 @@ export async function readEnvelope<T>(path: InitiativeApiPath, params: Readonly<
     status = response.status;
     text = await response.text();
   } catch {
-    return unreadResult(NO_RESPONSE_REFERENCE);
+    return unreadResult("no-response");
   }
   const parsed = parseJson(text);
-  if (parsed === null) return unreadResult(UNREADABLE_BODY_REFERENCE);
+  if (parsed === null) return unreadResult("unreadable-body");
   const body: unknown = parsed.value;
   if (status === 200) return isEnvelopeFrame(body) ? { kind: "envelope", envelope: body as T } : unreadResult(UNEXPECTED_BODY_REFERENCE);
   if (isOutcome(body)) {
@@ -70,8 +66,7 @@ export async function readEnvelope<T>(path: InitiativeApiPath, params: Readonly<
   }
   return unreadResult(UNEXPECTED_BODY_REFERENCE);
 }
-type ParsedBody = { readonly value: unknown };
-function parseJson(text: string): ParsedBody | null {
+function parseJson(text: string): { readonly value: unknown } | null {
   if (text === "") return null;
   try {
     const value: unknown = JSON.parse(text);
@@ -81,4 +76,4 @@ function parseJson(text: string): ParsedBody | null {
   }
 }
 /** The outage a read states when it produced none of its own outcomes: it reports the shared read attempt identity, because a read has no attempt of its own to name and its outage is the same read-level answer every other transport states. */
-const unreadResult = <T>(reference: string): ReadResult<T> => ({ kind: "unavailable", unavailable: { outcome: "unavailable", operationId: READ_ATTEMPT_ID, source: { system: TRANSPORT_SYSTEM, reference }, guidance: UNREAD_RESULT_GUIDANCE } });
+const unreadResult = <T>(reference: string): ReadResult<T> => ({ kind: "unavailable", unavailable: { outcome: "unavailable", operationId: READ_ATTEMPT_ID, source: { system: "data-service-transport", reference }, guidance: UNREAD_RESULT_GUIDANCE } });

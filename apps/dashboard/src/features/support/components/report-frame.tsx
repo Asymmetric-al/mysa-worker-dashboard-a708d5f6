@@ -33,11 +33,9 @@ export type ReportFrameProps = {
 };
 const LOADING_BODY = "No figure is shown until the read answers, because a report written before the answer would state a number nobody computed.";
 const COVERAGE_NOTE_TITLES: Readonly<Partial<Record<CoverageState, string>>> = { partial: "Coverage of this period is partial", unknown: "How much of this period the source covers is unknown" };
-const UNSTATED_BOUNDARY = "a date the source does not state";
 const GIFTS_PARAM = { from: "from", to: "to", currency: "currency", recipient: "recipient", partnerId: "partnerId", amountMin: "amountMin", amountMax: "amountMax", designation: "designation", method: "method", search: "search", sortField: "sortField", sortDirection: "sortDirection" } as const;
 const NO_YEARS: readonly number[] = [];
 /** The page window the address states, in the read's own vocabulary: a page index counted from zero, and the rows it holds, which travel together because a row count without a page states no window. */ const PAGE_PARAM = "page";
-const PAGE_SIZE_PARAM = "pageSize";
 function isReportResult(value: unknown): value is ReportResult {
   if (!isRecord(value)) return false;
   const snapshot = value["snapshot"];
@@ -60,12 +58,11 @@ const isReportEnvelope = (value: ReadEnvelope<unknown>): value is ReportEnvelope
 /** The envelope this page already read, when it is this authority's answer to this exact request: the same scope and the same query, identified by the one snapshot identity the read and its export share. A seed that answered another query would state another report's figures without asking for this one, so it is never used. */
 const seededEnvelope = (initialEnvelope: ReadEnvelope<unknown> | undefined, scope: Scope, asked: ReportRequestQuery): ReportEnvelope | undefined =>
   initialEnvelope === undefined || !isReportEnvelope(initialEnvelope) || !sameScope(initialEnvelope.scope, scope) ? undefined : reportSnapshotId(requestQueryOf(initialEnvelope.data.snapshot.query)) === reportSnapshotId(asked) ? initialEnvelope : undefined;
-const periodInputOf = (period: ReportQuery["period"]): ReportRequestQuery["period"] => (period.kind === "preset" ? { kind: "preset", preset: period.preset } : period.kind === "year" ? { kind: "year", year: period.year } : { kind: "explicit", from: String(period.from), to: String(period.to) });
 function requestQueryOf(query: ReportQuery): ReportRequestQuery {
-  const { amountRange, page, sort } = query;
+  const { amountRange, page, period, sort } = query;
   return {
     reportId: query.reportId,
-    period: periodInputOf(query.period),
+    period: period.kind === "preset" ? { kind: "preset", preset: period.preset } : period.kind === "year" ? { kind: "year", year: period.year } : { kind: "explicit", from: String(period.from), to: String(period.to) },
     ...(query.currency.kind === "one" ? { currency: query.currency.currency } : {}),
     ...(amountRange === undefined ? {} : { amountRange: { minMinor: amountRange.minMinor, maxMinor: amountRange.maxMinor } }),
     ...(query.designation === undefined ? {} : { designation: query.designation }),
@@ -79,7 +76,7 @@ function requestQueryOf(query: ReportQuery): ReportRequestQuery {
 }
 function coverageNoteOf(coverage: Coverage): { readonly title: string; readonly body: string } | null {
   const title = COVERAGE_NOTE_TITLES[coverage.state];
-  return title === undefined ? null : { title, body: fillTemplate(COVERAGE_TEMPLATES[coverage.state], { from: coverage.from ?? UNSTATED_BOUNDARY, to: coverage.to ?? UNSTATED_BOUNDARY }) };
+  return title === undefined ? null : { title, body: fillTemplate(COVERAGE_TEMPLATES[coverage.state], { from: coverage.from ?? "a date the source does not state", to: coverage.to ?? "a date the source does not state" }) };
 } /** The gifts address one matrix cell opens: the query that cell stands for, stated in the ledger's own filter set. */
 function cellDrilldownHref(query: ReportQuery, attribution: GiftAttribution, cell: MatrixCell): string {
   const drilldown = matrixDrilldownQuery(query, attribution, cell.currency, cell.bucketStart, cell.bucketEnd); // The narrowing is derived here from the query the matrix was computed from, the row's own attribution and the cell's month, so no cell carries a copy of the query behind it.
@@ -148,7 +145,7 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
     (page: number, pageSize: number): void => {
       const params = new URLSearchParams(window.location.search);
       params.set(PAGE_PARAM, String(page));
-      params.set(PAGE_SIZE_PARAM, String(pageSize));
+      params.set("pageSize", String(pageSize));
       router.replace(`${pathname}?${params.toString()}`, { scroll: false });
     },
     [pathname, router],
@@ -209,9 +206,7 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink className="inline-link" render={<Link href="/support" />}>
-                Support
-              </BreadcrumbLink>{" "}
+              <BreadcrumbLink {...{ className: "inline-link", render: <Link href="/support" /> }}>Support</BreadcrumbLink>{" "}
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
@@ -225,11 +220,7 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
         </header>
         {content}
       </div>
-      {printed === null ? null : (
-        <div data-slot="report-print" className="hidden print:block">
-          {printed}
-        </div>
-      )}
+      {printed === null ? null : <div {...{ "data-slot": "report-print", className: "hidden print:block" }}>{printed}</div>}
     </div>
   );
 }

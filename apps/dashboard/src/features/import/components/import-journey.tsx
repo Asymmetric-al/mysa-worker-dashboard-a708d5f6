@@ -19,7 +19,7 @@ import type { AcceptImportRowsPayload, CancelPayload } from "../schemas/acceptan
 import FileChooser from "./file-chooser";
 import ImportNotice from "./import-notice";
 import ImportStepper from "./import-stepper";
-import StepAcceptance from "./step-acceptance";
+import StepAcceptance, { type StepAcceptanceProps } from "./step-acceptance";
 import StepMapping from "./step-mapping";
 import StepResults, { type ImportResultsRow, type ImportResultsView } from "./step-results";
 import StepReview, { type ImportStopControl, type StepReviewRefusal } from "./step-review";
@@ -59,11 +59,8 @@ function isImportProposalView(value: unknown): value is ImportProposalView {
   if (!isRecord(value)) return false;
   return isNonEmptyString(value.importOperationId) && typeof value.inFlight === "boolean" && typeof value.revision === "string" && isRecord(value.file) && isRecord(value.summary) && isRecord(value.rowWindow) && Array.isArray(value.rows) && isRecord(value.record) && (value.review === null || isRecord(value.review));
 }
-function isImportReceiptView(value: unknown): value is ImportReceiptView {
-  return (
-    isRecord(value) && isNonEmptyString(value.importOperationId) && isNonEmptyString(value.processedAt) && typeof value.revision === "string" && isRecord(value.file) && isRecord(value.counts) && isRecord(value.summary) && Array.isArray(value.rows) && isRecord(value.rowWindow) && typeof value.cancelled === "boolean"
-  );
-}
+const isImportReceiptView = (value: unknown): value is ImportReceiptView =>
+  isRecord(value) && isNonEmptyString(value.importOperationId) && isNonEmptyString(value.processedAt) && typeof value.revision === "string" && isRecord(value.file) && isRecord(value.counts) && isRecord(value.summary) && Array.isArray(value.rows) && isRecord(value.rowWindow) && typeof value.cancelled === "boolean";
 const settledRowCount = (view: ImportProposalView): number => view.record.results.filter((result) => result.state === "accepted" || result.state === "already-accepted" || result.state === "skipped").length;
 const stoppableRowCount = (view: ImportProposalView): number => Math.max(0, view.file.rowCount - settledRowCount(view));
 function stateCountsOfResults(results: ImportProposalView["record"]["results"]): Readonly<Record<ImportRowState, number>> | null {
@@ -118,14 +115,15 @@ function proposeNoticeOf(outcome: MutationOutcome): ProposeNotice | null {
       return null;
   }
 }
-function reviewRefusalOf(outcome: MutationOutcome): StepReviewRefusal | null {
+function reviewRefusalOf(outcome: MutationOutcome, decided: { readonly rowNumber: number; readonly decision: ImportDecisionInput }): StepReviewRefusal | null {
   switch (outcome.outcome) {
     case "invalid":
       return { kind: "invalid", errors: fieldErrorsFromInvalid(outcome) };
     case "denied":
       return { kind: "denied", reasonCode: outcome.reasonCode };
     case "conflict":
-      return { kind: "conflict" };
+      // The decision this attempt posted and the input the service preserved are the same value, and the echoed `preservedInput` is `unknown`, so the typed decision is the one stated back beside the revision the review now stands at.
+      return { kind: "conflict", rowNumber: decided.rowNumber, currentRevision: outcome.currentRevision, preservedInput: decided.decision };
     case "unavailable":
       return { kind: "unavailable", source: outcome.source, guidance: outcome.guidance };
     case "unknown":
@@ -143,8 +141,7 @@ function ProposeNoticeBlock({ notice }: { readonly notice: ProposeNotice }): Rea
   const details = notice.kind === "denied" ? [{ label: "Reason", value: notice.reasonCode }] : notice.kind === "unavailable" ? [{ label: "Source", value: formatSourceReference(notice.source), guidance: notice.guidance }] : notice.kind === "unknown" ? [{ label: "Operation", value: notice.operationId }] : [];
   return <ImportNotice destructive={notice.kind === "denied"} title={copy.title} lead={copy.lead} details={details} />;
 }
-type ReadNoticeProps = { readonly state: ProposalRead | ResultsRead; readonly title: string; readonly onRetry: (request: ReadRequest) => void; readonly fallback?: ReactElement | null };
-function ReadNotice({ state, title, onRetry, fallback = null }: ReadNoticeProps): ReactElement | null {
+function ReadNotice({ state, title, onRetry, fallback = null }: { readonly state: ProposalRead | ResultsRead; readonly title: string; readonly onRetry: (request: ReadRequest) => void; readonly fallback?: ReactElement | null }): ReactElement | null {
   switch (state.kind) {
     case "reading":
       return <StateNotice kind="loading" title={JOURNEY_COPY.reading} />;
@@ -306,9 +303,12 @@ function ReadNotice({ state, title, onRetry, fallback = null }: ReadNoticeProps)
       setReviewRefusal(null);
       const input: Omit<MutationInput<ImportDecisionInput>, "operationId"> = { scope: currentScope, expectedRevision: currentRevision, payload: decision };
       const outcome = await setRowDecisionRequest<ImportDecisionInput>({ operationId: operationIdFor(intentKeyOf("setRowDecision", input)), ...input });
-      setDecidingRow(null);
+      // One row's decision may still be in flight after another row's attempt settled, so only the row whose own attempt settled stops reading as pending.
+      setDecidingRow((current) => (current === rowNumber ? null : current));
       if (!wasApplied(outcome)) {
-        setReviewRefusal(reviewRefusalOf(outcome));
+        setReviewRefusal(reviewRefusalOf(outcome, { rowNumber, decision }));
+        // A stale revision is read back before the worker decides again: the rows and the revision on screen are then the ones the record now stands at, so the row's own control submits against them instead of a revision the service has already left behind.
+        if (outcome.outcome === "conflict" && importIdentity !== null) await readProposal({ identity: importIdentity, page: paging.page, pageSize: paging.pageSize });
         return;
       }
       journey.setDecision(rowNumber, decision);
@@ -432,16 +432,10 @@ function ReadNotice({ state, title, onRetry, fallback = null }: ReadNoticeProps)
       case "accept":
         if (proposalView === null || proposalEnvelope === null) return <ReadNotice state={proposalRead} title={stepTitle(step)} onRetry={(request) => void readProposal(request)} fallback={<StateNotice kind="loading" title={JOURNEY_COPY.reading} />} />;
         if (proposalView.review === null) return <StateNotice kind="unavailable" title={stepTitle("accept")} description={proposalView.reviewDetail.message} />;
+        const acceptInput: StepAcceptanceProps["input"] = { scope: currentScope, expectedRevision: currentRevision, payload: { acknowledged: true, fileFingerprint: proposalView.fileFingerprint, decisions: Object.values(decisions) } };
         return (
           <div className="flex min-w-0 flex-col gap-4">
-            <StepAcceptance
-              key={journey.acceptIntentKey}
-              summary={proposalView.summary}
-              input={{ scope: currentScope, expectedRevision: currentRevision, payload: { acknowledged: true, fileFingerprint: proposalView.fileFingerprint, decisions: Object.values(decisions) } }}
-              submit={submitAcceptance}
-              decidedRowCount={Object.values(decisions).length}
-              onCancel={() => journey.goTo("review")}
-            />
+            <StepAcceptance key={journey.acceptIntentKey} summary={proposalView.summary} input={acceptInput} submit={submitAcceptance} decidedRowCount={Object.values(decisions).length} onCancel={() => journey.goTo("review")} />
             {acceptUnknown === null ? null : <StateNotice kind="unknown" title={JOURNEY_COPY.unknownAccept.title} description={JOURNEY_COPY.unknownAccept.statement} operationId={acceptUnknown} retry={{ label: JOURNEY_COPY.checkAcceptanceLabel, onClick: checkAcceptance }} />}
             {resultsRead.kind === "pending" ? (
               <Alert>

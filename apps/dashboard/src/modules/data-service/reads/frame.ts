@@ -20,8 +20,7 @@ export type ScenarioInstant = ReturnType<typeof instantAt>;
 export type OpenedSession = { readonly ok: true; readonly session: ResolvedSession; readonly instant: ScenarioInstant } | { readonly ok: false; readonly result: ReadResult<never> };
 export type OpenedRead = { readonly ok: true; readonly session: ResolvedSession; readonly scope: Scope; readonly instant: ScenarioInstant } | { readonly ok: false; readonly result: ReadResult<never> };
 export type StoredRead = { readonly ok: true; readonly documents: SessionDocuments } | { readonly ok: false; readonly result: ReadResult<never> };
-/** The read's denial, stated the one way every read states it. */
-export const deniedRead = (reasonCode: DenialReason): ReadResult<never> => ({ kind: "denied", denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode }) });
+/** The read's denial, stated the one way every read states it. */ export const deniedRead = (reasonCode: DenialReason): ReadResult<never> => ({ kind: "denied", denied: denied({ operationId: READ_ATTEMPT_ID, reasonCode }) });
 /** An unavailable source, logged against the job that could not read it and worded by that job's own guidance. */
 export function sourceUnavailableRead(input: { readonly job: string; readonly source: SourceReference; readonly guidance: string }): ReadResult<never> {
   logger.sourceUnavailable({ job: input.job, source: { system: input.source.system, reference: input.source.reference } });
@@ -66,8 +65,7 @@ export async function openRead(options: { readonly job: string; readonly source?
   return permitted !== undefined && !permitted.allowed ? { ok: false, result: { kind: "denied", denied: permitted.denial } } : { ok: true, session, scope, instant };
 }
 export type DecodedStore<T> = { readonly ok: true; readonly value: T; readonly documents: SessionDocuments } | { readonly ok: false; readonly result: ReadResult<never> };
-/** The one source a read reports when the defect is the store rather than the document it holds. */
-export const storeSource = (reference: string): SourceReference => ({ system: LOCAL_STORE_SYSTEM, reference });
+/** The one source a read reports when the defect is the store rather than the document it holds. */ export const storeSource = (reference: string): SourceReference => ({ system: LOCAL_STORE_SYSTEM, reference });
 /** An unavailable synthetic store, named by the reference a read states for it. */
 export const storeUnavailableRead = (job: string, reference: string, guidance: string): ReadResult<never> => sourceUnavailableRead({ job, source: storeSource(reference), guidance });
 /** Reads the session's stored documents, answering an unreadable store, a missing session and an undecodable document as the one unavailable source this read reports. */
@@ -89,8 +87,7 @@ export async function readDecodedState<T>(options: { readonly session: ResolvedS
   return !decoded.success ? { ok: false, result: sourceUnavailableRead({ job: options.job, source: options.source, guidance: options.guidance }) } : { ok: true, value: decoded.data, documents: stored.documents };
 }
 export type OpenedStatefulRead<T> = { readonly ok: true; readonly session: ResolvedSession; readonly scope: Scope; readonly instant: ScenarioInstant; readonly state: T; readonly documents: SessionDocuments } | { readonly ok: false; readonly result: ReadResult<never> };
-/** Opens a read's session, scope and job authority and decodes the state document it projects from, which is the whole of what a stateful read does before it reads a record. */
-export async function openStatefulRead<T>(options: {
+/** Opens a read's session, scope and job authority and decodes the state document it projects from, which is the whole of what a stateful read does before it reads a record. */ export async function openStatefulRead<T>(options: {
   readonly source?: SessionSource;
   readonly unselectedReason: DenialReason;
   readonly permit?: (session: ResolvedSession, scope: Scope) => AccessDecision;
@@ -117,23 +114,20 @@ export function cachedDecoder<T>(schema: z.ZodType<T>): (value: unknown) => z.Zo
     return parsed;
   };
 }
-/** Two sources' coverage merged into the one a read states for both: unknown wherever either is, and complete only where both are. */
-export function mergedCoverage(base: Coverage, workload: Coverage): Coverage {
+/** Two sources' coverage merged into the one a read states for both: unknown wherever either is, and complete only where both are. */ export function mergedCoverage(base: Coverage, workload: Coverage): Coverage {
   if (base.state === "unknown" || workload.state === "unknown") return { from: null, to: null, state: "unknown" };
   const earlier = (left: string | null, right: string | null): string | null => (left === null ? right : right === null ? left : left <= right ? left : right);
   return { from: earlier(base.from, workload.from), to: earlier(base.to, workload.to), state: base.state === "complete" && workload.state === "complete" ? "complete" : "partial" };
 }
 export type PageWindow = { readonly page: number; readonly pageSize: number; readonly pageCount: number; readonly start: number; readonly end: number };
-/** The window a page request selects over a whole result, clamped to the pages that exist. */
-export function pageWindow(total: number, requestedPage: number | undefined, requestedPageSize: number | undefined): PageWindow {
+/** The window a page request selects over a whole result, clamped to the pages that exist. */ export function pageWindow(total: number, requestedPage: number | undefined, requestedPageSize: number | undefined): PageWindow {
   const pageSize = clampPageSize(requestedPageSize);
   const pageCount = Math.ceil(total / pageSize);
   const page = Math.min(Math.max(1, requestedPage === undefined || !Number.isFinite(requestedPage) ? 1 : Math.trunc(requestedPage)), Math.max(1, pageCount));
   const start = (page - 1) * pageSize;
   return { page, pageSize, pageCount, start, end: start + pageSize };
 }
-/** One stored gift row projected into the report engine's own row, which every read that states received support feeds it. */
-export function toReportGiftRow(record: GiftRowRecord): GiftRow {
+/** One stored gift row projected into the report engine's own row, which every read that states received support feeds it. */ export function toReportGiftRow(record: GiftRowRecord): GiftRow {
   const originalGiftOn = statedDateOrNull(record.originalGiftOn, "gift date");
   return {
     giftRowId: record.giftRowId,
@@ -149,8 +143,7 @@ export function toReportGiftRow(record: GiftRowRecord): GiftRow {
     entryOn: statedDate(record.entryOn, "gift entry date"),
   };
 }
-/** One stored commitment row projected into the report engine's own row, with its stated dates as civil dates and its fixed total as the progress it records. */
-export function toCommitmentRow(record: CommitmentRowRecord): CommitmentRow {
+/** One stored commitment row projected into the report engine's own row, with its stated dates as civil dates and its fixed total as the progress it records. */ export function toCommitmentRow(record: CommitmentRowRecord): CommitmentRow {
   const lastSuccessfulOn = statedDateOrNull(record.lastSuccessfulOn, "commitment date");
   const nextEligibleOn = statedDateOrNull(record.nextEligibleOn, "commitment date");
   const resumeOn = statedDateOrNull(record.pause.resumeOn, "commitment pause date");
@@ -166,8 +159,7 @@ export function toCommitmentRow(record: CommitmentRowRecord): CommitmentRow {
     ...(record.fixedTotal === null ? {} : { fixedTotal: record.fixedTotal }),
   };
 }
-/** The eight-character FNV-1a digest of a stored string, so a record's stored form can be compared without carrying the form itself. */
-export function digest(value: string): string {
+/** The eight-character FNV-1a digest of a stored string, so a record's stored form can be compared without carrying the form itself. */ export function digest(value: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
@@ -184,8 +176,7 @@ export function giftRowOrNull(record: GiftRowRecord): GiftRow | undefined {
     throw fault;
   }
 }
-/** One stored commitment row as the report engine's own row, or nothing when a stored day it states is not a civil date. */
-export function commitmentRowOrNull(record: CommitmentRowRecord): CommitmentRow | undefined {
+/** One stored commitment row as the report engine's own row, or nothing when a stored day it states is not a civil date. */ export function commitmentRowOrNull(record: CommitmentRowRecord): CommitmentRow | undefined {
   try {
     return toCommitmentRow(record);
   } catch (fault) {
@@ -203,8 +194,7 @@ export function giftRowsOf(records: readonly GiftRowRecord[]): readonly GiftRow[
   }
   return rows;
 }
-/** Every stored commitment row converted, or nothing at all when one of them states a day this runtime cannot read. */
-export function commitmentRowsOf(records: readonly CommitmentRowRecord[]): readonly CommitmentRow[] | undefined {
+/** Every stored commitment row converted, or nothing at all when one of them states a day this runtime cannot read. */ export function commitmentRowsOf(records: readonly CommitmentRowRecord[]): readonly CommitmentRow[] | undefined {
   const rows: CommitmentRow[] = [];
   for (const record of records) {
     const row = commitmentRowOrNull(record);
@@ -213,8 +203,7 @@ export function commitmentRowsOf(records: readonly CommitmentRowRecord[]): reado
   }
   return rows;
 }
-/** A collection's revision: one prefix and a digest of its parts, taken in the order the caller orders them. */
-export function hashedRevision(prefix: string, orderedParts: readonly string[]): string {
+/** A collection's revision: one prefix and a digest of its parts, taken in the order the caller orders them. */ export function hashedRevision(prefix: string, orderedParts: readonly string[]): string {
   let hash = 0x811c9dc5;
   for (const part of orderedParts) {
     for (const character of `${part}\u001f`) {
@@ -249,14 +238,11 @@ export function statedProjection(input: {
   const { supportSubjectId, basis, lastSourceUpdate, source } = record;
   return { supportSubjectId, basis, currencyExponents, coverage, asOf: input.asOf, lastSourceUpdate, source, ...(input.withGoal && record.goal !== null ? { goal: record.goal } : {}), gifts: [...input.gifts, ...input.workloadGifts].map(toReportGiftRow), commitments: input.commitments.map(toCommitmentRow) };
 }
-/** The state a count is recorded as: a whole-result total is never unknown, and zero is stated as zero rather than as a value. */
-export const countState = (count: number): RecordedValueState => (count === 0 ? "zero" : "value");
-/** The state a derived value is recorded as when the value it came from may itself be a subtotal. */
-export const recordedStateOf = (state: ValueState): RecordedValueState => (state === "incomplete-subtotal" ? "value" : state);
+/** The state a count is recorded as: a whole-result total is never unknown, and zero is stated as zero rather than as a value. */ export const countState = (count: number): RecordedValueState => (count === 0 ? "zero" : "value");
+/** The state a derived value is recorded as when the value it came from may itself be a subtotal. */ export const recordedStateOf = (state: ValueState): RecordedValueState => (state === "incomplete-subtotal" ? "value" : state);
 /** One advisory action, stated the way every read states it: an unavailable action always says why it is. */
 export const readAction = (name: string, available: boolean, reason = "This action is not available here."): ReadAction => (available ? { name, available } : { name, available, reason });
 export { storedInstantOf as instantOf } from "../projection";
-/** A stored civil date, or nothing when the record states none this runtime cannot read. */
 /** The currency exponents this application knows for the codes one source states, so a generated workload header merges into a stored record without inventing a precision. */
 export function knownExponentsOf(codes: readonly string[]): Record<string, number> {
   const exponents: Record<string, number> = {};
@@ -266,17 +252,15 @@ export function knownExponentsOf(codes: readonly string[]): Record<string, numbe
   }
   return exponents;
 }
-export function civilDateOf(value: string): CivilDate | undefined {
+/** A stored civil date, or nothing when the record states none this runtime cannot read. */ export function civilDateOf(value: string): CivilDate | undefined {
   const parsed = parseCivilDate(value);
   return parsed.status === "parsed" ? parsed.date : undefined;
 }
-/** A stored civil date a record cannot be read without. */
-export function statedDate(value: string, field: string): CivilDate {
+/** A stored civil date a record cannot be read without. */ export function statedDate(value: string, field: string): CivilDate {
   const parsed = civilDateOf(value);
   if (parsed === undefined) throw new TypeError(`A stored ${field} value is not a civil date, so the record it belongs to cannot be read.`);
   return parsed;
 }
-/** A stored civil date the record may leave unstated. */
-export const statedDateOrNull = (value: string | null, field: string): CivilDate | undefined => (value === null ? undefined : statedDate(value, field));
+/** A stored civil date the record may leave unstated. */ export const statedDateOrNull = (value: string | null, field: string): CivilDate | undefined => (value === null ? undefined : statedDate(value, field));
 /** Orders two optional texts: the stated one first, then the absent, both by code unit. */
 export const compareOptionalText = (left: string | null, right: string | null): number => (left === null ? (right === null ? 0 : 1) : right === null ? -1 : compareCodeUnits(left, right));

@@ -28,8 +28,7 @@ function relativeSegmentsOf(reference: string): readonly string[] {
   return segments;
 }
 const mediaPathOf = (reference: string): string => join(DATA_ROOT, ...relativeSegmentsOf(reference));
-/** Writes one rendition's bytes into custody through the store's one atomic writer. */
-export const writeMediaBytes = async (reference: string, bytes: Uint8Array): Promise<void> => writeBytesAtomic(mediaPathOf(reference), bytes);
+/** Writes one rendition's bytes into custody through the store's one atomic writer. */ export const writeMediaBytes = async (reference: string, bytes: Uint8Array): Promise<void> => writeBytesAtomic(mediaPathOf(reference), bytes);
 /** The size in bytes of one custody file: the one fact a serving decision needs, and the count the response's own length is computed from. Answers `undefined` exactly where a read would — a reference outside the custody tree, or a path that names no readable file. */
 export async function statMediaBytes(reference: string): Promise<number | undefined> {
   let file: string;

@@ -76,13 +76,10 @@ function utf8Bytes(text: string): number[] {
   for (const character of text) {
     const code = character.codePointAt(0);
     if (code === undefined) continue;
-    if (code < 0x80) {
-      encoded.push(code);
-    } else if (code < 0x800) {
-      encoded.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
-    } else if (code < 0x10000) {
-      encoded.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
-    } else encoded.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+    if (code < 0x80) encoded.push(code);
+    else if (code < 0x800) encoded.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+    else if (code < 0x10000) encoded.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+    else encoded.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
   }
   return encoded;
 }
@@ -145,14 +142,7 @@ function displayDimensions(header: Metadata): { width: number; height: number } 
 }
 async function renderDisplayImage(bytes: Uint8Array, format: AdmittedImageFormat): Promise<Buffer> {
   const bounded = sharp(bytes, { failOn: "error", limitInputPixels: DECODE_PIXEL_LIMIT }).autoOrient().resize({ width: IMAGE_DISPLAY_MAX_EDGE_PX, height: IMAGE_DISPLAY_MAX_EDGE_PX, fit: "inside", withoutEnlargement: true });
-  switch (format) {
-    case "jpeg":
-      return bounded.jpeg({ quality: JPEG_QUALITY, progressive: true }).toBuffer();
-    case "png":
-      return bounded.png({ compressionLevel: PNG_COMPRESSION_LEVEL, adaptiveFiltering: true }).toBuffer();
-    case "webp":
-      return bounded.webp({ quality: WEBP_QUALITY }).toBuffer();
-  }
+  return format === "jpeg" ? bounded.jpeg({ quality: JPEG_QUALITY, progressive: true }).toBuffer() : format === "png" ? bounded.png({ compressionLevel: PNG_COMPRESSION_LEVEL, adaptiveFiltering: true }).toBuffer() : bounded.webp({ quality: WEBP_QUALITY }).toBuffer();
 }
 async function verifyPreparedImage(prepared: Buffer, sourceName: string | undefined): Promise<VerificationResult> {
   let written: Metadata;

@@ -19,10 +19,6 @@ const HEADING_LEVEL: ReviewHeadingLevel = 3;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's heading utility per level, so this chooser states the level it lands at with the same measure on every surface. */
 const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
-const RADIO_GROUP_LIMIT = 3;
-const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
-const FACT_TERM_CLASS = "text-muted-foreground";
-const DISABLED_APPLY_CLASS = "min-h-target max-w-full self-start whitespace-normal";
 const SURFACE_COPY = {
   choiceQuestion: "Which preset should this edition start from?",
   proposalHeading: "What this preset proposes",
@@ -33,11 +29,8 @@ const SURFACE_COPY = {
   partCount: (count: number): string => (count === 1 ? "1 section" : `${String(count)} sections`),
   unavailable: { "no-target": "This edition has no draft yet, so there is nothing for a preset to compose into.", "no-context": "The draft's context is not stated on this surface, so no preset can be applied from here.", disabled: "This edition cannot take a preset right now." },
 } as const;
-type PresetWithheldReason = keyof typeof SURFACE_COPY.unavailable;
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { presetId: SURFACE_COPY.presetTerm, variantId: SURFACE_COPY.languageTerm, draftRevisionId: SURFACE_COPY.draftTerm };
-/** One preset as the Page and catalogue reads supply it: the catalogue's own composition and nothing else. */
 export type PresetView = { readonly presetId: string; readonly sections: readonly PageSectionType[]; readonly creates: "reviewable-draft" };
-/** The Page the settled attempt re-reads, keyed by document in the section transport. */
 export type PresetChooserProps = { readonly family: PageFamily; readonly presets: readonly PresetView[]; readonly baseVariantId: string; readonly locale: string; readonly expectedRevision: string; readonly disabled?: boolean; readonly scope?: Scope; readonly documentId?: string; readonly className?: string };
 type PresetIntent = Omit<MutationInput<applyPresetPayload>, "operationId">;
 type PresetOffer = { readonly preset: PresetView; readonly sections: readonly CatalogueSectionCopy[] };
@@ -73,8 +66,8 @@ const ProposalList = ({ offer }: { readonly offer: PresetOffer }): ReactElement 
   </ul>
 );
 const FactRow = ({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement => (
-  <div className={FACT_ROW_CLASS}>
-    <dt className={FACT_TERM_CLASS}>{term}</dt>
+  <div className={"flex min-w-0 flex-wrap items-baseline gap-x-2"}>
+    <dt className={"text-muted-foreground"}>{term}</dt>
     <dd className="min-w-0">{children}</dd>
   </div>
 );
@@ -84,11 +77,7 @@ const WithheldNotice = ({ id, body, offersButton }: { readonly id: string; reado
     <Alert role={undefined}>
       <AlertDescription id={id}>{body}</AlertDescription>
     </Alert>
-    {offersButton ? (
-      <Button type="button" variant="outline" disabled aria-describedby={id} className={DISABLED_APPLY_CLASS}>
-        {copy.preset.apply}
-      </Button>
-    ) : null}
+    {offersButton ? <Button {...{ type: "button" as const, variant: "outline" as const, disabled: true as const, "aria-describedby": id, className: "min-h-target max-w-full self-start whitespace-normal" }}>{copy.preset.apply}</Button> : null}
   </div>
 );
 /** The preset chooser for the active family, and the one step that applies a preset. */
@@ -114,7 +103,7 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
     if (selectedPresetId === null || !isAdmittedPresetId(selectedPresetId) || variantId === "") return null;
     return { presetId: selectedPresetId, variantId };
   }, [selectedPresetId, variantId]);
-  const withheld: PresetWithheldReason | null = disabled ? "disabled" : variantId === "" || revision === "" ? "no-target" : scope === undefined || documentIdValue === "" ? "no-context" : null;
+  const withheld: keyof typeof SURFACE_COPY.unavailable | null = disabled ? "disabled" : variantId === "" || revision === "" ? "no-target" : scope === undefined || documentIdValue === "" ? "no-context" : null;
   const carriesReceipt = settled !== null && submitted !== null && (settled.outcome === "accepted" || settled.outcome === "alreadyAccepted" || settled.outcome === "unchanged" || settled.outcome === "unknown") && submitted.payload.presetId === payload?.presetId;
   const liveInput = useMemo<PresetIntent | null>(() => (payload === null || scope === undefined ? null : { scope, expectedRevision: revision, payload }), [payload, scope, revision]);
   const input = carriesReceipt && submitted !== null ? submitted : liveInput;
@@ -143,9 +132,7 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
       <Card>
         <CardHeader>
           <CardTitle>
-            <Heading id={headingId} className={HEADING_SCALE[HEADING_LEVEL]}>
-              {copy.preset.heading}
-            </Heading>
+            <Heading {...{ id: headingId, className: HEADING_SCALE[HEADING_LEVEL] }}>{copy.preset.heading}</Heading>
           </CardTitle>
           <CardDescription className="flex min-w-0 flex-wrap items-baseline gap-x-2">
             <bdi>{copy.families[family].label}</bdi>
@@ -158,11 +145,9 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
             <WithheldNotice id={emptyId} body={copy.preset.emptyReason} offersButton />
           ) : (
             <>
-              {offers.length <= RADIO_GROUP_LIMIT ? (
+              {offers.length <= 3 ? (
                 <div className="flex min-w-0 flex-col gap-2">
-                  <p id={questionId} className="type-group-title text-pretty">
-                    {SURFACE_COPY.choiceQuestion}
-                  </p>
+                  <p {...{ id: questionId, className: "type-group-title text-pretty" as const }}>{SURFACE_COPY.choiceQuestion}</p>
                   <RadioGroup
                     value={selectedPresetId ?? ""}
                     onValueChange={(next) => {
@@ -189,9 +174,7 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
                 </div>
               ) : (
                 <div className="flex min-w-0 flex-col gap-2">
-                  <Label htmlFor={choicesId} className="min-h-target">
-                    {SURFACE_COPY.choiceQuestion}
-                  </Label>
+                  <Label {...{ htmlFor: choicesId, className: "min-h-target" as const }}>{SURFACE_COPY.choiceQuestion}</Label>
                   <NativeSelect id={choicesId} value={selectedPresetId ?? ""} onChange={(event) => setChosenId(event.target.value)} aria-describedby={proposalId} disabled={disabled} className="w-full min-w-0">
                     {offers.map((offer) => (
                       <NativeSelectOption key={offer.preset.presetId} value={offer.preset.presetId}>{`${presetLabel(offer)} · ${SURFACE_COPY.partCount(offer.sections.length)}`}</NativeSelectOption>
@@ -203,9 +186,7 @@ export function PresetChooser({ family, presets, baseVariantId, locale, expected
                 <>
                   <Separator />
                   <section id={proposalId} aria-labelledby={proposalHeadingId} className="flex min-w-0 flex-col gap-2">
-                    <p id={proposalHeadingId} className="type-group-title">
-                      {SURFACE_COPY.proposalHeading}
-                    </p>
+                    <p {...{ id: proposalHeadingId, className: "type-group-title" as const }}>{SURFACE_COPY.proposalHeading}</p>
                     <ProposalList offer={chosen} />
                   </section>
                 </>

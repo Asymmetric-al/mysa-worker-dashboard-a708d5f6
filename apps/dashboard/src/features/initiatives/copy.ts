@@ -1,6 +1,5 @@
 import type { NoticeKind } from "@/components/state-notice";
-/** The three states of an initiative working-list membership. */
-export const MEMBERSHIP_STATES = ["included", "removed", "excluded"] as const;
+/** The three states of an initiative working-list membership. */ export const MEMBERSHIP_STATES = ["included", "removed", "excluded"] as const;
 export type MembershipState = (typeof MEMBERSHIP_STATES)[number];
 export const MEMBERSHIP_STATE_COPY: Record<MembershipState, { label: string; description: string; emptyNote: string }> = {
   included: { label: "On the working list", description: "You selected this partner for this initiative's reviewed working list.", emptyNote: "No partners are on the working list yet." },
@@ -16,8 +15,7 @@ export const MEMBERSHIP_RULES_COPY = {
   removalPreservesHistory: "Removing a partner keeps its history and any obligation recorded elsewhere.",
   returnRestoresEligiblePlanning: "Returning a partner restores eligible planning only and grants no permission.",
 } as const;
-/** The four ways a stage can appear on this surface. */
-export const STAGE_STATES = ["recorded", "retired", "denied", "unavailable"] as const;
+/** The four ways a stage can appear on this surface. */ export const STAGE_STATES = ["recorded", "retired", "denied", "unavailable"] as const;
 export type StageState = (typeof STAGE_STATES)[number];
 export const STAGE_STATE_COPY: Record<StageState, { label: string; description: string }> = {
   recorded: { label: "Recorded", description: "A human assessment the worker recorded; it is never a prediction of giving." },
@@ -35,8 +33,7 @@ export const STAGE_SELECTOR_COPY = {
   movedToListNote: "Moving a partner off the working list is the explicit Return action, never a drag.",
   noTaskCreatedNote: "Changing a stage creates no task and pauses or resumes nothing.",
 } as const;
-/** The seven ways a Request can be answered. */
-export const RESPONSE_KINDS = ["agreed", "conditional", "partial", "deferred", "declined", "unanswered", "needs clarification"] as const;
+/** The seven ways a Request can be answered. */ export const RESPONSE_KINDS = ["agreed", "conditional", "partial", "deferred", "declined", "unanswered", "needs clarification"] as const;
 export type ResponseKind = (typeof RESPONSE_KINDS)[number];
 /** The three kinds that assert agreement — agreed, conditional and partial. */
 export const ASSERTING_RESPONSE_KINDS = ["agreed", "conditional", "partial"] as const satisfies readonly ResponseKind[];
@@ -72,12 +69,9 @@ export const REQUESTED_TERMS_COPY = {
   versionLabel: "Terms version",
 } as const;
 const readableToken = (value: string): string => value.replace(/[_\s-]+/g, " ").trim() || REQUESTED_TERMS_COPY.notStated;
-/** Renders a cadence value from the envelope instead of leaving the field blank. */
-export const cadenceValueFallback = (value: string): string => readableToken(value);
-/** Renders a term value from the envelope instead of leaving the field blank. */
-export const termValueFallback = (value: string): string => readableToken(value);
-/** Renders a closure disposition from the envelope instead of leaving it blank. */
-export const dispositionFallback = (value: string): string => readableToken(value);
+/** Renders a cadence value from the envelope instead of leaving the field blank. */ export const cadenceValueFallback = (value: string): string => readableToken(value);
+/** Renders a term value from the envelope instead of leaving the field blank. */ export const termValueFallback = (value: string): string => readableToken(value);
+/** Renders a closure disposition from the envelope instead of leaving it blank. */ export const dispositionFallback = (value: string): string => readableToken(value);
 /** The four states a Request passes through; each owns its own draft and version. */
 export const REQUEST_LIFECYCLE_STATES = ["draft", "submitted", "presented", "answered"] as const;
 export type RequestLifecycleState = (typeof REQUEST_LIFECYCLE_STATES)[number];
@@ -111,8 +105,7 @@ export const CLOSURE_COPY = {
   reopenHelp: "Reopening allows new solicitation again, and the closure history stays in place.",
   historyPreservedNote: "Reopening keeps the closure history and the exclusions that are current.",
 } as const;
-/** The two initiative states. */
-export const INITIATIVE_STATES = ["open", "closed"] as const;
+/** The two initiative states. */ export const INITIATIVE_STATES = ["open", "closed"] as const;
 export type InitiativeState = (typeof INITIATIVE_STATES)[number];
 export const INITIATIVE_STATE_COPY: Record<InitiativeState, { label: string; description: string }> = {
   open: { label: "Open", description: "Accepting new solicitation and further recorded responses." },
@@ -133,7 +126,6 @@ export const INITIATIVE_COPY = {
   nextWorkHeading: "Next work",
   historyHeading: "History",
 } as const;
-/** Empty, unavailable, denied and unconfirmed results for this family. */
 export type StateNoticeKind = Exclude<NoticeKind, "loading" | "partial-coverage" | "language-unavailable">;
 export const STATE_NOTICE_COPY: Record<StateNoticeKind, { title: string; body: string; actionLabel: string | null }> = {
   empty: { title: "Nothing recorded yet", body: "Create an initiative to start a reviewed working list.", actionLabel: null },

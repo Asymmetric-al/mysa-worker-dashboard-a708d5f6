@@ -1,11 +1,8 @@
 import type { reads } from "@/modules/data-service";
 import { paramOf, wholeNumberOf, type SearchParams } from "../../page-frame";
-/** The bounded filter set the ledger read accepts, taken from its own signature rather than restated. */
-export type GiftsQueryInput = NonNullable<Parameters<typeof reads.support.readGifts>[0]>;
-/** The page window the ledger read accepts, taken from the same signature. */
-export type GiftsPageInput = NonNullable<GiftsQueryInput["page"]>;
-/** Every parameter this family's address states, named once so the ledger, the detail route and the way back read the same names. */
-export const GIFTS_PARAM = {
+/** The bounded filter set the ledger read accepts, taken from its own signature rather than restated. */ export type GiftsQueryInput = NonNullable<Parameters<typeof reads.support.readGifts>[0]>;
+/** The page window the ledger read accepts, taken from the same signature. */ export type GiftsPageInput = NonNullable<GiftsQueryInput["page"]>;
+/** Every parameter this family's address states, named once so the ledger, the detail route and the way back read the same names. */ export const GIFTS_PARAM = {
   period: "period",
   from: "from",
   to: "to",
@@ -22,11 +19,6 @@ export const GIFTS_PARAM = {
   page: "page",
   pageSize: "pageSize",
 } as const;
-const RECIPIENT_PARTNER = "partner";
-const RECIPIENT_ANONYMOUS = "anonymous";
-const RECIPIENT_UNRESOLVED = "unresolved";
-const SORT_ASCENDING = "asc";
-const SORT_DESCENDING = "desc";
 const SIGNED_INTEGER = /^-?\d{1,16}$/u;
 function minorUnitsOf(value: string | undefined): number | undefined {
   if (value === undefined || !SIGNED_INTEGER.test(value)) return undefined;
@@ -48,24 +40,22 @@ function amountRangeOf(stated: SearchParams): GiftsQueryInput["amountRange"] {
 }
 function partnerOf(stated: SearchParams): GiftsQueryInput["partner"] {
   const recipient = paramOf(stated, GIFTS_PARAM.recipient);
-  if (recipient === RECIPIENT_ANONYMOUS) return { kind: "anonymous" };
-  if (recipient === RECIPIENT_UNRESOLVED) return { kind: "unresolved" };
-  const partnerId = recipient === RECIPIENT_PARTNER ? paramOf(stated, GIFTS_PARAM.partnerId) : undefined;
+  if (recipient === "anonymous") return { kind: "anonymous" };
+  if (recipient === "unresolved") return { kind: "unresolved" };
+  const partnerId = recipient === "partner" ? paramOf(stated, GIFTS_PARAM.partnerId) : undefined;
   return partnerId === undefined ? undefined : { kind: "partner", partnerId };
 }
 function sortOf(stated: SearchParams): GiftsQueryInput["sort"] {
   const field = paramOf(stated, GIFTS_PARAM.sortField);
   const direction = paramOf(stated, GIFTS_PARAM.sortDirection);
-  return field === undefined || (direction !== SORT_ASCENDING && direction !== SORT_DESCENDING) ? undefined : { field, direction };
+  return field === undefined || (direction !== "asc" && direction !== "desc") ? undefined : { field, direction };
 }
-/** The page window the address states, or `undefined` where it states none, so the ledger's own default stays the ledger's. */
-export function statedPageOf(stated: SearchParams): GiftsQueryInput["page"] {
+/** The page window the address states, or `undefined` where it states none, so the ledger's own default stays the ledger's. */ export function statedPageOf(stated: SearchParams): GiftsQueryInput["page"] {
   const index = wholeNumberOf(paramOf(stated, GIFTS_PARAM.page));
   const size = wholeNumberOf(paramOf(stated, GIFTS_PARAM.pageSize));
   return index === undefined && size === undefined ? undefined : { ...(index === undefined ? {} : { index }), ...(size === undefined ? {} : { size }) };
 }
-/** The ledger's question as the address states it: every filter the read admits, and the page window the route decided. */
-export function giftQueryOf(stated: SearchParams, page: GiftsQueryInput["page"]): GiftsQueryInput {
+/** The ledger's question as the address states it: every filter the read admits, and the page window the route decided. */ export function giftQueryOf(stated: SearchParams, page: GiftsQueryInput["page"]): GiftsQueryInput {
   const period = periodOf(stated);
   const currency = paramOf(stated, GIFTS_PARAM.currency);
   const amountRange = amountRangeOf(stated);

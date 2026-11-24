@@ -20,7 +20,6 @@ import { useRecordRequestResponse } from "../hooks/use-request-mutations";
 import { recordRequestResponsePayloadSchemaFor, type RecordRequestResponsePayload } from "../schemas/response";
 import { errorsOf, FactList, ReviewFact, TermFact, type FactEntry } from "./figures";
 type RequestRow = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"]["data"]["requests"]["items"][number];
-type PresentationRow = NonNullable<RequestRow["presentation"]>;
 type ResponseRow = NonNullable<RequestRow["response"]>;
 const responseKindOf = (recorded: ResponseRow["kind"]): ResponseKind => (recorded === "needs-clarification" ? "needs clarification" : recorded);
 const HEADING_TAG = { 3: "h3", 4: "h4" } as const;
@@ -28,7 +27,6 @@ type RequestResponseHeadingLevel = keyof typeof HEADING_TAG;
 const HEADING_SCALE: Readonly<Record<RequestResponseHeadingLevel, string>> = { 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING_LEVEL = 4;
 const ASSERTING_KINDS: ReadonlySet<string> = new Set(ASSERTING_RESPONSE_KINDS);
-const NO_KIND_VALUE = "";
 const KIND_FIELD = "kind";
 const RESPONDENT_FIELD = "respondentId";
 const EVIDENCE_FIELD = "standingEvidence";
@@ -98,7 +96,7 @@ export interface RequestResponseFormProps {
   readonly headingLevel?: RequestResponseHeadingLevel;
   readonly className?: string;
 }
-const defaultValuesFor = (): ResponseFormValues => ({ kind: NO_KIND_VALUE, respondentId: "", standingEvidence: "" });
+const defaultValuesFor = (): ResponseFormValues => ({ kind: "", respondentId: "", standingEvidence: "" });
 const copyForKind = (kind: ResponseKind): { readonly label: string; readonly description: string } => RESPONSE_KIND_COPY[kind];
 const isResponseKind = (value: string): value is ResponseKind => RESPONSE_KINDS.some((kind) => kind === value);
 function payloadOf(initiativeId: string, requestId: string, presentedVersionRef: string, values: ResponseFormValues): ResponseFormPayload {
@@ -285,7 +283,6 @@ function ResponseEditor({ initiativeId, request, scope, expectedRevision, respon
   const chosenKind = isResponseKind(form.state.values.kind) ? form.state.values.kind : null;
   const chosenKindCopy = chosenKind === null ? null : copyForKind(chosenKind);
   const needsEvidence = chosenKind !== null && ASSERTING_KINDS.has(chosenKind);
-  const kindDescription = chosenKindCopy === null ? RESPONSE_SURFACE_COPY.kindDescription : `${RESPONSE_SURFACE_COPY.kindDescription} ${chosenKindCopy.description}`;
   const suppliedReferences: readonly { readonly reference: string; readonly action: string }[] = [
     { reference: request.recipientPartnerId, action: RESPONSE_SURFACE_COPY.suppliedRecipientAction },
     ...(request.representedOrganizationId === null ? [] : [{ reference: request.representedOrganizationId, action: RESPONSE_SURFACE_COPY.suppliedOrganizationAction }]),
@@ -298,7 +295,7 @@ function ResponseEditor({ initiativeId, request, scope, expectedRevision, respon
       </div>
       <RequestContext request={request} presentedVersionRef={presentedVersionRef} citesCurrentVersion={citesCurrentVersion} />
       {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={NESTED_HEADING_LEVEL} />}
-      <FormFieldGroup legend={RESPONSE_SURFACE_COPY.kindLabel} name={KIND_FIELD} description={kindDescription} error={messagesFor(errors, KIND_FIELD)} required>
+      <FormFieldGroup legend={RESPONSE_SURFACE_COPY.kindLabel} name={KIND_FIELD} description={chosenKindCopy === null ? RESPONSE_SURFACE_COPY.kindDescription : `${RESPONSE_SURFACE_COPY.kindDescription} ${chosenKindCopy.description}`} error={messagesFor(errors, KIND_FIELD)} required>
         {(group) => (
           <form.Field name={KIND_FIELD}>
             {(field) => (
@@ -322,9 +319,7 @@ function ResponseEditor({ initiativeId, request, scope, expectedRevision, respon
                       <RadioGroupItem id={optionId} value={kind} aria-label={wording.label} aria-describedby={meaningId} className="mt-0.5" />
                       <span className="flex min-w-0 flex-col gap-0.5">
                         <span className="text-sm font-medium text-pretty">{wording.label}</span>
-                        <span id={meaningId} className="text-sm text-pretty text-muted-foreground">
-                          {wording.description}
-                        </span>
+                        <span {...{ id: meaningId, className: "text-sm text-pretty text-muted-foreground" }}>{wording.description}</span>
                       </span>
                     </label>
                   );
@@ -381,14 +376,12 @@ function ResponseEditor({ initiativeId, request, scope, expectedRevision, respon
 export default function RequestResponseForm({ initiativeId, request, scope, expectedRevision, responseAction, onRecorded, headingLevel = 3, className }: RequestResponseFormProps): ReactElement {
   const headingId = useId();
   const Heading = HEADING_TAG[headingLevel];
-  const presentation: PresentationRow | null = request.presentation;
+  const presentation: NonNullable<RequestRow["presentation"]> | null = request.presentation;
   const response: ResponseRow | null = request.response;
   return (
     <section aria-labelledby={headingId} data-slot="request-response-form" data-state={response !== null ? "answered" : presentation === null ? "unpresented" : "awaiting"} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-pretty")}>
-          {RESPONSE_SURFACE_COPY.heading}
-        </Heading>
+        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty") }}>{RESPONSE_SURFACE_COPY.heading}</Heading>
         <p className="text-sm text-pretty text-muted-foreground">{RESPONSE_SURFACE_COPY.intro}</p>
       </div>
       <Alert role={undefined} className="px-3 py-2">

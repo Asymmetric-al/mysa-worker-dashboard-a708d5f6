@@ -47,7 +47,6 @@ function describeOffset(milliseconds: number): string {
   const direction = milliseconds > 0 ? "ahead of" : "before";
   return `${joinWords(parts)} ${direction} the seed instant`;
 }
-const INSTANT_LOCALE = "en-GB";
 type ClockAmount = { readonly unit: ClockUnit; readonly amount: number; readonly offset: number };
 function clockProblem(value: string, unitId: ClockUnitId, noun: string, minimum: number | null): ClockAmount | string {
   const unit = clockUnitFor(unitId);
@@ -67,7 +66,7 @@ function describeInstantWords(iso: string): string | null {
   const milliseconds = Date.parse(iso);
   if (!Number.isFinite(milliseconds)) return null;
   try {
-    return new Intl.DateTimeFormat(INSTANT_LOCALE, { dateStyle: "long", timeStyle: "long", timeZone: zoneOf(iso) }).format(milliseconds);
+    return new Intl.DateTimeFormat("en-GB", { dateStyle: "long", timeStyle: "long", timeZone: zoneOf(iso) }).format(milliseconds);
   } catch {
     return null;
   }
@@ -96,14 +95,7 @@ type DevPanelAttempt = { readonly action: DevPanelAction; readonly settledHeadin
 const CLOCK_BOUNDARY_SENTENCE = "Every boundary is evaluated when a read or a command runs against this instant: the referral " + "window, the coaching cutoff, notification usefulness, confirmation expiry and recurrence all " + "decide from it at the moment they are asked.";
 const CLOCK_IMMEDIATE_SENTENCE = "Nothing here is scheduled. There is no run-at time, no timer and no background job, so advancing " + "is an immediate act and the only two controls that move time are the two below.";
 const ARMED_DISARM_SENTENCE = "Disarm this plan before arming another: exactly one failure is active at a time, and the " + "development route refuses a second arming rather than replacing this one.";
-const DISARMED_SENTENCE = "No failure is armed, so every read and every mutation answers from the application's own behaviour.";
-const PENDING_SENTENCE = "Applying that change to this development session and waiting for the answer.";
-const CLOCK_ROW_CLASS = "flex min-w-0 flex-wrap items-end gap-2";
 const CLOCK_FIELD_CLASS = "flex min-w-0 flex-col gap-2";
-const CLOCK_INPUT_CLASS = "w-24 sm:w-28";
-const CLOCK_SELECT_CLASS = "w-full sm:w-auto";
-const CLOCK_HINT_CLASS = "type-supporting text-pretty";
-const CLOCK_ERROR_CLASS = "type-body text-pretty text-destructive";
 const OFFSET_HINT = "Units are elapsed time: a day here is 24 hours, and no unit on this panel is a calendar day. A negative offset places the instant before the seed.";
 const ADVANCE_HINT = "Advancing moves the instant forward by elapsed time only. 24 hours reaches the notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which is where both are refused.";
 const chooseClockUnit = (value: string, select: (unit: ClockUnitId) => void): void => {
@@ -131,14 +123,14 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
   return (
     <fieldset className="flex min-w-0 flex-col gap-3">
       <legend className="text-sm font-medium">{legend}</legend>
-      <div className={CLOCK_ROW_CLASS}>
+      <div className={"flex min-w-0 flex-wrap items-end gap-2"}>
         <div className={CLOCK_FIELD_CLASS}>
           <Label htmlFor={idBase}>{field}</Label>
-          <Input id={idBase} type="number" inputMode="numeric" step={1} min={minimum} value={value} disabled={disabled} aria-invalid={error === null ? undefined : true} aria-describedby={describedBy} className={CLOCK_INPUT_CLASS} onChange={(event) => onChange(event.currentTarget.value)} />
+          <Input id={idBase} type="number" inputMode="numeric" step={1} min={minimum} value={value} disabled={disabled} aria-invalid={error === null ? undefined : true} aria-describedby={describedBy} className={"w-24 sm:w-28"} onChange={(event) => onChange(event.currentTarget.value)} />
         </div>
         <div className={CLOCK_FIELD_CLASS}>
           <Label htmlFor={unitId}>Unit</Label>
-          <NativeSelect id={unitId} className={CLOCK_SELECT_CLASS} value={unit} disabled={disabled} onChange={(event) => chooseClockUnit(event.currentTarget.value, onUnit)}>
+          <NativeSelect id={unitId} className={"w-full sm:w-auto"} value={unit} disabled={disabled} onChange={(event) => chooseClockUnit(event.currentTarget.value, onUnit)}>
             {CLOCK_UNITS.map((entry) => (
               <NativeSelectOption key={entry.id} value={entry.id}>
                 {entry.plural}
@@ -150,11 +142,11 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
           {action}
         </Button>
       </div>
-      <p id={hintId} className={CLOCK_HINT_CLASS}>
+      <p id={hintId} className={"type-supporting text-pretty"}>
         {hint}
       </p>
       {error === null ? null : (
-        <p id={errorId} className={CLOCK_ERROR_CLASS}>
+        <p id={errorId} className={"type-body text-pretty text-destructive"}>
           {error}
         </p>
       )}
@@ -263,7 +255,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
           </p>
         </div>
       ) : null}
-      {busy ? <output className="block type-supporting text-pretty">{PENDING_SENTENCE}</output> : null}
+      {busy ? <output className="block type-supporting text-pretty">{"Applying that change to this development session and waiting for the answer."}</output> : null}
       {result === null ? null : (
         <div data-slot="dev-panel-result" data-action={result.action} className="min-w-0">
           <OperationResult outcome={result.outcome} heading={receiptHeading ?? undefined} headingLevel={3} onRetrySameWork={receiptRetry} />
@@ -375,7 +367,7 @@ export function DevPanel({ devState, onSetScenario, onSetClock, onAdvanceClock, 
             </div>
           ) : (
             <>
-              <p className="type-supporting text-pretty">{DISARMED_SENTENCE}</p>
+              <p className="type-supporting text-pretty">{"No failure is armed, so every read and every mutation answers from the application's own behaviour."}</p>
               <fieldset className="flex min-w-0 flex-col gap-4">
                 <legend className="text-sm font-medium">Failure to arm</legend>
                 <fieldset className="flex min-w-0 flex-col gap-2">

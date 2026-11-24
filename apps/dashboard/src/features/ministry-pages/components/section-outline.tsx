@@ -12,22 +12,18 @@ import { useEditionAuthority, usePageReread } from "../hooks/page-reads";
 import { useMovePageSection } from "../hooks/page-mutations";
 import MoveToPosition from "./move-to-position";
 import SectionActions from "./section-actions";
-/** One catalogue section type, taken from the copy module's own catalogue so a type added there reaches this file. */
 export type PageSectionType = keyof typeof copy.catalogue.sections;
-/** One section of the draft edition as the outline needs it: the identity a change addresses, the type, whether a source owns it, and the caller's label and position where it states them. */
 export type PageBuilderSection = { readonly sectionId: string; readonly sectionType: PageSectionType; readonly sectionTypeLabel?: string | null; readonly managed: boolean; readonly managedReasonKey?: ManagedFieldKey | null; readonly index?: number };
 const labelOf = (section: PageBuilderSection): string => section.sectionTypeLabel?.trim() || copy.catalogue.sections[section.sectionType].label;
 const positionOf = (section: PageBuilderSection, listIndex: number, count: number): number => (section.index !== undefined && Number.isInteger(section.index) && section.index >= 0 && section.index < count ? section.index : listIndex);
 const MANAGED_REASON_BY_TYPE: Partial<Readonly<Record<PageSectionType, ManagedFieldKey>>> = { giving: "giving-binding", progress: "support-progress" };
 const managedReasonKeyOf = (section: PageBuilderSection): ManagedFieldKey => section.managedReasonKey ?? MANAGED_REASON_BY_TYPE[section.sectionType] ?? "source-supplied-section";
-type OutcomeName = MutationOutcome["outcome"];
 /** The controls a move can start from, so a settled move returns focus to the one the person used. */
 type MoveControlKind = "up" | "down" | "to-position";
-type MoveVariables = Parameters<ReturnType<typeof useMovePageSection>["mutateAsync"]>[0];
 /** One submitted move, held with the identity it was minted under: a retry replays this exactly, and a move with a changed intent mints its own. */
-type HeldMove = { readonly identity: ReviewedAttempt; readonly variables: MoveVariables; readonly label: string; readonly kind: MoveControlKind };
+type HeldMove = { readonly identity: ReviewedAttempt; readonly variables: Parameters<ReturnType<typeof useMovePageSection>["mutateAsync"]>[0]; readonly label: string; readonly kind: MoveControlKind };
 const controlIdOf = (base: string, kind: MoveControlKind, position: number): string => `${base}-${kind}-${String(position)}`;
-const MOVE_RESULT: Readonly<Record<OutcomeName, (position: number) => string>> = {
+const MOVE_RESULT: Readonly<Record<MutationOutcome["outcome"], (position: number) => string>> = {
   accepted: (position) => ` now stands at ${copy.builder.positionOption(position)}. ${copy.sectionActions.results.moved}`,
   alreadyAccepted: (position) => ` was already moved to ${copy.builder.positionOption(position)} by this same change, so nothing was applied again.`,
   unchanged: () => " did not move: it already stands at that position.",
@@ -40,9 +36,7 @@ const MOVE_RESULT: Readonly<Record<OutcomeName, (position: number) => string>> =
 const outcomeSentence = (outcome: MutationOutcome, targetIndex: number): string => MOVE_RESULT[outcome.outcome](targetIndex + 1);
 const blockedSentence = (reason: string): string => ` did not move. ${reason}`;
 const NO_AUTHORITY_REASON = "Open this edition again and change its order from there: the context this Page was read in is the only one a section change may act in.";
-const OUTLINE_RESULT_HEADING_LEVEL = 4;
 const NOTE_CLASS = "text-sm text-pretty text-muted-foreground";
-const ROW_CLASS = "flex min-w-0 flex-col gap-2 rounded-lg border border-border p-2";
 type MoveControlProps = { readonly direction: "up" | "down"; readonly sectionLabel: string; readonly position: number; readonly controlId: string; readonly describedBy: string | undefined; readonly ariaDisabled: boolean; readonly onActivate: () => void };
 // A blocked move control states why with `aria-disabled` and stays focusable: the native `disabled` attribute would take the
 // person's focus off the control they pressed the moment a request in flight blocks it, so a keyboard user would restart
@@ -59,7 +53,6 @@ const MoveControl = ({ direction, sectionLabel, position, controlId, describedBy
 );
 /** Whether the caller withholds every structural change, for a reason of its own. */
 export type SectionOutlineProps = { readonly sections: readonly PageBuilderSection[]; readonly selectedSectionId: string | null; readonly onSelect: (sectionId: string) => void; readonly variantId: string; readonly expectedRevision: string; readonly disabled?: boolean; readonly className?: string };
-type Announcement = { readonly label: string; readonly sentence: string };
 /** The ordered outline of one draft edition, with the four structural changes a section can be given. */
 export function SectionOutline({ sections, selectedSectionId, onSelect, variantId, expectedRevision, disabled = false, className }: SectionOutlineProps): ReactElement {
   const move = useMovePageSection();
@@ -69,7 +62,7 @@ export function SectionOutline({ sections, selectedSectionId, onSelect, variantI
   const reasonIdBase = useId();
   const controlIdBase = useId();
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
-  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  const [announcement, setAnnouncement] = useState<{ readonly label: string; readonly sentence: string } | null>(null);
   const [lastMove, setLastMove] = useState<HeldMove | null>(null);
   // The move already submitted, read synchronously so two activations in one tick cannot both mint against the same held identity.
   const held = useRef<HeldMove | null>(null);
@@ -158,7 +151,7 @@ export function SectionOutline({ sections, selectedSectionId, onSelect, variantI
               requestMove(kind, section, position, targetPosition);
             };
             return (
-              <li key={section.sectionId} data-slot="section-outline-row" data-section-id={section.sectionId} data-section-position={String(position)} data-managed={managed ? "true" : "false"} data-selected={selected ? "true" : "false"} className={ROW_CLASS}>
+              <li key={section.sectionId} data-slot="section-outline-row" data-section-id={section.sectionId} data-section-position={String(position)} data-managed={managed ? "true" : "false"} data-selected={selected ? "true" : "false"} className={"flex min-w-0 flex-col gap-2 rounded-lg border border-border p-2"}>
                 <div className={"flex min-w-0 flex-wrap items-center gap-2"}>
                   <bdi className={"tabular-figures text-sm text-muted-foreground"}>{String(position + 1)}</bdi>
                   <Button type="button" variant={selected ? "secondary" : "ghost"} size="sm" className={BUTTON_WRAP_CLASS} aria-current={selected ? "true" : undefined} onClick={() => onSelect(section.sectionId)}>
@@ -219,12 +212,7 @@ export function SectionOutline({ sections, selectedSectionId, onSelect, variantI
         )}
       </div>
       {settled === null ? null : (
-        <OperationResult
-          outcome={settled}
-          headingLevel={OUTLINE_RESULT_HEADING_LEVEL}
-          onCheckResult={settled.outcome === "conflict" || settled.outcome === "unknown" ? rereadPage : undefined}
-          onRetrySameWork={lastMove !== null && (settled.outcome === "unknown" || settled.outcome === "unavailable") ? retryLastMove : undefined}
-        />
+        <OperationResult outcome={settled} headingLevel={4} onCheckResult={settled.outcome === "conflict" || settled.outcome === "unknown" ? rereadPage : undefined} onRetrySameWork={lastMove !== null && (settled.outcome === "unknown" || settled.outcome === "unavailable") ? retryLastMove : undefined} />
       )}
     </section>
   );

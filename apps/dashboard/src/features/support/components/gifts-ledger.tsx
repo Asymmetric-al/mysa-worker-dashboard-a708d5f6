@@ -7,21 +7,20 @@ import StateNotice from "@/components/state-notice";
 import { refusalSummary } from "@/components/form-field";
 import QueryToolbar, { type FacetSpec, type FacetValueSpec } from "@/components/query-toolbar";
 import { cn } from "@/lib/cn";
+import { countTextOf } from "@/lib/count-format";
 import { isRecord } from "@/lib/guards";
 import type { GiftAttribution, ReadEnvelope, Scope, ValueState } from "@/modules/data-service/envelope";
-import { minorUnitsOf, type MinorUnits, type Money } from "@/modules/money/amount";
+import { minorUnitsOf, type MinorUnits } from "@/modules/money/amount";
 import type { ReportFacets } from "@/modules/support/report";
 import type { CivilDate } from "@/modules/time/civil";
 import { COUNT_STATE_NOTE, EMPTY_STATES, VALUE_STATE_MEANING } from "../copy";
 import { reportHref } from "../report-catalog";
 import { GIFTS_DEFAULT_PERIOD_PRESET, GIFTS_PAGE_SIZE_CAP, GIFTS_PAGE_SIZE_DEFAULT, parseGiftsQuery, toGiftsParams, useGifts, type GiftCurrencyQuery, type GiftPeriodQuery, type GiftRecipientQuery, type GiftsEnvelope, type GiftsQuery } from "../hooks/use-gifts";
 import AmountValue from "./amount-value";
-import { countText } from "./count-text";
 import SnapshotStatement from "./snapshot-statement";
 export type GiftsLedgerProps = { readonly scope: Scope; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly initialEnvelope?: ReadEnvelope<unknown>; readonly initialQuery?: GiftsQuery; readonly className?: string };
 type GiftLedgerRow = GiftsEnvelope["data"]["report"]["rows"][number];
 type GiftReport = GiftsEnvelope["data"]["report"];
-type StatedAmount = GiftReport["summary"][number]["received"];
 type ExactRange = { readonly minMinor: MinorUnits; readonly maxMinor: MinorUnits };
 const giftRowIdOf = (row: GiftLedgerRow): string => row.giftRowId;
 interface GiftsQueryPatch {
@@ -39,18 +38,13 @@ const FACETS = { period: "period", currency: "currency", amountRange: "amount-ra
 const SEPARATOR = ":";
 const CUSTOM_PERIOD_PREFIX = "custom";
 const PARTNER_PREFIX = "partner";
-const ANONYMOUS = "anonymous";
-const UNRESOLVED = "unresolved";
 const FIRST_PAGE = 0;
 const SORTABLE_FIELDS: readonly string[] = ["originalGiftOn", "amountMinor", "designation"];
 const PAGE_SIZE_OPTIONS: readonly number[] = [GIFTS_PAGE_SIZE_DEFAULT, GIFTS_PAGE_SIZE_CAP]; /** The one report that carries this ledger's query out of the application as a CSV file and a printed page. */
-const EXPORT_REPORT_HREF = reportHref("received");
 /** The parameters that state a window over a result rather than the query itself: an export is the whole query, so they are left behind. */ const PAGE_PARAMS: readonly string[] = ["page", "pageSize"];
 /** The giving-method facet is this ledger's own vocabulary and the financial source carries no such field, so the report would refuse a query that named it. */ const METHOD_PARAM = "method";
 const AMOUNT_BAND_EDGES: readonly number[] = [100, 500, 1000, 5000];
 const AMOUNT_BAND_PREFIX = "band";
-const OPEN_BAND_MAX_MINOR = Number.MAX_SAFE_INTEGER;
-const DIGITS_PATTERN = /^\d{1,16}$/;
 const ROW_STATE_PREFIX = "rows.";
 const LEGEND_STATE_ORDER: readonly ValueState[] = ["incomplete-subtotal", "unknown", "withheld", "unavailable"];
 const STATE_WORDS: Readonly<Record<ValueState, string>> = { value: "Amount recorded", zero: "Zero", unknown: "Unknown amount", withheld: "Withheld", unavailable: "Source unavailable", "incomplete-subtotal": "Incomplete subtotal" };
@@ -64,15 +58,8 @@ const PERIOD_PRESET_VALUES: readonly FacetValueSpec[] = [
   { id: "year-to-date", label: "Year to date" },
 ];
 /** The one notice this ledger states for a period with no gift in it: a period the source does not cover is a gap rather than a zero, and widening the period is the first action a reader actually has, because the ledger always reads one period at a time. */
-const GIFTS_EMPTY_STATE = (
-  <StateNotice
-    kind="empty"
-    title={EMPTY_STATES.gifts.title}
-    description="This ledger reads one period at a time, and a period the source does not cover is a gap rather than a zero: a period with no gift in it and a query that selects nothing look the same here and mean different things. Widen the period to read more of the ledger."
-    action={{ label: "Read this year's gifts", href: "/support/gifts?period=this-year" }}
-    headingLevel={2}
-  />
-);
+const GIFTS_EMPTY_DESCRIPTION = "This ledger reads one period at a time, and a period the source does not cover is a gap rather than a zero: a period with no gift in it and a query that selects nothing look the same here and mean different things. Widen the period to read more of the ledger.";
+const GIFTS_EMPTY_STATE = <StateNotice kind="empty" title={EMPTY_STATES.gifts.title} description={GIFTS_EMPTY_DESCRIPTION} action={{ label: "Read this year's gifts", href: "/support/gifts?period=this-year" }} headingLevel={2} />;
 function isGiftsEnvelope(value: ReadEnvelope<unknown>): value is GiftsEnvelope {
   const data: unknown = value.data;
   if (!isRecord(data)) return false;
@@ -83,17 +70,14 @@ function isGiftsEnvelope(value: ReadEnvelope<unknown>): value is GiftsEnvelope {
   if (!isRecord(facets) || !Array.isArray(facets.designations) || !Array.isArray(facets.attributions)) return false;
   return isRecord(value.scope) && isRecord(value.coverage) && isRecord(value.valueStates) && typeof value.asOf === "string" && typeof value.revision === "string" && Array.isArray(value.actions);
 }
-const giftsEnvelopeOf = (value: ReadEnvelope<unknown> | undefined): GiftsEnvelope | undefined => (value !== undefined && isGiftsEnvelope(value) ? value : undefined);
 const civilDateText = (date: CivilDate): string => date.toString();
-const datePrecisionWord = (precision: string): string | null => (precision === "date" ? null : (DATE_PRECISION_WORD[precision] ?? "date not stated"));
-const exponentOf = (report: GiftReport, currency: string): number | undefined => report.summary.find((entry) => entry.currency === currency)?.exponent;
 function minorScale(exponent: number): number | undefined {
   const scale = 10 ** exponent;
   return Number.isSafeInteger(scale) && scale > 0 ? scale : undefined;
 }
 const bandId = (minMinor: MinorUnits, maxMinor: MinorUnits): string => `${AMOUNT_BAND_PREFIX}${SEPARATOR}${minMinor}${SEPARATOR}${maxMinor}`;
 function wholeMinorUnits(value: string): MinorUnits | undefined {
-  if (!DIGITS_PATTERN.test(value)) return undefined;
+  if (!/^\d{1,16}$/.test(value)) return undefined;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? minorUnitsOf(parsed) : undefined;
 }
@@ -110,7 +94,7 @@ function amountBands(currency: string, exponent: number, formatNumber: (value: n
   return [0, ...AMOUNT_BAND_EDGES].map((lowerMajor, index) => {
     const upperMajor = AMOUNT_BAND_EDGES[index];
     const label = upperMajor === undefined ? `${formatNumber(lowerMajor)} and over ${currency}` : lowerMajor === 0 ? `Under ${formatNumber(upperMajor)} ${currency}` : `${formatNumber(lowerMajor)} to under ${formatNumber(upperMajor)} ${currency}`;
-    const maxMinor = upperMajor === undefined ? OPEN_BAND_MAX_MINOR : upperMajor * scale - 1;
+    const maxMinor = upperMajor === undefined ? Number.MAX_SAFE_INTEGER : upperMajor * scale - 1;
     return { id: bandId(minorUnitsOf(lowerMajor * scale), minorUnitsOf(maxMinor)), label };
   });
 }
@@ -155,11 +139,10 @@ const partnerIdOf = (value: string): string | undefined => {
 };
 /** The facet value one attribution is offered and applied under: the partner's own opaque reference, or the kind when no partner is named. */
 const attributionValueOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? `${PARTNER_PREFIX}${SEPARATOR}${attribution.partnerId}` : attribution.kind);
-const recipientValueOf = (recipient: GiftRecipientQuery): string | undefined => (recipient.kind === "any" ? undefined : attributionValueOf(recipient));
 function recipientFromValue(value: string | undefined): GiftRecipientQuery {
   if (value === undefined) return { kind: "any" };
-  if (value === ANONYMOUS) return { kind: "anonymous" };
-  if (value === UNRESOLVED) return { kind: "unresolved" };
+  if (value === "anonymous") return { kind: "anonymous" };
+  if (value === "unresolved") return { kind: "unresolved" };
   const partnerId = partnerIdOf(value);
   return partnerId === undefined ? { kind: "any" } : { kind: "partner", partnerId };
 }
@@ -180,7 +163,7 @@ const queryFromApplied = (current: GiftsQuery, applied: Readonly<Record<string, 
   });
 function appliedOf(query: GiftsQuery): Readonly<Record<string, readonly string[]>> {
   const range = completeRange(query.currency);
-  const recipient = recipientValueOf(query.recipient);
+  const recipient = query.recipient.kind === "any" ? undefined : attributionValueOf(query.recipient);
   return {
     [FACETS.period]: [periodValueOf(query.period)],
     ...(query.currency.kind === "one" ? { [FACETS.currency]: [query.currency.currency] } : {}),
@@ -198,7 +181,6 @@ function unavailableReasonOf(envelope: GiftsEnvelope | undefined, actionName: st
   const action = envelope?.actions.find((candidate) => candidate.name === actionName);
   return action === undefined || action.available ? undefined : action.reason === undefined || action.reason.trim() === "" ? undefined : action.reason;
 }
-const moneyOf = (currency: string, stated: StatedAmount): Money => ({ currency, minorUnits: stated.minorUnits ?? minorUnitsOf(0) });
 function amountRangeRuleReason(query: GiftsQuery, report: GiftReport | undefined, exponent: number | undefined): string | undefined {
   if (query.currency.kind !== "one") return "Amounts in different currencies are not compared, so this range is applied only within one selected currency. Select one currency to compare amounts: a range spans one currency's minor units.";
   return report === undefined ? undefined : exponent === undefined ? `The source states no exponent for ${query.currency.currency}, so no amount band can be compared in its minor units.` : undefined;
@@ -228,20 +210,15 @@ function amountRangeValuesOf(query: GiftsQuery, selected: string | undefined, ex
   return [...restated, ...bands.filter((band) => band.id !== applied)];
 }
 /** One offered value with the count the read states for it, so a filter states how many rows each value stands for rather than only naming it; a value the read states no count for is offered without one rather than with an invented zero. */
-type CountedFacetValue = { readonly count: number; readonly valueState: ValueState };
-const faceted = (id: string, label: string, counted: CountedFacetValue | undefined): FacetValueSpec => (counted === undefined ? { id, label } : { id, label, count: counted.count, countState: counted.valueState });
-const ANONYMOUS_LABEL = "Anonymous support";
-const UNRESOLVED_LABEL = "Unattributed source support";
+const faceted = (id: string, label: string, counted: { readonly count: number; readonly valueState: ValueState } | undefined): FacetValueSpec => (counted === undefined ? { id, label } : { id, label, count: counted.count, countState: counted.valueState });
 const UNNAMED_ATTRIBUTIONS: readonly GiftAttribution[] = [{ kind: "anonymous" }, { kind: "unresolved" }];
-const attributionLabelOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? attribution.partnerId : attribution.kind === "anonymous" ? ANONYMOUS_LABEL : UNRESOLVED_LABEL);
+const attributionLabelOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? attribution.partnerId : attribution.kind === "anonymous" ? "Anonymous support" : "Unattributed source support");
 /** The attributions the whole filtered result carries — read from the envelope, never from the rows on this page — each partner named by its own opaque reference with no name looked up for it, with anonymous and unattributed support always offered and a value the address already applies kept even when no row matches it. */
 function recipientValuesOf(query: GiftsQuery, facets: ReportFacets | undefined): readonly FacetValueSpec[] {
   const counted = new Map((facets?.attributions ?? []).map((value) => [attributionValueOf(value.attribution), value]));
   const offered = (facets?.attributions ?? []).map((value) => value.attribution);
   const applied: readonly GiftAttribution[] = query.recipient.kind === "any" ? [] : [query.recipient];
-  for (const attribution of [...UNNAMED_ATTRIBUTIONS, ...applied]) {
-    if (!offered.some((listed) => attributionValueOf(listed) === attributionValueOf(attribution))) offered.push(attribution);
-  }
+  for (const attribution of [...UNNAMED_ATTRIBUTIONS, ...applied]) if (!offered.some((listed) => attributionValueOf(listed) === attributionValueOf(attribution))) offered.push(attribution);
   return offered.map((attribution) => faceted(attributionValueOf(attribution), attributionLabelOf(attribution), counted.get(attributionValueOf(attribution))));
 }
 /** The designations the whole filtered result carries — read from the envelope, never from the rows on this page — with the value the address already applies kept even when no row matches it. */
@@ -250,26 +227,25 @@ function designationValuesOf(query: GiftsQuery, facets: ReportFacets | undefined
   const applied = query.designation;
   return applied === undefined || offered.some((value) => value.id === applied) ? offered : [faceted(applied, applied, undefined), ...offered];
 }
-const methodValuesOf = (query: GiftsQuery): readonly FacetValueSpec[] => (query.method === undefined ? [] : [{ id: query.method, label: query.method }]);
 function facetsOf(query: GiftsQuery, envelope: GiftsEnvelope | undefined, locale: string): readonly FacetSpec[] {
   const report = envelope?.data.report;
   const selected = query.currency.kind === "one" ? query.currency.currency : undefined;
-  const exponent = report === undefined || selected === undefined ? undefined : exponentOf(report, selected);
+  const exponent = report === undefined || selected === undefined ? undefined : report.summary.find((entry) => entry.currency === selected)?.exponent;
   const rangeReason = unavailableReasonOf(envelope, "filterByAmountRange") ?? amountRangeRuleReason(query, report, exponent);
   const methodReason = unavailableReasonOf(envelope, "filterByMethod");
   return [
     { id: FACETS.period, label: "Period", multi: false, values: periodValuesOf(query) },
     { id: FACETS.currency, label: "Currency", multi: false, values: currencyValuesOf(query, report) },
-    { id: FACETS.amountRange, label: "Amount range", multi: false, values: amountRangeValuesOf(query, selected, exponent, (value: number): string => countText(value, locale)), ...(rangeReason === undefined ? {} : { disabledReason: rangeReason }) },
+    { id: FACETS.amountRange, label: "Amount range", multi: false, values: amountRangeValuesOf(query, selected, exponent, (value: number): string => countTextOf(value, locale)), ...(rangeReason === undefined ? {} : { disabledReason: rangeReason }) },
     { id: FACETS.attribution, label: "Attribution", multi: false, values: recipientValuesOf(query, envelope?.data.facets) },
     { id: FACETS.designation, label: "Designation", multi: false, values: designationValuesOf(query, envelope?.data.facets) },
-    { id: FACETS.method, label: "Giving method", multi: false, values: methodValuesOf(query), ...(methodReason === undefined ? {} : { disabledReason: methodReason }) },
+    { id: FACETS.method, label: "Giving method", multi: false, values: query.method === undefined ? [] : [{ id: query.method, label: query.method }], ...(methodReason === undefined ? {} : { disabledReason: methodReason }) },
   ];
 }
 function GiftDateCell({ row }: { readonly row: GiftLedgerRow }): ReactElement {
   const date = row.originalGiftOn;
   if (date === undefined) return <span className={MUTED_TEXT_CLASS}>{"The source states no gift date"}</span>;
-  const precision = datePrecisionWord(row.datePrecision);
+  const precision = row.datePrecision === "date" ? null : (DATE_PRECISION_WORD[row.datePrecision] ?? "date not stated");
   return (
     <span className="flex flex-wrap items-baseline gap-x-1.5">
       <bdi className="tabular-figures">{civilDateText(date)}</bdi>
@@ -315,39 +291,37 @@ function ValueStateLegend({ states }: { readonly states: readonly ValueState[] }
     </div>
   );
 }
-function WholeResultSummary({ summary, locale }: { readonly summary: GiftReport["summary"]; readonly locale: string }): ReactElement {
-  return (
-    <div data-slot="whole-result-summary" className={cn("flex flex-col gap-1 text-xs", MUTED_TEXT_CLASS)}>
-      <h2 className="type-section-title text-foreground">{"Whole-result support, by currency"}</h2>
-      <p className="type-supporting">{"These figures are the whole result these filters match, not the rows on this page. Each currency is stated on its own: nothing here is added across currencies and no combined total is stated."}</p>
-      {summary.length === 0 ? (
-        <p className="type-supporting">{"This result states no currency, so there is no whole-result figure to state here. That is not a zero."}</p>
-      ) : (
-        <ul className="flex flex-col gap-1">
-          {summary.map((entry) => {
-            const countNote = COUNT_STATE_NOTE[entry.giftCount.valueState];
-            return (
-              <li key={entry.currency} className="flex flex-wrap items-baseline gap-x-1.5">
-                <bdi className="mono-identifier font-medium text-foreground">{entry.currency}</bdi>
-                <span>received</span>
-                <AmountValue money={moneyOf(entry.currency, entry.received)} valueState={entry.received.valueState} locale={locale} />
-                <span>{`and ${countText(entry.giftCount.count, locale)} ${entry.giftCount.count === 1 ? "gift" : "gifts"}`}</span>
-                {countNote === null ? null : <span>{`(${countNote})`}</span>}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-}
+const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport["summary"]; readonly locale: string }): ReactElement => (
+  <div data-slot="whole-result-summary" className={cn("flex flex-col gap-1 text-xs", MUTED_TEXT_CLASS)}>
+    <h2 className="type-section-title text-foreground">{"Whole-result support, by currency"}</h2>
+    <p className="type-supporting">{"These figures are the whole result these filters match, not the rows on this page. Each currency is stated on its own: nothing here is added across currencies and no combined total is stated."}</p>
+    {summary.length === 0 ? (
+      <p className="type-supporting">{"This result states no currency, so there is no whole-result figure to state here. That is not a zero."}</p>
+    ) : (
+      <ul className="flex flex-col gap-1">
+        {summary.map((entry) => {
+          const countNote = COUNT_STATE_NOTE[entry.giftCount.valueState];
+          return (
+            <li key={entry.currency} className="flex flex-wrap items-baseline gap-x-1.5">
+              <bdi className="mono-identifier font-medium text-foreground">{entry.currency}</bdi>
+              <span>received</span>
+              <AmountValue money={{ currency: entry.currency, minorUnits: entry.received.minorUnits ?? minorUnitsOf(0) }} valueState={entry.received.valueState} locale={locale} />
+              <span>{`and ${countTextOf(entry.giftCount.count, locale)} ${entry.giftCount.count === 1 ? "gift" : "gifts"}`}</span>
+              {countNote === null ? null : <span>{`(${countNote})`}</span>}
+            </li>
+          );
+        })}
+      </ul>
+    )}
+  </div>
+);
 /** The `/support/gifts` surface: one whole-query ledger over the bounded filter set, with the query kept in the URL. */ export function GiftsLedger({ scope, locale, dir, initialEnvelope, initialQuery, className }: GiftsLedgerProps): ReactElement {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const query = useMemo<GiftsQuery>(() => normalisedQuery(searchParams.toString() === "" && initialQuery !== undefined ? initialQuery : parseGiftsQuery(searchParams)), [initialQuery, searchParams]);
   const [mountParams] = useState<string>(() => toGiftsParams(query).toString());
-  const seed = useMemo<GiftsEnvelope | undefined>(() => giftsEnvelopeOf(initialEnvelope), [initialEnvelope]);
+  const seed = useMemo<GiftsEnvelope | undefined>(() => (initialEnvelope !== undefined && isGiftsEnvelope(initialEnvelope) ? initialEnvelope : undefined), [initialEnvelope]);
   const initialData = seed !== undefined && toGiftsParams(query).toString() === mountParams ? seed : undefined;
   const gifts = useGifts({ scope, query, ...(initialData === undefined ? {} : { initialEnvelope: initialData }) });
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>({});
@@ -374,7 +348,7 @@ function WholeResultSummary({ summary, locale }: { readonly summary: GiftReport[
     for (const name of PAGE_PARAMS) params.delete(name);
     params.delete(METHOD_PARAM);
     const stated = params.toString();
-    return stated === "" ? EXPORT_REPORT_HREF : `${EXPORT_REPORT_HREF}?${stated}`;
+    return stated === "" ? reportHref("received") : `${reportHref("received")}?${stated}`;
   }, [query]);
   const activeFilters = activeFilterCount(query);
   // The period is in force on every query, so only a filter beyond the ledger's own default period narrows the result: an empty default view is an empty period, not a query the reader narrowed.
@@ -420,20 +394,19 @@ function WholeResultSummary({ summary, locale }: { readonly summary: GiftReport[
     ];
   }, [envelope, locale, query]);
   const listState: RecordListQueryState = { sort: query.sort === undefined ? [] : [{ id: query.sort.key, desc: query.sort.direction === "desc" }], page: query.page + 1, pageSize: query.pageSize, columnVisibility };
+  const filtersApplied = { hasActiveFilters: narrowedBeyondDefault, onClearFilters: handleClearFilters };
   const retry = { label: "Try again", onClick: (): void => void gifts.refetch() };
   let content: ReactElement | null;
   if (gifts.isPending) {
-    content = <StateNotice kind="loading" title={"Reading this ledger"} description={"The read is in progress. No count, total or empty result is shown until it answers."} headingLevel={2} loadingLines={6} />;
+    content = <StateNotice kind="loading" title="Reading this ledger" description="The read is in progress. No count, total or empty result is shown until it answers." headingLevel={2} loadingLines={6} />;
   } else if (read === undefined) {
-    content = (
-      <StateNotice kind="unavailable" title={"The gifts ledger could not be read"} description={"The source behind these gifts answered nothing this surface can state, so the outage is reported rather than an empty ledger or a zero. Nothing was changed; try again in a moment."} retry={retry} headingLevel={2} />
-    );
+    content = <StateNotice kind="unavailable" title="The gifts ledger could not be read" description="The source behind these gifts answered nothing this surface can state, so the outage is reported rather than an empty ledger or a zero. Nothing was changed; try again in a moment." retry={retry} headingLevel={2} />;
   } else if (read.kind === "denied") {
-    content = <StateNotice kind="denied" title={"This ledger is not available in the context you are working in"} reasonCode={read.denied.reasonCode} headingLevel={2} />;
+    content = <StateNotice kind="denied" title="This ledger is not available in the context you are working in" reasonCode={read.denied.reasonCode} headingLevel={2} />;
   } else if (read.kind === "unavailable") {
-    content = <StateNotice kind="unavailable" title={"The gifts ledger could not be read"} description={read.unavailable.guidance} source={read.unavailable.source} retry={retry} headingLevel={2} />;
+    content = <StateNotice kind="unavailable" title="The gifts ledger could not be read" description={read.unavailable.guidance} source={read.unavailable.source} retry={retry} headingLevel={2} />;
   } else if (read.kind === "refused") {
-    content = <StateNotice kind="refused" title={"This ledger's request was refused"} description={refusalSummary(read.refused)} headingLevel={2} />;
+    content = <StateNotice kind="refused" title="This ledger's request was refused" description={refusalSummary(read.refused)} headingLevel={2} />;
   } else {
     const ledger = read.envelope.data.report;
     const snapshot = ledger.snapshot;
@@ -442,34 +415,19 @@ function WholeResultSummary({ summary, locale }: { readonly summary: GiftReport[
         <SnapshotStatement basis={snapshot.basis} currencies={snapshot.currencies} period={{ from: civilDateText(snapshot.period.from), to: civilDateText(snapshot.period.to) }} coverage={read.envelope.coverage} asOf={read.envelope.asOf} isCurrentPeriod={snapshot.period.state === "in-progress"} locale={locale} />
         <WholeResultSummary summary={ledger.summary} locale={locale} />
         <ValueStateLegend states={legendStatesOf(read.envelope.valueStates)} />
-        <RecordList
-          label="Received gifts"
-          columns={columns}
-          rows={ledger.rows}
-          rowCount={ledger.total}
-          queryState={listState}
-          onQueryStateChange={handleQueryStateChange}
-          getRowId={giftRowIdOf}
-          itemNoun="gifts"
-          pageSizeOptions={PAGE_SIZE_OPTIONS}
-          hasActiveFilters={narrowedBeyondDefault}
-          onClearFilters={handleClearFilters}
-          emptyState={GIFTS_EMPTY_STATE}
-        />
+        <RecordList {...filtersApplied} label="Received gifts" columns={columns} rows={ledger.rows} rowCount={ledger.total} queryState={listState} onQueryStateChange={handleQueryStateChange} getRowId={giftRowIdOf} itemNoun="gifts" locale={locale} pageSizeOptions={PAGE_SIZE_OPTIONS} emptyState={GIFTS_EMPTY_STATE} />
       </>
     );
   }
   const searchFacet = { value: query.search ?? "", onChange: handleSearchChange, placeholder: "Search this ledger" };
   return (
     <div data-slot="gifts-ledger" dir={dir} className={cn("flex flex-col gap-4", className)}>
-      <QueryToolbar label="Gift filters" search={searchFacet} facets={facets} applied={applied} onAppliedChange={handleAppliedChange} amountRange={{ facetId: FACETS.amountRange, currencyFacetId: FACETS.currency }} pending={gifts.isFetching} />
+      <QueryToolbar label="Gift filters" search={searchFacet} facets={facets} applied={applied} onAppliedChange={handleAppliedChange} amountRange={{ facetId: FACETS.amountRange, currencyFacetId: FACETS.currency }} pending={gifts.isFetching} locale={locale} />
       {/* Where the whole query leaves the application: the report states this same filter set with its CSV download and
           its printed page, so the query a worker investigated here is the query those artifacts carry. */}
       <p data-slot="gifts-export-href" className={cn("type-supporting max-w-prose text-balance md:text-pretty")}>
         {"The received-support report states this same filter set with the CSV download and the printed page, so opening it carries the query you investigated rather than the page on screen. "}
-        <Link href={exportHref} className="inline-link rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          {"Open the received-support report for this query"}
-        </Link>
+        <Link {...{ href: exportHref, className: "inline-link rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" }}>{"Open the received-support report for this query"}</Link>
       </p>
       {content}
     </div>

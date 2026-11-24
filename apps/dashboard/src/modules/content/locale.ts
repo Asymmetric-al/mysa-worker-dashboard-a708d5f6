@@ -26,9 +26,8 @@ function parseLocaleTag(tag: string): ParsedLocaleTag | undefined {
     if (normalised.length === 1 && SCRIPT_SUBTAG.test(subtag)) {
       script = subtag.toLowerCase();
       normalised.push(script.charAt(0).toUpperCase() + script.slice(1));
-    } else if (LETTER_REGION_SUBTAG.test(subtag) || DIGIT_REGION_SUBTAG.test(subtag)) {
-      normalised.push(subtag.toUpperCase());
-    } else normalised.push(subtag.toLowerCase());
+    } else if (LETTER_REGION_SUBTAG.test(subtag) || DIGIT_REGION_SUBTAG.test(subtag)) normalised.push(subtag.toUpperCase());
+    else normalised.push(subtag.toLowerCase());
   }
   return { tag: normalised.join("-"), language: language.toLowerCase(), script };
 }
@@ -79,8 +78,7 @@ export function resolveLocale(input: LocaleInput): LocaleResolution {
   return { status: "resolved", requestedLocale: input.requestedLocale, servedLocale: served.locale, fallbackOccurred: requested === undefined || requested.tag !== served.parsed.tag, release: served.release };
 }
 export type AdmittedLocale = ContentLocale & { readonly releaseId: string; readonly isSiteDefault: boolean };
-/** The locales this reader may actually read, for the locale switcher and the Page edition list. */
-export function admittedLocales(query: AdmittedLocaleQuery): readonly AdmittedLocale[] {
+/** The locales this reader may actually read, for the locale switcher and the Page edition list. */ export function admittedLocales(query: AdmittedLocaleQuery): readonly AdmittedLocale[] {
   const siteDefault = parseLocaleTag(query.siteDefaultLocale);
   const newestByTag = new Map<string, AdmittedEdition>();
   for (const edition of admittedEditions(query)) {

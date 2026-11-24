@@ -115,8 +115,7 @@ const storedSelection = (record: SessionContextRecord): StoredSelection | undefi
   const { selectedOrganizationId, selectedMinistryId, selectedSupportSubjectId } = record;
   return selectedOrganizationId === null || selectedMinistryId === null || selectedSupportSubjectId === null ? undefined : { organizationId: selectedOrganizationId, ministryId: selectedMinistryId, supportSubjectId: selectedSupportSubjectId };
 };
-/** Switches the context this session acts in and answers one of the eight outcomes. */
-export async function selectContext(input: MutationInput<SelectContextPayload>, source?: SessionSource): Promise<MutationOutcome> {
+/** Switches the context this session acts in and answers one of the eight outcomes. */ export async function selectContext(input: MutationInput<SelectContextPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
   const authorize = (session: ResolvedSession): ScopeDecision => {
     const selection = selectContextPayloadSchema.safeParse(input.payload);
@@ -190,8 +189,7 @@ export type SetScenarioPayload = { readonly scenarioId: ScenarioId };
 export type SetScenarioResult = { readonly scenarioId: ScenarioId; readonly clockOffsetMs: number };
 const scenarioIdSchema: z.ZodType<ScenarioId> = z.custom<ScenarioId>(isScenarioId, `A scenario is one this release defines: ${SCENARIO_IDS.join(", ")}.`);
 const setScenarioPayloadSchema: z.ZodType<SetScenarioPayload> = z.strictObject({ scenarioId: scenarioIdSchema });
-/** Selects the scenario this session runs in and answers one of the eight outcomes. */
-export async function setScenario(input: MutationInput<SetScenarioPayload>, source?: SessionSource): Promise<MutationOutcome> {
+/** Selects the scenario this session runs in and answers one of the eight outcomes. */ export async function setScenario(input: MutationInput<SetScenarioPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
   const request = { sessionId: acting.sessionId, principalId: acting.principalId, input, schema: setScenarioPayloadSchema, name: "setScenario", developmentControl: "setScenario" };
   const probe = await probeDevelopmentDocument(request);
@@ -205,8 +203,7 @@ export async function setScenario(input: MutationInput<SetScenarioPayload>, sour
 export type SetClockPayload = { readonly offsetIso: string };
 export type SetClockResult = { readonly clockOffsetMs: number };
 const setClockPayloadSchema: z.ZodType<SetClockPayload> = z.strictObject({ offsetIso: z.string().refine((value) => clockOffsetMilliseconds(value) !== undefined, CLOCK_READING_MESSAGE) });
-/** Sets how far this session's scenario clock stands from the seed instant and answers one of the eight outcomes. */
-export async function setClock(input: MutationInput<SetClockPayload>, source?: SessionSource): Promise<MutationOutcome> {
+/** Sets how far this session's scenario clock stands from the seed instant and answers one of the eight outcomes. */ export async function setClock(input: MutationInput<SetClockPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
   const request = { sessionId: acting.sessionId, principalId: acting.principalId, input, schema: setClockPayloadSchema, name: "setClock", developmentControl: "setClock" };
   const probe = await probeDevelopmentDocument(request);
@@ -228,8 +225,7 @@ const advanceClockPayloadSchema: z.ZodType<AdvanceClockPayload> = z.strictObject
     .positive()
     .max(CLOCK_ADVANCE_LIMIT_SECONDS, `A clock advance is a whole number of seconds from 1 to ${String(CLOCK_ADVANCE_LIMIT_SECONDS)}, because the scenario clock stays within ten years of the seed instant.`),
 });
-/** Moves this session's scenario clock forward and answers one of the eight outcomes. */
-export async function advanceClock(input: MutationInput<AdvanceClockPayload>, source?: SessionSource): Promise<MutationOutcome> {
+/** Moves this session's scenario clock forward and answers one of the eight outcomes. */ export async function advanceClock(input: MutationInput<AdvanceClockPayload>, source?: SessionSource): Promise<MutationOutcome> {
   const acting = await actingSessionContext(source);
   const request = { sessionId: acting.sessionId, principalId: acting.principalId, input, schema: advanceClockPayloadSchema, name: "advanceClock", developmentControl: "advanceClock" };
   const probe = await probeDevelopmentDocument(request);

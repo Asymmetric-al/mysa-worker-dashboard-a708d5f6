@@ -1,11 +1,11 @@
 import type { ReactElement } from "react";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
+import { countTextOf } from "@/lib/count-format";
 import type { Coverage } from "@/modules/data-service/envelope";
 import type { PrintCell, PrintColumn, PrintModel, PrintRow } from "@/modules/export/print";
 import type { SupportBasis } from "@/modules/support/basis";
 import { EMPTY_STATES, SUPPORT_GRAIN_STATEMENT } from "../copy";
-import { countText } from "./count-text";
 import SnapshotStatement from "./snapshot-statement";
 export type PrintReportSnapshot = { readonly basis: SupportBasis; readonly currencies: readonly string[]; readonly period: { readonly from: string; readonly to: string } | null; readonly coverage: Coverage; readonly asOf: string; readonly isCurrentPeriod: boolean };
 export type PrintReportProps = { readonly model: PrintModel; readonly snapshot: PrintReportSnapshot; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly className?: string };
@@ -18,52 +18,46 @@ const COMPLETENESS_PROSE: Readonly<Record<PrintModel["completeness"], string>> =
   "whole-query": "This page holds every authorised row of the query, so the figures printed here are the whole " + "query's figures rather than a page of them.",
   "page-only": "This page holds one page of the query, so the rows printed here are a window of the result while " + "the row count stated below is the whole query's count.",
 };
-const currencyPartitionText = (currencies: readonly string[]): string => (currencies.length === 0 ? "No currency is stated by this read" : currencies.join(", "));
-function PrintedCell({ cell, align }: { readonly cell: PrintCell; readonly align: PrintColumn["align"] }): ReactElement {
-  return (
-    <TableCell className={cn("align-top print:px-1 print:py-0.5 print:whitespace-normal", ALIGN[align])}>
-      <bdi>{cell.text}</bdi>
-      {cell.accessibleLabel === null || cell.accessibleLabel === cell.text ? null : <span className="sr-only">{cell.accessibleLabel}</span>}
-    </TableCell>
-  );
-}
-function PrintedRow({ row, columns }: { readonly row: PrintRow; readonly columns: readonly PrintColumn[] }): ReactElement {
-  return (
-    <TableRow className="print:break-inside-avoid">
-      {row.map((cell, index) => {
-        const column = columns[index];
-        return <PrintedCell key={`${String(index)}:${column?.header ?? ""}`} cell={cell} align={column?.align ?? "start"} />;
-      })}
-    </TableRow>
-  );
-}
-function PrintedTable({ model, partition }: { readonly model: PrintModel; readonly partition: string }): ReactElement {
-  return (
-    <Table>
-      <TableCaption className="mt-2 text-start print:mt-1 print:caption-top">
-        {`${model.title}. Stated in: `}
-        <bdi>{partition}</bdi>
-        {`. ${SUPPORT_GRAIN_STATEMENT}`}
-      </TableCaption>
-      <TableHeader>
-        <TableRow>
-          {model.columns.map((column, index) => (
-            <TableHead key={`${String(index)}:${column.header}`} className={cn("print:px-1 print:py-0.5 print:whitespace-normal", ALIGN[column.align])}>
-              <bdi>{column.header}</bdi>
-            </TableHead>
-          ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {model.rows.map((row, index) => (
-          <PrintedRow key={String(index)} row={row} columns={model.columns} />
+const PrintedCell = ({ cell, align }: { readonly cell: PrintCell; readonly align: PrintColumn["align"] }): ReactElement => (
+  <TableCell className={cn("align-top print:px-1 print:py-0.5 print:whitespace-normal", ALIGN[align])}>
+    <bdi>{cell.text}</bdi>
+    {cell.accessibleLabel === null || cell.accessibleLabel === cell.text ? null : <span className="sr-only">{cell.accessibleLabel}</span>}
+  </TableCell>
+);
+const PrintedRow = ({ row, columns }: { readonly row: PrintRow; readonly columns: readonly PrintColumn[] }): ReactElement => (
+  <TableRow className="print:break-inside-avoid">
+    {row.map((cell, index) => {
+      const column = columns[index];
+      return <PrintedCell key={`${String(index)}:${column?.header ?? ""}`} cell={cell} align={column?.align ?? "start"} />;
+    })}
+  </TableRow>
+);
+const PrintedTable = ({ model, partition }: { readonly model: PrintModel; readonly partition: string }): ReactElement => (
+  <Table>
+    <TableCaption className="mt-2 text-start print:mt-1 print:caption-top">
+      {`${model.title}. Stated in: `}
+      <bdi>{partition}</bdi>
+      {`. ${SUPPORT_GRAIN_STATEMENT}`}
+    </TableCaption>
+    <TableHeader>
+      <TableRow>
+        {model.columns.map((column, index) => (
+          <TableHead key={`${String(index)}:${column.header}`} className={cn("print:px-1 print:py-0.5 print:whitespace-normal", ALIGN[column.align])}>
+            <bdi>{column.header}</bdi>
+          </TableHead>
         ))}
-      </TableBody>
-    </Table>
-  );
-} /** Renders one report result as the page a worker prints: its title and period state, the snapshot statement the screen shows, the per-currency summary, the rows, and the words that keep the printed sheet checkable. */
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      {model.rows.map((row, index) => (
+        <PrintedRow key={String(index)} row={row} columns={model.columns} />
+      ))}
+    </TableBody>
+  </Table>
+);
+/** Renders one report result as the page a worker prints: its title and period state, the snapshot statement the screen shows, the per-currency summary, the rows, and the words that keep the printed sheet checkable. */
 export function PrintReport({ model, snapshot, locale, dir, className }: PrintReportProps): ReactElement {
-  const partition = currencyPartitionText(snapshot.currencies);
+  const partition = snapshot.currencies.length === 0 ? "No currency is stated by this read" : snapshot.currencies.join(", ");
   return (
     <section aria-label="Printable report" data-print-report="" dir={dir} className={cn("flex min-w-0 flex-col gap-6 print:gap-3 print:text-xs", className)}>
       <header className="flex min-w-0 flex-col gap-1 print:break-inside-avoid">
@@ -109,7 +103,7 @@ export function PrintReport({ model, snapshot, locale, dir, className }: PrintRe
         <p className={WRAPPING_TEXT_CLASS}>{COMPLETENESS_PROSE[model.completeness]}</p>
         <p className={WRAPPING_TEXT_CLASS}>
           {"Rows in this result: "}
-          <bdi>{countText(model.rowTotal, locale)}</bdi>
+          <bdi>{countTextOf(model.rowTotal, locale)}</bdi>
         </p>
         {model.notes.length === 0 ? null : (
           <ul className="flex list-disc flex-col gap-1 ps-5">

@@ -12,18 +12,15 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
+import { countFormatOf } from "@/lib/count-format";
 import { useRovingFocus, useTypeahead } from "@/lib/ui-sdk";
 import type { ValueState } from "@/modules/data-service/envelope";
-/** One value a facet offers. */
-export type FacetValueSpec = { readonly id: string; readonly label: string; readonly count?: number; readonly countState?: ValueState; readonly tone?: StatusTone };
+/** One value a facet offers. */ export type FacetValueSpec = { readonly id: string; readonly label: string; readonly count?: number; readonly countState?: ValueState; readonly tone?: StatusTone };
 /** One filter the read envelope offers, with the values it admits in the caller's scope. */
 export type FacetSpec = { readonly id: string; readonly label: string; readonly values: readonly FacetValueSpec[]; readonly multi: boolean; readonly disabledReason?: string };
-/** Which facet is the amount range and which is the currency it is scoped to. */
-export type AmountRangeScope = { readonly facetId?: string; readonly currencyFacetId?: string };
-/** The search field, controlled by the owner and debounced here. */
-export type QueryToolbarSearch = { readonly value: string; readonly onChange: (value: string) => void; readonly placeholder: string; readonly debounceMs?: number };
-/** Props of {@link QueryToolbar}. */
-export type QueryToolbarProps = {
+/** Which facet is the amount range and which is the currency it is scoped to. */ export type AmountRangeScope = { readonly facetId?: string; readonly currencyFacetId?: string };
+/** The search field, controlled by the owner and debounced here. */ export type QueryToolbarSearch = { readonly value: string; readonly onChange: (value: string) => void; readonly placeholder: string; readonly debounceMs?: number };
+/** Props of {@link QueryToolbar}. */ export type QueryToolbarProps = {
   readonly label: string;
   readonly search: QueryToolbarSearch;
   readonly facets: readonly FacetSpec[];
@@ -32,6 +29,7 @@ export type QueryToolbarProps = {
   readonly amountRange?: AmountRangeScope;
   readonly pending?: boolean;
   readonly className?: string;
+  /** The interface locale this toolbar formats its counts in, stated by the route that composes it; left off, the application default interface locale applies. */ readonly locale?: string;
 };
 const TOOLBAR_COPY = {
   searchLabel: "Search",
@@ -52,9 +50,6 @@ const TOOLBAR_COPY = {
 } as const;
 const DEFAULT_SEARCH_DEBOUNCE_MS = 250;
 const LOADING_PLACEHOLDER_ROWS = 4;
-const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const DEFAULT_AMOUNT_RANGE_FACET_ID = "amount-range";
-const DEFAULT_CURRENCY_FACET_ID = "currency";
 const appliedValuesOf = (applied: Readonly<Record<string, readonly string[]>>, facetId: string): readonly string[] => applied[facetId] ?? [];
 function withFacetValues(applied: Readonly<Record<string, readonly string[]>>, facetId: string, values: readonly string[]): Record<string, string[]> {
   const next: Record<string, string[]> = Object.fromEntries(
@@ -91,19 +86,20 @@ function appliedChips(facets: readonly FacetSpec[], applied: Readonly<Record<str
   return chips;
 }
 type FacetCountView = { readonly kind: "number"; readonly text: string } | { readonly kind: "number-with-state"; readonly text: string; readonly label: string; readonly tone: StatusTone } | { readonly kind: "word"; readonly label: string; readonly tone: StatusTone } | { readonly kind: "none" };
-function countViewOf(value: FacetValueSpec): FacetCountView {
+function countViewOf(value: FacetValueSpec, locale?: string): FacetCountView {
+  const formatCount = countFormatOf(locale);
   const state = value.countState;
-  const counted = value.count !== undefined && Number.isFinite(value.count) ? countFormat.format(Math.max(0, Math.trunc(value.count))) : undefined;
+  const counted = value.count !== undefined && Number.isFinite(value.count) ? formatCount.format(Math.max(0, Math.trunc(value.count))) : undefined;
   if (state !== undefined && state !== "value" && state !== "zero") {
     const word = valueStateWord(state);
     if (word !== undefined) return state === "incomplete-subtotal" && counted !== undefined ? { kind: "number-with-state", text: counted, label: word.label, tone: word.tone } : { kind: "word", label: word.label, tone: word.tone };
   }
   if (counted !== undefined) return { kind: "number", text: counted };
-  if (state === "zero") return { kind: "number", text: countFormat.format(0) };
+  if (state === "zero") return { kind: "number", text: formatCount.format(0) };
   return { kind: "none" };
 }
-function FacetCount({ value }: { readonly value: FacetValueSpec }): ReactNode {
-  const view = countViewOf(value);
+function FacetCount({ value, locale }: { readonly value: FacetValueSpec; readonly locale?: string }): ReactNode {
+  const view = countViewOf(value, locale);
   if (view.kind === "number") return <span className="ms-auto shrink-0 tabular-figures text-xs text-muted-foreground">{view.text}</span>;
   if (view.kind === "number-with-state") {
     return (
@@ -127,26 +123,26 @@ function FacetLoading(): ReactNode {
   );
 }
 const LayerNote = ({ children }: { readonly children: ReactNode }): ReactNode => <p className="type-supporting">{children}</p>;
-type FacetControlProps = { readonly facet: FacetSpec; readonly selected: readonly string[]; readonly onSelectionChange: (values: readonly string[]) => void; readonly pending: boolean; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly describedBy?: string };
-const FacetTriggerContent = ({ facet, selectedCount }: { readonly facet: FacetSpec; readonly selectedCount: number }): ReactNode => (
+type FacetControlProps = { readonly facet: FacetSpec; readonly selected: readonly string[]; readonly onSelectionChange: (values: readonly string[]) => void; readonly pending: boolean; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly describedBy?: string; readonly locale?: string };
+const FacetTriggerContent = ({ facet, selectedCount, locale }: { readonly facet: FacetSpec; readonly selectedCount: number; readonly locale?: string }): ReactNode => (
   <>
     <bdi className="truncate">{facet.label}</bdi>
     {selectedCount > 0 ? (
       <Badge variant="secondary" className="h-5 min-w-5 justify-center px-1 tabular-figures" aria-hidden="true">
-        {countFormat.format(selectedCount)}
+        {countFormatOf(locale).format(selectedCount)}
       </Badge>
     ) : null}
     <ChevronDownIcon aria-hidden="true" className="size-3" />
   </>
 );
 /** The one popover every facet control opens: the trigger that states the filter and how much of it is chosen, the filter's own title and sentence, and the body the control renders. A filter that cannot be used states why in that body instead of offering values. */
-type FacetPopoverProps = { readonly facet: FacetSpec; readonly selectedCount: number; readonly label: string; readonly description?: string; readonly describedBy?: string; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly children: ReactNode };
+type FacetPopoverProps = { readonly facet: FacetSpec; readonly selectedCount: number; readonly locale?: string; readonly label: string; readonly description?: string; readonly describedBy?: string; readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly children: ReactNode };
 function FacetPopover(props: FacetPopoverProps): ReactNode {
-  const { facet, selectedCount, label, description, describedBy, open, onOpenChange, children } = props;
+  const { facet, selectedCount, locale, label, description, describedBy, open, onOpenChange, children } = props;
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger render={<Button variant="outline" size="sm" className="max-w-full" aria-label={label} aria-describedby={describedBy} />}>
-        <FacetTriggerContent facet={facet} selectedCount={selectedCount} />
+        <FacetTriggerContent facet={facet} selectedCount={selectedCount} locale={locale} />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)]">
         <PopoverHeader>
@@ -160,12 +156,12 @@ function FacetPopover(props: FacetPopoverProps): ReactNode {
     </Popover>
   );
 }
-const UnavailableFacetControl = ({ facet, open, onOpenChange, describedBy, reason }: FacetControlProps & { readonly reason: string }): ReactNode => (
-  <FacetPopover facet={facet} selectedCount={0} label={TOOLBAR_COPY.facetUnavailableLabel(facet.label)} describedBy={describedBy} open={open} onOpenChange={onOpenChange}>
+const UnavailableFacetControl = ({ facet, open, onOpenChange, describedBy, reason, locale }: FacetControlProps & { readonly reason: string }): ReactNode => (
+  <FacetPopover facet={facet} selectedCount={0} locale={locale} label={TOOLBAR_COPY.facetUnavailableLabel(facet.label)} describedBy={describedBy} open={open} onOpenChange={onOpenChange}>
     <LayerNote>{reason}</LayerNote>
   </FacetPopover>
 );
-function MultiFacetControl({ facet, selected, onSelectionChange, pending, open, onOpenChange }: FacetControlProps): ReactNode {
+function MultiFacetControl({ facet, selected, onSelectionChange, pending, open, onOpenChange, locale }: FacetControlProps): ReactNode {
   const optionBaseId = useId();
   const values = facet.values;
   const labels = useMemo(() => values.map((value) => value.label), [values]);
@@ -183,7 +179,7 @@ function MultiFacetControl({ facet, selected, onSelectionChange, pending, open, 
   const setValue = (valueId: string, next: boolean): void => onSelectionChange(next ? withValueAdded(selected, valueId, true) : withValueRemoved(selected, valueId));
   const label = selected.length > 0 ? `${facet.label}, ${TOOLBAR_COPY.appliedCount(selected.length)}` : facet.label;
   return (
-    <FacetPopover facet={facet} selectedCount={selected.length} label={label} description={`${TOOLBAR_COPY.acrossFacets} ${facet.multi ? TOOLBAR_COPY.withinFacet : TOOLBAR_COPY.singleValue}`} open={open} onOpenChange={onOpenChange}>
+    <FacetPopover facet={facet} selectedCount={selected.length} locale={locale} label={label} description={`${TOOLBAR_COPY.acrossFacets} ${facet.multi ? TOOLBAR_COPY.withinFacet : TOOLBAR_COPY.singleValue}`} open={open} onOpenChange={onOpenChange}>
       {pending && values.length === 0 ? (
         <div aria-busy="true">
           <span className="sr-only">{TOOLBAR_COPY.facetLoading}</span>
@@ -202,7 +198,7 @@ function MultiFacetControl({ facet, selected, onSelectionChange, pending, open, 
                 <Label htmlFor={optionId} className="min-w-0 flex-1 cursor-pointer items-start font-normal leading-snug">
                   <bdi className="min-w-0 break-words">{value.label}</bdi>
                 </Label>
-                <FacetCount value={value} />
+                <FacetCount value={value} locale={locale} />
               </div>
             );
           })}
@@ -216,7 +212,7 @@ function MultiFacetControl({ facet, selected, onSelectionChange, pending, open, 
     </FacetPopover>
   );
 }
-function SingleFacetControl({ facet, selected, onSelectionChange, pending }: FacetControlProps): ReactNode {
+function SingleFacetControl({ facet, selected, onSelectionChange, pending, locale }: FacetControlProps): ReactNode {
   const valueIds = useMemo(() => facet.values.map((value) => value.id), [facet.values]);
   const candidate = selected.length === 1 ? selected[0] : undefined;
   const current = candidate !== undefined && facetValueById(facet, candidate) !== undefined ? candidate : null;
@@ -237,7 +233,7 @@ function SingleFacetControl({ facet, selected, onSelectionChange, pending }: Fac
               {(valueId: string) => (
                 <ComboboxItem key={valueId} value={valueId}>
                   <bdi className="min-w-0 flex-1 break-words">{labelOfValue(facet, valueId)}</bdi>
-                  <FacetCount value={facetValueById(facet, valueId) ?? { id: valueId, label: valueId }} />
+                  <FacetCount value={facetValueById(facet, valueId) ?? { id: valueId, label: valueId }} locale={locale} />
                 </ComboboxItem>
               )}
             </ComboboxList>
@@ -263,14 +259,12 @@ function FilterChip({ chip, onRemove }: { readonly chip: AppliedChip; readonly o
   );
 }
 const FACET_LAYER_PREFIX = "facet:";
-type SearchState = { readonly external: string; readonly text: string };
 type UnavailableFilterNote = { readonly facetId: string; readonly label: string; readonly reason: string; readonly reasonId: string };
 type FacetControlEntry = { readonly facet: FacetSpec; readonly reason: string | null; readonly reasonId: string };
-/** The only filter surface in the application. */
-export function QueryToolbar({ label, search, facets, applied, onAppliedChange, amountRange, pending = false, className }: QueryToolbarProps): ReactNode {
+/** The only filter surface in the application. */ export function QueryToolbar({ label, search, facets, applied, onAppliedChange, amountRange, pending = false, className, locale }: QueryToolbarProps): ReactNode {
   const searchFieldId = useId();
   const [openLayer, setOpenLayer] = useState<string | null>(null);
-  const [searchState, setSearchState] = useState<SearchState>({ external: search.value, text: search.value });
+  const [searchState, setSearchState] = useState<{ readonly external: string; readonly text: string }>({ external: search.value, text: search.value });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const emitRef = useRef(search.onChange);
   const debounceMs = search.debounceMs ?? DEFAULT_SEARCH_DEBOUNCE_MS;
@@ -290,8 +284,8 @@ export function QueryToolbar({ label, search, facets, applied, onAppliedChange, 
       timerRef.current = null;
     };
   }, [searchText, searchState.external, debounceMs]);
-  const rangeFacetId = amountRange?.facetId ?? DEFAULT_AMOUNT_RANGE_FACET_ID;
-  const currencyFacetId = amountRange?.currencyFacetId ?? DEFAULT_CURRENCY_FACET_ID;
+  const rangeFacetId = amountRange?.facetId ?? "amount-range";
+  const currencyFacetId = amountRange?.currencyFacetId ?? "currency";
   const singleCurrency = singleSelectedValue(applied, currencyFacetId);
   const rangeFacet = facetById(facets, rangeFacetId);
   const hasRangeValues = appliedValuesOf(applied, rangeFacetId).length > 0;
@@ -357,7 +351,7 @@ export function QueryToolbar({ label, search, facets, applied, onAppliedChange, 
           const layer = `${FACET_LAYER_PREFIX}${facet.id}`;
           const selectedValues = appliedValuesOf(applied, facet.id);
           const describedBy = reason === null ? undefined : reasonId;
-          return <FacetControl key={facet.id} facet={facet} selected={selectedValues} onSelectionChange={(values) => setFacetValues(facet.id, values)} pending={pending} open={openLayer === layer} onOpenChange={(open) => setOpenLayer(open ? layer : null)} reason={reason} describedBy={describedBy} />;
+          return <FacetControl key={facet.id} facet={facet} selected={selectedValues} onSelectionChange={(values) => setFacetValues(facet.id, values)} pending={pending} open={openLayer === layer} onOpenChange={(open) => setOpenLayer(open ? layer : null)} reason={reason} describedBy={describedBy} locale={locale} />;
         })}
         {chips.length === 0 ? null : (
           <Button variant="ghost" size="sm" onClick={clearAll}>

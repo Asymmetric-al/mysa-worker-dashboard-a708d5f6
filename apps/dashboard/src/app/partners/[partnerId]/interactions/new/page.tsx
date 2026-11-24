@@ -7,7 +7,6 @@ import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY } from "@/features/partners/c
 import { reads, type ReadAction } from "@/modules/data-service";
 import { ReadNotices, type ReadNoticeCopy } from "../../../../page-frame";
 const PARTNERS_PATH = "/partners";
-const LOG_INTERACTION_ACTION = "logInteraction";
 const SURFACE_COPY = SURFACE_STATE_COPY.interactions;
 const RECORD_REFUSED_COPY = SURFACE_STATE_COPY["partner-detail"].refused;
 const RETURN_LABEL = "Back to the record";
@@ -31,7 +30,7 @@ export default async function NewInteractionPage({ params }: { readonly params: 
   const { envelope } = result;
   const { partner } = envelope.data;
   const record = recordHref(partner.partnerId);
-  if (!advertised(envelope.actions, LOG_INTERACTION_ACTION)) return <StateNotice kind="denied" headingLevel={1} title={SURFACE_COPY.denied.title} description={SURFACE_COPY.denied.body} action={{ label: RETURN_LABEL, href: record }} className={NOTICE_CLASS} />;
+  if (!advertised(envelope.actions, "logInteraction")) return <StateNotice kind="denied" headingLevel={1} title={SURFACE_COPY.denied.title} description={SURFACE_COPY.denied.body} action={{ label: RETURN_LABEL, href: record }} className={NOTICE_CLASS} />;
   return (
     <div className="flex min-w-0 flex-col gap-6 text-start">
       <div className="flex min-w-0 flex-col gap-2">

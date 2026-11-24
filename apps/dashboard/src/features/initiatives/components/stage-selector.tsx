@@ -14,9 +14,6 @@ import { MEMBERSHIP_RULES_COPY, MEMBERSHIP_STATE_COPY, REQUESTED_TERMS_COPY, STA
 import { useSetStage } from "../hooks/use-initiative-mutations";
 import { isAdmittedStage, type StagePayload } from "../schemas/stage";
 const ABSENT_OPTION_VALUE = "";
-const MENU_TRIGGER_LABEL = "Stage actions";
-const RECORDED_TERM = "Recorded stage";
-const INTENDED_TERM = "Stage after this change";
 type StageSourceState = Exclude<StageState, "recorded" | "retired">;
 type StagePresentation = { readonly variant: "secondary" | "outline"; readonly offersControls: boolean };
 const STAGE_PRESENTATION: Readonly<Record<StageState, StagePresentation>> = { recorded: { variant: "secondary", offersControls: true }, retired: { variant: "outline", offersControls: true }, denied: { variant: "outline", offersControls: false }, unavailable: { variant: "outline", offersControls: false } };
@@ -38,7 +35,6 @@ type StageIntent = { readonly stage: string | null; readonly expectedRevision: s
 type RecordedStage = { readonly memberId: string; readonly stage: string | null; readonly revision: string };
 const carriedForward = (recorded: RecordedStage | null, member: StageSelectorMember): RecordedStage | null => (recorded === null || recorded.memberId !== member.memberId || recorded.revision === member.revision ? null : recorded);
 type PendingAttempt = { readonly operationId: string; readonly resolve: (outcome: MutationOutcome) => void };
-type StageNote = { readonly text: string; readonly sequence: number };
 function stageStateOf(stage: string | null, admittedStages: readonly string[], sourceState: StageSourceState | undefined): StageState | null {
   if (sourceState !== undefined) return sourceState;
   if (stage === null) return null;
@@ -49,13 +45,13 @@ const stageTextOf = (stage: string | null): string => (stage === null ? REQUESTE
 const StageComparison = ({ recorded, intended }: { readonly recorded: string | null; readonly intended: string | null }): ReactElement => (
   <dl className="flex min-w-0 flex-col gap-1.5">
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-      <dt className="font-medium">{RECORDED_TERM}</dt>
+      <dt className="font-medium">{"Recorded stage"}</dt>
       <dd className="min-w-0 wrap-anywhere">
         <bdi>{stageTextOf(recorded)}</bdi>
       </dd>
     </div>
     <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-      <dt className="font-medium">{INTENDED_TERM}</dt>
+      <dt className="font-medium">{"Stage after this change"}</dt>
       <dd className="min-w-0 wrap-anywhere">
         <bdi>{stageTextOf(intended)}</bdi>
       </dd>
@@ -75,7 +71,7 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
   const reasonId = useId();
   const clearHelpId = useId();
   const [intent, setIntent] = useState<StageIntent | null>(null);
-  const [note, setNote] = useState<StageNote | null>(null);
+  const [note, setNote] = useState<{ readonly text: string; readonly sequence: number } | null>(null);
   const [recorded, setRecorded] = useState<RecordedStage | null>(null);
   const carried = carriedForward(recorded, member);
   const recordedStage = carried === null ? member.stage : carried.stage;
@@ -146,13 +142,9 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
   const offersStageChoice = presentation.offersControls && refusedReason === null;
   const offersClear = offersStageChoice && recordedStage !== null;
   const offersReturn = onReturn !== undefined && member.state === "removed";
-  const describedBy = refusedReason === null ? helpId : `${helpId} ${reasonId}`;
   const shownValue: string | null = intent === null ? recordedStage : intent.stage;
-  const selectedValue = shownValue ?? ABSENT_OPTION_VALUE;
   const showsRetiredOption = recordedStage !== null && !isAdmittedStage(admittedStages, recordedStage);
   const handleSelectChange = (event: ChangeEvent<HTMLSelectElement>): void => beginChange(event.target.value === ABSENT_OPTION_VALUE ? null : event.target.value);
-  const handleClear = (): void => beginChange(null);
-  const handleReturn = (): void => onReturn?.(member.memberId);
   return (
     <div data-slot="stage-selector" data-member-id={member.memberId} data-stage-state={stageState ?? undefined} className={cn("flex min-w-0 flex-col gap-2", className)}>
       {stageState === null ? null : (
@@ -170,7 +162,7 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
             </span>
           </Label>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <NativeSelect id={selectId} value={selectedValue} disabled={!offersStageChoice} aria-describedby={describedBy} onChange={handleSelectChange} className="max-w-full">
+            <NativeSelect id={selectId} value={shownValue ?? ABSENT_OPTION_VALUE} disabled={!offersStageChoice} aria-describedby={refusedReason === null ? helpId : `${helpId} ${reasonId}`} onChange={handleSelectChange} className="max-w-full">
               {shownValue === null ? <NativeSelectOption value={ABSENT_OPTION_VALUE}>{stageTextOf(null)}</NativeSelectOption> : null}
               {showsRetiredOption ? <NativeSelectOption value={recordedStage ?? ABSENT_OPTION_VALUE}>{`${stageTextOf(recordedStage)} — ${STAGE_STATE_COPY.retired.label}`}</NativeSelectOption> : null}
               {admittedStages.map((stage) => (
@@ -182,36 +174,22 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
             {offersClear || offersReturn ? (
               <DropdownMenu>
                 <DropdownMenuTrigger render={<Button type="button" variant="outline" size="sm" />} aria-describedby={helpId}>
-                  {MENU_TRIGGER_LABEL}
+                  {"Stage actions"}
                   <span className="sr-only">
                     {" for "}
                     <bdi>{memberName}</bdi>
                   </span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-72 max-w-full">
-                  {offersClear ? (
-                    <DropdownMenuItem aria-describedby={clearHelpId} className="py-2" onClick={handleClear}>
-                      {STAGE_SELECTOR_COPY.clearLabel}
-                    </DropdownMenuItem>
-                  ) : null}
+                  {offersClear ? <DropdownMenuItem {...{ "aria-describedby": clearHelpId, className: "py-2", onClick: () => beginChange(null) }}>{STAGE_SELECTOR_COPY.clearLabel}</DropdownMenuItem> : null}
                   {offersClear && offersReturn ? <DropdownMenuSeparator /> : null}
-                  {offersReturn ? (
-                    <DropdownMenuItem className="py-2 text-pretty" onClick={handleReturn}>
-                      {MEMBERSHIP_RULES_COPY.returnRestoresEligiblePlanning}
-                    </DropdownMenuItem>
-                  ) : null}
+                  {offersReturn ? <DropdownMenuItem {...{ className: "py-2 text-pretty", onClick: () => onReturn?.(member.memberId) }}>{MEMBERSHIP_RULES_COPY.returnRestoresEligiblePlanning}</DropdownMenuItem> : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
           </div>
-          <p id={helpId} className="text-xs text-pretty text-muted-foreground">
-            {STAGE_SELECTOR_COPY.help}
-          </p>
-          {offersClear ? (
-            <p id={clearHelpId} className="text-xs text-pretty text-muted-foreground">
-              {STAGE_SELECTOR_COPY.clearHelp}
-            </p>
-          ) : null}
+          <p {...{ id: helpId, className: "text-xs text-pretty text-muted-foreground" }}>{STAGE_SELECTOR_COPY.help}</p>
+          {offersClear ? <p {...{ id: clearHelpId, className: "text-xs text-pretty text-muted-foreground" }}>{STAGE_SELECTOR_COPY.clearHelp}</p> : null}
           {refusedReason === null ? null : (
             <Alert id={reasonId} role={undefined} className="px-3 py-2">
               <AlertDescription>{refusedReason}</AlertDescription>
@@ -221,9 +199,7 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
           <p className="text-xs text-pretty text-muted-foreground">{STAGE_SELECTOR_COPY.noTaskCreatedNote}</p>
         </div>
       ) : null}
-      <output aria-live="polite" aria-atomic="true" className="block text-xs text-pretty text-muted-foreground">
-        {note?.text ?? ""}
-      </output>
+      <output {...{ "aria-live": "polite", "aria-atomic": "true", className: "block text-xs text-pretty text-muted-foreground" }}>{note?.text ?? ""}</output>
       {intent === null ? null : (
         <div className="flex min-w-0 flex-col gap-3">
           <Separator />

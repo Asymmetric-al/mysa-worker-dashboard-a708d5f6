@@ -108,7 +108,7 @@ const namedRecipients = (recipients: readonly string[]): readonly string[] => Ob
 const revisionIdOf = (checkInId: string, lane: "private" | "shared", revision: number): string => `${checkInId}:${lane}:${revision}`;
 /** Resolves the state a check-in is read in — `private-draft`, `shared`, `withdrawn` or `unavailable` — so "not shared yet", "shared", "withdrawn" and "the source could not be read" stay four. */
 export const checkInReadState = (checkIn: CheckIn | null, sourceAvailability: CheckInSourceAvailability): CheckInState => (sourceAvailability === "unavailable" || checkIn === null ? "unavailable" : checkIn.shared === undefined ? "private-draft" : checkIn.shared.withdrawnAt === undefined ? "shared" : "withdrawn");
-/** Captures an optional question set — at most five questions of at most 500 scalars each — as a frozen deep copy stamped with the instant the editor opened; returns the captured set, or the. */
+/** Captures an optional question set — at most five questions of at most 500 scalars each — as a frozen deep copy stamped with the instant the editor opened; returns the captured set, or the refusal that stopped the capture. */
 export function captureQuestions(questions: readonly CheckInQuestion[], capturedAt: CheckInInstant): Result<CapturedQuestionSet, CheckInRefusal> {
   const captureRefusal = violationsRefusal(questionSetViolations(questions));
   if (captureRefusal !== null) return err(captureRefusal);
@@ -126,7 +126,7 @@ export function validateCheckInRequest(payload: CheckInPayload): readonly CheckI
 }
 /** The answers a save writes: those the payload states beside the questions it carries, plus the stored answers that belong to no question, which such a payload has no position to state — a save writes the question set and never deletes that work. A payload carrying no questions is a whole statement on its own, so it replaces the stored answers. */
 const retainedAnswers = (existing: CheckInPrivateDraftRevision | undefined, payload: CheckInPayload): readonly CheckInAnswer[] => (existing === undefined || payload.questions.length === 0 ? payload.answers : [...payload.answers, ...existing.answers.filter((answer) => answer.questionOrder === null)]);
-/** Saves the worker's private draft — the only revision an autosave touches, so nothing becomes readable by a coach here; returns the saved record, or the refusal (a stale revision, or the. */
+/** Saves the worker's private draft — the only revision an autosave touches, so nothing becomes readable by a coach here; returns the saved record, or the refusal (a stale revision, or the violations it named). */
 export function savePrivateDraft(checkIn: CheckIn, payload: CheckInPayload, expectedRevision: number, now: CheckInInstant): CheckInMutation {
   const stale = staleRevisionRefusal(checkIn, expectedRevision);
   if (stale !== null) return err(stale);
@@ -143,7 +143,7 @@ export function savePrivateDraft(checkIn: CheckIn, payload: CheckInPayload, expe
   const next: CheckIn = { ...checkIn, revision, privateDraft: { revisionId: revisionIdOf(checkIn.checkInId, "private", revision), captured, answers, savedAt: now } };
   return ok(accepted(next, true, "The private draft is saved. It stays your own working text: a coach sees nothing until you share this check-in."));
 }
-/** Shares the saved private draft by creating the shared revision a named coach may read, recording the recipients and the share duration; returns the shared record, or the refusal (a stale. */
+/** Shares the saved private draft by creating the shared revision a named coach may read, recording the recipients and the share duration; returns the shared record, or the refusal (a stale revision, or the reason the share cannot be made). */
 export function shareCheckIn(checkIn: CheckIn, expectedRevision: number, recipients: readonly string[], duration: CheckInShareDuration, now: CheckInInstant): CheckInMutation {
   const stale = staleRevisionRefusal(checkIn, expectedRevision);
   if (stale !== null) return err(stale);
@@ -182,7 +182,6 @@ export function withdrawSharedCheckIn(checkIn: CheckIn, expectedRevision: number
   if (checkInReadState(checkIn, AVAILABLE_SOURCE) === "withdrawn") return ok(accepted(checkIn, false, "This check-in is already withdrawn, so nothing changed."));
   const shared = sharedRevisionOf(checkIn);
   if (!shared.ok) return err(shared.error);
-  const revision = checkIn.revision + 1;
-  const next: CheckIn = { ...checkIn, revision, shared: { ...shared.value, withdrawnAt: now } };
+  const next: CheckIn = { ...checkIn, revision: checkIn.revision + 1, shared: { ...shared.value, withdrawnAt: now } };
   return ok(accepted(next, true, "This check-in is withdrawn from now on: a coach can no longer open it. Withdrawal removes access from this moment; it does not take back anything a coach has already read."));
 }

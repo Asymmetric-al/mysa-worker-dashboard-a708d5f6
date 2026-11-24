@@ -13,7 +13,6 @@ import { DEFAULT_PAGE_SIZE, FIRST_PAGE, offeredPageSize } from "@/lib/page-windo
 import type { Scope, ValueState } from "@/modules/data-service/envelope";
 import type { FieldMessages, ReadResult } from "@/modules/data-service/outcome";
 type MembershipMember = AudienceEnvelope["data"]["members"][number];
-type MembershipView = AudienceEnvelope["data"];
 type ExclusionReasonKey = keyof typeof EXCLUSION_REASON_COPY;
 type MembershipStateKey = keyof typeof MEMBERSHIP_STATE_DESCRIPTIONS;
 const EXCLUSION_REASON_ORDER = Object.keys(EXCLUSION_REASON_COPY) as readonly ExclusionReasonKey[];
@@ -62,8 +61,7 @@ const refusalSummary = (fields: FieldMessages): string =>
   Object.entries(fields)
     .flatMap(([field, fieldMessages]) => fieldMessages.map((message) => `${field}: ${message}`))
     .join(" ") || SURFACE_COPY.refusedTitle;
-type CountCardProps = { readonly heading: string; readonly figureLabel: string; readonly count: number; readonly state: ValueState; readonly locale: string; readonly children: ReactNode };
-const CountCard = ({ heading, figureLabel, count, state, locale, children }: CountCardProps): ReactElement => (
+const CountCard = ({ heading, figureLabel, count, state, locale, children }: { readonly heading: string; readonly figureLabel: string; readonly count: number; readonly state: ValueState; readonly locale: string; readonly children: ReactNode }): ReactElement => (
   <Card>
     <CardHeader>
       <CardTitle>
@@ -81,8 +79,7 @@ const CountCard = ({ heading, figureLabel, count, state, locale, children }: Cou
     </CardContent>
   </Card>
 );
-type MembershipCountsProps = { readonly view: MembershipView; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string; readonly className?: string };
-const MembershipCounts = ({ view, valueStates, locale, className }: MembershipCountsProps): ReactElement => (
+const MembershipCounts = ({ view, valueStates, locale, className }: { readonly view: AudienceEnvelope["data"]; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string; readonly className?: string }): ReactElement => (
   <div data-slot="membership-counts" className={cn("grid gap-3 lg:grid-cols-2", className)}>
     <CountCard heading={ELIGIBLE_HEADING} figureLabel={SURFACE_COPY.eligibleFigureLabel} count={view.counts.eligible} state={statedState(valueStates, "counts.eligible")} locale={locale}>
       <ul className="flex flex-col gap-2.5">
@@ -190,15 +187,21 @@ export type MembershipTableProps = { readonly envelope: MembershipSource; readon
         {view.page.total === 0 ? (
           <StateNotice kind="empty" title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} headingLevel={2} />
         ) : (
-          <RecordList<MembershipMember> label={MEMBERSHIP_COLUMN_HEADINGS.caption} columns={columns} rows={view.members} rowCount={view.page.total} queryState={{ sort: [], page, pageSize, columnVisibility }} onQueryStateChange={handleQueryStateChange} getRowId={(row) => row.membershipId} itemNoun="members" />
+          <RecordList<MembershipMember>
+            label={MEMBERSHIP_COLUMN_HEADINGS.caption}
+            columns={columns}
+            rows={view.members}
+            rowCount={view.page.total}
+            queryState={{ sort: [], page, pageSize, columnVisibility }}
+            onQueryStateChange={handleQueryStateChange}
+            getRowId={(row) => row.membershipId}
+            itemNoun="members"
+            locale={locale}
+          />
         )}
       </div>
     );
   }
-  return (
-    <div data-slot="membership-table" className={cn("flex flex-col gap-4", className)}>
-      {content}
-    </div>
-  );
+  return <div {...{ "data-slot": "membership-table", className: cn("flex flex-col gap-4", className) }}>{content}</div>;
 }
 export default MembershipTable;

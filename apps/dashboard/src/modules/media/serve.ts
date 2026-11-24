@@ -10,8 +10,7 @@ const UNAVAILABLE_MESSAGE = "This media file could not be read from its source r
 export type ByteRange = { readonly start: number; readonly end: number; readonly total: number };
 export type ByteRangeResult = { readonly kind: "none" } | { readonly kind: "bytes"; readonly range: ByteRange } | { readonly kind: "unsatisfiable"; readonly total: number };
 const RANGE_HEADER_SHAPE = /^bytes=(\d*)-(\d*)$/i;
-/** Reads one Range header against one entity, returning the inclusive window to send or why there is none. */
-export function parseByteRange(header: string | null, totalBytes: number): ByteRangeResult {
+/** Reads one Range header against one entity, returning the inclusive window to send or why there is none. */ export function parseByteRange(header: string | null, totalBytes: number): ByteRangeResult {
   const total = Number.isSafeInteger(totalBytes) && totalBytes > 0 ? totalBytes : 0;
   if (total === 0) return { kind: "none" };
   if (header === null) return { kind: "none" };

@@ -1,8 +1,4 @@
-/**
- * The initiative list's URL grammar: the one reading and writing of the view state `/partners/initiatives` keeps in its address — the parameter names, how the state filter, the order, the page window and the hidden columns are written, and the read query that state resolves to.
- *
- * It is deliberately not a client module: the Server Component route reads the address with these functions and asks the service for exactly the view they describe, and the browser list parses and writes the same address with them, so one view is one grammar rather than a copy on each side of the server boundary. Nothing here touches React, a hook, the network or the session: every export is a pure rule over the address.
- */
+/** The initiative list's URL grammar: the one reading and writing of the view state `/partners/initiatives` keeps in its address — the parameter names, how the state filter, the order, the page window and the hidden columns are written, and the read query that state resolves to. It is deliberately not a client module: the Server Component route reads the address with these functions and asks the service for exactly the view they describe, and the browser list parses and writes the same address with them, so one view is one grammar rather than a copy on each side of the server boundary. Nothing here touches React, a hook, the network or the session: every export is a pure rule over the address. */
 import type { reads } from "@/modules/data-service";
 import { INITIATIVE_STATES, type InitiativeState } from "@/modules/data-service/envelope";
 import { clampPageSize } from "@/modules/support/report";
@@ -10,22 +6,17 @@ import { clampPageSize } from "@/modules/support/report";
 export type InitiativesReadQuery = NonNullable<Parameters<typeof reads.outreach.readInitiatives>[0]>;
 /** The orders the read admits, in the order this surface offers them: the read owns the direction of each, so no direction travels. */
 export const INITIATIVE_ORDERS = ["name", "period-start", "state"] as const satisfies readonly NonNullable<InitiativesReadQuery["sort"]>[];
-/** One order the list may be presented in. */
 export type InitiativeOrder = (typeof INITIATIVE_ORDERS)[number];
 /** The one state filter value that states no filter: either of the read's two states. */
 export const STATE_ALL = "all";
 /** The state filter a view may state: one of the read's two states, or either of them. */
 export type InitiativeStateFilter = InitiativeState | typeof STATE_ALL;
-/** The order a view states when it names none: the read's own default order. */
-export const DEFAULT_ORDER: InitiativeOrder = "name";
-/** The page a view states when it names none, counted from one as the list read counts pages. */
-export const FIRST_PAGE = 1;
-/** The parameters the view state travels as. */
+/** The order a view states when it names none: the read's own default order. */ export const DEFAULT_ORDER: InitiativeOrder = "name";
+/** The page a view states when it names none, counted from one as the list read counts pages. */ export const FIRST_PAGE = 1;
 const PARAM = { search: "search", state: "state", sort: "sort", page: "page", pageSize: "pageSize", hidden: "hidden" } as const;
 const HIDDEN_SEPARATOR = ",";
 /** The columns a reader may hide: the name column carries the row's link, so it is never one of them. */
 const HIDEABLE_COLUMN_IDS = ["purpose", "responsible", "period", "state", "members"] as const;
-/** One column-visibility set, keyed by column identifier. */
 type ColumnVisibility = Readonly<Record<string, boolean>>;
 /** Everything the list's view states: the search text, the state filter, the order, the page window and the columns a reader has hidden. */
 export interface InitiativesViewState {

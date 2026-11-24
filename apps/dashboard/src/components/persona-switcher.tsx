@@ -1,10 +1,8 @@
 "use client";
 import type { StatusBadgeSpec } from "@/components/status-badge";
 import type { SessionState } from "@/modules/data-service/envelope";
-/** The seeded identity kinds the development preview labels. */
-export type PersonaKind = "reader" | "worker" | "reviewer" | "coach";
-/** The five session states the development preview labels and explains. */
-export type PersonaSessionState = SessionState;
+/** The seeded identity kinds the development preview labels. */ export type PersonaKind = "reader" | "worker" | "reviewer" | "coach";
+/** The five session states the development preview labels and explains. */ export type PersonaSessionState = SessionState;
 export const PERSONA_SESSION_STATE_LABELS: Readonly<Record<PersonaSessionState, StatusBadgeSpec>> = {
   "signed-in": { label: "Signed in", tone: "neutral" },
   unavailable: { label: "Session unavailable", tone: "danger" },

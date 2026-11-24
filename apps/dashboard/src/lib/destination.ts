@@ -1,7 +1,5 @@
-/** The one owner of "what may be an in-application destination". */
-export type DestinationProblem = "empty" | "not-relative" | "protocol-relative" | "backslash" | "control-character";
-/** Answers why `href` is not an application destination, or `undefined` when it is one. */
-export function destinationProblemOf(href: string): DestinationProblem | undefined {
+/** The one owner of "what may be an in-application destination". */ export type DestinationProblem = "empty" | "not-relative" | "protocol-relative" | "backslash" | "control-character";
+/** Answers why `href` is not an application destination, or `undefined` when it is one. */ export function destinationProblemOf(href: string): DestinationProblem | undefined {
   if (href.trim().length === 0) return "empty";
   for (const character of href) {
     const code = character.charCodeAt(0);

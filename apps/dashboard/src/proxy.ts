@@ -4,14 +4,11 @@ import { isCommittedMediaFixturePath } from "@/lib/fixture-path-guard";
 import { isDevelopment } from "@/lib/guards";
 import { SESSION_COOKIE, SESSION_COOKIE_GRANT, readSessionId } from "@/lib/session-cookie";
 import { DEFAULT_SESSION_ID } from "@/modules/dev-runtime/seed";
-const FRAMEWORK_ASSET_PREFIX = "/_next/";
-function refuseFixturePath(): NextResponse {
-  return new NextResponse(null, { status: 404, headers: { "cache-control": "no-store" } });
-}
+const refuseFixturePath = (): NextResponse => new NextResponse(null, { status: 404, headers: { "cache-control": "no-store" } });
 /** Applies the two request-level decisions of this file, in order, and answers the request. */
 export default function proxy(request: NextRequest): NextResponse {
   if (isCommittedMediaFixturePath(request.nextUrl.pathname)) return refuseFixturePath();
-  if (request.nextUrl.pathname.startsWith(FRAMEWORK_ASSET_PREFIX)) return NextResponse.next();
+  if (request.nextUrl.pathname.startsWith("/_next/")) return NextResponse.next();
   const carriedSessionId = readSessionId(request.cookies.get(SESSION_COOKIE)?.value);
   if (carriedSessionId !== undefined) return NextResponse.next();
   if (!isDevelopment()) return NextResponse.next();

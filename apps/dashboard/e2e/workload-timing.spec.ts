@@ -2,8 +2,7 @@
 import { cpus, loadavg, release, totalmem } from "node:os";
 import type { Page } from "@playwright/test";
 import { parse } from "csv-parse/sync";
-import { CSV_META, csvTextOf, ensureWorkload, expect, test, type PersonaName } from "../playwright.config";
-const PERSONA: PersonaName = "established-worker";
+import { CSV_META, csvTextOf, ensureWorkload, expect, test } from "../playwright.config";
 const GIFTS_PAGE_HREF = `/support/gifts?${new URLSearchParams({ from: "2025-11-01", to: "2026-10-31", currency: "USD", page: "0", pageSize: "50" }).toString()}`;
 const RECEIVED_REPORT_HREF = `/support/reports/received?${new URLSearchParams({ from: "2022-11-20", to: "2026-11-21" }).toString()}`;
 const SAMPLES = 30;
@@ -16,11 +15,9 @@ const MEANINGFUL_CONTENT_MARK = "__workloadFirstMeaningfulRenderMs";
 /** The export section the report renders from the server, whose adoption by the client renderer is the moment its control's click handler exists. */
 const EXPORT_SLOT = '[data-slot="export-print-actions"]';
 /** The property the client renderer sets on every DOM node it adopts, so its presence on the export section is that adoption rather than the section merely existing in the server's HTML. */
-const HYDRATION_PROPERTY_PREFIX = "__reactFiber$";
 /** Every wait is bounded well above the budget it is judged by, so a slow host reports a slow sample rather than a navigation or download timeout. */
 const NAVIGATION_TIMEOUT_MS = 120_000;
 const MARK_TIMEOUT_MS = 60_000;
-const DOWNLOAD_TIMEOUT_MS = 300_000;
 const TEST_TIMEOUT_MS = 900_000;
 /** How many times one counted load is taken before the run states the condition: a load that produced no number is discarded and taken again, and a measured sample is never taken twice. */
 const LOAD_ATTEMPT_LIMIT = 5;
@@ -59,12 +56,11 @@ function machineRecord(): MachineRecord {
 /** A load whose document the development server replaced under the read: it produced no number, so it is discarded and taken again rather than counted as a sample. */
 class ReplacedDocumentError extends Error {}
 /** What a replaced document looks like from outside: Playwright's own words for a context that is gone, and the time-origin mismatch this file names itself. */
-const REPLACED_DOCUMENT_MESSAGES = ["Execution context was destroyed", "Navigating frame was detached", "Cannot find context with specified id", "the document was replaced"];
 /** The reason a load produced no number, or `undefined` where the failure is anything else and has to be reported as it stands rather than taken again. */
 function replacedDocumentReasonOf(error: unknown): string | undefined {
   if (error instanceof ReplacedDocumentError) return error.message;
   const message = error instanceof Error ? error.message : String(error);
-  return REPLACED_DOCUMENT_MESSAGES.find((phrase) => message.includes(phrase));
+  return ["Execution context was destroyed", "Navigating frame was detached", "Cannot find context with specified id", "the document was replaced"].find((phrase) => message.includes(phrase));
 }
 /** One counted load as a bounded retake: a load that produced no number because the server replaced its document is discarded, printed as its own record and taken again, while the attempt that produced a sample returns it and is never taken again. */
 async function withRetake<T>(subject: string, index: number, take: () => Promise<T>): Promise<T> {
@@ -142,7 +138,7 @@ async function awaitExportHydration(page: Page): Promise<void> {
         const section = document.querySelector(state.slot);
         return section !== null && Object.getOwnPropertyNames(section).some((name) => name.startsWith(state.property));
       },
-      { slot: EXPORT_SLOT, property: HYDRATION_PROPERTY_PREFIX },
+      { slot: EXPORT_SLOT, property: "__reactFiber$" },
       { timeout: NAVIGATION_TIMEOUT_MS },
     );
   } catch (error) {
@@ -180,7 +176,7 @@ function csvCountsOf(text: string, subject: string): CsvCounts {
   return { rowTotal, dataRecords: records.length - header - 1, records: records.length };
 }
 /** This file measures the workload the established worker's session carries, and reads both surfaces as that persona. */
-test.use({ persona: PERSONA });
+test.use({ persona: "established-worker" });
 test("measures thirty filtered Gifts page loads once and reports their 95th percentile", async ({ page }) => {
   test.skip(process.env.WORKLOAD_MEASUREMENT !== "1", SKIP_REASON);
   test.setTimeout(TEST_TIMEOUT_MS);
@@ -243,7 +239,7 @@ test("times the whole-query CSV export once and states the row count it exported
     await awaitExportHydration(page);
     const statedRows = await rowsStatedByReport(page);
     const startedAt = performance.now();
-    const waiting = page.waitForEvent("download", { timeout: DOWNLOAD_TIMEOUT_MS });
+    const waiting = page.waitForEvent("download", { timeout: 300_000 });
     void waiting.catch(() => undefined); // A discard between the click and the download must not leave this wait rejecting on its own minutes later, so its rejection is observed here as well as awaited below.
     await control.click();
     const text = await csvTextOf(await waiting);

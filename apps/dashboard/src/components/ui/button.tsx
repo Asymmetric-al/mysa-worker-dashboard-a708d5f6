@@ -27,8 +27,7 @@ const buttonVariants = cva(
     defaultVariants: { variant: "default", size: "default" },
   },
 );
-/** A control whose label may wrap: it keeps its size's height for one line and grows for more, so no call site states the height itself. */
-const BUTTON_WRAP_CLASS = "h-auto max-w-full py-0 whitespace-normal";
+/** A control whose label may wrap: it keeps its size's height for one line and grows for more, so no call site states the height itself. */ const BUTTON_WRAP_CLASS = "h-auto max-w-full py-0 whitespace-normal";
 function Button({ className, variant = "default", size = "default", ...props }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return <ButtonPrimitive data-slot="button" className={cn(buttonVariants({ variant, size, className }))} {...props} />;
 }

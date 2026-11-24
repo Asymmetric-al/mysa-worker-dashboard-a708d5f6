@@ -4,12 +4,9 @@ import { StateNotice } from "@/components/state-notice";
 import DeliveryResults from "@/features/updates/components/delivery-results";
 import { reads } from "@/modules/data-service";
 import { PageColumn, PageHeading, pageRefusalOf, paramOf, wholeNumberOf, type ReadNoticeCopy, type SearchParams } from "../../page-frame";
-type SendResultQuery = NonNullable<Parameters<typeof reads.audience.readSendResult>[0]>;
 const PAGE_HEADING_LEVEL = 1;
 const SECTION_HEADING_LEVEL = 2;
 const PARAM = { intentId: "intentId", page: "page", pageSize: "pageSize" } as const;
-/** The interface locale the composed surface formats its counts in. */
-const INTERFACE_LOCALE = "en-GB";
 const EMPTY_ACTION = { label: "Open the Updates list", href: "/communication" } as const;
 const PAGE_COPY = {
   title: "Delivery",
@@ -21,7 +18,7 @@ const PAGE_COPY = {
   retry: "Try this read again",
 } as const;
 export const metadata: Metadata = { title: PAGE_COPY.title };
-function queryOf(intentId: string, searchParams: SearchParams): SendResultQuery {
+function queryOf(intentId: string, searchParams: SearchParams): NonNullable<Parameters<typeof reads.audience.readSendResult>[0]> {
   const page = wholeNumberOf(paramOf(searchParams, PARAM.page));
   const pageSize = wholeNumberOf(paramOf(searchParams, PARAM.pageSize));
   return { intentId, ...(page === undefined ? {} : { page }), ...(pageSize === undefined ? {} : { pageSize }) };
@@ -53,7 +50,7 @@ export default async function CommunicationDeliveryPage({ searchParams }: { read
   return (
     <PageColumn>
       <PageHeading title={PAGE_COPY.title} paragraphs={[PAGE_COPY.lede]} />
-      <DeliveryResults scope={result.envelope.scope} locale={INTERFACE_LOCALE} intentId={intentId} initialData={result} headingLevel={SECTION_HEADING_LEVEL} />
+      <DeliveryResults scope={result.envelope.scope} locale={"en-GB"} intentId={intentId} initialData={result} headingLevel={SECTION_HEADING_LEVEL} />
     </PageColumn>
   );
 }

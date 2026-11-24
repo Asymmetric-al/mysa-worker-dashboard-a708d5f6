@@ -62,8 +62,7 @@ export const acceptImportRowsPayloadSchema: z.ZodType<AcceptImportRowsPayload> =
 export type AcceptImportRowsPayload = { readonly acknowledged: true; readonly fileFingerprint: string; readonly decisions: readonly ImportDecisionInput[] };
 export const cancelImportPayloadSchema: z.ZodType<CancelImportPayload> = z.strictObject({});
 export type CancelImportPayload = Record<string, never>;
-/** The review in progress: the chosen file's own text, the headers and counts measured from it, the mapping */
-export interface ImportReviewRecord {
+/** The review in progress: the chosen file's own text, the headers and counts measured from it, the mapping, the decisions taken about its rows, and the receipt of what the acceptance applied. */ export interface ImportReviewRecord {
   readonly importOperationId: string;
   readonly scope: Scope;
   readonly fileName: string;
@@ -78,8 +77,7 @@ export interface ImportReviewRecord {
   readonly cancelledAt: string | null;
   readonly receipt: unknown;
 }
-/** The stored review record as it is read back. */
-export const importReviewRecordSchema: z.ZodType<ImportReviewRecord> = z.object({
+/** The stored review record as it is read back. */ export const importReviewRecordSchema: z.ZodType<ImportReviewRecord> = z.object({
   importOperationId: z.string().min(1),
   scope: scopeSchema,
   fileName: z.string().min(1),
@@ -167,7 +165,7 @@ function fileRefusalOn(refusals: readonly ImportRefusal[]): FieldMessages {
   const messages = refusals.map((refusal) => refusal.message);
   return { contentBase64: messages.length > 0 ? messages : ["This file could not be read as CSV."] };
 }
-/** The existing contacts a file's rows may be compared against: every stored partner as an opaque, */
+/** The existing contacts a file's rows may be compared against: every stored partner as an opaque, source-qualified candidate. */
 export const candidatesOf = (partners: readonly PartnerRecord[]): readonly ImportMatchCandidate[] => partners.map((partner) => ({ reference: { system: LOCAL_STORE_SYSTEM, reference: partner.partnerId }, visibleFields: CANDIDATE_FIELDS, visibleValues: visibleValuesOf(partner), reuse: { permitted: true } }));
 const CANDIDATE_FIELDS: readonly ImportFieldId[] = [...IMPORT_FIELD_IDS];
 function visibleValuesOf(partner: PartnerRecord): Readonly<Partial<Record<ImportFieldId, readonly string[]>>> {
@@ -380,17 +378,17 @@ export async function proposeImport(input: MutationInput<ProposeImportPayload>, 
       const state = openImportState(context);
       const payload = input.payload;
       const bytes = decodeContent(payload.contentBase64);
-      if (bytes === null) refuseInvalid(context.operationId, invalidField("contentBase64", "This file's content is not valid base64, so it could not be read as the file that was chosen. Choose the file again."));
+      if (bytes === null) return refuseInvalid(context.operationId, invalidField("contentBase64", "This file's content is not valid base64, so it could not be read as the file that was chosen. Choose the file again."));
       const admitted = await checkLimits(bytes, payload.fileName);
-      if (!admitted.ok) refuseInvalid(context.operationId, fileRefusalOn(admitted.refusals));
+      if (!admitted.ok) return refuseInvalid(context.operationId, fileRefusalOn(admitted.refusals));
       const parsed = await parseCsv(admitted.file.text);
-      if (!parsed.ok) refuseInvalid(context.operationId, fileRefusalOn(parsed.refusals));
+      if (!parsed.ok) return refuseInvalid(context.operationId, fileRefusalOn(parsed.refusals));
       const file = parsed.file;
       const text = admitted.file.text;
       let mapping: ImportConfirmedMapping | null = null;
       if (payload.confirmedMapping !== undefined) {
         const confirmed = confirmMapping(suggestMapping(file), mappingDecisionsOf(payload.confirmedMapping));
-        if (!confirmed.ok) refuseInvalid(context.operationId, { confirmedMapping: confirmed.refusals.map((entry) => entry.message) });
+        if (!confirmed.ok) return refuseInvalid(context.operationId, { confirmedMapping: confirmed.refusals.map((entry) => entry.message) });
         mapping = confirmed.mapping;
         if (!mappingSuppliesName(mapping)) refuseInvalid(context.operationId, invalidField("confirmedMapping", "This mapping supplies no column that names a contact, so nothing could be created from the file. Map a display name, or a given and family name, or an organization name."));
       }
@@ -405,7 +403,7 @@ export async function proposeImport(input: MutationInput<ProposeImportPayload>, 
         const recorded = decisionsFor(file, previous, mappingRecordsOf(file.headers, file.columnCount, confirmedMapping));
         const validation = validateRows(file, confirmedMapping);
         const summarised = summariseDecisions(recorded, { file, mapping: confirmedMapping, validation, candidates: candidatesOf(state.partners) });
-        if (!summarised.ok) refuseInvalid(context.operationId, invalidField("confirmedMapping", summarised.refusal.message));
+        if (!summarised.ok) return refuseInvalid(context.operationId, invalidField("confirmedMapping", summarised.refusal.message));
         decisions = recorded;
         summary = summarised.summary;
       }
@@ -443,12 +441,12 @@ export async function setRowDecision(input: MutationInput<SetRowDecisionPayload>
     apply: async (context) => {
       const state = openImportState(context);
       const stored = latestImportIn(state, input.scope);
-      if (stored === null) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, "No import is in progress in this context, so there is no row to decide about. Choose a file and map its columns first."));
+      if (stored === null) return refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, "No import is in progress in this context, so there is no row to decide about. Choose a file and map its columns first."));
       if (stored.proposal.processedAt !== null) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, "This import has already been accepted or cancelled, so its row decisions can no longer change. Start a new import to decide about these rows again."));
       const confirmedMapping = stored.review.mapping;
-      if (confirmedMapping === null) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, "No column mapping is confirmed for this import yet, so no row can be decided about. Confirm the mapping first."));
+      if (confirmedMapping === null) return refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, "No column mapping is confirmed for this import yet, so no row can be decided about. Confirm the mapping first."));
       const parsed = await parseCsv(stored.review.text);
-      if (!parsed.ok) refuseUnavailable({ operationId: context.operationId, reference: "stored-import-text", guidance: TEXT_UNAVAILABLE_GUIDANCE });
+      if (!parsed.ok) return refuseUnavailable({ operationId: context.operationId, reference: "stored-import-text", guidance: TEXT_UNAVAILABLE_GUIDANCE });
       const file = parsed.file;
       const validation = validateRows(file, confirmedMapping);
       const candidates = candidatesOf(state.partners);
@@ -456,7 +454,7 @@ export async function setRowDecision(input: MutationInput<SetRowDecisionPayload>
       if (!recorded.ok) refuseDecision(context.operationId, recorded.refusal);
       if (!recorded.changed) return NOT_CHANGED;
       const summarised = summariseDecisions(recorded.set, { file, mapping: confirmedMapping, validation, candidates });
-      if (!summarised.ok) refuseInvalid(context.operationId, invalidField("rowNumber", summarised.refusal.message));
+      if (!summarised.ok) return refuseInvalid(context.operationId, invalidField("rowNumber", summarised.refusal.message));
       const revision = nextRevision(stored.proposal.revision);
       const proposal = proposalRecordOf({
         importOperationId: stored.proposal.importOperationId,
@@ -489,14 +487,14 @@ export async function acceptImportRows(input: MutationInput<AcceptImportRowsPayl
     apply: async (context) => {
       const state = openImportState(context);
       const stored = latestImportIn(state, input.scope);
-      if (stored === null) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, "No import is in progress in this context, so there is nothing to accept. Choose a file, map its columns and decide about its rows first."));
+      if (stored === null) return refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, "No import is in progress in this context, so there is nothing to accept. Choose a file, map its columns and decide about its rows first."));
       const review = stored.review;
       const confirmedMapping = review.mapping;
-      if (confirmedMapping === null) refuseInvalid(context.operationId, invalidField("confirmedMapping", "No column mapping is confirmed for this import, so no row could be applied. Map the columns and review the rows before accepting."));
+      if (confirmedMapping === null) return refuseInvalid(context.operationId, invalidField("confirmedMapping", "No column mapping is confirmed for this import, so no row could be applied. Map the columns and review the rows before accepting."));
       const prior = storedReceiptOf(review);
       if (prior.kind === "unreadable") refuseUnavailable({ operationId: context.operationId, reference: "import-receipt", guidance: RECEIPT_UNAVAILABLE_GUIDANCE });
       const parsed = await parseCsv(review.text);
-      if (!parsed.ok) refuseUnavailable({ operationId: context.operationId, reference: "stored-import-text", guidance: TEXT_UNAVAILABLE_GUIDANCE });
+      if (!parsed.ok) return refuseUnavailable({ operationId: context.operationId, reference: "stored-import-text", guidance: TEXT_UNAVAILABLE_GUIDANCE });
       const file = parsed.file;
       const fingerprint = fingerprintOf(file);
       const carried = carriedFingerprintRefusal(input.payload.fileFingerprint, fingerprint, review.decisions?.fingerprint ?? null);
@@ -510,7 +508,7 @@ export async function acceptImportRows(input: MutationInput<AcceptImportRowsPayl
         if (recorded.changed) set = recorded.set;
       }
       const summarised = summariseDecisions(set, { file, mapping: confirmedMapping, validation, candidates });
-      if (!summarised.ok) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, summarised.refusal.message));
+      if (!summarised.ok) return refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, summarised.refusal.message));
       const summary = summarised.summary;
       const alreadyApplied = prior.kind === "receipt" ? appliedRowsOf(prior.receipt) : new Map<number, ImportMatchReference>();
       const validatedByRow = new Map<number, ImportValidatedRow>();
@@ -547,7 +545,7 @@ export async function acceptImportRows(input: MutationInput<AcceptImportRowsPayl
       const acceptedAt = now().toString();
       // The receipt belongs to the import, not to this attempt: it is identified by the import operation identity the review and the proposal are recorded under, so the acceptance stays reachable by the one identity the journey holds and the address names. This attempt's own identity is what the ledger records, and a replay of it returns this same stored receipt.
       const built = buildReceipt({ importOperationId: review.importOperationId, fileMeta: { name: review.fileName, bytes: review.byteLength, rowCount: file.dataRowCount, columnCount: file.columnCount }, mapping: confirmedMapping, rowDecisions: set, summary, processedAt: acceptedAt, applications });
-      if (!built.ok) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, built.refusal.message));
+      if (!built.ok) return refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, built.refusal.message));
       const receipt = built.receipt;
       const revision = nextRevision(stored.proposal.revision);
       const proposal = proposalRecordOf({
@@ -598,12 +596,12 @@ export async function cancelImport(input: MutationInput<CancelImportPayload>, se
       } else if (review.mapping !== null) {
         const confirmedMapping = review.mapping;
         const parsed = await parseCsv(review.text);
-        if (!parsed.ok) refuseUnavailable({ operationId: context.operationId, reference: "stored-import-text", guidance: TEXT_UNAVAILABLE_GUIDANCE });
+        if (!parsed.ok) return refuseUnavailable({ operationId: context.operationId, reference: "stored-import-text", guidance: TEXT_UNAVAILABLE_GUIDANCE });
         const file = parsed.file;
         const validation = validateRows(file, confirmedMapping);
         const set = review.decisions ?? createDecisionSet(file);
         const summarised = summariseDecisions(set, { file, mapping: confirmedMapping, validation, candidates: candidatesOf(state.partners) });
-        if (!summarised.ok) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, summarised.refusal.message));
+        if (!summarised.ok) return refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, summarised.refusal.message));
         const built = buildReceipt({
           importOperationId: review.importOperationId,
           fileMeta: { name: review.fileName, bytes: review.byteLength, rowCount: file.dataRowCount, columnCount: file.columnCount },
@@ -613,7 +611,7 @@ export async function cancelImport(input: MutationInput<CancelImportPayload>, se
           processedAt: cancelledAt,
           applications: [],
         });
-        if (!built.ok) refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, built.refusal.message));
+        if (!built.ok) return refuseInvalid(context.operationId, invalidField(ROOT_FIELD_KEY, built.refusal.message));
         receipt = cancelUnacceptedRows(built.receipt, cancelledAt);
       }
       const revision = nextRevision(stored.proposal.revision);

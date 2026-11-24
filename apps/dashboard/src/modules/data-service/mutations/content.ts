@@ -9,7 +9,7 @@ import { directionOfTag } from "@/modules/content/locale";
 import { buildNotice, resolveRendition, type RenditionCandidate as NoticeRenditionCandidate, type NoticeRecipient } from "@/modules/content/notice";
 import { containEditions, decideReach, withdrawEdition } from "@/modules/content/reach";
 import { VARIANT_AUDIENCES, VARIANT_FAMILIES, admittedAudiences, applyDraftRevision, applyReleaseOutcome, applyReviewDecision, createRelease, createRevision, createVariant as buildVariant, freezeCandidate, isReleaseUnchanged, restoreAsNewDraft, revisionChecksum, variantKeyAllowed } from "@/modules/content/variant";
-import type { ContentRevision, ContentVariant, MediaPlacement, Release, VariantAudience, VariantFamily } from "@/modules/content/variant";
+import type { ContentRevision, ContentVariant, MediaPlacement, Release, VariantAudience } from "@/modules/content/variant";
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
 import { canonicalJson } from "@/modules/import/receipt";
 import { uploadedMediaReference, writeMediaBytes } from "@/modules/store/media";
@@ -17,13 +17,13 @@ import { RENDITION_PURPOSES, acceptImage, acceptVideo, mediaStateReason, prepare
 import { instantAt } from "@/modules/time/clock";
 import { notificationDeadline } from "@/modules/time/window";
 import { canEdit, type ResolvedSession, type ScopeDecision } from "../authorize";
-import { PAGE_PRESET_IDS, PAGE_SECTION_TYPES, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetRecordSchema, membershipRecordSchema, notificationIntentRecordSchema, notificationSendResultRecordSchema, principalIdSchema } from "../envelope";
+import { PAGE_PRESET_IDS, PAGE_SECTION_TYPES_BY_FAMILY, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetRecordSchema, membershipRecordSchema, notificationIntentRecordSchema, notificationSendResultRecordSchema, principalIdSchema } from "../envelope";
 import { recordRevisionSchema, releaseRecordSchema, storedContentRevisionRecordSchema, releaseReachSchema, storedInstantSchema } from "../envelope";
 import type { ContentCaptionTrackRecord, ContentDocumentRecord, ContentFamily, ContentVariantRecord, MediaAssetRecord, MediaAssetRenditionPurpose, MediaPlacementRecord, MembershipRecord as StoredMembership, MutationInput, PagePresetId, PageSectionType, PrincipalId, NotificationIntentRecord } from "../envelope";
 import type { NotificationRecipientOutcomeRecord, NotificationSendResultRecord, NotificationUnservedRecipientRecord, ReleaseReach, ReleaseRecord, Scope, SharePresentationRecord, StoredContentRevisionRecord, StoredRecord } from "../envelope";
 import { unknown, type MutationOutcome, type MutationResult, type PerItemResult } from "../outcome";
 import { runMutation, type ApplyResult, type CurrentTarget, type MutationContext, type MutationName } from "../operations";
-import { contentRevisionOf, contentVariantOf, membershipOf, storedInstantOf } from "../projection";
+import { contentDocumentOf, contentRevisionOf, contentVariantOf, membershipOf, storedInstantOf } from "../projection";
 export const PUBLISH_MODES = ["publish-only", "publish-and-notify"] as const;
 export type PublishMode = (typeof PUBLISH_MODES)[number];
 export const PER_VARIANT_RELEASE_STATES = ["released", "failed-prior-good-head", "needs-attention"] as const;
@@ -97,17 +97,6 @@ function nextRevision(current: string): string {
 const scenarioInstant = (session: ResolvedSession): Temporal.Instant => instantAt(session.clockOffsetMs);
 const invalidAt = (issues: readonly DocumentIssue[]): z.ZodError => new z.ZodError(issues.map((issue) => ({ code: "custom" as const, path: issue.path.split("."), message: issue.message })));
 const invalidField = (path: string, message: string): z.ZodError => invalidAt([{ path, message }]);
-function domainDocumentOf(record: ContentDocumentRecord): {
-  readonly documentId: string;
-  readonly family: VariantFamily;
-  readonly kind: ContentDocumentRecord["kind"];
-  readonly sourceSubject: ContentDocumentRecord["sourceSubject"];
-  readonly siteId: string;
-  readonly givingBinding?: ContentDocumentRecord["sourceSubject"];
-  readonly managedFields: Readonly<Record<string, string>>;
-} {
-  return { documentId: record.documentId, family: record.family, kind: record.kind, sourceSubject: record.sourceSubject, siteId: record.siteId, ...(record.givingBinding === null ? {} : { givingBinding: record.givingBinding.designation }), managedFields: {} };
-}
 function storedVariantOf(variant: ContentVariant, revision: string): ContentVariantRecord {
   const translationSource = variant.translationSource === undefined ? null : { variantId: variant.translationSource.variantId, revisionId: variant.translationSource.revisionId };
   const draftRevisionId = variant.draftRevisionId ?? null;
@@ -185,9 +174,11 @@ function requireEditableSection(sections: readonly ContentSection[], sectionId: 
   if (MANAGED_SECTION_TYPES.has(section.element)) throw invalidField("sectionId", MANAGED_SECTION_REFUSAL);
   return { sections, index, section };
 }
-function requireSectionType(value: string): PageSectionType {
-  const admitted = PAGE_SECTION_TYPES.find((type) => type === value);
-  if (admitted === undefined) throw invalidField("sectionType", "A section type is one the page catalogue admits, and this one is not in it.");
+// The section types one document family admits: a Page family states its own catalogue, and an Update admits none because it carries prose and its own media placements rather than composed sections.
+const admittedSectionTypesOf = (family: ContentFamily): readonly PageSectionType[] => (family === "update" ? [] : PAGE_SECTION_TYPES_BY_FAMILY[family]);
+function requireSectionType(family: ContentFamily, value: string): PageSectionType {
+  const admitted = admittedSectionTypesOf(family).find((type) => type === value);
+  if (admitted === undefined) throw invalidField("sectionType", "A section type is one the addressed Page family's catalogue admits, and this one is not in it.");
   return admitted;
 }
 const RECORD_REFERENCE_MESSAGE = "This action applies to one record, so open the record again and retry rather than pasting an address.";
@@ -238,8 +229,7 @@ const UNTITLED_SHARE_TITLE = "Untitled";
 type StatedShare = { readonly title?: string; readonly description?: string; readonly imageAssetId?: string | null; readonly imageAltText?: string | null };
 // The text one save states for a share field: a blank field is the author leaving the field out rather than emptying it.
 const statedShareTextOf = (value: string | undefined): string | undefined => (value === undefined || value.trim().length === 0 ? undefined : value);
-/** The share presentation one revision stores. */
-function storedShareOf(share: StatedShare, previous: SharePresentationRecord | undefined): SharePresentationRecord {
+/** The share presentation one revision stores. */ function storedShareOf(share: StatedShare, previous: SharePresentationRecord | undefined): SharePresentationRecord {
   return {
     title: statedShareTextOf(share.title) ?? statedShareTextOf(previous?.title) ?? UNTITLED_SHARE_TITLE,
     description: statedShareTextOf(share.description) ?? previous?.description ?? "",
@@ -367,7 +357,7 @@ function applyCreateVariant(context: MutationContext, payload: CreateVariantPayl
   }
   const created = buildVariant({
     variantId: newRecordId("variant"),
-    document: domainDocumentOf(document),
+    document: contentDocumentOf(document),
     audience,
     locale,
     existingVariants: state.contentVariants.filter((candidate) => candidate.documentId === document.documentId).map(contentVariantOf),
@@ -540,6 +530,10 @@ function simulatedSiblingAttempt(variant: ContentVariantRecord, head: ReleaseRec
         : "This scenario simulates a partial release, so no release was recorded for this edition and the revision it already published stays the head; the sibling edition's release stands rather than being rolled back.",
   };
 }
+// The reach a family's first release starts at, because a first release has no head to inherit one from. A Page's builder carries the owner's own reach control, so a first Page edition stays Not public until they choose otherwise. An Update has no reach control on any surface, so its first edition starts Shared by link: public — readable at its own address, unlisted and noindex — because an edition reported Published that no reader can open is a publication only its author can see.
+function firstReleaseReach(family: ContentFamily): ReleaseReach {
+  return family === "update" ? "link-public" : "not-public";
+}
 function applyPublishVariants(context: MutationContext, payload: PublishVariantsPayload): ApplyResult<MutationResult> {
   const { raw, state } = openState(context.docs);
   const selections = releaseSelectionsOf(state, payload);
@@ -622,7 +616,7 @@ function applyPublishVariants(context: MutationContext, payload: PublishVariants
       attempts.push({ variantId: variant.variantId, state: "released", releaseId: domainHead.releaseId, revisionId: domainHead.revisionId, notifyMode, reasonCode: "already-published", reason: "This edition already publishes exactly this revision; no second release was recorded." });
       continue;
     }
-    const built = createRelease({ releaseId: newRecordId("release"), variant: domainVariant, revision: domainRevision, reach: head?.reach ?? "not-public", at });
+    const built = createRelease({ releaseId: newRecordId("release"), variant: domainVariant, revision: domainRevision, reach: head?.reach ?? firstReleaseReach(document.family), at });
     if (built.status === "invalid") throw invalidAt(built.issues);
     const advanced = applyReleaseOutcome(domainVariant, { status: "released", release: built.release }, domainHead);
     if (advanced.status === "invalid") throw invalidAt(advanced.issues);
@@ -966,9 +960,7 @@ function draftTargetOf(state: ContentMutationState, payload: { readonly draftRev
   return target;
 }
 // The draft a media placement change edits: an Update carries prose and its own media placements exactly as a Page composes its own sections, so this reader states no family guard and both families place media on their draft.
-function placementTargetOf(state: ContentMutationState, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): DraftTarget {
-  return resolveDraftTarget(state, payload);
-}
+const placementTargetOf = (state: ContentMutationState, payload: { readonly draftRevisionId?: string; readonly variantId?: string }): DraftTarget => resolveDraftTarget(state, payload);
 function sectionIndexOf(sections: readonly ContentSection[], sectionId: string): number {
   const numericText = /^section-(\d+)$/u.exec(sectionId)?.[1] ?? (/^\d+$/u.test(sectionId) ? sectionId : undefined);
   if (numericText !== undefined) {
@@ -986,6 +978,8 @@ function emptyFieldsFor(type: PageSectionType): Readonly<Record<string, string>>
   for (const key of SECTION_FIELD_KEYS[type]) fields[key] = "";
   return fields;
 }
+// Two records outside an edition's draft name one exact revision and are read through it: a release, because a reader is served that record on the edition's live address and the release reports that record's own digest, and a review record, because the candidate a reviewer answers is identified by the very revision it froze. So a section or placement edit to a revision either of them names continues the draft as a new record instead of rewriting the named one: rewriting it would put text nobody submitted or reviewed in front of readers, move the release's checksum with no review and no release, and change what was submitted into the revision an approval would answer. An edition no release and no review record names keeps the in-place write, because nothing outside its own draft reads that record.
+const revisionIsFrozen = (state: ContentMutationState, revisionId: string): boolean => state.releases.some((release) => release.revisionId === revisionId) || (state.contentReviews ?? []).some((review) => review.revisionId === revisionId);
 function writeDraftEdit(input: {
   readonly context: { readonly docs: { state: unknown }; readonly session: ResolvedSession };
   readonly opened: OpenedState;
@@ -1004,9 +998,14 @@ function writeDraftEdit(input: {
   const checksum = revisionChecksum({ body, sections: body.sections, mediaPlacements: placements.map((placement) => ({ placementId: placement.placementId, assetId: placement.assetId })), captions, altText, sharePresentation: contentRevisionOf(target.revision, target.body).sharePresentation });
   const next: StoredContentRevision = { ...target.revision, body, mediaPlacements: [...placements], captions: [...tracks], contentChecksum: checksum, revision: nextRevision(target.revision.revision) };
   if (storedContentEquals(target.revision, next)) return { changed: false };
-  const nextVariants = replaceVariant(input.opened.state.contentVariants, storedVariantOf(contentVariantOf(target.variant), nextRevision(target.variant.revision)));
-  writeState(input.context.docs, input.opened.raw, { contentRevisions: replaceRevision(input.opened.state.contentRevisions, next), contentVariants: nextVariants });
-  return { changed: true, revisionId: next.revisionId, revision: next.revision, documentId: target.document.documentId, variantId: target.variant.variantId };
+  // The identity the edit continues under: a frozen revision is left exactly as the record naming it states it, and the draft moves on to a record of its own that names the person editing now, while a revision nothing outside its own draft names is edited under the identity it already holds.
+  const forked = revisionIsFrozen(input.opened.state, target.revision.revisionId);
+  const edited: StoredContentRevision = forked ? { ...next, revisionId: newRecordId("rev"), authorPrincipalId: principalIdOf(input.context.session.principalId), createdAt: scenarioInstant(input.context.session).toString(), revision: INITIAL_REVISION_TOKEN } : next;
+  const pointed = applyDraftRevision(contentVariantOf(target.variant), contentRevisionOf(edited, body));
+  if (pointed.status === "invalid") throw invalidAt(pointed.issues);
+  const nextVariants = replaceVariant(input.opened.state.contentVariants, storedVariantOf(pointed.variant, nextRevision(target.variant.revision)));
+  writeState(input.context.docs, input.opened.raw, { contentRevisions: forked ? [...input.opened.state.contentRevisions, edited] : replaceRevision(input.opened.state.contentRevisions, edited), contentVariants: nextVariants });
+  return { changed: true, revisionId: edited.revisionId, revision: edited.revision, documentId: target.document.documentId, variantId: target.variant.variantId };
 }
 const replaceRevision = (revisions: readonly StoredContentRevision[], next: StoredContentRevision): readonly StoredContentRevision[] => revisions.map((revision) => (revision.revisionId === next.revisionId ? next : revision));
 export type SectionEditView = { readonly documentId: string; readonly variantId: string; readonly revisionId: string; readonly revision: string; readonly sectionCount: number };
@@ -1028,10 +1027,10 @@ async function editDraftSections<P extends DraftTargetSelector>(sessionId: strin
 }
 const addSectionPayloadSchema = z.strictObject({ ...draftTargetShape, sectionType: z.string().trim().min(1, "Choose the section to add."), afterSectionId: recordIdSchema.optional() }).superRefine(refuseUnnamedDraftTarget);
 export type AddSectionPayload = z.infer<typeof addSectionPayloadSchema>;
-/** Adds one section of an admitted catalogue type to a page draft, after a named section or at the end. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
+/** Adds one section of a type the addressed Page family's catalogue admits to that family's draft, after a named section or at the end. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export async function addSection(sessionId: string, input: MutationInput<AddSectionPayload>): Promise<MutationOutcome> {
   return editDraftSections(sessionId, input, addSectionPayloadSchema, "addSection", (target, payload) => {
-    const type = requireSectionType(payload.sectionType);
+    const type = requireSectionType(target.document.family, payload.sectionType);
     if (MANAGED_SECTION_TYPES.has(type)) throw invalidField("sectionType", MANAGED_SECTION_REFUSAL);
     const sections = target.body.sections;
     const after = payload.afterSectionId === undefined ? sections.length : sectionIndexOf(sections, payload.afterSectionId) + 1;
@@ -1179,9 +1178,7 @@ async function writeReplayedRegistration(sessionId: string, payload: RegisterMed
   for (const rendition of replayed.renditions) await writeMediaBytes(uploadedMediaReference(sessionId, assetId, rendition.renditionId, rendition.mimeType), rendition.bytes);
 }
 // The revision a registration presents: none for an Updates registration, which registers the asset here and places it through its own draft save, and the draft edition's own revision for a Page registration, which writes the placement itself.
-function registrationTargetOf(documents: MutationContext["docs"], sectionPlacement: RegisterMediaAssetPayload["sectionPlacement"]): CurrentTarget {
-  return sectionPlacement === undefined ? { kind: "absent" } : draftTarget(documents, sectionPlacement);
-}
+const registrationTargetOf = (documents: MutationContext["docs"], sectionPlacement: RegisterMediaAssetPayload["sectionPlacement"]): CurrentTarget => (sectionPlacement === undefined ? { kind: "absent" } : draftTarget(documents, sectionPlacement));
 function storeRegisteredAsset(documents: MutationContext["docs"], opened: OpenedState, asset: MediaAssetRecord, descriptor: MediaAssetDescriptorRecord): string {
   writeState(documents, opened.raw, { mediaAssets: [...opened.state.mediaAssets, asset], mediaAssetDescriptors: [...opened.state.mediaAssetDescriptors, descriptor] });
   return asset.revision;

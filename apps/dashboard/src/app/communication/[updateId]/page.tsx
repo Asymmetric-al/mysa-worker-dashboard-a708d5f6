@@ -16,26 +16,17 @@ const PAGE_LEDE = "Every edition of this Update, each with its own saved draft, 
 const SURFACE_HEADING_LEVEL = 2;
 /** The level the release review occupies: a second section under the same `h1`, beside the matrix rather than inside it, because releasing is not one of the matrix's per-edition writes and the review opens its own blocks below itself. */
 const PUBLISH_HEADING_LEVEL = 2;
-/** The page's own title, stated by the heading block above the matrix and kept whenever the read answers with a refusal, so no refusal arm leaves a notice standing in for the page's heading. */
-const PAGE_TITLE = "Update";
-/** The level a notice nests at beneath that title: the page keeps its heading and the refusal is stated under it. */
-const NESTED_NOTICE_LEVEL = 2;
-const DENIED_TITLE = "These editions are not available in this session";
+/** The page's own title, stated by the heading block above the matrix and kept whenever the read answers with a refusal, so no refusal arm leaves a notice standing in for the page's heading. */ const PAGE_TITLE = "Update";
+/** The level a notice nests at beneath that title: the page keeps its heading and the refusal is stated under it. */ const NESTED_NOTICE_LEVEL = 2;
 const DENIED_DESCRIPTION = "This session may not read this Update's editions in the context it is working in, so no edition, revision, " + "candidate, language or count is stated here. A refusal is not an Update with no editions.";
 const UNAVAILABLE_TITLE = "The editions could not be read";
 const UNAVAILABLE_FALLBACK = "The source holding this Update could not be read, so nothing is stated in place of its editions. Retry the same " + "read: an outage is never presented as an Update with no editions.";
-const REFUSED_TITLE = "This overview's request was refused";
 const REFUSED_DESCRIPTION = "The address this page asked the read to resolve is not one the read admits, so nothing was read and nothing is " + "shown in its place. Opening an Update from the Updates list states the address the read does admit.";
-const NOT_AN_UPDATE_TITLE = "This address does not name an Update";
 const NOT_AN_UPDATE_DESCRIPTION = "The document this address names is a Page rather than an Update, so it is not shown here under Update wording. " + "A Page is composed, previewed and released from its own route, where its locale editions and its give " + "placement are stated.";
 /** The page's words for each arm of the one read it makes, so a refusal states what could not be read in the page's own terms. */
-const NOTICE_COPY: ReadNoticeCopy = { headingLevel: NESTED_NOTICE_LEVEL, denied: { title: DENIED_TITLE, body: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE }, refused: { title: REFUSED_TITLE, body: REFUSED_DESCRIPTION } };
-const ROOT_CLASS = "flex min-w-0 flex-col gap-6 text-start";
+const NOTICE_COPY: ReadNoticeCopy = { headingLevel: NESTED_NOTICE_LEVEL, denied: { title: "These editions are not available in this session", body: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE }, refused: { title: "This overview's request was refused", body: REFUSED_DESCRIPTION } };
 type OverviewSurfaceProps = { readonly envelope: OverviewEnvelope; /** The recipient ceiling the audience read stated for this publisher, or why it stated none. */ readonly ceiling: PublishAudienceCeiling | undefined };
-/** One edition of this Update as the matrix read states it, so the review's rows are the matrix's own facts. */
-type EditionView = OverviewEnvelope["data"]["editions"][number];
-/** What the audience read answers with: the recipient ceiling's own counts, its refusal, or the outage behind them. */
-type AudienceResult = Awaited<ReturnType<typeof reads.audience.readAudience>>;
+/** What the audience read answers with: the recipient ceiling's own counts, its refusal, or the outage behind them. */ type AudienceResult = Awaited<ReturnType<typeof reads.audience.readAudience>>;
 /** One release as the review's own plain view: the record's fields with its instants as the ISO text the wire form carries. `JSON.stringify` writes a `Temporal.Instant` as the very text `toString()` states, so this is the value the transport would have handed a browser — an instant object cannot cross to a Client Component, and none does. */
 const releaseViewOf = (release: Release): PublishReleaseView => ({
   releaseId: release.releaseId,
@@ -50,7 +41,7 @@ const releaseViewOf = (release: Release): PublishReleaseView => ({
   ...(release.supersededBy === undefined ? {} : { supersededBy: release.supersededBy }),
 });
 /** One edition of the review: what it is, the lifecycle word its own records state through the one shared evaluator, the frozen candidate the read projected straight through, and the release standing at its head. Nothing else is derived — a count, a mode and a notice decision are the read's and the service's to state. */
-const publishEditionOf = (documentId: string, edition: EditionView): PublishEditionView => ({
+const publishEditionOf = (documentId: string, edition: OverviewEnvelope["data"]["editions"][number]): PublishEditionView => ({
   variantId: edition.variantId,
   audience: edition.audience,
   locale: edition.locale,
@@ -90,7 +81,7 @@ async function ceilingOf(): Promise<PublishAudienceCeiling | undefined> {
 const OverviewSurface = ({ envelope, ceiling }: OverviewSurfaceProps): ReactElement => {
   const documentId = envelope.data.document.documentId;
   return (
-    <div className={ROOT_CLASS}>
+    <div className={"flex min-w-0 flex-col gap-6 text-start"}>
       <div className="flex min-w-0 flex-col gap-2">
         <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
         <p className="max-w-prose type-supporting text-pretty">{PAGE_LEDE}</p>
@@ -119,7 +110,7 @@ export default async function CommunicationUpdateOverviewPage({ params }: { read
   switch (result.kind) {
     case "envelope": {
       // An Update's matrix is this family's surface, so a document of another family is a request this route does not serve rather than one it renders under Update wording. The comparison is a routing decision on a fact the read states; it derives no lifecycle and carries no authority, which stays with the read.
-      if (result.envelope.data.document.family !== "update") return routeRefusal(NOT_AN_UPDATE_TITLE, NOT_AN_UPDATE_DESCRIPTION);
+      if (result.envelope.data.document.family !== "update") return routeRefusal("This address does not name an Update", NOT_AN_UPDATE_DESCRIPTION);
       return <OverviewSurface envelope={result.envelope} ceiling={await ceilingOf()} />; // The ceiling is read only for an Update this route serves, and it is the service's own audience read rather than a request to this application's handler: the same counts the audience screen shows, under this scope.
     }
     case "denied":

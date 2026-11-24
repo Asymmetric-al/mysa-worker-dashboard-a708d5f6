@@ -29,8 +29,7 @@ export function civilDateAt(instant: Temporal.Instant, timeZone: string): ZonedC
 }
 export const todayInZone = (timeZone: string, now: Temporal.Instant): ZonedCivilDate => civilDateAt(now, timeZone);
 export const isResolvableTimeZone = (timeZone: string): boolean => civilDateAt(ZONE_PROBE_INSTANT, timeZone).status === "resolved";
-/** Resolves the first instant of a civil day in a named zone, disclosing how midnight resolved. */
-export function startOfCivilDay(date: CivilDate, timeZone: string): CivilDayStart {
+/** Resolves the first instant of a civil day in a named zone, disclosing how midnight resolved. */ export function startOfCivilDay(date: CivilDate, timeZone: string): CivilDayStart {
   const midnight = date.withCalendar("iso8601").toPlainDateTime(MIDNIGHT);
   let earlier: Temporal.ZonedDateTime;
   let later: Temporal.ZonedDateTime;

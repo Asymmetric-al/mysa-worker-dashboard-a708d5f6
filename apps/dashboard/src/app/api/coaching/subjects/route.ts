@@ -4,7 +4,6 @@ import { reads } from "@/modules/data-service";
 import { readGrammar, readRoute } from "../../read";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const PORTFOLIO_VIEW = "portfolio";
 const IDENTITY_PARAMETERS = ["coachId", "principalId", "persona", "actingAs", "subjectPrincipalId", "as"] as const;
 const MESSAGES = {
   identity: "Choose the acting coach through the development session, not the query string: an identity named in the query would be a second and silent way to claim one while the session still decides which grants are read.",
@@ -30,7 +29,7 @@ const coachQuerySchema = z
       return;
     }
     if (view !== undefined) {
-      if (view !== PORTFOLIO_VIEW) context.addIssue({ code: "custom", path: ["view"], message: MESSAGES.viewNotPortfolio });
+      if (view !== "portfolio") context.addIssue({ code: "custom", path: ["view"], message: MESSAGES.viewNotPortfolio });
       return;
     }
     context.addIssue({ code: "custom", path: ["view"], message: MESSAGES.selectorRequired });

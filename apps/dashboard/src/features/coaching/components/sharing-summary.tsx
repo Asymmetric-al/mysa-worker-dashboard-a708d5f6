@@ -56,7 +56,6 @@ export function outcomeWord(entry: SharingOutcomeCopy, state: SharingOutcome): s
   }
 }
 export const MODULE_READ_STATE_TONE: Readonly<Record<ModuleReadState, StatusTone>> = { empty: "muted", partial: "info", withheld: "caution", unavailable: "danger", ended: "neutral" };
-const MODULE_OFF_WORD = "Switched off";
 const AVAILABILITY_COPY: Readonly<Record<SubjectAvailability, { label: string; description: string }>> = {
   available: { label: "Readable", description: "Every module this grant shares has a source that can be read at this moment." },
   unavailable: { label: "Unavailable right now", description: "The source behind these modules cannot be read at this moment. The episode is still open, the modules that do not depend on it stay usable, and this is an outage rather than an ending." },
@@ -65,13 +64,6 @@ const HOLD_COPY: Readonly<Record<PermissionHold, { label: string; description: s
   none: { label: "Not on hold", description: "Access is not suspended: the invitation's own dates bound this share." },
   temporary: { label: "Temporary hold", description: "Access is suspended by a temporary permission hold. A hold is not an ending, and lifting it grants nothing the invitation had not already named." },
 };
-const CUTOFF_ABSENT_ONGOING_SENTENCE = "No closing instant is set: this share has no end date until you stop it.";
-const CUTOFF_ABSENT_SENTENCE = "No closing instant has been resolved for this share yet.";
-const DURATION_ONGOING_SENTENCE = "You chose no end date, so the share stays open until you stop it, or until any earlier limit the source imposes.";
-const DURATION_THROUGH_SENTENCE = "You chose to share through the end of that date, and the whole of it stays readable.";
-const DURATION_UNRESOLVED_SENTENCE = "This share was set to run through a calendar day, but that day could not be resolved from the frozen bound, so no date is shown beside it. The closing instant below still stands.";
-const DURATION_NONE_SENTENCE = "This relationship records no usable duration, so it is not an open-ended share: nothing is readable under it, because a missing duration is never permission.";
-const RANGE_DATES_UNREADABLE = "The dates this range was reviewed for could not be read, so the range is not shown as reviewed and no figure stands in for it.";
 const carriesDigits = (state: ValueState): boolean => state === "value" || state === "zero" || state === "incomplete-subtotal";
 function resolveCivilDate(value: CivilDateInput): CivilDate | null {
   if (typeof value !== "string") return value;
@@ -89,26 +81,25 @@ export function storedDayText(storedInstant: string): string {
   const day = STORED_DAY.exec(storedInstant)?.[1];
   return day === undefined ? storedInstant.trim() : civilDateText(day);
 }
-type DurationStatement = { readonly value: ReactNode; readonly sentence: string; readonly dayShown: boolean };
-function durationStatementOf(duration: GrantDurationView): DurationStatement {
+function durationStatementOf(duration: GrantDurationView): { readonly value: ReactNode; readonly sentence: string; readonly dayShown: boolean } {
   switch (duration.kind) {
     case "ongoing":
-      return { value: <bdi>{"Ongoing"}</bdi>, sentence: DURATION_ONGOING_SENTENCE, dayShown: false };
+      return { value: <bdi>{"Ongoing"}</bdi>, sentence: "You chose no end date, so the share stays open until you stop it, or until any earlier limit the source imposes.", dayShown: false };
     case "through-date": {
       const day = duration.throughDate === null ? null : resolveCivilDate(duration.throughDate);
-      if (day === null) return { value: <bdi>{"Through a day that could not be resolved"}</bdi>, sentence: DURATION_UNRESOLVED_SENTENCE, dayShown: false };
+      if (day === null) return { value: <bdi>{"Through a day that could not be resolved"}</bdi>, sentence: "This share was set to run through a calendar day, but that day could not be resolved from the frozen bound, so no date is shown beside it. The closing instant below still stands.", dayShown: false };
       return {
         value: (
           <>
             Through <bdi>{civilDateText(day)}</bdi>
           </>
         ),
-        sentence: DURATION_THROUGH_SENTENCE,
+        sentence: "You chose to share through the end of that date, and the whole of it stays readable.",
         dayShown: true,
       };
     }
     case "none":
-      return { value: <bdi>{"No usable duration recorded"}</bdi>, sentence: DURATION_NONE_SENTENCE, dayShown: false };
+      return { value: <bdi>{"No usable duration recorded"}</bdi>, sentence: "This relationship records no usable duration, so it is not an open-ended share: nothing is readable under it, because a missing duration is never permission.", dayShown: false };
   }
 }
 type RangeView = { readonly from: string; readonly to: string; readonly currency: string; readonly state: ValueState; readonly formatting: MinorFormatting; readonly problem: string | null };
@@ -118,7 +109,7 @@ function buildRangeView(range: FinancialRange, locale: string): RangeView {
   const from = resolveCivilDate(range.from);
   const to = resolveCivilDate(range.to);
   const asSupplied = (problem: string | null): RangeView => ({ from: civilDateText(range.from), to: civilDateText(range.to), currency: range.currency, state, formatting: formatMinor(money, state, locale), problem });
-  if (from === null || to === null) return asSupplied(RANGE_DATES_UNREADABLE);
+  if (from === null || to === null) return asSupplied("The dates this range was reviewed for could not be read, so the range is not shown as reviewed and no figure stands in for it.");
   const described = describeFinancialRange({ from, to, measures: [{ amount: money, state }] }, locale);
   if (!described.ok) return asSupplied(described.error.message);
   const entry = described.value.entries[0];
@@ -146,7 +137,7 @@ export const StatementAlert = ({ icon, label, sentence }: { readonly icon: React
 );
 /** A module the read answers `null` for is the complete share, never an unknown one; `undefined` is a module this grant does not share at all. */
 function moduleWordAndTone(readState: ModuleReadState | null | undefined): { readonly label: string; readonly tone: StatusTone } {
-  if (readState === undefined) return { label: MODULE_OFF_WORD, tone: "muted" };
+  if (readState === undefined) return { label: "Switched off", tone: "muted" };
   if (readState === null) return { label: MODULE_COMPLETE_COPY.label, tone: "positive" };
   return { label: MODULE_READ_STATE_COPY[readState].label, tone: MODULE_READ_STATE_TONE[readState] };
 }
@@ -264,7 +255,7 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
           </p>
           <p className="type-supporting text-pretty">{duration.sentence}</p>
           {cutoffInstant.length === 0 ? (
-            <p className="type-supporting text-pretty">{grant.duration.kind === "ongoing" ? CUTOFF_ABSENT_ONGOING_SENTENCE : CUTOFF_ABSENT_SENTENCE}</p>
+            <p className="type-supporting text-pretty">{grant.duration.kind === "ongoing" ? "No closing instant is set: this share has no end date until you stop it." : "No closing instant has been resolved for this share yet."}</p>
           ) : (
             <>
               <p className="type-body text-pretty">
@@ -277,8 +268,8 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
               {grant.shareCutoff.sourceLimitWins ? (
                 <StatementAlert
                   icon={<ClockIcon aria-hidden="true" />}
-                  label={"An earlier limit set by the source decides this end"}
-                  sentence={"The source itself imposes an earlier limit than the date you chose, and that limit wins. The share closes at the frozen instant above, in the zone named with it, and not at the end of the Share-through date."}
+                  label="An earlier limit set by the source decides this end"
+                  sentence="The source itself imposes an earlier limit than the date you chose, and that limit wins. The share closes at the frozen instant above, in the zone named with it, and not at the end of the Share-through date."
                 />
               ) : null}
             </>
@@ -314,7 +305,7 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
                   </dl>
                   <p className="type-supporting text-pretty">{BASIS_DESCRIPTION}</p>
                   <p className="type-supporting text-pretty">{FINANCIAL_RANGE_COPY.exclusions}</p>
-                  {range.problem === null ? null : <StatementAlert icon={<TriangleAlertIcon aria-hidden="true" />} label={"This range cannot be shown as reviewed"} sentence={range.problem} />}
+                  {range.problem === null ? null : <StatementAlert icon={<TriangleAlertIcon aria-hidden="true" />} label="This range cannot be shown as reviewed" sentence={range.problem} />}
                 </>
               )}
             </Section>

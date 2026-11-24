@@ -35,15 +35,13 @@ const requestChangesPayloadSchema = z.strictObject({ operation: z.literal("reque
 const rejectCandidatePayloadSchema = z.strictObject({ operation: z.literal("rejectCandidate"), ...reviewerNoteFields });
 const reviewPayloadSchema = z.discriminatedUnion("operation", [submitForReviewPayloadSchema, approveCandidatePayloadSchema, requestChangesPayloadSchema, rejectCandidatePayloadSchema]);
 type ReviewPayload = z.output<typeof reviewPayloadSchema>;
-type ReviewOperation = ReviewPayload["operation"];
-type ReviewRequest = MutationInput<ReviewPayload>;
 const reviewRequestBodySchema = z.custom<unknown>((value) => isRecord(value), { error: MESSAGES.bodyNotJson }).pipe(mutationInputSchema(reviewPayloadSchema));
 const reviewQuerySchema = z.strictObject({ variantId: variantIdSchema });
-function withoutOperation<P extends { readonly operation: ReviewOperation }>(payload: P): Omit<P, "operation"> {
+function withoutOperation<P extends { readonly operation: ReviewPayload["operation"] }>(payload: P): Omit<P, "operation"> {
   const { operation: _discriminant, ...forwarded } = payload;
   return forwarded;
 }
-async function runReview(sessionId: string, input: ReviewRequest): Promise<MutationOutcome> {
+async function runReview(sessionId: string, input: MutationInput<ReviewPayload>): Promise<MutationOutcome> {
   const { payload } = input;
   switch (payload.operation) {
     case "submitForReview":
@@ -58,8 +56,7 @@ async function runReview(sessionId: string, input: ReviewRequest): Promise<Mutat
       return assertNever(payload, "Unhandled review mutation");
   }
 }
-/** The frozen candidate one edition holds under review, with the single review step and the per-variant approval the service decides. */
-const readCandidateReview = readRoute(
+/** The frozen candidate one edition holds under review, with the single review step and the per-variant approval the service decides. */ const readCandidateReview = readRoute(
   readGrammar(reviewQuerySchema, (search) => ({ variantId: search.get("variantId") ?? "" })),
   (query) => reads.updates.readCandidate({ variantId: query.variantId }),
 );

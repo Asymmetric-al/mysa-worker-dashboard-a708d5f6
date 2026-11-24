@@ -24,8 +24,6 @@ import PublishResults, { type PublishedEdition, type PublishedEditionNotice, typ
 type PublishOutcome = PublishResultsProps["outcome"];
 type PublishRelease = NonNullable<PublishedEdition["release"]>;
 type PublishLocale = { readonly tag: string; readonly direction: "ltr" | "rtl" };
-type SourceReference = ReadEnvelope<unknown>["source"];
-type DenialReasonCode = NonNullable<StateNoticeProps["reasonCode"]>;
 export type PublishReleaseView = {
   readonly releaseId: string;
   readonly variantId: string;
@@ -39,7 +37,6 @@ export type PublishReleaseView = {
   readonly supersededBy?: string;
 };
 const NOTIFY_NOW_MODE = "publish-and-notify-now" satisfies PublishMode;
-const PUBLISH_ONLY_MODE = "publish-only" satisfies PublishMode;
 const PUBLISH_SIMULATION = SIMULATED_EFFECT_BY_TRIGGER.publish;
 const NOTICE_SIMULATION = SIMULATED_EFFECT_BY_TRIGGER.notify;
 export type PublishCandidateView = { readonly candidateId: string; readonly revisionId: string; readonly contentChecksum: string; readonly notifyAdmitted: boolean; readonly notifyRefusal?: string };
@@ -47,81 +44,44 @@ export type PublishEditionView = { readonly variantId: string; readonly audience
 export type PublishExclusionRow = { readonly reason: string; readonly count: number };
 export type PublishAudienceCeiling =
   | { readonly state: "stated"; readonly eligible: number; readonly excluded: number; readonly excludedByReason: readonly PublishExclusionRow[] }
-  | { readonly state: "unavailable"; readonly source: SourceReference; readonly guidance?: string }
-  | { readonly state: "denied"; readonly reasonCode: DenialReasonCode };
+  | { readonly state: "unavailable"; readonly source: ReadEnvelope<unknown>["source"]; readonly guidance?: string }
+  | { readonly state: "denied"; readonly reasonCode: NonNullable<StateNoticeProps["reasonCode"]> };
 export type PublishReviewProps = { readonly scope: Scope; readonly documentId: string; readonly expectedRevision: string; readonly editions: readonly PublishEditionView[]; readonly ceiling?: PublishAudienceCeiling; readonly headingLevel?: ReviewHeadingLevel; readonly className?: string };
 type SubmittedEdition = { readonly variantId: string; readonly audience: ContentAudience; readonly locale: PublishLocale; readonly revisionId: string; readonly contentChecksum: string; readonly mode: PublishMode };
 type NoticeAttempt = { readonly variantId: string; readonly notice: PublishedEditionNotice } | { readonly variantId: string; readonly withheld: string };
-type ReleaseReport = { readonly selectionKey: string; readonly outcome: PublishOutcome; readonly submitted: readonly SubmittedEdition[]; readonly notices: readonly NoticeAttempt[] };
 type ReportedEdition = { readonly variantId: string; readonly state: string; readonly releaseId: string | null; readonly reasonCode?: string; readonly reason?: string };
-const REVIEW_TITLE = "Release the selected editions";
-const REVIEW_INTRO = "A release publishes the exact frozen revision of each edition you select. It sends no message by itself: a notice is a separate deliberate request, and it is submitted here only for an edition whose submission asked for one.";
 const EDITIONS_LEGEND = "Editions to release";
-const EDITIONS_DESCRIPTION = "Each edition keeps its own draft, its own review and its own release. Tick the editions this release publishes: only an edition with a frozen candidate can be released, and one release lists each edition once.";
-const EDITION_DESCRIPTION = "Tick this edition's checkbox to publish its frozen revision in this release.";
-const INCLUDE_HINT = "Include this edition in the release";
 const MODE_LEGEND = "How this edition is released";
-const MODE_DESCRIPTION = "The submission for this edition fixed its release mode, and a release cannot change it.";
 const NOTIFY_DROPPED_REASON = "This edition's submission asked for a notice, so releasing it without one is refused. A new submission is required to release it and submit nothing.";
 const NO_CANDIDATE_REASON = "This edition has no frozen candidate, so this release cannot publish it. Submit a revision for its one review step first.";
-const NO_EDITIONS_TITLE = "This Update has no edition to release";
-const NO_EDITIONS_DESCRIPTION = "No edition of this Update exists yet, so there is nothing a release could publish and nothing a notice could point at. Add an audience and language edition first.";
-const SELECTION_REQUIRED = "Nothing is selected, so this step has nothing to apply. Tick at least one edition above, then return here.";
 const RELEASE_CONFIRM_LABEL = "Release these editions";
-const RELEASE_CONFIRM_TITLE = "Release the selected editions?";
-const CANCEL_LABEL = "Cancel";
-const WORKING_NOTE = "Submitting the release. Nothing else on this page changes while it is in flight.";
-const SETTLED_NOTE = "This step is complete for this attempt, and the result below is its record. Changing the selection or the acknowledged ceiling begins a new attempt with its own identity.";
-const SETTLED_BLOCK = "This attempt is recorded above, so pressing again would replay it rather than release anything new. Change the selection to begin another release.";
-const REFUSED_BEFORE_SENDING = "This release would be refused before it was sent: correct the edition whose message appears beside it above.";
-const REPLAY_NOTE = "Pressing release again resubmits this same attempt: it keeps its own identity, so work that was already accepted answers with its result instead of happening twice.";
 const SIBLING_PROMISE = "If one selected edition cannot be released, the others proceed. The edition that fails keeps the revision it already published, and nothing is rolled back: this is not a batch that reverts.";
 const NOTHING_OUTSIDE = "Nothing outside the editions listed below changes: this step creates no financial record, subscribes no one and completes no task.";
-const CEILING_HEADING = "Who a notice could reach";
 const CEILING_ACKNOWLEDGEMENT = "This ceiling is the count the audience envelope stated when this review was read. It is acknowledged at this instant, so a person who signs up later never expands it, and the number acknowledged here is the number the notice request carries.";
 const CEILING_ELIGIBLE_LABEL = "Eligible recipients";
 const CEILING_EXCLUDED_LABEL = "Excluded from this purpose";
-const CEILING_NONE_EXCLUDED = "No member of this audience is excluded from this purpose right now, so every membership counted above is eligible.";
 const CEILING_UNAVAILABLE_TITLE = "The notice audience could not be read";
 const CEILING_UNAVAILABLE_DESCRIPTION = "The eligible and excluded counts behind a notice could not be read, so no notice can be acknowledged from this screen. Publishing is unaffected: a release is a separate step, and it is recorded with the notification still needing attention.";
-const CEILING_DENIED_TITLE = "This audience is not available in this session";
 const CEILING_DENIED_DESCRIPTION = "The notice audience was refused before it was enumerated, so no count, no membership and no exclusion is stated here. Retrying the same read is the only recovery: it is never presented as an audience of nobody.";
-const NOTICE_HEADING = "The notice this release would submit";
 const NOTICE_READING_TITLE = "Reading what this notice would point at";
-const NOTICE_INTRO = "A notice carries a link to the published edition and its own safe wording. Opening that link checks the reader's current access at that moment, so the message itself confers no access.";
-const NOTICE_NO_NOTIFY = "No notice is part of this release: neither selected edition's submission asked for one.";
 const NOTICE_TARGET_LABEL = "The notice links to";
-const NOTICE_TARGET_WITHDRAWN = "This edition currently publishes nothing: its last release was withdrawn. The notice would point at the address below once this release is recorded.";
-const NOTICE_TARGET_UNLISTED = "This edition is published but not listed, so the address is not offered for discovery.";
-const NOTICE_TARGET_NONE = "This edition has neither a published revision nor a saved draft to present, so the address a notice would carry cannot be stated yet.";
 const NOTICE_UNREADABLE_REASON = "The edition's share presentation could not be read, so no notice is submitted for it. The release proceeds and the notification needs attention.";
 const NOTICE_NOT_READY_REASON = "The edition's share presentation had not been read when this release was submitted, so no notice went with it. The release stands and the notification needs attention.";
 const NOTICE_CEILING_REASON = "The eligible-recipient ceiling could not be read, so no notice is submitted for it. The release proceeds and the notification needs attention.";
-const NOTICE_REFUSED_REASON = "The notice request could not be assembled here, so nothing was sent and nothing was recorded from it. The release is unaffected.";
-const NOTICE_ACCEPTED_DETAIL = "The notice request was accepted and its per-recipient results were recorded for this publication intent.";
 const NOTICE_REPLAY_DETAIL = "A notice for this publication had already been submitted, so this attempt created no second copy.";
-const NOTICE_CONFLICT_DETAIL = "The publication moved while this notice was being submitted, so no notice was submitted. Review the release result and submit the notice again against the revision it states.";
-const NOTICE_DENIED_DETAIL = "This session may not submit a notice for this publication, so none was submitted.";
-const NOTICE_UNKNOWN_DETAIL = "The notice's result was not confirmed. Check the result under this attempt's identity: nothing here states that a message was accepted, and nothing offers to send it again.";
-const NOTICE_UNEXPECTED_DETAIL = "The notice answered with a result this surface does not describe, so nothing is claimed about acceptance here.";
 const STANDING_HEADING = "What this edition publishes now";
 const STANDING_RELEASED = "Currently published";
-const STANDING_NONE = "This edition publishes nothing yet, so this release is its first publication.";
-const STANDING_WITHDRAWN = "This edition's last publication was withdrawn, so this release publishes it again.";
 const STANDING_CHECKING = "Re-reading this edition's release head and its share presentation. Whatever the service now states is what appears here.";
-const CHECK_READS = "Checking the result re-reads this edition's release head and its share presentation; the release result above is the record of the attempt, and the service states which revision stands.";
 const WITHHELD_PREFIX = "Published. Notification needs attention:";
 const isRecordValue = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
 const textOf = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
 const childLevel = (level: ReviewHeadingLevel): ReviewHeadingLevel => (level === 2 ? 3 : 4);
-const fixedModeOf = (edition: PublishEditionView): PublishMode => (edition.candidate?.notifyAdmitted === true ? NOTIFY_NOW_MODE : PUBLISH_ONLY_MODE);
+const fixedModeOf = (edition: PublishEditionView): PublishMode => (edition.candidate?.notifyAdmitted === true ? NOTIFY_NOW_MODE : ("publish-only" satisfies PublishMode));
 const notifyRefusalOf = (edition: PublishEditionView): string => ((edition.candidate?.notifyRefusal ?? "").trim() === "" ? REVIEW_ROUND_NOTE.reviewerCannotAddNotify : (edition.candidate?.notifyRefusal ?? "").trim());
 const audienceLabelOf = (edition: PublishEditionView): string => AUDIENCE_LABELS[edition.audience].label;
 const localeNameOf = (edition: PublishEditionView): string => LOCALE_DISPLAY_NAMES[edition.locale.tag] ?? edition.locale.tag;
 const selectionOf = (edition: PublishEditionView, candidate: PublishCandidateView): PublishSelection => ({ variantId: edition.variantId, revisionId: candidate.revisionId, mode: fixedModeOf(edition), candidateNotifyAdmitted: candidate.notifyAdmitted });
-const REPORT_KEY_REVISION = "release-report";
 /** The identity of the selection one release attempt is made from — this document and the editions ticked for it. It names the person's selection rather than the candidate content a release consumes, so the receipt of the attempt it answers stays on the surface after the page's own refresh drops the released candidate, and it changes the moment that selection does, which is the only thing that withholds the receipt. */
-const selectionKeyOf = (scope: Scope, documentId: string, selected: readonly string[]): string => intentKeyOf({ scope, expectedRevision: REPORT_KEY_REVISION, payload: { documentId, variantIds: selected.toSorted() } });
 function storedEditionsOf(result: unknown): readonly ReportedEdition[] {
   if (!isRecordValue(result) || !Array.isArray(result["editions"])) return [];
   const rows: ReportedEdition[] = [];
@@ -150,15 +110,6 @@ function releasedIdsOf(outcome: PublishOutcome): ReadonlyMap<string, string> {
   for (const [variantId, reported] of reportedEditionsOf(outcome)) if (reported.state === "released" && reported.releaseId !== null) releases.set(variantId, reported.releaseId);
   return releases;
 }
-const publishStateOf = (state: string): PublishedEdition["state"] => (state === "released" ? "released" : state === "failed-prior-good-head" ? "failed-with-prior-good-head" : "needs-attention");
-const NOTICE_ATTEMPT = {
-  accepted: { state: "accepted", detail: NOTICE_ACCEPTED_DETAIL },
-  alreadyAccepted: { state: "accepted", detail: NOTICE_REPLAY_DETAIL },
-  unchanged: { state: "accepted", detail: NOTICE_REPLAY_DETAIL },
-  conflict: { state: "failed", detail: NOTICE_CONFLICT_DETAIL },
-  denied: { state: "failed", detail: NOTICE_DENIED_DETAIL },
-  unknown: { state: "unknown", detail: NOTICE_UNKNOWN_DETAIL },
-} as const satisfies Readonly<Record<"accepted" | "alreadyAccepted" | "unchanged" | "conflict" | "denied" | "unknown", PublishedEditionNotice>>;
 /** The identity the recorded per-send results of one accepted notice are read under, or nothing when the answer states none: a first acceptance mints the intent and then the send result it is recorded in, while a replay answers with the stored submission, whose own `intentId` names that same notice. Nothing here mints, parses or derives an identity. */
 function noticeIdentityOf(outcome: PublishOutcome): Pick<PublishedEditionNotice, "intentId"> {
   const stored = outcome.outcome === "alreadyAccepted" ? textOf(isRecordValue(outcome.result) ? outcome.result["intentId"] : undefined) : null;
@@ -166,10 +117,18 @@ function noticeIdentityOf(outcome: PublishOutcome): Pick<PublishedEditionNotice,
   const intentId = stored ?? created;
   return intentId === null ? {} : { intentId };
 }
+const NOTICE_ATTEMPT = {
+  accepted: { state: "accepted", detail: "The notice request was accepted and its per-recipient results were recorded for this publication intent." },
+  alreadyAccepted: { state: "accepted", detail: NOTICE_REPLAY_DETAIL },
+  unchanged: { state: "accepted", detail: NOTICE_REPLAY_DETAIL },
+  conflict: { state: "failed", detail: "The publication moved while this notice was being submitted, so no notice was submitted. Review the release result and submit the notice again against the revision it states." },
+  denied: { state: "failed", detail: "This session may not submit a notice for this publication, so none was submitted." },
+  unknown: { state: "unknown", detail: "The notice's result was not confirmed. Check the result under this attempt's identity: nothing here states that a message was accepted, and nothing offers to send it again." },
+} as const satisfies Readonly<Record<"accepted" | "alreadyAccepted" | "unchanged" | "conflict" | "denied" | "unknown", PublishedEditionNotice>>;
 function noticeAttemptOf(variantId: string, outcome: PublishOutcome): NoticeAttempt {
   if (outcome.outcome === "invalid") return { variantId, notice: { state: "failed", detail: refusalSummary(outcome) } };
   if (outcome.outcome === "unavailable") return { variantId, notice: { state: "failed", detail: outcome.guidance } };
-  const row = NOTICE_ATTEMPT[outcome.outcome] ?? { state: "unknown", detail: NOTICE_UNEXPECTED_DETAIL };
+  const row = NOTICE_ATTEMPT[outcome.outcome] ?? { state: "unknown", detail: "The notice answered with a result this surface does not describe, so nothing is claimed about acceptance here." };
   return { variantId, notice: outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" ? { ...row, ...noticeIdentityOf(outcome) } : row };
 }
 function messagesOfIssues(error: { readonly issues: readonly { readonly path: readonly PropertyKey[]; readonly message: string }[] }): Readonly<Record<string, readonly string[]>> {
@@ -187,24 +146,12 @@ const selectionRefusalOf = (payload: PublishVariantsPayload): FieldErrorLookup |
   return checked.success ? null : fieldErrorsFromInvalid({ fields: messagesOfIssues(checked.error) });
 };
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-/** The one type scale's utility for each level, so every block this review opens states its own level's measure rather than one fixed size. */
-const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
-const instantText = (value: { toString(): string }): string => value.toString();
+/** The one type scale's utility for each level, so every block this review opens states its own level's measure rather than one fixed size. */ const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 function releaseRecordOf(view: PublishReleaseView): PublishRelease | undefined {
   try {
     const withdrawnAt = view.withdrawnAt === undefined ? undefined : Temporal.Instant.from(view.withdrawnAt);
-    return {
-      releaseId: view.releaseId,
-      variantId: view.variantId,
-      revisionId: view.revisionId,
-      audience: view.audience,
-      locale: view.locale,
-      publishedAt: Temporal.Instant.from(view.publishedAt),
-      reach: view.reach,
-      contentChecksum: view.contentChecksum,
-      ...(withdrawnAt === undefined ? {} : { withdrawnAt }),
-      ...(view.supersededBy === undefined ? {} : { supersededBy: view.supersededBy }),
-    };
+    const { releaseId, variantId, revisionId, audience, locale, publishedAt, reach, contentChecksum, supersededBy } = view;
+    return { releaseId, variantId, revisionId, audience, locale, publishedAt: Temporal.Instant.from(publishedAt), reach, contentChecksum, ...(withdrawnAt === undefined ? {} : { withdrawnAt }), ...(supersededBy === undefined ? {} : { supersededBy }) };
   } catch {
     return undefined;
   }
@@ -212,7 +159,7 @@ function releaseRecordOf(view: PublishReleaseView): PublishRelease | undefined {
 function ReleaseModeChoice({ edition, idPrefix, error }: { readonly edition: PublishEditionView; readonly idPrefix: string; readonly error?: string | readonly string[] }): ReactElement {
   const recorded = fixedModeOf(edition);
   return (
-    <FormFieldGroup legend={MODE_LEGEND} name={`publish-mode-${edition.variantId}`} description={MODE_DESCRIPTION} error={error}>
+    <FormFieldGroup legend={MODE_LEGEND} name={`publish-mode-${edition.variantId}`} description="The submission for this edition fixed its release mode, and a release cannot change it." error={error}>
       {({ describedBy, invalid, legendId }) => (
         <div data-slot="publish-mode" data-mode={recorded} className="flex min-w-0 flex-col gap-2">
           <RadioGroup value={recorded} readOnly aria-labelledby={legendId} aria-describedby={describedBy} aria-invalid={invalid}>
@@ -260,7 +207,7 @@ function EditionRow({ edition, index, selected, disabled, refusal, onSelectedCha
   const name = `${audienceLabelOf(edition)} — ${localeNameOf(edition)}`;
   return (
     <li data-slot="publish-review-edition" data-variant-id={edition.variantId} data-selected={selected ? "true" : "false"} data-lifecycle-state={edition.lifecycle} data-mode={fixedModeOf(edition)} className="min-w-0 rounded-lg border border-border p-3">
-      <FormFieldGroup legend={name} name={`publish-edition-${edition.variantId}`} description={candidate === null ? NO_CANDIDATE_REASON : EDITION_DESCRIPTION}>
+      <FormFieldGroup legend={name} name={`publish-edition-${edition.variantId}`} description={candidate === null ? NO_CANDIDATE_REASON : "Tick this edition's checkbox to publish its frozen revision in this release."}>
         {({ legendId }) => (
           <div className="flex min-w-0 flex-col gap-3">
             <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 type-supporting">
@@ -273,7 +220,7 @@ function EditionRow({ edition, index, selected, disabled, refusal, onSelectedCha
               <p className="flex min-w-0 items-center gap-3 type-body">
                 {/* The primitive renders its control beside a labelled input, so the name is stated on the control itself: every tick says which edition it selects. */}
                 <Checkbox id={`${idPrefix}-select`} checked={selected} disabled={disabled} aria-label={`Release ${name}`} aria-describedby={legendId} onCheckedChange={(checked: boolean) => onSelectedChange(checked)} />
-                <span className="text-pretty">{INCLUDE_HINT}</span>
+                <span className="text-pretty">{"Include this edition in the release"}</span>
               </p>
             )}
             <DraftStatus state={edition.lifecycle} />
@@ -289,17 +236,17 @@ function CeilingBlock({ ceiling, level }: { readonly ceiling: PublishAudienceCei
   const Heading = HEADING_TAG[level];
   if (ceiling === undefined) return <StateNotice kind="unavailable" headingLevel={level} title={CEILING_UNAVAILABLE_TITLE} description={CEILING_UNAVAILABLE_DESCRIPTION} />;
   if (ceiling.state === "unavailable") return <StateNotice kind="unavailable" headingLevel={level} title={CEILING_UNAVAILABLE_TITLE} description={ceiling.guidance ?? CEILING_UNAVAILABLE_DESCRIPTION} source={ceiling.source} />;
-  if (ceiling.state === "denied") return <StateNotice kind="denied" headingLevel={level} title={CEILING_DENIED_TITLE} description={CEILING_DENIED_DESCRIPTION} reasonCode={ceiling.reasonCode} />;
+  if (ceiling.state === "denied") return <StateNotice kind="denied" headingLevel={level} title="This audience is not available in this session" description={CEILING_DENIED_DESCRIPTION} reasonCode={ceiling.reasonCode} />;
   return (
     <section data-slot="publish-ceiling" data-state="stated" data-eligible={String(ceiling.eligible)} data-excluded={String(ceiling.excluded)} className="flex min-w-0 flex-col gap-2">
-      <Heading className={HEADING_SCALE[level]}>{CEILING_HEADING}</Heading>
+      <Heading className={HEADING_SCALE[level]}>{"Who a notice could reach"}</Heading>
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
         <span className="text-muted-foreground">{`${CEILING_ELIGIBLE_LABEL}:`}</span>
         <bdi className="tabular-figures font-medium text-foreground">{String(ceiling.eligible)}</bdi>
       </p>
       {/* Zero exclusions are stated in words rather than as a numeral: an audience nobody is excluded from and an audience whose exclusions could not be counted must never read the same, and only the first is a fact. */}
       {ceiling.excluded === 0 ? (
-        <p className="type-supporting text-pretty">{CEILING_NONE_EXCLUDED}</p>
+        <p className="type-supporting text-pretty">{"No member of this audience is excluded from this purpose right now, so every membership counted above is eligible."}</p>
       ) : (
         <>
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
@@ -320,8 +267,7 @@ function CeilingBlock({ ceiling, level }: { readonly ceiling: PublishAudienceCei
     </section>
   );
 }
-/** The release standing at the focused edition's head, so a failed release can be read against what it keeps. */
-function PublicationStanding({ release, level }: { readonly release: UpdatesQueryState<UpdateReleaseData>; readonly level: ReviewHeadingLevel }): ReactElement {
+/** The release standing at the focused edition's head, so a failed release can be read against what it keeps. */ function PublicationStanding({ release, level }: { readonly release: UpdatesQueryState<UpdateReleaseData>; readonly level: ReviewHeadingLevel }): ReactElement {
   const Heading = HEADING_TAG[level];
   const result = release.result;
   if (result === undefined) return <StateNotice kind="loading" headingLevel={level} title={STANDING_HEADING} description={STANDING_CHECKING} loadingLines={1} />;
@@ -336,10 +282,10 @@ function PublicationStanding({ release, level }: { readonly release: UpdatesQuer
         <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
           <span className="text-muted-foreground">{`${STANDING_RELEASED}:`}</span>
           <bdi className="mono-identifier">{data.release.revisionId}</bdi>
-          <span className="text-muted-foreground">{instantText(data.release.publishedAt)}</span>
+          <span className="text-muted-foreground">{((value: { toString(): string }): string => value.toString())(data.release.publishedAt)}</span>
         </p>
       ) : (
-        <p className="type-supporting text-pretty">{data.status === "withdrawn" ? STANDING_WITHDRAWN : STANDING_NONE}</p>
+        <p className="type-supporting text-pretty">{data.status === "withdrawn" ? "This edition's last publication was withdrawn, so this release publishes it again." : "This edition publishes nothing yet, so this release is its first publication."}</p>
       )}
       {release.isFetching ? <p className="type-supporting text-pretty">{STANDING_CHECKING}</p> : null}
     </section>
@@ -350,13 +296,13 @@ function NoticeTarget({ variantId, share, level }: { readonly variantId: string 
   const Heading = HEADING_TAG[level];
   const result = share.result;
   const detail = (): ReactElement => {
-    if (variantId === null) return <p className="type-supporting text-pretty">{NOTICE_NO_NOTIFY}</p>;
+    if (variantId === null) return <p className="type-supporting text-pretty">{"No notice is part of this release: neither selected edition's submission asked for one."}</p>;
     if (result === undefined) return <StateNotice kind="loading" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={STANDING_CHECKING} loadingLines={1} />;
     if (result.kind === "denied") return <StateNotice kind="denied" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={NOTICE_UNREADABLE_REASON} reasonCode={result.denied.reasonCode} />;
     if (result.kind === "unavailable") return <StateNotice kind="unavailable" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={NOTICE_UNREADABLE_REASON} source={result.unavailable.source} />;
     if (result.kind === "refused") return <StateNotice kind="refused" headingLevel={childLevel(level)} title={NOTICE_READING_TITLE} description={NOTICE_UNREADABLE_REASON} />;
     const data = result.envelope.data;
-    if (data.status === "no-presentation") return <p className="type-supporting text-pretty wrap-anywhere">{NOTICE_TARGET_NONE}</p>;
+    if (data.status === "no-presentation") return <p className="type-supporting text-pretty wrap-anywhere">{"This edition has neither a published revision nor a saved draft to present, so the address a notice would carry cannot be stated yet."}</p>;
     return (
       <div className="flex min-w-0 flex-col gap-1">
         {data.status === "shareable" && data.title.trim() !== "" ? (
@@ -369,15 +315,15 @@ function NoticeTarget({ variantId, share, level }: { readonly variantId: string 
           <span className="text-muted-foreground">{`${NOTICE_TARGET_LABEL}:`}</span>
           <bdi className="mono-identifier wrap-anywhere">{data.canonicalPath}</bdi>
         </p>
-        {data.status === "withdrawn" ? <p className="type-supporting text-pretty">{NOTICE_TARGET_WITHDRAWN}</p> : null}
-        {data.status === "shareable" && data.robots === "noindex" ? <p className="type-supporting text-pretty">{NOTICE_TARGET_UNLISTED}</p> : null}
+        {data.status === "withdrawn" ? <p className="type-supporting text-pretty">{"This edition currently publishes nothing: its last release was withdrawn. The notice would point at the address below once this release is recorded."}</p> : null}
+        {data.status === "shareable" && data.robots === "noindex" ? <p className="type-supporting text-pretty">{"This edition is published but not listed, so the address is not offered for discovery."}</p> : null}
       </div>
     );
   };
   return (
     <section data-slot="publish-notice" data-notice-edition={variantId ?? ""} className="flex min-w-0 flex-col gap-2">
-      <Heading className={HEADING_SCALE[level]}>{NOTICE_HEADING}</Heading>
-      <p className="type-supporting text-pretty">{NOTICE_INTRO}</p>
+      <Heading className={HEADING_SCALE[level]}>{"The notice this release would submit"}</Heading>
+      <p className="type-supporting text-pretty">{"A notice carries a link to the published edition and its own safe wording. Opening that link checks the reader's current access at that moment, so the message itself confers no access."}</p>
       {detail()}
       {variantId === null ? null : <SimulationLabel effect={NOTICE_SIMULATION} />}
     </section>
@@ -399,7 +345,7 @@ function ReleaseConfirmation({ selections, notifyCount, blockedReason, busy, onC
           <AlertDialogTrigger render={<Button type="button" disabled={blockedReason !== null || busy} aria-describedby={blockedReason === null ? undefined : reasonId} />}>{RELEASE_CONFIRM_LABEL}</AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>{RELEASE_CONFIRM_TITLE}</AlertDialogTitle>
+              <AlertDialogTitle>{"Release the selected editions?"}</AlertDialogTitle>
               {/* The description element is itself a paragraph, so each sentence is a span laid out as a block. */}
               <AlertDialogDescription className="flex flex-col gap-2">
                 <span>{editions}</span>
@@ -420,7 +366,7 @@ function ReleaseConfirmation({ selections, notifyCount, blockedReason, busy, onC
             <SimulationLabel effect={PUBLISH_SIMULATION} context="block" />
             {notifyCount === 0 ? null : <SimulationLabel effect={NOTICE_SIMULATION} context="block" />}
             <AlertDialogFooter>
-              <AlertDialogCancel>{CANCEL_LABEL}</AlertDialogCancel>
+              <AlertDialogCancel>{"Cancel"}</AlertDialogCancel>
               <AlertDialogAction {...{ onClick: confirm, disabled: busy }}>{RELEASE_CONFIRM_LABEL}</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -428,7 +374,7 @@ function ReleaseConfirmation({ selections, notifyCount, blockedReason, busy, onC
         <SimulationLabel effect={PUBLISH_SIMULATION} />
       </div>
       {blockedReason === null ? null : <p {...{ id: reasonId, className: "type-supporting text-pretty wrap-anywhere" }}>{blockedReason}</p>}
-      {busy ? <output className="block type-supporting text-pretty wrap-anywhere">{WORKING_NOTE}</output> : null}
+      {busy ? <output className="block type-supporting text-pretty wrap-anywhere">{"Submitting the release. Nothing else on this page changes while it is in flight."}</output> : null}
     </div>
   );
 }
@@ -440,7 +386,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
   const publish = usePublishVariants();
   const notify = useRequestNotification();
   const [selected, setSelected] = useState<readonly string[]>([]);
-  const [report, setReport] = useState<ReleaseReport | null>(null);
+  const [report, setReport] = useState<{ readonly selectionKey: string; readonly outcome: PublishOutcome; readonly submitted: readonly SubmittedEdition[]; readonly notices: readonly NoticeAttempt[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const resultRef = useRef<HTMLDivElement | null>(null);
@@ -448,7 +394,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
   const selectable = useMemo(() => editions.filter((edition) => edition.candidate !== null), [editions]);
   const chosen = useMemo(() => selectable.filter((edition) => selected.includes(edition.variantId)), [selectable, selected]);
   const notifyEditions = useMemo(() => chosen.filter((edition) => fixedModeOf(edition) === NOTIFY_NOW_MODE), [chosen]);
-  const selectionKey = selectionKeyOf(scope, documentId, selected);
+  const selectionKey = ((scope: Scope, documentId: string, selected: readonly string[]): string => intentKeyOf({ scope, expectedRevision: "release-report", payload: { documentId, variantIds: selected.toSorted() } }))(scope, documentId, selected);
   const current = report !== null && report.selectionKey === selectionKey ? report : null;
   // The notice block describes the submission this attempt made, so a report on screen answers it: publishing consumes the released edition's candidate and the page's own refresh brings route data without one, which empties the selection above and would otherwise leave this block stating that no notice is part of a release whose receipt names one.
   const reportedNoticeVariantId = current === null ? null : (current.submitted.find((submitted) => submitted.mode === NOTIFY_NOW_MODE)?.variantId ?? null);
@@ -491,7 +437,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
             }
             const noticePayload = { documentId, variantId: edition.variantId, releaseId, acknowledgedCeiling: ceiling !== undefined && ceiling.state === "stated" ? ceiling.eligible : 0 };
             if (!requestNotificationSchema.safeParse(noticePayload).success) {
-              notices.push({ variantId: edition.variantId, withheld: NOTICE_REFUSED_REASON });
+              notices.push({ variantId: edition.variantId, withheld: "The notice request could not be assembled here, so nothing was sent and nothing was recorded from it. The release is unaffected." });
               continue;
             }
             notices.push(noticeAttemptOf(edition.variantId, await notify.submit({ scope, expectedRevision: published.revision, payload: noticePayload })));
@@ -525,7 +471,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
     return current.submitted.flatMap((submitted): readonly PublishedEdition[] => {
       const stated = reported.get(submitted.variantId);
       if (stated === undefined) return [];
-      const state = publishStateOf(stated.state);
+      const state = ((state: string): PublishedEdition["state"] => (state === "released" ? "released" : state === "failed-prior-good-head" ? "failed-with-prior-good-head" : "needs-attention"))(stated.state);
       const live = editions.find((edition) => edition.variantId === submitted.variantId);
       const fromRoute = live === undefined || live.headRelease === null ? undefined : releaseRecordOf(live.headRelease);
       const fromRead = standingRelease !== undefined && standingRelease.variantId === submitted.variantId && standingRelease.revisionId === submitted.revisionId ? standingRelease : undefined;
@@ -561,7 +507,16 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
   }, [current]);
   const selectEdition = (variantId: string, on: boolean): void => setSelected((previous) => (on ? (previous.includes(variantId) ? previous : [...previous, variantId]) : previous.filter((entry) => entry !== variantId)));
   // A settled attempt states that it is settled before it states that nothing is selected: the page's own refresh drops the released edition's candidate, and "nothing is selected" beside a receipt that names the edition this attempt released would contradict it.
-  const blockedReason = editions.length === 0 ? null : settled ? SETTLED_BLOCK : chosen.length === 0 ? SELECTION_REQUIRED : refusal !== null ? REFUSED_BEFORE_SENDING : null;
+  const blockedReason =
+    editions.length === 0
+      ? null
+      : settled
+        ? "This attempt is recorded above, so pressing again would replay it rather than release anything new. Change the selection to begin another release."
+        : chosen.length === 0
+          ? "Nothing is selected, so this step has nothing to apply. Tick at least one edition above, then return here."
+          : refusal !== null
+            ? "This release would be refused before it was sent: correct the edition whose message appears beside it above."
+            : null;
   const state = pending ? "working" : settled ? "settled" : "review";
   return (
     <section
@@ -578,16 +533,16 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
         <CardHeader>
           <CardTitle>
             <Heading id={titleId} className={HEADING_SCALE[headingLevel]}>
-              {REVIEW_TITLE}
+              {"Release the selected editions"}
             </Heading>
           </CardTitle>
-          <CardDescription>{REVIEW_INTRO}</CardDescription>
+          <CardDescription>{"A release publishes the exact frozen revision of each edition you select. It sends no message by itself: a notice is a separate deliberate request, and it is submitted here only for an edition whose submission asked for one."}</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           {editions.length === 0 ? (
-            <StateNotice kind="empty" headingLevel={childHeading} title={NO_EDITIONS_TITLE} description={NO_EDITIONS_DESCRIPTION} />
+            <StateNotice kind="empty" headingLevel={childHeading} title="This Update has no edition to release" description={"No edition of this Update exists yet, so there is nothing a release could publish and nothing a notice could point at. Add an audience and language edition first."} />
           ) : (
-            <FormFieldGroup legend={EDITIONS_LEGEND} name="publish-editions" description={EDITIONS_DESCRIPTION}>
+            <FormFieldGroup legend={EDITIONS_LEGEND} name="publish-editions" description={"Each edition keeps its own draft, its own review and its own release. Tick the editions this release publishes: only an edition with a frozen candidate can be released, and one release lists each edition once."}>
               {() => (
                 <ul className="flex min-w-0 flex-col gap-3">
                   {editions.map((edition, index) => (
@@ -615,7 +570,11 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
               <NoticeTarget variantId={noticeVariantId} share={share} level={childHeading} />
               <p className="type-supporting text-pretty">{SIBLING_PROMISE}</p>
               <p className="type-supporting text-pretty">{NOTHING_OUTSIDE}</p>
-              {settled ? <p className="type-supporting text-pretty">{SETTLED_NOTE}</p> : <p className="type-supporting text-pretty">{REPLAY_NOTE}</p>}
+              {settled ? (
+                <p className="type-supporting text-pretty">{"This step is complete for this attempt, and the result below is its record. Changing the selection or the acknowledged ceiling begins a new attempt with its own identity."}</p>
+              ) : (
+                <p className="type-supporting text-pretty">{"Pressing release again resubmits this same attempt: it keeps its own identity, so work that was already accepted answers with its result instead of happening twice."}</p>
+              )}
               <ReleaseConfirmation selections={chosen} notifyCount={notifyEditions.length} blockedReason={blockedReason} busy={pending} onConfirm={confirmRelease} />
             </>
           )}
@@ -631,7 +590,7 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
               ))}
             </ul>
           )}
-          <p className="type-supporting text-pretty">{CHECK_READS}</p>
+          <p className="type-supporting text-pretty">{"Checking the result re-reads this edition's release head and its share presentation; the release result above is the record of the attempt, and the service states which revision stands."}</p>
         </div>
       )}
     </section>

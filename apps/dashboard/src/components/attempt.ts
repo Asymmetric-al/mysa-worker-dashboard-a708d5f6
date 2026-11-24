@@ -5,8 +5,7 @@ import type { NoticeHeadingLevel, StateNoticeProps } from "@/components/state-no
 import { newOperationId, type SourceReference } from "@/lib/ids";
 import type { MutationInput } from "@/modules/data-service/envelope";
 import { isOutcome, outcomeFromError, type MutationOutcome, type PerItemResult } from "@/modules/data-service/outcome";
-/** The identity one attempt carries: the `operationId` it submits under, and the intent that identity was minted for. */
-export type ReviewedAttempt = { readonly operationId: string; readonly intent: string | null };
+/** The identity one attempt carries: the `operationId` it submits under, and the intent that identity was minted for. */ export type ReviewedAttempt = { readonly operationId: string; readonly intent: string | null };
 function canonicalIntent(value: unknown): string {
   if (value === null || value === undefined) return "null";
   if (Array.isArray(value)) return `[${value.map((entry) => canonicalIntent(entry)).join(",")}]`;
@@ -22,23 +21,19 @@ function canonicalIntent(value: unknown): string {
   if (typeof value === "boolean") return value ? "true" : "false";
   return JSON.stringify(String(value));
 }
-/** The stable fingerprint of one intent: the context, the revision the caller saw, and the payload. */
-export const intentKeyOf = (input: Omit<MutationInput<unknown>, "operationId">): string => canonicalIntent(input);
+/** The stable fingerprint of one intent: the context, the revision the caller saw, and the payload. */ export const intentKeyOf = (input: Omit<MutationInput<unknown>, "operationId">): string => canonicalIntent(input);
 /** The identity an attempt must carry, given the identity already held and the intent submitted now. */
 export function attemptForIntent(current: ReviewedAttempt | null, intent: string, mint: () => string = newOperationId): ReviewedAttempt {
   if (current !== null && current.intent === intent) return current;
   return { operationId: mint(), intent };
 }
-/** Whether an outcome leaves the same operation worth replaying. */
-export const mayReplay = (outcome: MutationOutcome | null): boolean => outcome !== null && (outcome.outcome === "unavailable" || outcome.outcome === "unknown");
+/** Whether an outcome leaves the same operation worth replaying. */ export const mayReplay = (outcome: MutationOutcome | null): boolean => outcome !== null && (outcome.outcome === "unavailable" || outcome.outcome === "unknown");
 /** The revision a conflict's preserved input may be re-applied against, or `null` when there is no conflict to re-apply. */
 export const reappliableRevision = (outcome: MutationOutcome | null): string | null => (outcome !== null && outcome.outcome === "conflict" ? outcome.currentRevision : null);
 /** Whether an outcome reports a result that stands: applied once, already applied, or nothing to change. */
 export const hasSettled = (outcome: MutationOutcome | null): boolean => outcome !== null && (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged");
-/** The transport an attempt submits through: the caller's own mutation call, which the attempt supplies the identity to. */
-export type MutationSubmit<P> = (input: MutationInput<P>) => Promise<MutationOutcome>;
-/** Everything one attempt offers the surface that renders it, so the surface states no part of the cycle itself. */
-export type UseAttemptedMutationResult<P> = {
+/** The transport an attempt submits through: the caller's own mutation call, which the attempt supplies the identity to. */ export type MutationSubmit<P> = (input: MutationInput<P>) => Promise<MutationOutcome>;
+/** Everything one attempt offers the surface that renders it, so the surface states no part of the cycle itself. */ export type UseAttemptedMutationResult<P> = {
   readonly operationId: string | null;
   readonly pending: boolean;
   readonly outcome: MutationOutcome | null;
@@ -134,15 +129,13 @@ export function useAttemptedMutation<P = unknown>(submit: MutationSubmit<P>, onS
   const fieldErrors = useMemo((): FieldErrorLookup | null => (outcome !== null && outcome.outcome === "invalid" ? fieldErrorsFromInvalid(outcome) : null), [outcome]);
   return { operationId: attempt === null ? null : attempt.operationId, pending, outcome, reviewedIntent, fieldErrors, canReplay: mayReplay(outcome), conflictRevision: reappliableRevision(outcome), submit: submitInput, retry, reapplyOnConflict, reset };
 }
-/** Owns the attempt identity, the in-flight fence and the last outcome of one reviewed mutation. */
-export function useReviewedMutation<P = unknown>(submit: MutationSubmit<P>): UseReviewedMutationResult<P> {
+/** Owns the attempt identity, the in-flight fence and the last outcome of one reviewed mutation. */ export function useReviewedMutation<P = unknown>(submit: MutationSubmit<P>): UseReviewedMutationResult<P> {
   const { operationId, pending, outcome, reviewedIntent, submit: submitInput, retry, reapplyOnConflict, reset } = useAttemptedMutation<P>(submit);
   return { operationId, pending, outcome, reviewedIntent, submit: submitInput, retry, reapply: reapplyOnConflict, reset };
 }
 /** The sentences one surface states for the per-item arms of an outcome, so a batch reports each record in words of its own. */
 export type OutcomeRowCopy = { readonly alreadyApplied: string; readonly conflict: string; readonly denied: string; readonly unavailable: (source: SourceReference) => string; readonly unknown: (operationId: string) => string };
-/** One record's own outcome, as the per-item row that reports it beside the record it names. */
-export function outcomeRow(targetId: string, outcome: MutationOutcome, copy: OutcomeRowCopy): PerItemResult {
+/** One record's own outcome, as the per-item row that reports it beside the record it names. */ export function outcomeRow(targetId: string, outcome: MutationOutcome, copy: OutcomeRowCopy): PerItemResult {
   switch (outcome.outcome) {
     case "accepted":
       return { targetId, state: "accepted", revision: outcome.revision };
@@ -162,8 +155,7 @@ export function outcomeRow(targetId: string, outcome: MutationOutcome, copy: Out
       return { targetId, state: "failed", reasonCode: "unknown", reason: copy.unknown(outcome.operationId) };
   }
 }
-/** The words a surface states for the three outcomes a person can recover from, so no surface invents its own. */
-export type OutcomeNoticeCopy = {
+/** The words a surface states for the three outcomes a person can recover from, so no surface invents its own. */ export type OutcomeNoticeCopy = {
   readonly denied: { readonly title: string; readonly description?: string };
   readonly unavailable: { readonly title: string; readonly description?: string };
   readonly unknown: { readonly title: string; readonly description?: string };

@@ -1,35 +1,11 @@
 /** Criterion 1 — whole-query agreement: one query, one snapshot, six artifacts (AAP 0.8.8, 0.12.2). */
 import type { Locator, Page } from "@playwright/test";
-import {} from "csv-parse/sync";
-import {
-  AMOUNT_STATE_WORDS,
-  CSV_FIELD,
-  NEUTRALISER,
-  countOf,
-  ensureWorkload,
-  listTotalOf,
-  csvFileOf,
-  csvTextOf,
-  expect,
-  expectSameAmount,
-  isInert,
-  metadataOf,
-  printedColumnAmounts,
-  rowMinorUnitsOf,
-  statedAmountOf,
-  sumOf,
-  test,
-  withoutNeutraliser,
-  type CsvFile,
-  type PersonaName,
-  type StatedAmount,
-} from "../playwright.config";
+import { AMOUNT_STATE_WORDS, CSV_FIELD, NEUTRALISER, countOf, ensureWorkload, listTotalOf, csvFileOf, csvTextOf, expect, expectSameAmount, isInert, metadataOf, printedColumnAmounts, rowMinorUnitsOf, statedAmountOf, sumOf, test, withoutNeutraliser, type CsvFile, type StatedAmount } from "../playwright.config";
 const openReport = async (page: Page, href: string, heading: string): Promise<void> => {
   await page.goto(href);
   await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
 };
 const recordEvidence = (type: string, description: string): void => void test.info().annotations.push({ type, description });
-const PERSONA: PersonaName = "established-worker";
 const GIFTS_HREF = "/support/gifts";
 const RECEIVED_REPORT_HREF = "/support/reports/received";
 const HISTORY_REPORT_HREF = "/support/reports/history";
@@ -50,7 +26,6 @@ const PARTIAL_COVERAGE_OPENING = "Coverage is partial";
 const INCOMPLETE_MARKER = /\(incomplete\)/u;
 const GIFT_LINK_LABEL = /^Open gift (\S+)$/u;
 const ROWS_IN_FILE = /Rows in the file\s+([\d,]+)/u;
-const ROWS_IN_RESULT = /Rows in this result:\s+([\d,]+)/u;
 const SNAPSHOT_FACT_LABELS = ["Basis", "Grain", "Period", "Currencies", "Coverage", "As of"] as const;
 type SnapshotFactLabel = (typeof SNAPSHOT_FACT_LABELS)[number];
 type SnapshotFacts = Readonly<Record<SnapshotFactLabel, string>>;
@@ -229,7 +204,7 @@ function readPrintedPage(page: Page, withAmounts = false): Promise<PrintedPage> 
     return {
       facts,
       summaryAmount: statedAmountOf(await summaryLine.innerText(), "The printed page's summary line"),
-      rowsStated: countOf(ROWS_IN_RESULT.exec(about)?.[1] ?? "", "The row total the printed page states"),
+      rowsStated: countOf(/Rows in this result:\s+([\d,]+)/u.exec(about)?.[1] ?? "", "The row total the printed page states"),
       rows: await region.locator("table tbody tr").count(),
       rowAmounts: withAmounts ? await printedColumnAmounts(region, "amount") : [],
       about,
@@ -237,7 +212,12 @@ function readPrintedPage(page: Page, withAmounts = false): Promise<PrintedPage> 
   });
 }
 const firstGiftLink = (page: Page): Locator => page.getByRole("link", { name: /^Open gift /u }).first();
-test.use({ persona: PERSONA }); // This file acts as the established worker throughout, which is the persona the runner admits the context as.; Every test starts from the deterministic seed.
+const fileMinorUnitsOf = (file: CsvFile, subject: string): number =>
+  sumOf(
+    file.rows.map((row, index) => rowMinorUnitsOf(file, row, index)),
+    subject,
+  );
+test.use({ persona: "established-worker" }); // This file acts as the established worker throughout, which is the persona the runner admits the context as.; Every test starts from the deterministic seed.
 async function exportedQueryOf(page: Page, href: string): Promise<CsvFile> {
   await openReport(page, href, "Received support"); // Opens one of the fixed reports and downloads the whole query it states, through that report's own export action.
   return downloadCsv(page);
@@ -297,25 +277,11 @@ test("one query, one snapshot: the screen, the chart, the table, a matrix drilld
   const csvTotal = countOf(metadataOf(csv, CSV_FIELD.rowTotal, subject), "The row total the file states");
   expect(csvTotal, "The file's own row total is the whole-result count the ledger's pager states.").toBe(wholeRows);
   expect(csv.rows.length, "Every authorised row of the query is in the file, so its records match its row total.").toBe(csvTotal);
-  const fileMinorUnits = sumOf(
-    csv.rows.map((row, index) => rowMinorUnitsOf(csv, row, index)),
-    "The file's rows",
-  );
+  const fileMinorUnits = fileMinorUnitsOf(csv, "The file's rows");
   expect(fileMinorUnits, "The file's rows sum to the same minor units the ledger states.").toBe(ledgerFigure.amount.minorUnits);
   expect([...new Set(csv.rows.map((row) => row["gift_id"] ?? ""))].sort(), "The file's gifts are exactly the gifts the ledger's own rows name, so the table and the file are the same records.").toEqual([...new Set(rowGiftIds)].sort());
   // --- the print artifact: the same report, printed from the same navigation.
-  const printed = await asPrinted(page, async (region) => {
-    const printFacts = await snapshotFactsOf(page, "print");
-    const summaryLine = region
-      .locator("li")
-      .filter({ hasText: `Received support (${CURRENCY})` })
-      .first();
-    await expect(summaryLine, "The printed page states its per-currency summary line.").toBeVisible();
-    const about = (await region.innerText()).replace(/\s+/gu, " ");
-    const summaryAmount = statedAmountOf(await summaryLine.innerText(), "The printed page's summary line");
-    const rowsStated = countOf(ROWS_IN_RESULT.exec(about)?.[1] ?? "", "The row total the printed page states");
-    return { facts: printFacts, summaryAmount, rowsStated, rows: await region.locator("table tbody tr").count(), rowAmounts: await printedColumnAmounts(region, "amount"), about };
-  });
+  const printed = await readPrintedPage(page, true);
   expectSameSnapshot(printed.facts, "The printed page", reportFacts);
   expectSameAmount(printed.summaryAmount, ledgerFigure.amount, "The printed page's summary states the same received support the screen's whole-result figure states.");
   expect(printed.rowsStated, "The printed page states the whole query's row count beside the rows it printed.").toBe(wholeRows);
@@ -587,10 +553,8 @@ test("the chart's monthly series sums to the figure the screen, the CSV and the 
   const chartMonths = await chartMonthsOf(page);
   const gapMonths = chartMonths.filter((month) => month.amount === undefined).map((month) => month.start);
   const plottedAmounts = chartMonths.filter((month) => month.amount !== undefined).map((month) => month.amount ?? 0);
-  expect(
-    gapMonths.map((month) => month.slice(0, ABSENT_MONTH.length)),
-    "The one month the source records nothing in is stated as a gap, and no other month is.",
-  ).toEqual([ABSENT_MONTH]);
+  const gapMonthLabels = gapMonths.map((month) => month.slice(0, ABSENT_MONTH.length));
+  expect(gapMonthLabels, "The one month the source records nothing in is stated as a gap, and no other month is.").toEqual([ABSENT_MONTH]);
   expect(gapMonths, "The gap states the civil day its month begins on, so the month cannot be mistaken for another.").toEqual([`${ABSENT_MONTH}-01`]);
   const seriesSum = sumOf(plottedAmounts, "The chart's twelve monthly points");
   await openReport(page, `${RECEIVED_REPORT_HREF}?from=${yearFrom}&to=${yearTo}&currency=${CURRENCY}`, "Received support"); // --- the screen artifact: the same query stated as one figure ------------------------------------
@@ -602,10 +566,7 @@ test("the chart's monthly series sums to the figure the screen, the CSV and the 
   expect(metadataOf(csv, CSV_FIELD.page, "The year's export"), "The file is the whole query rather than a page of it.").toBe("whole-query");
   expect({ from: metadataOf(csv, CSV_FIELD.periodFrom, "The year's export"), to: metadataOf(csv, CSV_FIELD.periodTo, "The year's export") }, "The file states the year the chart and the screen state.").toEqual({ from: yearFrom, to: yearTo });
   expect(countOf(metadataOf(csv, CSV_FIELD.rowTotal, "The year's export"), "The year's export row total"), "The file's records are the whole query's rows.").toBe(csv.rows.length);
-  const csvSum = sumOf(
-    csv.rows.map((row, index) => rowMinorUnitsOf(csv, row, index)),
-    "The year's exported rows",
-  );
+  const csvSum = fileMinorUnitsOf(csv, "The year's exported rows");
   expect(csvSum, "The file's rows sum to the same minor units the chart's points and the screen's figure state.").toBe(seriesSum);
   const printed = await readPrintedPage(page); // --- the print artifact -------------------------------------------------------------------------
   expect(periodOfFacts(printed.facts), "The printed page states the year the chart, the screen and the file state.").toEqual({ from: yearFrom, to: yearTo });
@@ -649,13 +610,7 @@ test("one figure at three grains: the matrix cell, the rows it narrows to and th
   expect(countOf(metadataOf(csv, CSV_FIELD.rowTotal, drilledExport), "The drilled export's row total"), "The drilled export holds the rows the drilled ledger stated.").toBe(drilledRows);
   expect(csv.rows.length, "The drilled export's records are its whole result.").toBe(drilledRows);
   for (const [index, row] of csv.rows.entries()) expect(row["partner_id"], `Row ${String(index)} of the drilled export belongs to the partner the cell names.`).toBe("partner-church-st-aidan");
-  expect(
-    sumOf(
-      csv.rows.map((row, index) => rowMinorUnitsOf(csv, row, index)),
-      "The drilled export's rows",
-    ),
-    "The drilled export's rows sum to the cell's figure.",
-  ).toBe(cellAmount.minorUnits);
+  expect(fileMinorUnitsOf(csv, "The drilled export's rows"), "The drilled export's rows sum to the cell's figure.").toBe(cellAmount.minorUnits);
   const printed = await readPrintedPage(page, true);
   expect(periodOfFacts(printed.facts), "The printed page states the cell's month.").toEqual({ from: DRILLDOWN_MONTH_FROM, to: DRILLDOWN_MONTH_TO });
   expectSameAmount(printed.summaryAmount, cellAmount, "The printed page's summary states the cell's figure.");

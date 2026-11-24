@@ -34,8 +34,7 @@ export interface SupportProjection {
   readonly gifts: readonly GiftRow[];
   readonly commitments: readonly CommitmentRow[];
 }
-/** Reports the projection's basis, refusing a basis this application does not measure. */
-export function assertSingleBasis(projection: SupportProjection): SupportBasis {
+/** Reports the projection's basis, refusing a basis this application does not measure. */ export function assertSingleBasis(projection: SupportProjection): SupportBasis {
   const basis: string = projection.basis;
   if (basis !== SUPPORT_BASIS) throw new TypeError(`Support projection "${projection.supportSubjectId}" reports the basis "${basis}", which this application does not measure. A second basis would make two support figures incomparable, so the projection is refused instead of reported.`);
   return SUPPORT_BASIS;

@@ -1,6 +1,6 @@
 /** Success criterion 10, at the domain and the service boundary: the proof flow's 168-hour confirmation window, and the honesty of the states around it. */
 import { Temporal } from "temporal-polyfill";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { type MembershipRecord as StoredMembership, type MutationOutcome, type Scope, mutations, reads } from "@/modules/data-service";
 import { type AccessDecision, type ResolvedSession, type SessionSource, canReadProtected } from "@/modules/data-service/authorize";
@@ -191,255 +191,243 @@ afterEach(async () => {
 afterAll(async () => {
   await resetSeed(); // This file changes only seeded sessions, and a reset leaves them as the world every criterion starts from rather than holding the confirmations these cases accepted.
 });
-describe("the deadline is the acceptance instant plus 168 elapsed hours", () => {
-  it("measures 168 x 3,600,000 milliseconds from every acceptance instant it is given", () => {
-    const acceptances: readonly Temporal.Instant[] = [
-      SEED_INSTANT,
-      Temporal.Instant.from("2027-02-28T23:59:59Z"),
-      Temporal.ZonedDateTime.from("2026-10-20T12:00:00+01:00[Europe/London]").toInstant(), // Europe/London leaves British Summer Time at 02:00 on 2026-10-25, so a window opened on 2026-10-20 crosses the transition; its end is still 168 elapsed hours away.
-    ];
-    for (const acceptedAt of acceptances) {
-      const deadline = openWindowAt(acceptedAt, acceptedAt);
-      expect([elapsedMilliseconds(acceptedAt, deadline.deadlineInstant), deadline.remainingMilliseconds]).toEqual([WINDOW_MILLISECONDS, WINDOW_MILLISECONDS]);
-    }
-  });
-  it("counts 168 elapsed hours across a daylight-saving transition rather than seven calendar days", () => {
-    const acceptedLocal = Temporal.ZonedDateTime.from("2026-10-20T12:00:00+01:00[Europe/London]");
-    const acceptedAt = acceptedLocal.toInstant();
+it("the deadline is the acceptance instant plus 168 elapsed hours: measures 168 x 3,600,000 milliseconds from every acceptance instant it is given", () => {
+  const acceptances: readonly Temporal.Instant[] = [
+    SEED_INSTANT,
+    Temporal.Instant.from("2027-02-28T23:59:59Z"),
+    Temporal.ZonedDateTime.from("2026-10-20T12:00:00+01:00[Europe/London]").toInstant(), // Europe/London leaves British Summer Time at 02:00 on 2026-10-25, so a window opened on 2026-10-20 crosses the transition; its end is still 168 elapsed hours away.
+  ];
+  for (const acceptedAt of acceptances) {
     const deadline = openWindowAt(acceptedAt, acceptedAt);
-    expect(elapsedMilliseconds(acceptedAt, deadline.deadlineInstant)).toBe(WINDOW_MILLISECONDS);
-    // The acceptance reads 12:00 in London and the end reads 11:00, because the zone lost an hour in between. A calendar-day reading — the same clock time seven days later — would end an hour later, which is exactly the reading this window must not be.
-    expect([acceptedLocal.hour, deadline.deadlineInstant.toZonedDateTimeISO("Europe/London").hour]).toEqual([12, 11]);
-    expect(
-      acceptedLocal
-        .add({ days: 7 })
-        .toInstant()
-        .equals(deadline.deadlineInstant.add({ seconds: 3_600 })),
-    ).toBe(true);
-  });
-  it("keeps the deadline the acceptance recorded through every read that follows it", async () => {
-    const step = await openedProofStep();
-    const opened = replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE));
-    expect([textOf(opened, "state"), nullableTextOf(opened, "confirmationDeadline")]).toEqual(["awaiting-proof", DEADLINE_AT_SEED.toString()]);
-    for (let pass = 0; pass < 3; pass += 1) expect([(await devStateEnvelope()).asOf, (await sessionOf(SOURCE)).principalId]).toEqual([SEED_INSTANT.toString(), step.principalId]);
-    const deadlineText = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
-    expect([deadlineText, elapsedMilliseconds(SEED_INSTANT, Temporal.Instant.from(String(deadlineText)))]).toEqual([DEADLINE_AT_SEED.toString(), WINDOW_MILLISECONDS]);
-  });
+    expect([elapsedMilliseconds(acceptedAt, deadline.deadlineInstant), deadline.remainingMilliseconds]).toEqual([WINDOW_MILLISECONDS, WINDOW_MILLISECONDS]);
+  }
 });
-describe("strict at equality", () => {
-  it("confirms one second inside the window and records the membership as active", async () => {
-    const step = await openedProofStep();
-    await advanceBy(WINDOW_MILLISECONDS - SECOND_MILLISECONDS);
-    const confirmation = confirmInput(step, "rev-1");
-    expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SOURCE)).revision).toBe("rev-2");
-    const receipt = replayedResult(await mutations.audience.confirmMembership(confirmation, SOURCE));
-    expect([textOf(receipt, "state"), nullableTextOf(receipt, "confirmedAt")]).toEqual(["active", DEADLINE_AT_SEED.subtract({ seconds: 1 }).toString()]);
-  });
-  it("refuses the confirmation at exactly 168 hours and leaves the row waiting for proof", async () => {
-    const step = await openedProofStep();
-    await advanceBy(WINDOW_MILLISECONDS);
-    expect(closedWindowAt(SEED_INSTANT, now()).deadlineInstant.equals(DEADLINE_AT_SEED)).toBe(true); // The boundary instant itself is outside the window: it is the first instant the same module reports as expired, and it is exactly the deadline the acceptance opened.
-    const refused = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
-    expect(named(refused)).toBe("invalid");
-    const expiry = firstMessageAbout(refused, "membershipId");
-    expect(expiry.startsWith("confirmation-expired:")).toBe(true);
-    expect(instantsIn(expiry).map((instant) => instant.toString())).toEqual([DEADLINE_AT_SEED.toString()]); // The reason names the instant the window closed, and that instant is the deadline the acceptance opened rather than the instant the refusal happened.
-    // An active membership answers `unchanged` here and an off or restricted one answers `not-awaiting-proof`; only a row still waiting for proof reaches `confirmation-expired`, so the refusal is also the proof that the state was not flipped to active behind it.
-    expect(expiry.startsWith("not-awaiting-proof")).toBe(false);
-    const restored = await setClock(SESSION_ID, WINDOW_MILLISECONDS - SECOND_MILLISECONDS); // One second earlier the same row is still confirmable at the revision the caller read, so the refusal neither promoted it nor moved the window it was measured against.
-    expect([restored.ok, acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE)).revision]).toEqual([true, "rev-2"]);
-  });
+it("the deadline is the acceptance instant plus 168 elapsed hours: counts 168 elapsed hours across a daylight-saving transition rather than seven calendar days", () => {
+  const acceptedLocal = Temporal.ZonedDateTime.from("2026-10-20T12:00:00+01:00[Europe/London]");
+  const acceptedAt = acceptedLocal.toInstant();
+  const deadline = openWindowAt(acceptedAt, acceptedAt);
+  expect(elapsedMilliseconds(acceptedAt, deadline.deadlineInstant)).toBe(WINDOW_MILLISECONDS);
+  // The acceptance reads 12:00 in London and the end reads 11:00, because the zone lost an hour in between. A calendar-day reading — the same clock time seven days later — would end an hour later, which is exactly the reading this window must not be.
+  expect([acceptedLocal.hour, deadline.deadlineInstant.toZonedDateTimeISO("Europe/London").hour]).toEqual([12, 11]);
+  expect(
+    acceptedLocal
+      .add({ days: 7 })
+      .toInstant()
+      .equals(deadline.deadlineInstant.add({ seconds: 3_600 })),
+  ).toBe(true);
 });
-describe("nothing extends the window", () => {
-  it("does not renew the deadline when the surface is reloaded inside it", async () => {
-    const step = await openedProofStep();
-    const before = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
-    await advanceBy(WINDOW_MILLISECONDS - SECOND_MILLISECONDS);
-    for (let pass = 0; pass < 3; pass += 1) {
-      expect((await devStateEnvelope()).asOf).toBe(DEADLINE_AT_SEED.subtract({ seconds: 1 }).toString()); // A reload re-reads the session and its documents, which is what a page load performs; a read that renewed anything would show up in the deadline compared below.
-      await sessionOf(SOURCE);
-    }
-    const after = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
-    expect([after, after]).toEqual([before, DEADLINE_AT_SEED.toString()]);
-    await advanceBy(SECOND_MILLISECONDS); // Having spent the last second of the window on reads, the boundary still closes where the acceptance put it.
-    const refused = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
-    expect(named(refused)).toBe("invalid");
-    expect(firstMessageAbout(refused, "membershipId")).toContain(DEADLINE_AT_SEED.toString());
-  });
-  it("keeps a refused confirmation refused when it is tried again a second later", async () => {
-    const step = await openedProofStep();
-    await advanceBy(WINDOW_MILLISECONDS);
-    const firstRefusal = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
-    expect(named(firstRefusal)).toBe("invalid");
-    await advanceBy(SECOND_MILLISECONDS);
-    const retry = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
-    expect(named(retry)).toBe("invalid");
-    const message = firstMessageAbout(retry, "membershipId"); // The retry names exactly the instant the first refusal named: a retry that had opened a new acceptance would name a deadline 168 hours after itself instead.
-    expect(message).toBe(firstMessageAbout(firstRefusal, "membershipId"));
-    expect(message).toContain(DEADLINE_AT_SEED.toString());
-    expect(message).not.toContain(now().add({ hours: CONFIRMATION_WINDOW_HOURS }).toString());
-  });
-  it("does not reset the acceptance when the proof is issued again for the same membership", async () => {
-    const step = await openedProofStep();
-    await advanceBy(WINDOW_MILLISECONDS + SECOND_MILLISECONDS);
-    const issuedAgain = await mutations.audience.signupForPurpose({ ...step.signup, operationId: newOperationId() }, SOURCE);
-    expect(named(issuedAgain)).toBe("unchanged"); // The service offers no resend: a membership that already exists is answered as unchanged, so the acceptance stays where the person's own act put it.
-    const receipt = replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE));
-    expect([textOf(receipt, "state"), textOf(receipt, "revision"), nullableTextOf(receipt, "confirmationDeadline")]).toEqual(["awaiting-proof", "rev-1", DEADLINE_AT_SEED.toString()]);
-    const refused = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
-    expect(named(refused)).toBe("invalid");
-    const message = firstMessageAbout(refused, "membershipId");
-    expect(message).toContain(DEADLINE_AT_SEED.toString());
-    expect(message).not.toContain(now().add({ hours: CONFIRMATION_WINDOW_HOURS }).toString()); // The deadline the second signup would have opened is nowhere in the refusal.
-  });
+it("the deadline is the acceptance instant plus 168 elapsed hours: keeps the deadline the acceptance recorded through every read that follows it", async () => {
+  const step = await openedProofStep();
+  const opened = replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE));
+  expect([textOf(opened, "state"), nullableTextOf(opened, "confirmationDeadline")]).toEqual(["awaiting-proof", DEADLINE_AT_SEED.toString()]);
+  for (let pass = 0; pass < 3; pass += 1) expect([(await devStateEnvelope()).asOf, (await sessionOf(SOURCE)).principalId]).toEqual([SEED_INSTANT.toString(), step.principalId]);
+  const deadlineText = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
+  expect([deadlineText, elapsedMilliseconds(SEED_INSTANT, Temporal.Instant.from(String(deadlineText)))]).toEqual([DEADLINE_AT_SEED.toString(), WINDOW_MILLISECONDS]);
 });
-describe("confirmation is an explicit action and never a read", () => {
-  it("leaves the membership at the revision the caller read until it confirms explicitly", async () => {
-    const step = await openedProofStep();
-    for (let pass = 0; pass < 3; pass += 1) {
-      expect((await devStateEnvelope()).scope.principalId).toBe(step.principalId);
-      await sessionOf(SOURCE);
-    }
-    // Presenting the revision those reads returned is an assertion about them: a read that had confirmed the address would have left the row active at rev-2, and this write would answer `conflict` rather than `accepted`.
-    expect(acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE)).revision).toBe("rev-2");
-  });
-  it("moves the row to active only on the explicit confirmation, and a repeat changes nothing", async () => {
-    const step = await openedProofStep();
-    const confirmation = confirmInput(step, "rev-1");
-    expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SOURCE)).revision).toBe("rev-2");
-    const replay = await mutations.audience.confirmMembership(confirmation, SOURCE);
-    expect(named(replay)).toBe("alreadyAccepted");
-    const receipt = replayedResult(replay);
-    expect([textOf(receipt, "state"), textOf(receipt, "revision")]).toEqual(["active", "rev-2"]);
-    const repeated = await mutations.audience.confirmMembership(confirmInput(step, "rev-2"), SOURCE);
-    expect([named(repeated), unchangedRevision(repeated)]).toEqual(["unchanged", "rev-2"]);
-  });
-  it("opens the proof step with a pending result that claims no message and no membership", async () => {
-    const step = await openedProofStep();
-    const receipt = replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE));
-    expect(textOf(receipt, "state")).not.toBe("active");
-    const proof = fieldOf(receipt, "proof");
-    expect([proof, [booleanOf(proof, "claimsMailSent"), textOf(proof, "status")], Object.keys(proof ?? {}).sort()]).toEqual([pendingProofResult(), [false, "pending"], ["claimsMailSent", "nextStep", "status"]]);
-  });
+it("strict at equality: confirms one second inside the window and records the membership as active", async () => {
+  const step = await openedProofStep();
+  await advanceBy(WINDOW_MILLISECONDS - SECOND_MILLISECONDS);
+  const confirmation = confirmInput(step, "rev-1");
+  expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SOURCE)).revision).toBe("rev-2");
+  const receipt = replayedResult(await mutations.audience.confirmMembership(confirmation, SOURCE));
+  expect([textOf(receipt, "state"), nullableTextOf(receipt, "confirmedAt")]).toEqual(["active", DEADLINE_AT_SEED.subtract({ seconds: 1 }).toString()]);
 });
-describe("the states and the choices stay honest", () => {
-  it("keeps exactly four membership states and refuses any other word for one", () => {
-    expect(MEMBERSHIP_STATES).toHaveLength(4);
-    expect([...MEMBERSHIP_STATES].sort()).toEqual(["active", "awaiting-proof", "off", "restricted"]);
-    const vocabulary: readonly MembershipState[] = MEMBERSHIP_STATES;
-    for (const state of vocabulary) expect(isMembershipState(state)).toBe(true);
-    for (const word of ["subscribed", "pending", "held", "unqualified", "paused"]) expect(isMembershipState(word)).toBe(false);
-    const observed = new Set(seededRows.map((row) => row.state)); // Every row the seeded audience holds is one of those four, and together the rows exercise all four, so a fifth state cannot appear without this failing.
-    expect([...observed].sort()).toEqual([...MEMBERSHIP_STATES].sort());
-  });
-  it("offers exactly Off and Immediate, and refuses a cadence it does not offer", async () => {
-    expect(MEMBER_CHOICES).toHaveLength(2);
-    expect([...MEMBER_CHOICES]).toEqual(["off", "immediate"]);
-    for (const word of ["digest", "weekly", "monthly", "daily", "all"]) expect(isMemberChoice(word)).toBe(false);
-    const step = await openedProofStep();
-    const offered = preferenceInput(step, "rev-1", { choice: "immediate" });
-    const withCadence = { ...offered, payload: { ...offered.payload, choice: "digest" } } as unknown as SetPreferenceArgs; // A cadence the audience does not offer is stated the way a caller could state it, and the service refuses it rather than treating an unknown word as one of the two.
-    const refused = await mutations.audience.setPreference(withCadence, SOURCE);
-    expect(named(refused)).toBe("invalid");
-    expect(fieldMessages(refused, "choice").length).toBeGreaterThan(0);
-  });
-  it("treats a subscribed-looking column as no consent at all", async () => {
-    const scope = await selectedScope();
-    const session = await sessionOf(SOURCE);
-    const imported = seededRow("membership-subscribed-column");
-    expect(imported.state).not.toBe("active");
-    expect(imported.state).toBe("off");
-    expect(imported.acceptedAt).toBeNull();
-    expect(imported.confirmationDeadline).toBeNull();
-    expect(isConfirmationOpen(domainRowOf(imported, scope), now())).toBe(false);
-    const refused = readingGrantFor(imported, scope, session); // The permission question asked of the same row: the column grants no protected reading, because nothing ever proved the address.
-    if (refused.allowed) throw new Error("A subscribed-looking import column was read as consent, and a column is not consent.");
-    expect(refused.denial.reasonCode).toBe("no-protected-grant");
-    const unsubscribed = seededRow("membership-unsubscribed"); // The row whose person did confirm once keeps its grant although it is off, so what the case separates is the acceptance, not the state the row happens to sit in.
-    expect(unsubscribed.state).toBe("off");
-    expect(unsubscribed.acceptedAt).not.toBeNull();
-    expect(readingGrantFor(unsubscribed, scope, session).allowed).toBe(true);
-  });
-  it("records a reading language without touching the state, the choice or the deadline", async () => {
-    const step = await openedProofStep();
-    const before = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
-    const preference = preferenceInput(step, "rev-1", { choice: "immediate", languagePreference: "cy" });
-    expect(acceptedFrom(await mutations.audience.setPreference(preference, SOURCE)).revision).toBe("rev-2");
-    const receipt = replayedResult(await mutations.audience.setPreference(preference, SOURCE));
-    expect([[textOf(receipt, "state"), textOf(receipt, "choice"), textOf(receipt, "languagePreference")], fieldOf(receipt, "changed")]).toEqual([["awaiting-proof", "immediate", "cy"], { choice: false, languagePreference: true }]);
-    const after = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
-    expect([after, acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-2"), SOURCE)).revision]).toEqual([before, "rev-3"]);
-  });
-  it.each(["held", "unqualified"] as const)("records a %s source row as excluded and never activates it", async (disposition) => {
-    const scope = await selectedScope();
-    const membershipScope: MembershipScope = { organizationId: scope.organizationId, ministryId: scope.ministryId };
-    const excluded = excludedSourceMembership({ membershipId: "membership-source-row", scope: membershipScope, publisherId: await seededPublisher(), recipientId: "membership-source-row", email: "source.row@example.org", languagePreference: "en", sourceDisposition: disposition });
-    expect([isExcludedSourceMembership(excluded), excluded.state]).toEqual([true, "off"]);
-    expect(excluded.state).not.toBe("active");
-    expect(isConfirmationOpen(excluded, now())).toBe(false);
-    expect(withChoice(excluded, "immediate", now())).toBe(excluded); // A deliberate choice does not activate it either: the audience module returns the row it was given, so no path leads from a held or unqualified source row to an active membership.
-    const confirmation = confirmAt(excluded, now());
-    if (confirmation.status !== "refused") throw new Error(`A ${disposition} source row was confirmed, and a row the source supplied is never activated by a confirmation.`);
-    expect(confirmation.reason).toBe("source-excluded");
-    const untouched = { ...excluded };
-    confirmationDeadline({ acceptedAt: SEED_INSTANT, now: now() });
-    isConfirmationOpen(excluded, now());
-    withChoice(excluded, "off", now());
-    const session = await sessionOf(SOURCE);
-    const grant = canReadProtected(session, { audience: "approved-supporter", reader: { recipientId: excluded.recipientId, publisherId: excluded.publisherId, purpose: excluded.purpose, memberships: [excluded] } });
-    expect(grant.allowed).toBe(false);
-    expect(excluded).toEqual(untouched);
-  });
-  it("unsubscribes one publisher and one purpose, and leaves every other fact alone", async () => {
-    const step = await openedProofStep();
-    expect(acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE)).revision).toBe("rev-2");
-    expect(acceptedFrom(await mutations.audience.setPreference(preferenceInput(step, "rev-2", { choice: "immediate", languagePreference: "fr" }), SOURCE)).revision).toBe("rev-3");
-    const elsewhere = await mutations.audience.unsubscribe({ operationId: newOperationId(), scope: step.scope, expectedRevision: "rev-3", payload: { publisherId: OTHER_PUBLISHER, purpose: UPDATE_EMAIL_PURPOSE } }, SOURCE); // Another publisher is not addressed, so the act turns nothing off and advances no revision.
-    expect([named(elsewhere), unchangedRevision(elsewhere)]).toEqual(["unchanged", "rev-3"]);
-    const otherPurpose = { ...unsubscribeInput(step, "rev-3"), payload: { publisherId: step.publisherId, purpose: "newsletter" } } as unknown as UnsubscribeArgs; // A purpose this release keeps no memberships for is refused rather than widened to the one it does keep: one purpose is the whole vocabulary.
-    const widened = await mutations.audience.unsubscribe(otherPurpose, SOURCE);
-    expect(named(widened)).toBe("invalid");
-    expect(fieldMessages(widened, "purpose").length).toBeGreaterThan(0);
-    const addressed = unsubscribeInput(step, "rev-3");
-    expect(acceptedFrom(await mutations.audience.unsubscribe(addressed, SOURCE)).revision).toBe("rev-4");
-    const receipt = replayedResult(await mutations.audience.unsubscribe(addressed, SOURCE));
-    expect([textOf(receipt, "publisherId"), textOf(receipt, "purpose"), textOf(receipt, "state"), textOf(receipt, "choice"), booleanOf(receipt, "claimsRecall")]).toEqual([step.publisherId, UPDATE_EMAIL_PURPOSE, "off", "off", false]);
-    expect(named(await mutations.audience.setPreference(preferenceInput(step, "rev-4", { choice: "off", languagePreference: "fr" }), SOURCE))).toBe("unchanged");
-  });
+it("strict at equality: refuses the confirmation at exactly 168 hours and leaves the row waiting for proof", async () => {
+  const step = await openedProofStep();
+  await advanceBy(WINDOW_MILLISECONDS);
+  expect(closedWindowAt(SEED_INSTANT, now()).deadlineInstant.equals(DEADLINE_AT_SEED)).toBe(true); // The boundary instant itself is outside the window: it is the first instant the same module reports as expired, and it is exactly the deadline the acceptance opened.
+  const refused = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
+  expect(named(refused)).toBe("invalid");
+  const expiry = firstMessageAbout(refused, "membershipId");
+  expect(expiry.startsWith("confirmation-expired:")).toBe(true);
+  expect(instantsIn(expiry).map((instant) => instant.toString())).toEqual([DEADLINE_AT_SEED.toString()]); // The reason names the instant the window closed, and that instant is the deadline the acceptance opened rather than the instant the refusal happened.
+  // An active membership answers `unchanged` here and an off or restricted one answers `not-awaiting-proof`; only a row still waiting for proof reaches `confirmation-expired`, so the refusal is also the proof that the state was not flipped to active behind it.
+  expect(expiry.startsWith("not-awaiting-proof")).toBe(false);
+  const restored = await setClock(SESSION_ID, WINDOW_MILLISECONDS - SECOND_MILLISECONDS); // One second earlier the same row is still confirmable at the revision the caller read, so the refusal neither promoted it nor moved the window it was measured against.
+  expect([restored.ok, acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE)).revision]).toEqual([true, "rev-2"]);
 });
-describe("a reader confirms the membership its own session holds", () => {
-  it("confirms the seeded awaiting-proof membership one second before its seeded deadline, and a repeat changes nothing", async () => {
-    const seeded = await seededSubscriberRow();
-    const scope = await subscriberScope();
-    expect([seeded.membershipId, seeded.state]).toEqual([scope.principalId, "awaiting-proof"]);
-    expect(seeded.acceptedAt).toBe(SUBSCRIBER_ACCEPTED_AT.toString()); // The acceptance and the deadline are the ones the seed recorded, so the boundary below is this record's own 168 hours rather than an interval the case chose.
-    const deadline = Temporal.Instant.from(String(seeded.confirmationDeadline));
-    expect([deadline.toString(), elapsedMilliseconds(SUBSCRIBER_ACCEPTED_AT, deadline)]).toEqual(["2026-11-23T12:00:00Z", WINDOW_MILLISECONDS]);
-    const lastSecondInside = deadline.subtract({ seconds: 1 });
-    await setSessionClockTo(SUBSCRIBER_SESSION_ID, lastSecondInside);
-    expect(openWindowAt(SUBSCRIBER_ACCEPTED_AT, now()).deadlineInstant.equals(deadline)).toBe(true);
-    const confirmation: ConfirmArgs = { operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } };
-    expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SUBSCRIBER_SOURCE)).revision).toBe("rev-2");
-    const receipt = replayedResult(await mutations.audience.confirmMembership(confirmation, SUBSCRIBER_SOURCE));
-    expect([textOf(receipt, "state"), nullableTextOf(receipt, "confirmedAt")]).toEqual(["active", lastSecondInside.toString()]);
-    // A repeat proves nothing further: the row is active at the revision the acceptance reached, so a fresh attempt presenting that revision answers `unchanged` and records no second acceptance.
-    const repeated = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: "rev-2", payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
-    expect([named(repeated), unchangedRevision(repeated)]).toEqual(["unchanged", "rev-2"]);
-  });
-  it("refuses the same confirmation at exactly the seeded deadline and leaves the record confirmable a second earlier", async () => {
-    const seeded = await seededSubscriberRow();
-    const scope = await subscriberScope();
-    const deadline = Temporal.Instant.from(String(seeded.confirmationDeadline));
-    await setSessionClockTo(SUBSCRIBER_SESSION_ID, deadline);
-    expect(closedWindowAt(SUBSCRIBER_ACCEPTED_AT, now()).deadlineInstant.equals(deadline)).toBe(true); // The boundary instant itself is outside the window: it is the first instant the module reports as expired, and it is exactly the deadline the record's own acceptance fixed.
-    const refused = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
-    expect(named(refused)).toBe("invalid");
-    const expiry = firstMessageAbout(refused, "membershipId");
-    expect(expiry.startsWith("confirmation-expired:")).toBe(true);
-    expect(instantsIn(expiry).map((instant) => instant.toString())).toEqual([deadline.toString()]);
-    expect(expiry.startsWith("not-awaiting-proof")).toBe(false);
-    await setSessionClockTo(SUBSCRIBER_SESSION_ID, deadline.subtract({ seconds: 1 }));
-    const inside = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
-    expect(acceptedFrom(inside).revision).toBe("rev-2");
-  });
+it("nothing extends the window: does not renew the deadline when the surface is reloaded inside it", async () => {
+  const step = await openedProofStep();
+  const before = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
+  await advanceBy(WINDOW_MILLISECONDS - SECOND_MILLISECONDS);
+  for (let pass = 0; pass < 3; pass += 1) {
+    expect((await devStateEnvelope()).asOf).toBe(DEADLINE_AT_SEED.subtract({ seconds: 1 }).toString()); // A reload re-reads the session and its documents, which is what a page load performs; a read that renewed anything would show up in the deadline compared below.
+    await sessionOf(SOURCE);
+  }
+  const after = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
+  expect([after, after]).toEqual([before, DEADLINE_AT_SEED.toString()]);
+  await advanceBy(SECOND_MILLISECONDS); // Having spent the last second of the window on reads, the boundary still closes where the acceptance put it.
+  const refused = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
+  expect(named(refused)).toBe("invalid");
+  expect(firstMessageAbout(refused, "membershipId")).toContain(DEADLINE_AT_SEED.toString());
+});
+it("nothing extends the window: keeps a refused confirmation refused when it is tried again a second later", async () => {
+  const step = await openedProofStep();
+  await advanceBy(WINDOW_MILLISECONDS);
+  const firstRefusal = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
+  expect(named(firstRefusal)).toBe("invalid");
+  await advanceBy(SECOND_MILLISECONDS);
+  const retry = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
+  expect(named(retry)).toBe("invalid");
+  const message = firstMessageAbout(retry, "membershipId"); // The retry names exactly the instant the first refusal named: a retry that had opened a new acceptance would name a deadline 168 hours after itself instead.
+  expect(message).toBe(firstMessageAbout(firstRefusal, "membershipId"));
+  expect(message).toContain(DEADLINE_AT_SEED.toString());
+  expect(message).not.toContain(now().add({ hours: CONFIRMATION_WINDOW_HOURS }).toString());
+});
+it("nothing extends the window: does not reset the acceptance when the proof is issued again for the same membership", async () => {
+  const step = await openedProofStep();
+  await advanceBy(WINDOW_MILLISECONDS + SECOND_MILLISECONDS);
+  const issuedAgain = await mutations.audience.signupForPurpose({ ...step.signup, operationId: newOperationId() }, SOURCE);
+  expect(named(issuedAgain)).toBe("unchanged"); // The service offers no resend: a membership that already exists is answered as unchanged, so the acceptance stays where the person's own act put it.
+  const receipt = replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE));
+  expect([textOf(receipt, "state"), textOf(receipt, "revision"), nullableTextOf(receipt, "confirmationDeadline")]).toEqual(["awaiting-proof", "rev-1", DEADLINE_AT_SEED.toString()]);
+  const refused = await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE);
+  expect(named(refused)).toBe("invalid");
+  const message = firstMessageAbout(refused, "membershipId");
+  expect(message).toContain(DEADLINE_AT_SEED.toString());
+  expect(message).not.toContain(now().add({ hours: CONFIRMATION_WINDOW_HOURS }).toString()); // The deadline the second signup would have opened is nowhere in the refusal.
+});
+it("confirmation is an explicit action and never a read: leaves the membership at the revision the caller read until it confirms explicitly", async () => {
+  const step = await openedProofStep();
+  for (let pass = 0; pass < 3; pass += 1) {
+    expect((await devStateEnvelope()).scope.principalId).toBe(step.principalId);
+    await sessionOf(SOURCE);
+  }
+  // Presenting the revision those reads returned is an assertion about them: a read that had confirmed the address would have left the row active at rev-2, and this write would answer `conflict` rather than `accepted`.
+  expect(acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE)).revision).toBe("rev-2");
+});
+it("confirmation is an explicit action and never a read: moves the row to active only on the explicit confirmation, and a repeat changes nothing", async () => {
+  const step = await openedProofStep();
+  const confirmation = confirmInput(step, "rev-1");
+  expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SOURCE)).revision).toBe("rev-2");
+  const replay = await mutations.audience.confirmMembership(confirmation, SOURCE);
+  expect(named(replay)).toBe("alreadyAccepted");
+  const receipt = replayedResult(replay);
+  expect([textOf(receipt, "state"), textOf(receipt, "revision")]).toEqual(["active", "rev-2"]);
+  const repeated = await mutations.audience.confirmMembership(confirmInput(step, "rev-2"), SOURCE);
+  expect([named(repeated), unchangedRevision(repeated)]).toEqual(["unchanged", "rev-2"]);
+});
+it("confirmation is an explicit action and never a read: opens the proof step with a pending result that claims no message and no membership", async () => {
+  const step = await openedProofStep();
+  const receipt = replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE));
+  expect(textOf(receipt, "state")).not.toBe("active");
+  const proof = fieldOf(receipt, "proof");
+  expect([proof, [booleanOf(proof, "claimsMailSent"), textOf(proof, "status")], Object.keys(proof ?? {}).sort()]).toEqual([pendingProofResult(), [false, "pending"], ["claimsMailSent", "nextStep", "status"]]);
+});
+it("the states and the choices stay honest: keeps exactly four membership states and refuses any other word for one", () => {
+  expect(MEMBERSHIP_STATES).toHaveLength(4);
+  expect([...MEMBERSHIP_STATES].sort()).toEqual(["active", "awaiting-proof", "off", "restricted"]);
+  const vocabulary: readonly MembershipState[] = MEMBERSHIP_STATES;
+  for (const state of vocabulary) expect(isMembershipState(state)).toBe(true);
+  for (const word of ["subscribed", "pending", "held", "unqualified", "paused"]) expect(isMembershipState(word)).toBe(false);
+  const observed = new Set(seededRows.map((row) => row.state)); // Every row the seeded audience holds is one of those four, and together the rows exercise all four, so a fifth state cannot appear without this failing.
+  expect([...observed].sort()).toEqual([...MEMBERSHIP_STATES].sort());
+});
+it("the states and the choices stay honest: offers exactly Off and Immediate, and refuses a cadence it does not offer", async () => {
+  expect(MEMBER_CHOICES).toHaveLength(2);
+  expect([...MEMBER_CHOICES]).toEqual(["off", "immediate"]);
+  for (const word of ["digest", "weekly", "monthly", "daily", "all"]) expect(isMemberChoice(word)).toBe(false);
+  const step = await openedProofStep();
+  const offered = preferenceInput(step, "rev-1", { choice: "immediate" });
+  const withCadence = { ...offered, payload: { ...offered.payload, choice: "digest" } } as unknown as SetPreferenceArgs; // A cadence the audience does not offer is stated the way a caller could state it, and the service refuses it rather than treating an unknown word as one of the two.
+  const refused = await mutations.audience.setPreference(withCadence, SOURCE);
+  expect(named(refused)).toBe("invalid");
+  expect(fieldMessages(refused, "choice").length).toBeGreaterThan(0);
+});
+it("the states and the choices stay honest: treats a subscribed-looking column as no consent at all", async () => {
+  const scope = await selectedScope();
+  const session = await sessionOf(SOURCE);
+  const imported = seededRow("membership-subscribed-column");
+  expect(imported.state).not.toBe("active");
+  expect(imported.state).toBe("off");
+  expect(imported.acceptedAt).toBeNull();
+  expect(imported.confirmationDeadline).toBeNull();
+  expect(isConfirmationOpen(domainRowOf(imported, scope), now())).toBe(false);
+  const refused = readingGrantFor(imported, scope, session); // The permission question asked of the same row: the column grants no protected reading, because nothing ever proved the address.
+  if (refused.allowed) throw new Error("A subscribed-looking import column was read as consent, and a column is not consent.");
+  expect(refused.denial.reasonCode).toBe("no-protected-grant");
+  const unsubscribed = seededRow("membership-unsubscribed"); // The row whose person did confirm once keeps its grant although it is off, so what the case separates is the acceptance, not the state the row happens to sit in.
+  expect(unsubscribed.state).toBe("off");
+  expect(unsubscribed.acceptedAt).not.toBeNull();
+  expect(readingGrantFor(unsubscribed, scope, session).allowed).toBe(true);
+});
+it("the states and the choices stay honest: records a reading language without touching the state, the choice or the deadline", async () => {
+  const step = await openedProofStep();
+  const before = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
+  const preference = preferenceInput(step, "rev-1", { choice: "immediate", languagePreference: "cy" });
+  expect(acceptedFrom(await mutations.audience.setPreference(preference, SOURCE)).revision).toBe("rev-2");
+  const receipt = replayedResult(await mutations.audience.setPreference(preference, SOURCE));
+  expect([[textOf(receipt, "state"), textOf(receipt, "choice"), textOf(receipt, "languagePreference")], fieldOf(receipt, "changed")]).toEqual([["awaiting-proof", "immediate", "cy"], { choice: false, languagePreference: true }]);
+  const after = nullableTextOf(replayedResult(await mutations.audience.signupForPurpose(step.signup, SOURCE)), "confirmationDeadline");
+  expect([after, acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-2"), SOURCE)).revision]).toEqual([before, "rev-3"]);
+});
+it.each(["held", "unqualified"] as const)("records a %s source row as excluded and never activates it", async (disposition) => {
+  const scope = await selectedScope();
+  const membershipScope: MembershipScope = { organizationId: scope.organizationId, ministryId: scope.ministryId };
+  const excluded = excludedSourceMembership({ membershipId: "membership-source-row", scope: membershipScope, publisherId: await seededPublisher(), recipientId: "membership-source-row", email: "source.row@example.org", languagePreference: "en", sourceDisposition: disposition });
+  expect([isExcludedSourceMembership(excluded), excluded.state]).toEqual([true, "off"]);
+  expect(excluded.state).not.toBe("active");
+  expect(isConfirmationOpen(excluded, now())).toBe(false);
+  expect(withChoice(excluded, "immediate", now())).toBe(excluded); // A deliberate choice does not activate it either: the audience module returns the row it was given, so no path leads from a held or unqualified source row to an active membership.
+  const confirmation = confirmAt(excluded, now());
+  if (confirmation.status !== "refused") throw new Error(`A ${disposition} source row was confirmed, and a row the source supplied is never activated by a confirmation.`);
+  expect(confirmation.reason).toBe("source-excluded");
+  const untouched = { ...excluded };
+  confirmationDeadline({ acceptedAt: SEED_INSTANT, now: now() });
+  isConfirmationOpen(excluded, now());
+  withChoice(excluded, "off", now());
+  const session = await sessionOf(SOURCE);
+  const grant = canReadProtected(session, { audience: "approved-supporter", reader: { recipientId: excluded.recipientId, publisherId: excluded.publisherId, purpose: excluded.purpose, memberships: [excluded] } });
+  expect(grant.allowed).toBe(false);
+  expect(excluded).toEqual(untouched);
+});
+it("the states and the choices stay honest: unsubscribes one publisher and one purpose, and leaves every other fact alone", async () => {
+  const step = await openedProofStep();
+  expect(acceptedFrom(await mutations.audience.confirmMembership(confirmInput(step, "rev-1"), SOURCE)).revision).toBe("rev-2");
+  expect(acceptedFrom(await mutations.audience.setPreference(preferenceInput(step, "rev-2", { choice: "immediate", languagePreference: "fr" }), SOURCE)).revision).toBe("rev-3");
+  const elsewhere = await mutations.audience.unsubscribe({ operationId: newOperationId(), scope: step.scope, expectedRevision: "rev-3", payload: { publisherId: OTHER_PUBLISHER, purpose: UPDATE_EMAIL_PURPOSE } }, SOURCE); // Another publisher is not addressed, so the act turns nothing off and advances no revision.
+  expect([named(elsewhere), unchangedRevision(elsewhere)]).toEqual(["unchanged", "rev-3"]);
+  const otherPurpose = { ...unsubscribeInput(step, "rev-3"), payload: { publisherId: step.publisherId, purpose: "newsletter" } } as unknown as UnsubscribeArgs; // A purpose this release keeps no memberships for is refused rather than widened to the one it does keep: one purpose is the whole vocabulary.
+  const widened = await mutations.audience.unsubscribe(otherPurpose, SOURCE);
+  expect(named(widened)).toBe("invalid");
+  expect(fieldMessages(widened, "purpose").length).toBeGreaterThan(0);
+  const addressed = unsubscribeInput(step, "rev-3");
+  expect(acceptedFrom(await mutations.audience.unsubscribe(addressed, SOURCE)).revision).toBe("rev-4");
+  const receipt = replayedResult(await mutations.audience.unsubscribe(addressed, SOURCE));
+  expect([textOf(receipt, "publisherId"), textOf(receipt, "purpose"), textOf(receipt, "state"), textOf(receipt, "choice"), booleanOf(receipt, "claimsRecall")]).toEqual([step.publisherId, UPDATE_EMAIL_PURPOSE, "off", "off", false]);
+  expect(named(await mutations.audience.setPreference(preferenceInput(step, "rev-4", { choice: "off", languagePreference: "fr" }), SOURCE))).toBe("unchanged");
+});
+it("a reader confirms the membership its own session holds: confirms the seeded awaiting-proof membership one second before its seeded deadline, and a repeat changes nothing", async () => {
+  const seeded = await seededSubscriberRow();
+  const scope = await subscriberScope();
+  expect([seeded.membershipId, seeded.state]).toEqual([scope.principalId, "awaiting-proof"]);
+  expect(seeded.acceptedAt).toBe(SUBSCRIBER_ACCEPTED_AT.toString()); // The acceptance and the deadline are the ones the seed recorded, so the boundary below is this record's own 168 hours rather than an interval the case chose.
+  const deadline = Temporal.Instant.from(String(seeded.confirmationDeadline));
+  expect([deadline.toString(), elapsedMilliseconds(SUBSCRIBER_ACCEPTED_AT, deadline)]).toEqual(["2026-11-23T12:00:00Z", WINDOW_MILLISECONDS]);
+  const lastSecondInside = deadline.subtract({ seconds: 1 });
+  await setSessionClockTo(SUBSCRIBER_SESSION_ID, lastSecondInside);
+  expect(openWindowAt(SUBSCRIBER_ACCEPTED_AT, now()).deadlineInstant.equals(deadline)).toBe(true);
+  const confirmation: ConfirmArgs = { operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } };
+  expect(acceptedFrom(await mutations.audience.confirmMembership(confirmation, SUBSCRIBER_SOURCE)).revision).toBe("rev-2");
+  const receipt = replayedResult(await mutations.audience.confirmMembership(confirmation, SUBSCRIBER_SOURCE));
+  expect([textOf(receipt, "state"), nullableTextOf(receipt, "confirmedAt")]).toEqual(["active", lastSecondInside.toString()]);
+  // A repeat proves nothing further: the row is active at the revision the acceptance reached, so a fresh attempt presenting that revision answers `unchanged` and records no second acceptance.
+  const repeated = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: "rev-2", payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
+  expect([named(repeated), unchangedRevision(repeated)]).toEqual(["unchanged", "rev-2"]);
+});
+it("a reader confirms the membership its own session holds: refuses the same confirmation at exactly the seeded deadline and leaves the record confirmable a second earlier", async () => {
+  const seeded = await seededSubscriberRow();
+  const scope = await subscriberScope();
+  const deadline = Temporal.Instant.from(String(seeded.confirmationDeadline));
+  await setSessionClockTo(SUBSCRIBER_SESSION_ID, deadline);
+  expect(closedWindowAt(SUBSCRIBER_ACCEPTED_AT, now()).deadlineInstant.equals(deadline)).toBe(true); // The boundary instant itself is outside the window: it is the first instant the module reports as expired, and it is exactly the deadline the record's own acceptance fixed.
+  const refused = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
+  expect(named(refused)).toBe("invalid");
+  const expiry = firstMessageAbout(refused, "membershipId");
+  expect(expiry.startsWith("confirmation-expired:")).toBe(true);
+  expect(instantsIn(expiry).map((instant) => instant.toString())).toEqual([deadline.toString()]);
+  expect(expiry.startsWith("not-awaiting-proof")).toBe(false);
+  await setSessionClockTo(SUBSCRIBER_SESSION_ID, deadline.subtract({ seconds: 1 }));
+  const inside = await mutations.audience.confirmMembership({ operationId: newOperationId(), scope, expectedRevision: seeded.revision, payload: { membershipId: seeded.membershipId } }, SUBSCRIBER_SOURCE);
+  expect(acceptedFrom(inside).revision).toBe("rev-2");
 });

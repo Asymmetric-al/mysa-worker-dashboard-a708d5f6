@@ -38,8 +38,7 @@ function admitReading(query: ReadingQuery): ReadingAdmission {
   return !query.protectedEdition && !isDirectlyReadable(published) ? { status: "refused", reason: "unreleased" } : { status: "admitted", revisionId: text(published.revisionId) };
 }
 const admittedRenditionIds = (renditionIds: readonly string[] | undefined): readonly string[] => (Array.isArray(renditionIds) ? [...new Set(renditionIds.map(text).filter((id) => id.length > 0))] : []);
-/** Decides one preview: whether the acknowledged revision of this edition may be rendered by this principal, and what that answer admits. */
-export function authorisePreview(input: PreviewInput): PreviewDecision {
+/** Decides one preview: whether the acknowledged revision of this edition may be rendered by this principal, and what that answer admits. */ export function authorisePreview(input: PreviewInput): PreviewDecision {
   const submitted: unknown = input;
   if (submitted === undefined || submitted === null) return deny("not-authorised");
   const principalId = text(input.principal?.principalId);
@@ -60,9 +59,8 @@ export function authorisePreview(input: PreviewInput): PreviewDecision {
   const workingAuthority = isAuthor || reviewerAuthority;
   let admittedRevisionId: string | undefined;
   if (workingAuthority) {
-    if (isAuthor && acknowledgedRevisionId.length > 0 && acknowledgedRevisionId === text(variant.draftRevisionId)) {
-      admittedRevisionId = acknowledgedRevisionId;
-    } else if (reviewerAuthority && candidate !== undefined && candidate !== null && acknowledgedRevisionId.length > 0 && acknowledgedRevisionId === text(candidate.revisionId)) admittedRevisionId = acknowledgedRevisionId;
+    if (isAuthor && acknowledgedRevisionId.length > 0 && acknowledgedRevisionId === text(variant.draftRevisionId)) admittedRevisionId = acknowledgedRevisionId;
+    else if (reviewerAuthority && candidate !== undefined && candidate !== null && acknowledgedRevisionId.length > 0 && acknowledgedRevisionId === text(candidate.revisionId)) admittedRevisionId = acknowledgedRevisionId;
   }
   let readingRefusal: PreviewDenialReason | undefined;
   if (admittedRevisionId === undefined) {

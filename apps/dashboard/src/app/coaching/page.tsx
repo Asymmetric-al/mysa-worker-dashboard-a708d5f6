@@ -12,12 +12,9 @@ import SharingSummaryLocale from "./sharing-summary-locale";
 type CoachingOverviewEnvelope = Extract<Awaited<ReturnType<typeof reads.coaching.readCoachingOverview>>, { kind: "envelope" }>["envelope"];
 type CoachingOverview = CoachingOverviewEnvelope["data"];
 type CoachingRelationship = CoachingOverview["relationships"][number];
-type RelationshipDuration = CoachingRelationship["duration"];
 type PreparationRecordView = CoachingOverview["preparation"][number];
-type PreparationView = PreparationSurfaceProps["preparation"];
 export const metadata: Metadata = { title: COACHING_COPY.overview.heading };
-/** The path this page answers on: the destination strip marks it as the destination the reader is on, and nothing else. */
-const PAGE_PATH = "/coaching";
+/** The path this page answers on: the destination strip marks it as the destination the reader is on, and nothing else. */ const PAGE_PATH = "/coaching";
 const DESTINATIONS = [
   { href: PAGE_PATH, label: COACHING_COPY.overview.heading },
   { href: "/coaching/targets", label: COACHING_COPY.targets.heading },
@@ -39,13 +36,13 @@ function currentPreparationOf(records: CoachingOverview["preparation"]): Prepara
   }
   return current ?? records[0] ?? null;
 }
-function preparationViewOf(overview: CoachingOverview): PreparationView {
+function preparationViewOf(overview: CoachingOverview): PreparationSurfaceProps["preparation"] {
   const record = currentPreparationOf(overview.preparation);
   if (record === null) return null;
   return { body: record.body ?? "", updatedOn: record.updatedOn, audience: "private" };
 }
 const outcomeOf = (reached: boolean): SharingOutcome => (reached ? "reached" : "not-reached");
-function durationViewOf(duration: RelationshipDuration): GrantDurationView {
+function durationViewOf(duration: CoachingRelationship["duration"]): GrantDurationView {
   if (duration.kind === "ongoing") return { kind: "ongoing" };
   if (duration.kind === "none") return { kind: "none" };
   return { kind: "through-date", throughDate: duration.shareThroughDate };
@@ -63,12 +60,10 @@ function grantViewOf(relationship: CoachingRelationship): CoachingGrantView {
     outcomes: { delivery: outcomeOf(relationship.outcomes.invitationIssued), identityVerification: outcomeOf(relationship.outcomes.identityVerified), acceptance: outcomeOf(relationship.outcomes.accepted), access: outcomeOf(relationship.outcomes.accessLive) },
   };
 }
-/** One relationship's reviewed range in the summary's own shape, with nothing derived here: the read computed the figure. */
-const financialRangeOf = (relationship: CoachingRelationship): FinancialRange | null =>
+/** One relationship's reviewed range in the summary's own shape, with nothing derived here: the read computed the figure. */ const financialRangeOf = (relationship: CoachingRelationship): FinancialRange | null =>
   relationship.financialRange === null ? null : { from: relationship.financialRange.from, to: relationship.financialRange.to, currency: relationship.financialRange.currency, money: relationship.financialRange.money, valueState: relationship.financialRange.valueState };
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: 1, denied: { title: COACHING_COPY.overview.heading }, unavailable: { title: COACHING_COPY.overview.heading, body: COACHING_COPY.overview.unavailable }, refused: { title: COACHING_COPY.overview.heading } };
-/** The worker's coaching overview. */
-export default async function CoachingPage(): Promise<ReactElement> {
+/** The worker's coaching overview. */ export default async function CoachingPage(): Promise<ReactElement> {
   const result = await reads.coaching.readCoachingOverview();
   if (result.kind !== "envelope") return pageRefusalOf(result, NOTICE_COPY);
   const overview = result.envelope.data;

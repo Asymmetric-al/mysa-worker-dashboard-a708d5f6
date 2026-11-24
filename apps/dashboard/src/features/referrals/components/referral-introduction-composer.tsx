@@ -1,7 +1,5 @@
 "use client";
-/**
- * The referral introduction composer: the one surface that records an original introduction, and the only composition of the family's introduction form. `ReferralIntroductionForm` asks only for the date the introduction happened and the precision it is known to, because every other part of its payload is a fact a record holds — the partner the introduction refers to, the revision the view read, and the provenance. Those are supplied here, and none is invented: a default system name, a generated reference or a zone taken from a display preference would each be a claim the record makes and no source asserts. The form appears only once all four values parse, so this surface states what is still needed rather than offering a submission the service would refuse.
- */
+/** The referral introduction composer: the one surface that records an original introduction, and the only composition of the family's introduction form. `ReferralIntroductionForm` asks only for the date the introduction happened and the precision it is known to, because every other part of its payload is a fact a record holds — the partner the introduction refers to, the revision the view read, and the provenance. Those are supplied here, and none is invented: a default system name, a generated reference or a zone taken from a display preference would each be a claim the record makes and no source asserts. The form appears only once all four values parse, so this surface states what is still needed rather than offering a submission the service would refuse. */
 import { useCallback, useId, useState, type ReactElement } from "react";
 import FormField from "@/components/form-field";
 import { StateNotice } from "@/components/state-notice";
@@ -17,7 +15,6 @@ const COMPOSER_SECTION_ID = "record-introduction";
 /** The address of this composer's own section, stated once so the control a surface offers and the section it lands on cannot drift apart. */
 export const INTRODUCTION_COMPOSER_ANCHOR = `#${COMPOSER_SECTION_ID}`;
 const PARTNER_FIELD = "partnerId"; // The field names a refusal is anchored to are the payload's own paths, so a provenance refusal lands on the control that states the value rather than on the form.
-const SOURCE_ZONE_FIELD = "sourceZone";
 /** One partner the composing route offers for selection, and the candidate read it supplies: the eligible partners themselves, or the reason it could not enumerate them. */
 export type ReferralIntroductionCandidate = { readonly partnerId: string; readonly displayName: string };
 export type ReferralIntroductionCandidates = { readonly state: "available"; readonly partners: readonly ReferralIntroductionCandidate[] } | { readonly state: "unavailable"; readonly source: SourceReference };
@@ -50,7 +47,7 @@ const COMPOSER_COPY = {
 const PROVENANCE_FIELDS = [
   { key: "system", path: "sourceReference.system", label: COMPOSER_COPY.systemLabel, help: COMPOSER_COPY.systemHelp, width: "sm:max-w-96", part: COMPOSER_COPY.systemPart },
   { key: "reference", path: "sourceReference.reference", label: COMPOSER_COPY.referenceLabel, help: COMPOSER_COPY.referenceHelp, width: "sm:max-w-96", part: COMPOSER_COPY.referencePart },
-  { key: "sourceZone", path: SOURCE_ZONE_FIELD, label: COMPOSER_COPY.zoneLabel, help: COMPOSER_COPY.zoneHelp, width: "sm:max-w-60", part: COMPOSER_COPY.zonePart },
+  { key: "sourceZone", path: "sourceZone", label: COMPOSER_COPY.zoneLabel, help: COMPOSER_COPY.zoneHelp, width: "sm:max-w-60", part: COMPOSER_COPY.zonePart },
 ] as const;
 /** The messages a reference pair's refusal states, keyed by the field each one is about, in the schema's own words. */
 function referenceRefusalMessages(parsed: ReturnType<typeof sourceReferenceSchema.safeParse>): Readonly<Record<string, string | undefined>> {
@@ -88,9 +85,7 @@ export function ReferralIntroductionComposer({ scope, expectedRevision, candidat
   return (
     <section id={COMPOSER_SECTION_ID} aria-labelledby={headingId} data-slot="referral-introduction-composer" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="type-section-title text-pretty wrap-anywhere">
-          {COMPOSER_COPY.heading}
-        </h2>
+        <h2 {...{ id: headingId, className: "type-section-title text-pretty wrap-anywhere" }}>{COMPOSER_COPY.heading}</h2>
         <p className="type-supporting max-w-prose text-pretty wrap-anywhere">{COMPOSER_COPY.help}</p>
       </div>
       {candidates.state === "unavailable" ? (
@@ -102,19 +97,8 @@ export function ReferralIntroductionComposer({ scope, expectedRevision, candidat
         <>
           <FormField name={PARTNER_FIELD} label={COMPOSER_COPY.partnerLabel} required>
             {(control) => (
-              <NativeSelect
-                id={control.id}
-                value={partnerId}
-                aria-describedby={control.describedBy}
-                aria-required={control.required ? true : undefined}
-                onChange={(event) => {
-                  setPartnerId(event.currentTarget.value);
-                }}
-                className="w-full sm:max-w-96"
-              >
-                <NativeSelectOption value="" disabled>
-                  {COMPOSER_COPY.partnerPlaceholder}
-                </NativeSelectOption>
+              <NativeSelect id={control.id} value={partnerId} aria-describedby={control.describedBy} aria-required={control.required ? true : undefined} onChange={(event) => setPartnerId(event.currentTarget.value)} className="w-full sm:max-w-96">
+                <NativeSelectOption {...{ value: "", disabled: true }}>{COMPOSER_COPY.partnerPlaceholder}</NativeSelectOption>
                 {partners.map((candidate) => (
                   <NativeSelectOption key={candidate.partnerId} value={candidate.partnerId}>
                     {candidate.displayName}
@@ -132,9 +116,7 @@ export function ReferralIntroductionComposer({ scope, expectedRevision, candidat
                   aria-describedby={control.describedBy}
                   aria-invalid={control.invalid ? true : undefined}
                   aria-required={control.required ? true : undefined}
-                  onChange={(event) => {
-                    setProvenanceField(entry.key, event.currentTarget.value);
-                  }}
+                  onChange={(event) => setProvenanceField(entry.key, event.currentTarget.value)}
                   className={cn("w-full", entry.width)}
                 />
               )}

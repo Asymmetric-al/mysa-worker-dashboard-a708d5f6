@@ -55,20 +55,15 @@ async function routeRead(params: URLSearchParams): Promise<Response> {
       return assertNever(view.data.view, "Unhandled Page read");
   }
 }
-/** One of the five named Page reads — `catalogues`, `documents`, `page`, `locales` or `giving-binding` — answered as its own read envelope, or as the denial or outage the read itself reports. */
 const readPages = (request: NextRequest): Promise<Response> => routeRead(new URL(request.url).searchParams).catch((error: unknown) => toResponse(outcomeFromError(READ_ATTEMPT_ID, error)));
-type CreateVariantPayload = Parameters<typeof mutations.pages.createVariant>[1]["payload"];
-type SaveDraftPayload = Parameters<typeof mutations.pages.saveDraft>[1]["payload"];
 type Routed<P> = P & { readonly operation: string };
-const createVariantBodySchema = mutationInputSchema(z.custom<Routed<CreateVariantPayload>>());
-const saveDraftBodySchema = mutationInputSchema(z.custom<Routed<SaveDraftPayload>>());
+const createVariantBodySchema = mutationInputSchema(z.custom<Routed<Parameters<typeof mutations.pages.createVariant>[1]["payload"]>>());
+const saveDraftBodySchema = mutationInputSchema(z.custom<Routed<Parameters<typeof mutations.pages.saveDraft>[1]["payload"]>>());
 const PAGE_OPERATIONS = ["createVariant", "saveDraft"] as const;
-type PageOperation = (typeof PAGE_OPERATIONS)[number];
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(PAGE_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
 const WRITES = {
   createVariant: (raw, { operationId, sessionId }) => dispatch(createVariantBodySchema, raw, operationId, "operation", (input) => mutations.pages.createVariant(sessionId, input)),
   saveDraft: (raw, { operationId, sessionId }) => dispatch(saveDraftBodySchema, raw, operationId, "operation", (input) => mutations.pages.saveDraft(sessionId, input)),
-} satisfies Readonly<Record<PageOperation, ClaimedWrite>>;
-/** One named edition mutation — `createVariant` or `saveDraft` — selected by `payload.operation`, answered as exactly one of the eight outcomes under the caller's own operation id. */
+} satisfies Readonly<Record<(typeof PAGE_OPERATIONS)[number], ClaimedWrite>>;
 const changeEdition = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, WRITES);
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readPages, POST: changeEdition });

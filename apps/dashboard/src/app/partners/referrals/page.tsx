@@ -11,10 +11,8 @@ export const metadata: Metadata = { title: LIST_COPY.heading };
 const FIRST_PAGE = 1;
 const DEFAULT_LIST_QUERY: ReferralListQuery = { list: DEFAULT_REFERRAL_VIEW, search: "", page: FIRST_PAGE, pageSize: DEFAULT_REFERRAL_PAGE_SIZE };
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: 1, denied: { title: LIST_COPY.heading }, unavailable: { title: LIST_COPY.heading }, refused: { title: LIST_COPY.heading } };
-/** The partner roster's first page. This read counts pages from zero, so the first page is page `0`. */
-const CANDIDATE_PAGE_INDEX = 0;
-/** The roster's documented page ceiling (AAP 0.8.7): the most one read returns, so the most this page can enumerate. */
-const CANDIDATE_PAGE_SIZE = 200;
+/** The partner roster's first page. This read counts pages from zero, so the first page is page `0`. */ const CANDIDATE_PAGE_INDEX = 0;
+/** The roster's documented page ceiling (AAP 0.8.7): the most one read returns, so the most this page can enumerate. */ const CANDIDATE_PAGE_SIZE = 200;
 /** The answer this page gives the introduction composer when it cannot hand it a whole eligible set: it names the composition itself as the source, exactly as the initiative detail does when no read supplies a candidate set at all. A partial set is never passed off as the eligible set: a partner left out of it would be a partner the surface silently could not record an introduction against. */
 const CANDIDATES_UNCOMPOSED: ReferralIntroductionCandidates = { state: "unavailable", source: { system: "page-composition", reference: "eligible-partner-candidates" } };
 /** The eligible-partner set this page composes for the introduction composer: an introduction names the partner it happened with, so the composer needs the whole set it may offer, and the partner roster is the one read whose job is to enumerate readable partners. A worker-private preparation record is a different record class from a shared relationship — the service refuses one as the subject of a referral — so the private records a readable roster also carries are left out here rather than offered and then refused. The set is passed whole or not at all: a roster larger than one page is not enumerable here, so the composer is told it holds no answer instead of being handed the first page as though it were the set. */

@@ -28,7 +28,6 @@ const FIRST_KIB_BYTES = 1024; // The `Range` this file asks for: the first kibib
 const BYTE_RANGE_HEADER = `bytes=0-${String(FIRST_KIB_BYTES - 1)}`;
 const PRIVATE_MEDIA_MARKERS = ["welcome-sunday-raw.mp4", "evening-talk-raw.mp4", "media-originals", "public/fixtures", "IMG_20260814"] as const; // The addresses a media response may never carry: the opaque source reference of the seeded original, and the store's own custody paths.
 /** What a rendition address is never: a static file under the application's public directory, a blob URL, a data URL, or another origin. */
-const PUBLIC_PATH_MARKERS = ["/fixtures/", "/public/", "blob:", "data:", "http://", "https://"] as const;
 const MEDIA_ROUTE = /^\/api\/media\/[A-Za-z0-9][A-Za-z0-9._:-]*\/[A-Za-z0-9][A-Za-z0-9._:%-]*$/u; // The address every rendition is served from, and the only shape a rendition address may have.
 const MEDIA_IN_MARKUP = [/<img\b/iu, /<video\b/iu, /<audio\b/iu, /<source\b/iu, /<track\b/iu, /<iframe\b/iu, /<object\b/iu, /<embed\b/iu, /autoplay/iu, /poster=/iu] as const; // The measure of the criterion's "no media in the notice": every element that would carry an image, a video, a player, a poster or a track.
 const actAsPersona = async (page: Page, persona: PersonaName): Promise<void> => actAs(page, SEEDED_PERSONAS[persona].sessionId); // Puts one seeded persona's session in the browser context's jar, which is the whole of the identity a request is authorised as.
@@ -71,7 +70,6 @@ const PREPARATION_TIMEOUT_MS = 120_000;
 const POLLED_CLICK_TIMEOUT_MS = 2_000; // How long one attempt to switch the media pane's list may wait for the control to answer.
 const SHOW_PLACEMENTS_TIMEOUT_MS = 30_000; // How long the video list may take to be the panel on screen, which covers a reload's own hydration.
 const SHOW_PLACEMENTS_INTERVALS_MS = [250, 500, 1_000, 2_000]; // How often the list is asked for again, so a surface still settling is not clicked in a tight loop.
-const pickerOf = (page: Page, kind: "image" | "video"): Locator => page.locator(`[data-slot="media-picker"][data-kind="${kind}"]`);
 const mediaPaneOf = (page: Page): Locator => page.locator('[data-slot="editor-media-pane"]');
 async function openEditor(page: Page): Promise<void> {
   await page.goto(EDITOR_PATH); // Opens the protected edition's editor and waits for the editing surface itself rather than for a spinner.
@@ -82,7 +80,7 @@ async function openPicker(page: Page, kind: "image" | "video"): Promise<Locator>
   await mediaPaneOf(page) // Opens the picker for one kind of media from the editor's own add action, and waits for its first step.
     .getByRole("button", { name: kind === "video" ? "Add a video" : "Add an image", exact: true })
     .click();
-  const picker = pickerOf(page, kind);
+  const picker = page.locator(`[data-slot="media-picker"][data-kind="${kind}"]`);
   await expect(picker).toBeVisible();
   await expect(picker).toHaveAttribute("data-phase", "choosing");
   return picker;
@@ -108,10 +106,9 @@ async function showVideoPlacements(page: Page): Promise<void> {
 }
 type VideoPlacementInput = { readonly file: string; readonly altText?: string; readonly caption?: string; readonly credit?: string; readonly language?: string; readonly transcript?: string; readonly poster?: string | null; readonly captions?: string | null; readonly trackLabel?: string };
 /** The placement's caption field, told apart from the caption-track file input the video picker offers beside it. */
-const captionFieldOf = (picker: Locator): Locator => picker.getByLabel(/^Caption(?! track)/u);
 async function describePlacement(picker: Locator, input: VideoPlacementInput): Promise<void> {
   await picker.getByLabel(/^Alternative text/u).fill(input.altText ?? PLACEMENT_TEXT.altText); // The labels carry a required marker or an "(optional)" suffix, so each field is addressed by the start of the label a person reads rather than by text that would have to guess which of the two it is.
-  await captionFieldOf(picker).fill(input.caption ?? PLACEMENT_TEXT.caption);
+  await picker.getByLabel(/^Caption(?! track)/u).fill(input.caption ?? PLACEMENT_TEXT.caption);
   await picker.getByLabel(/^Credit/u).fill(input.credit ?? PLACEMENT_TEXT.credit);
   await picker.getByLabel(/^Language/u).fill(input.language ?? PLACEMENT_TEXT.language);
   await picker.getByLabel(/^Transcript/u).fill(input.transcript ?? TRANSCRIPT_TEXT);
@@ -172,7 +169,6 @@ async function submitNotice(page: Page, releaseId: string): Promise<unknown> {
   if (outcomeOf(body) !== "accepted") throw new Error(`The notice was not submitted, so the inbox this test reads would hold nothing: ${JSON.stringify(body).slice(0, 600)}`);
   return body;
 }
-const readInbox = async (page: Page): Promise<unknown> => jsonOf(await page.request.get("/api/inbox"), "GET /api/inbox");
 const placementFact = async (row: Locator, label: string): Promise<string> => (await row.locator(`dt:text-is("${label}") + dd`).innerText()).trim(); // The value the placement row states for one label, so "the video carries no caption track" is read rather than inferred.
 async function holdNextRegistration(page: Page): Promise<{ readonly reached: Promise<void>; readonly release: () => void }> {
   let signalReached = (): void => {}; // Holds the next registration request open, so the picker's *preparing* state is observed while it lasts rather than
@@ -359,7 +355,7 @@ test("every rendition is served by the application's own scoped route, and a byt
     ["caption track", seededCaptions],
   ] as const) {
     expect(address ?? "", `the ${what} address is this application's own rendition route`).toMatch(MEDIA_ROUTE);
-    for (const marker of PUBLIC_PATH_MARKERS) expect(address ?? "", `the ${what} address is never a static public path (${marker})`).not.toContain(marker);
+    for (const marker of ["/fixtures/", "/public/", "blob:", "data:", "http://", "https://"] as const) expect(address ?? "", `the ${what} address is never a static public path (${marker})`).not.toContain(marker);
   }
   const whole = await requestRendition(page, seededPlayback ?? "");
   expect(whole.status, "the whole playback rendition is served to the contributor").toBe(200);
@@ -484,7 +480,7 @@ test("a protected notice carries no protected prose or media, and the link it ca
   const draft = await readDraftEdition(page);
   expect(released.revisionId, "the release published the revision that carries the video").toBe(draft.revisionId);
   const intentId = stringAt(await submitNotice(page, released.releaseId), ["created", "0"], "The intent the notice created");
-  const inbox = await readInbox(page);
+  const inbox = await jsonOf(await page.request.get("/api/inbox"), "GET /api/inbox");
   expect(numberAt(inbox, ["data", "intentCount"], "Messages in this inbox"), "--- what the message really is: a sender, a subject and a link ------------------------------; --- the notice, submitted through its own handler -------------------------------------------").toBe(1);
   const messages = arrayAt(inbox, ["data", "messages"], "The inbox's messages");
   expect(messages).toHaveLength(1);

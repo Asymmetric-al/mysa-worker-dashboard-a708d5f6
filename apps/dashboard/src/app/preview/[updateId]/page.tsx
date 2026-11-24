@@ -2,32 +2,28 @@ import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { ReceivingPost } from "@/features/audience/components/receiving-post";
 import { reads, type Scope } from "@/modules/data-service";
-type DevelopmentRead = Awaited<ReturnType<typeof reads.dev.readDevState>>;
 type SearchParams = Record<string, string | string[] | undefined>;
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Receiving preview" };
-const LOCALE_PARAM = "locale";
-const VARIANT_PARAM = "variant";
 const MAX_LOCALE_TAG_LENGTH = 35;
 // A variant identity is one opaque reference naming a document, an audience and a language tag, so a stated value longer than this cannot name an edition of this application.
 const MAX_VARIANT_REFERENCE_LENGTH = 200;
 const NO_AUTHORITY_SCOPE: Scope = { organizationId: "" as Scope["organizationId"], ministryId: "" as Scope["ministryId"], supportSubjectId: "" as Scope["supportSubjectId"], principalId: "" as Scope["principalId"] };
-const UNNAMED_PERSONA = "this session's admitted reader";
-function personaLabelOf(development: DevelopmentRead): string | undefined {
+function personaLabelOf(development: Awaited<ReturnType<typeof reads.dev.readDevState>>): string | undefined {
   if (development.kind !== "envelope") return undefined;
   const { activePersonaId, personaCatalogue } = development.envelope.data;
   if (activePersonaId === null) return undefined;
   return personaCatalogue.personas.find((persona) => persona.id === activePersonaId)?.label;
 }
 function requestedLocaleFrom(searchParams: SearchParams): string | undefined {
-  const stated = searchParams[LOCALE_PARAM];
+  const stated = searchParams["locale"];
   if (typeof stated !== "string") return undefined;
   const trimmed = stated.trim();
   if (trimmed.length === 0 || trimmed.length > MAX_LOCALE_TAG_LENGTH) return undefined;
   return trimmed;
 }
 function requestedVariantFrom(searchParams: SearchParams): string | undefined {
-  const stated = searchParams[VARIANT_PARAM];
+  const stated = searchParams["variant"];
   if (typeof stated !== "string") return undefined;
   const trimmed = stated.trim();
   if (trimmed.length === 0 || trimmed.length > MAX_VARIANT_REFERENCE_LENGTH) return undefined;
@@ -40,5 +36,5 @@ export default async function ReceivingPostPage({ params, searchParams }: { para
   const variant = requestedVariantFrom(stated);
   const [post, development] = await Promise.all([reads.audience.readReceivingPost({ updateId, locale, variant }), reads.dev.readDevState()]);
   const scope = post.kind === "envelope" ? post.envelope.scope : NO_AUTHORITY_SCOPE;
-  return <ReceivingPost scope={scope} params={{ updateId, locale, variant }} initialEnvelope={post} persona={personaLabelOf(development) ?? UNNAMED_PERSONA} />;
+  return <ReceivingPost scope={scope} params={{ updateId, locale, variant }} initialEnvelope={post} persona={personaLabelOf(development) ?? "this session's admitted reader"} />;
 }

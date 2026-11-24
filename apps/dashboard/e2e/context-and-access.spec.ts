@@ -1,6 +1,6 @@
 /** Criterion 19 — context and access. */
 import type { APIResponse, Page } from "@playwright/test";
-import { test, expect, actAs, fieldAt, isRecord, parseJson, stringAt } from "../playwright.config"; // The development session cookie is the whole of the identity this application authorises a request as — `src/proxy.ts` mints it and `data-service/authorize.ts` resolves it — so a spec acts as a seeded identity by naming that identity's session in the jar, which is exactly what the runner's own `seedReset` fixture does. Reading the cookie's name from the runner rather than repeating the literal is what keeps this file from silently acting as the default identity if the name ever changes.
+import { test, expect, actAs, fieldAt, isRecord, newAttemptId, parseJson, scopeAt, stringAt } from "../playwright.config"; // The development session cookie is the whole of the identity this application authorises a request as — `src/proxy.ts` mints it and `data-service/authorize.ts` resolves it — so a spec acts as a seeded identity by naming that identity's session in the jar, which is exactly what the runner's own `seedReset` fixture does. Reading the cookie's name from the runner rather than repeating the literal is what keeps this file from silently acting as the default identity if the name ever changes.
 const OWNER_SESSION = "established-worker";
 const UNAUTHORISED_READER_SESSION = "reader-unauthorized"; // A seeded reader holding no grant of any kind: the persona whose refusal must disclose nothing.
 const REFUSED_SESSIONS = [
@@ -36,8 +36,8 @@ interface OutsideCall {
   readonly secondWorker: "refused" | "own-scope" | "own-scope-empty-roster"; // What the second worker receives.
 }
 /** The `<p>`-level lines of a rendered edition, with tags removed and whitespace collapsed. */
-function paragraphsOf(renderedHtml: string): readonly string[] {
-  return renderedHtml
+const paragraphsOf = (renderedHtml: string): readonly string[] =>
+  renderedHtml
     .split(/<\/(?:p|h1|h2|h3|h4|li)>/u)
     .map((chunk) =>
       chunk
@@ -46,8 +46,7 @@ function paragraphsOf(renderedHtml: string): readonly string[] {
         .trim(),
     )
     .filter((line) => line.length > 0);
-}
-/** The origin the application is served from, taken from a response the browser's own request context */
+/** Makes one GET and states the answer with its body as text, labelled with the job the call performs. */
 async function get(page: Page, label: string, path: string): Promise<Probe> {
   const response = await page.request.get(path); // One GET through the browser's own request context, so it carries the cookie jar this test set.
   return { label, response, body: await response.text() };
@@ -189,10 +188,8 @@ test.describe("criterion 19 — context and access", () => {
     const values = await captureOwnerValues(page);
     await expect(page.getByText("Development data", { exact: true })).toHaveCount(1); // The label the specification requires on every screen, asserted where the capture ended: none of the values just read can be mistaken for production data. The exact form is the label itself rather than a mention of it in the development panel's own prose.
     const ownerOnly = ownerOnlyValues(values);
-    expect(
-      ownerOnly.filter((value) => value.trim().length === 0),
-      "every value the outside identities are denied is a value the owner's own surfaces really hold",
-    ).toEqual([]);
+    const blankValues = ownerOnly.filter((value) => value.trim().length === 0);
+    expect(blankValues, "every value the outside identities are denied is a value the owner's own surfaces really hold").toEqual([]);
     expect(new Set(ownerOnly).size, "each captured value is distinct, so no assertion compares a value with itself").toBe(ownerOnly.length);
   });
   test("a second worker in another ministry retrieves none of the owner's records", async ({ page }) => {
@@ -290,5 +287,27 @@ test.describe("criterion 19 — context and access", () => {
     await expect(page.getByRole("button", { name: /Active context: .*Youth Ministry/u })).toBeVisible();
     await expect(youthGift).toHaveCount(1);
     await expect.poll(() => reads.length, { message: "the first context is read again rather than restored from a cached envelope" }).toBeGreaterThan(readsBeforeReturn);
+  });
+  test("a state-changing request another site caused is refused before it reaches the store", async ({ page }) => {
+    await actAs(page, OWNER_SESSION);
+    await page.goto("/partners"); // Loads the application from its own origin, so the admitted attempt below states the origin this browser really uses rather than one this file assumed.
+    const ownOrigin = new URL(page.url()).origin;
+    const listPath = "/api/tasks?read=listTasks&list=all&displayTimeZone=UTC&page=1&pageSize=50&sort=dueOn%3Aasc";
+    const before = parseJson((await get(page, "the owner's task list before either attempt", listPath)).body);
+    const scope = scopeAt(before, "The owner's task list");
+    const revision = stringAt(before, ["revision"], "The owner's task list's revision"); // The revision both attempts below present: the first is refused before it can move it, so the second still presents the revision the owner saw.
+    const attempt = (title: string) => ({ operationId: newAttemptId(), scope, expectedRevision: revision, payload: { operation: "createTask", title } });
+    const crossSite = await page.request.post("/api/tasks", { headers: { origin: "https://another-site.example", "sec-fetch-site": "cross-site" }, data: attempt("QA-CSRF-CROSS-SITE") }); // One page from another origin posting a JSON body: the shape a third-party site uses to change this application's state without a preflight.
+    expect(crossSite.status(), "a state-changing request another site caused is refused").toBe(403);
+    const refusal = parseJson(await crossSite.text());
+    expect(fieldAt(refusal, "outcome"), "the refusal is one of the closed outcomes rather than a bare status").toBe("denied");
+    expect(fieldAt(refusal, "reasonCode"), "the refusal states a reason that reveals nothing about a record it never read").toBe("no-permission");
+    const afterRefusal = await get(page, "the owner's task list after the cross-site attempt", listPath);
+    expect(afterRefusal.body, "the refused attempt created nothing").not.toContain("QA-CSRF-CROSS-SITE");
+    const sameOrigin = await page.request.post("/api/tasks", { headers: { origin: ownOrigin, "sec-fetch-site": "same-origin" }, data: attempt("QA-CSRF-SAME-ORIGIN") }); // The same body from the application's own origin, so the refusal above is this request's origin rather than the attempt's shape.
+    expect(sameOrigin.status(), "the application's own request is still applied").toBe(200);
+    expect(fieldAt(parseJson(await sameOrigin.text()), "outcome"), "the admitted attempt is accepted").toBe("accepted");
+    const afterAdmitted = await get(page, "the owner's task list after the admitted attempt", listPath);
+    expect(afterAdmitted.body, "the admitted attempt is the one that reached the store").toContain("QA-CSRF-SAME-ORIGIN");
   });
 });

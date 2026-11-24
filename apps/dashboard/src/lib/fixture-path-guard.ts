@@ -1,6 +1,5 @@
 /** The one decision about the committed media-fixture directory: whether a request path resolves into it. */
-/** Percent-decoding passes a path is unwrapped through before it is taken as it stands. */
-const MAX_DECODE_PASSES = 5;
+/** Percent-decoding passes a path is unwrapped through before it is taken as it stands. */ const MAX_DECODE_PASSES = 5;
 function decodeSegment(segment: string): string {
   try {
     return decodeURIComponent(segment);
@@ -29,8 +28,7 @@ function resolvedSegments(path: string): string[] {
   }
   return segments;
 }
-/** Whether a request path resolves into the committed media-fixture directory, whatever spelling it arrived in. */
-export function isCommittedMediaFixturePath(rawPath: string): boolean {
+/** Whether a request path resolves into the committed media-fixture directory, whatever spelling it arrived in. */ export function isCommittedMediaFixturePath(rawPath: string): boolean {
   const segments = resolvedSegments(unwrapEncodedPath(rawPath));
   return segments.some((segment, index) => segment === "fixtures" && segments[index + 1] === "media");
 }

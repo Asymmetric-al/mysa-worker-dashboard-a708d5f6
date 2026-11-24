@@ -55,9 +55,8 @@ const checkInIdSchema = z.string({ error: CHECKIN_SCHEMA_MESSAGES.missingCheckIn
 const sharedRevisionIdSchema = z.string({ error: CHECKIN_SCHEMA_MESSAGES.missingSharedRevision }).min(1, CHECKIN_SCHEMA_MESSAGES.missingSharedRevision);
 const questionsSchema = z.array(z.string({ error: CHECKIN_SCHEMA_MESSAGES.questionNotText }), { error: CHECKIN_SCHEMA_MESSAGES.questionNotText });
 const answersSchema = z.array(z.string({ error: CHECKIN_SCHEMA_MESSAGES.answerNotText }), { error: CHECKIN_SCHEMA_MESSAGES.answerNotText });
-type CheckInBody = { readonly questions: readonly string[]; readonly answers: readonly string[] };
 const UTF8_ENCODER = new TextEncoder();
-function applyCheckInLimits(payload: CheckInBody, context: z.RefinementCtx): void {
+function applyCheckInLimits(payload: { readonly questions: readonly string[]; readonly answers: readonly string[] }, context: z.RefinementCtx): void {
   const { questions, answers } = payload;
   if (questions.length > CHECKIN_MAX_QUESTIONS) context.addIssue({ code: "custom", path: ["questions"], message: LIMIT_COPY.questionSetExceeded(questions.length) });
   for (const [index, wording] of questions.entries()) {

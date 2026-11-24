@@ -50,7 +50,6 @@ function refineCalendarDay(value: string, ctx: z.RefinementCtx): void {
   if (!isCalendarDay(value)) ctx.addIssue({ code: "custom", message: MESSAGES.dateInvalid });
 }
 const civilDaySchema = z.string({ error: MESSAGES.dateRequired }).trim().superRefine(refineCalendarDay);
-const optionalCivilDaySchema = z.preprocess((value) => (typeof value === "string" && value.trim().length === 0 ? undefined : value), z.string({ error: MESSAGES.dateInvalid }).trim().superRefine(refineCalendarDay).optional());
 const isReportedCurrency = (value: string): boolean => value !== UNKNOWN_CURRENCY && isKnownCurrency(value);
 const goalSaveFormSchema = z.strictObject({
   currency: z.string({ error: MESSAGES.currencyRequired }).refine(isReportedCurrency, { error: MESSAGES.currencyRequired }),
@@ -92,7 +91,7 @@ export const followUpTaskPayloadSchema = z.strictObject({
   operation: z.literal("createTask").default("createTask"),
   title: titleSchema,
   category: categorySchema,
-  dueOn: optionalCivilDaySchema,
+  dueOn: z.preprocess((value) => (typeof value === "string" && value.trim().length === 0 ? undefined : value), z.string({ error: MESSAGES.dateInvalid }).trim().superRefine(refineCalendarDay).optional()),
   partnerId: partnerIdSchema.optional(),
   kind: z.enum(FOLLOW_UP_TASK_KINDS, { error: MESSAGES.kindInvalid }).default("default"),
 });

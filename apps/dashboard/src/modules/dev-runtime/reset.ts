@@ -26,53 +26,48 @@ const disagreement = (entry: SeededMediaBytes, expected: string, observed: strin
   new Error(`Cannot lay down the seeded media bytes for ${entry.assetId} ${entry.renditionId}: the record that serves them states ${expected}, and the bytes produced from ${entry.fixture} give ${observed}. ${nextStep}`);
 function assertRecordClaimsVerifiedBytes(entry: SeededMediaBytes, asset: SeededMediaAsset): void {
   const verification = asset.tagVerification;
-  if (!verification.checked || verification.residualTags.length > 0) {
+  if (!verification.checked || verification.residualTags.length > 0)
     throw new Error(
       `Cannot lay down the seeded media bytes for ${entry.assetId} ${entry.renditionId}: the record states checked=${String(verification.checked)} with residual tags ${JSON.stringify([...verification.residualTags])}, so it claims no completed metadata check for the bytes it serves. Correct the asset's tagVerification in the seed once the bytes have been verified.`,
     );
-  }
 }
 function assertImageMatchesRecord(entry: SeededMediaBytes, asset: SeededMediaAsset, rendition: SeededRendition, delivered: { format: string; width: number; height: number; mimeType: string }): void {
   const profile = asset.profileCheck;
   const agrees = profile.container === delivered.format && profile.width === delivered.width && profile.height === delivered.height && rendition.mimeType === delivered.mimeType;
-  if (!agrees) {
+  if (!agrees)
     throw disagreement(
       entry,
       `${profile.container} ${String(profile.width)}x${String(profile.height)} served as ${rendition.mimeType}`,
       `${delivered.format} ${String(delivered.width)}x${String(delivered.height)} served as ${delivered.mimeType}`,
       "Re-measure the materialised rendition and correct the seeded profileCheck in seed.ts.",
     );
-  }
 }
 async function assertCopiedRenditionMatchesRecord(entry: SeededMediaBytes, asset: SeededMediaAsset, rendition: SeededRendition, bytes: Uint8Array): Promise<void> {
   switch (rendition.purpose) {
     case "playback": {
       const inspected = await inspectVideo({ bytes });
-      if (inspected.ok === false) {
+      if (inspected.ok === false)
         throw new Error(
           `Cannot lay down the seeded media bytes for ${entry.assetId} ${entry.renditionId}: the video profile refused the committed fixture ${entry.fixture} (${inspected.code}: ${inspected.message}), so the record would describe bytes the application cannot admit. Restore the fixture with \`bun scripts/make-media-fixtures.mjs --check\`.`,
         );
-      }
       const profile = asset.profileCheck;
       const recorded = profile.durationSeconds;
       const measured = inspected.profileCheck;
       const agrees = profile.container === measured.container && profile.codec.includes(measured.codec) && profile.width === measured.width && profile.height === measured.height && recorded !== null && Math.abs(recorded - measured.durationS) < 0.01;
-      if (!agrees) {
+      if (!agrees)
         throw disagreement(
           entry,
           `${profile.container} ${profile.codec} ${String(profile.width)}x${String(profile.height)} for ${String(recorded)} s`,
           `${measured.container} ${measured.codec} ${String(measured.width)}x${String(measured.height)} for ${String(measured.durationS)} s`,
           "Re-inspect the fixture and correct the seeded profileCheck in seed.ts.",
         );
-      }
       return;
     }
     case "poster": {
       const prepared = await prepareDisplayImage({ bytes, assetId: entry.assetId, sourceName: entry.fixture });
       if (prepared.ok === false) throw new Error(`Cannot lay down the seeded media bytes for ${entry.assetId} ${entry.renditionId}: the image pipeline refused the committed poster ${entry.fixture} (${prepared.code}: ${prepared.message}). Restore the fixture with \`bun scripts/make-media-fixtures.mjs --check\`.`);
-      if (prepared.mimeType !== rendition.mimeType || prepared.tagVerification.residualTags.length > 0) {
+      if (prepared.mimeType !== rendition.mimeType || prepared.tagVerification.residualTags.length > 0)
         throw disagreement(entry, `${rendition.mimeType} with no residual metadata`, `${prepared.mimeType} with residual tags ${JSON.stringify([...prepared.tagVerification.residualTags])}`, "Restore the fixture with `bun scripts/make-media-fixtures.mjs --check`, or correct the rendition's mimeType in seed.ts.");
-      }
       return;
     }
     case "captions":
@@ -80,14 +75,13 @@ async function assertCopiedRenditionMatchesRecord(entry: SeededMediaBytes, asset
       const prepared = await prepareRendition({ assetId: entry.assetId, purpose: rendition.purpose, bytes });
       if (prepared.state === "rejected") throw new Error(`Cannot lay down the seeded media bytes for ${entry.assetId} ${entry.renditionId}: the media preparation refused the committed ${entry.fixture} (${prepared.code}: ${prepared.message}). Restore the fixture with \`bun scripts/make-media-fixtures.mjs --check\`.`);
       if (prepared.rendition.mimeType !== rendition.mimeType) throw disagreement(entry, rendition.mimeType, prepared.rendition.mimeType, "Correct the rendition's mimeType in seed.ts, or replace the fixture with a document of the type the record states.");
-      if (!sameBytes(prepared.rendition.bytes, bytes)) {
+      if (!sameBytes(prepared.rendition.bytes, bytes))
         throw disagreement(
           entry,
           "the canonical UTF-8 rendition the preparation produces",
           `different bytes (${String(prepared.rendition.bytes.byteLength)} of ${String(bytes.byteLength)})`,
           "Author the fixture so that it is already the canonical rendition, or record the prepared bytes instead of the fixture in SEEDED_MEDIA_BYTES.",
         );
-      }
       return;
     }
     case "display":
@@ -96,9 +90,8 @@ async function assertCopiedRenditionMatchesRecord(entry: SeededMediaBytes, asset
 }
 async function materialiseSeededRendition(entry: SeededMediaBytes, asset: SeededMediaAsset, rendition: SeededRendition): Promise<void> {
   const bytesRef = seededMediaReference(entry.assetId, entry.file);
-  if (rendition.bytesRef !== bytesRef) {
+  if (rendition.bytesRef !== bytesRef)
     throw new Error(`Cannot lay down the seeded media bytes for ${entry.assetId} ${entry.renditionId}: the record names ${JSON.stringify(rendition.bytesRef)}, and the row in SEEDED_MEDIA_BYTES is written to ${JSON.stringify(bytesRef)}. Correct the row, or the rendition the seed builds from it.`);
-  }
   assertRecordClaimsVerifiedBytes(entry, asset);
   const fixtureBytes = new Uint8Array(await readFile(join(COMMITTED_FIXTURE_DIRECTORY, entry.fixture)));
   if (entry.producedBy === "copy") {
@@ -123,8 +116,7 @@ async function materialiseSeededMedia(sessions: readonly SeededSessionWithDocume
     await materialiseSeededRendition(entry, asset, rendition);
   }
 }
-/** Discards every stored session, re-seeds every seeded one, returns the process clock to the seed instant, and reports what the run did. */
-export async function resetSeed(): Promise<ResetSummary> {
+/** Discards every stored session, re-seeds every seeded one, returns the process clock to the seed instant, and reports what the run did. */ export async function resetSeed(): Promise<ResetSummary> {
   const existingSessionIds = await listSessionIds();
   const sessions = await seed();
   const seededSessionIds = sessions.map((session) => session.sessionId);

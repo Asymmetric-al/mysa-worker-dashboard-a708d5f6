@@ -128,12 +128,8 @@ function TagEntry({ text, onTextChange, pending, error, suggestions, onApply }: 
         {(field) => (
           <div className={CONTROL_ROW_CLASS}>
             <Input id={field.id} value={text} autoComplete="off" aria-describedby={field.describedBy} aria-invalid={field.invalid ? true : undefined} onChange={(event) => onTextChange(event.target.value)} className="min-w-0 flex-1 basis-40" />
-            <Button type="button" className={BUTTON_WRAP_CLASS} disabled={pending || typed === ""} onClick={() => onApply(typed, true)}>
-              {FILING_COPY.addLabel}
-            </Button>
-            <Button type="button" variant="outline" className={BUTTON_WRAP_CLASS} disabled={pending || typed === ""} onClick={() => onApply(typed, false)}>
-              {FILING_COPY.removeLabel}
-            </Button>
+            <Button {...{ type: "button" as const, className: BUTTON_WRAP_CLASS, disabled: pending || typed === "", onClick: () => onApply(typed, true) }}>{FILING_COPY.addLabel}</Button>
+            <Button {...{ type: "button" as const, variant: "outline" as const, className: BUTTON_WRAP_CLASS, disabled: pending || typed === "", onClick: () => onApply(typed, false) }}>{FILING_COPY.removeLabel}</Button>
           </div>
         )}
       </FormField>
@@ -187,6 +183,7 @@ function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckR
     if (trimmed === "") return;
     void tagAttempt.submit({ scope, expectedRevision: record.expectedRevision, payload: { partnerId: record.partnerId, tag: trimmed, present } });
   };
+  const changeFavourite = (next: boolean): void => void favouriteAttempt.submit({ scope, expectedRevision: record.expectedRevision, payload: { partnerId: record.partnerId, favourite: next } });
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <section aria-labelledby={tagsHeadingId} data-slot="record-tags" className={PANEL_CLASS}>
@@ -202,9 +199,7 @@ function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckR
                 <Badge variant="secondary">
                   <bdi className="min-w-0 wrap-anywhere">{held}</bdi>
                 </Badge>
-                <Button type="button" variant="ghost" size="xs" className={BUTTON_WRAP_CLASS} disabled={tagAttempt.pending} aria-label={FILING_COPY.removeTagFromRecord(held)} onClick={() => fileTag(held, false)}>
-                  {FILING_COPY.removeLabel}
-                </Button>
+                <Button {...{ type: "button" as const, variant: "ghost" as const, size: "xs" as const, className: BUTTON_WRAP_CLASS, disabled: tagAttempt.pending, "aria-label": FILING_COPY.removeTagFromRecord(held), onClick: () => fileTag(held, false) }}>{FILING_COPY.removeLabel}</Button>
               </li>
             ))}
           </ul>
@@ -215,20 +210,10 @@ function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckR
       <Separator />
       <section data-slot="record-favourite" className={PANEL_CLASS}>
         <Label className="flex min-w-0 flex-wrap items-center gap-2">
-          <Switch
-            checked={favouriteState === true}
-            onCheckedChange={(next) => void favouriteAttempt.submit({ scope, expectedRevision: record.expectedRevision, payload: { partnerId: record.partnerId, favourite: next } })}
-            disabled={favouriteState === undefined || favouriteAttempt.pending}
-            aria-labelledby={favouriteLabelId}
-            aria-describedby={favouriteHintId}
-          />
-          <span id={favouriteLabelId} className="type-group-title">
-            {FILING_COPY.favouriteLabel}
-          </span>
+          <Switch checked={favouriteState === true} onCheckedChange={changeFavourite} disabled={favouriteState === undefined || favouriteAttempt.pending} aria-labelledby={favouriteLabelId} aria-describedby={favouriteHintId} />
+          <span {...{ id: favouriteLabelId, className: "type-group-title" as const }}>{FILING_COPY.favouriteLabel}</span>
         </Label>
-        <p id={favouriteHintId} className={SENTENCE_CLASS}>
-          {favouriteSentence(favouriteState)}
-        </p>
+        <p {...{ id: favouriteHintId, className: SENTENCE_CLASS }}>{favouriteSentence(favouriteState)}</p>
         <p className={SENTENCE_CLASS}>{FILING_COPY.favouriteDescription}</p>
       </section>
       <AttemptOutcome attempt={favouriteAttempt} fieldLabels={FAVOURITE_FIELD_LABELS} onCheckResult={onCheckResult} />
@@ -342,12 +327,8 @@ function SelectionFiling({ scope, records, tagSuggestions, onSettled, onCheckRes
       <section data-slot="selection-favourite" className={PANEL_CLASS}>
         <p className="type-group-title">{FILING_COPY.favouriteLabel}</p>
         <div className={CONTROL_ROW_CLASS}>
-          <Button type="button" variant="outline" className={BUTTON_WRAP_CLASS} disabled={pending} onClick={() => author({ kind: "favourite", favourite: true })}>
-            {FILING_COPY.favouriteOnLabel}
-          </Button>
-          <Button type="button" variant="outline" className={BUTTON_WRAP_CLASS} disabled={pending} onClick={() => author({ kind: "favourite", favourite: false })}>
-            {FILING_COPY.favouriteOffLabel}
-          </Button>
+          <Button {...{ type: "button" as const, variant: "outline" as const, className: BUTTON_WRAP_CLASS, disabled: pending, onClick: () => author({ kind: "favourite", favourite: true }) }}>{FILING_COPY.favouriteOnLabel}</Button>
+          <Button {...{ type: "button" as const, variant: "outline" as const, className: BUTTON_WRAP_CLASS, disabled: pending, onClick: () => author({ kind: "favourite", favourite: false }) }}>{FILING_COPY.favouriteOffLabel}</Button>
         </div>
         <p className={SENTENCE_CLASS}>{FILING_COPY.favouriteDescription}</p>
       </section>

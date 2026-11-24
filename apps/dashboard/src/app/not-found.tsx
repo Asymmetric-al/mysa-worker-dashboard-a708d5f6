@@ -3,8 +3,6 @@ import Link from "next/link";
 import type { ReactElement } from "react";
 import { PageColumn, PageHeading } from "./page-frame";
 const PAGE_TITLE = "This page could not be found";
-const HOME_HREF = "/";
-const HELP_HREF = "/help";
 const COPY = {
   missing: "No screen in this dashboard answers to the address you opened, so nothing is shown in its place: a missing address is not an empty list, a zero or a record with nothing in it.",
   whereToGo: "Every screen this session can open is listed in the navigation beside this page. The two destinations that begin again are",
@@ -19,11 +17,11 @@ export default function NotFoundPage(): ReactElement {
       <PageHeading title={PAGE_TITLE} paragraphs={[COPY.missing]} />
       <p className="type-supporting max-w-prose text-pretty">
         {`${COPY.whereToGo} `}
-        <Link href={HOME_HREF} className="inline-link">
+        <Link href={"/"} className="inline-link">
           Home
         </Link>
         {` ${COPY.orOpen} `}
-        <Link href={HELP_HREF} className="inline-link">
+        <Link href={"/help"} className="inline-link">
           Help
         </Link>
         {COPY.helpStated}

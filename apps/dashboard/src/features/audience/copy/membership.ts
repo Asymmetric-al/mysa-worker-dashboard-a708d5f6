@@ -1,7 +1,6 @@
 import { UPDATE_EMAIL_PURPOSE, type AudiencePurpose, type MembershipState } from "@/modules/audience/membership";
 import type { ExclusionReason } from "@/modules/audience/resolve";
-type MembershipStateDescription = { readonly description: string; readonly eligibleSuffix: string };
-export const MEMBERSHIP_STATE_DESCRIPTIONS: Record<MembershipState, MembershipStateDescription> = {
+export const MEMBERSHIP_STATE_DESCRIPTIONS: Record<MembershipState, { readonly description: string; readonly eligibleSuffix: string }> = {
   active: {
     description: "This person consented to this publisher's Update email for this purpose and confirmed the address, so the membership is active. That consent covers this publisher and this purpose only, and it is not contact permission for anything else.",
     eligibleSuffix: "eligible for this publisher and this purpose",
@@ -29,8 +28,7 @@ export const EXCLUSION_REASON_COPY: Record<ExclusionReason, string> = {
 export const ELIGIBLE_HEADING = "Eligible for this purpose";
 export const EXCLUDED_HEADING = "Excluded from this purpose";
 export const PURPOSE_LABEL: Record<AudiencePurpose, string> = { [UPDATE_EMAIL_PURPOSE]: "Update email" };
-type MembershipColumnHeadingSet = { readonly caption: string; readonly identity: string; readonly emailValue: string; readonly state: string; readonly languagePreference: string; readonly purpose: string; readonly since: string; readonly exclusionReason: string };
-export const MEMBERSHIP_COLUMN_HEADINGS: MembershipColumnHeadingSet = {
+export const MEMBERSHIP_COLUMN_HEADINGS: { readonly caption: string; readonly identity: string; readonly emailValue: string; readonly state: string; readonly languagePreference: string; readonly purpose: string; readonly since: string; readonly exclusionReason: string } = {
   caption: "Memberships of this publisher's Update email for this purpose",
   identity: "Person",
   emailValue: "Email address (a value only, never a match)",

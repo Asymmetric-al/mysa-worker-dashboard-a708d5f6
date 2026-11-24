@@ -228,7 +228,7 @@ async function runWorkMutation<P, R extends MutationResult>(input: MutationInput
 }
 /** The one record of this caller's own work a mutation names, refused rather than disclosed where the caller does not own it. */
 function requireOwned<T extends { readonly ownerPrincipalId: string }>(record: T | undefined, session: ResolvedSession, operationId: string): T {
-  if (record === undefined || record.ownerPrincipalId !== session.principalId) refuseDenied(operationId);
+  if (record === undefined || record.ownerPrincipalId !== session.principalId) return refuseDenied(operationId);
   return record;
 }
 const requireOwnedTask = (work: WorkDocument, taskId: string, session: ResolvedSession, operationId: string): TaskRecord => requireOwned(taskOf(work, taskId), session, operationId);

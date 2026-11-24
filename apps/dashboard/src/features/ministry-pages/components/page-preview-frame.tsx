@@ -6,11 +6,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
+import type { PreviewDenialReason } from "@/modules/content/preview";
 import { copy } from "../copy";
 import { GivingDesignation, type GivingBindingView } from "./giving-designation";
-/** One placement this preview's own rendering could not reach: its kind, the words it stands behind, and the source's reason in the source's terms. */
 export type PagePreviewUnreadyMedia = { readonly placementId: string; readonly kind: "image" | "video"; readonly altText: string; readonly caption: string | null; readonly reason: { readonly label: string; readonly action?: string } | null };
-/** A preview that may be rendered: the exact revision, the language and direction it is read in, the markup the single renderer produced, and the placements that markup could not reach. */
 export type PagePreviewAuthorisedView = {
   readonly status: "authorised";
   readonly variantId: string;
@@ -23,8 +22,9 @@ export type PagePreviewAuthorisedView = {
   readonly inert: true;
   readonly givingAction: "none";
 };
-/** A preview that may not be rendered: one reason code and nothing else. */
 export type PagePreviewDeniedView = { readonly status: "denied"; readonly reason: string };
+/** A preview of an edition that has been withdrawn: the withdrawal is the state this surface reports, so nothing here reads as a denial or a refusal of access. */
+export type PagePreviewWithdrawnView = { readonly status: "withdrawn" };
 /** A preview whose edition could not be read: the source that failed, named honestly. */
 export type PagePreviewUnavailableView = { readonly status: "unavailable"; readonly source: SourceReference };
 /** A preview whose own request was refused: the read answered, and the edition, revision or language asked for is not one it admits. */
@@ -33,11 +33,15 @@ export type PagePreviewRefusedView = { readonly status: "refused" };
 export type PagePreviewLanguageUnavailableView = { readonly status: "language-unavailable"; readonly requestedLocale: string };
 /** A preview whose edition has neither a draft nor a released revision, so there is nothing exact to render. */
 export type PagePreviewUnreleasedView = { readonly status: "unreleased"; readonly locale: string };
-/** Every answer this surface renders. */
-export type PagePreviewView = PagePreviewAuthorisedView | PagePreviewDeniedView | PagePreviewUnavailableView | PagePreviewRefusedView | PagePreviewLanguageUnavailableView | PagePreviewUnreleasedView;
+export type PagePreviewView = PagePreviewAuthorisedView | PagePreviewDeniedView | PagePreviewWithdrawnView | PagePreviewUnavailableView | PagePreviewRefusedView | PagePreviewLanguageUnavailableView | PagePreviewUnreleasedView;
+/** The one preview refusal that is not a denial: `withdrawn` states what happened to the edition, and the type above holds the domain's own reason so the two cannot drift apart. */
+const WITHDRAWN_PREVIEW_REASON: PreviewDenialReason = "withdrawn";
+/** The view a preview read's refusal maps to, in the builder and on the route alike: a withdrawn edition states its withdrawal, and every other reason stays the denial it is. */
+export function previewRefusalViewOf(reason: string): PagePreviewView {
+  return reason === WITHDRAWN_PREVIEW_REASON ? { status: "withdrawn" } : { status: "denied", reason };
+}
 /** How a surface re-reads the preview it shows: an address that answers the same exact revision again, or the callback that re-runs the read the surface already holds. */
 export type PagePreviewRetry = { readonly label: string; readonly href?: string; readonly onClick?: () => void };
-/** Props of {@link PagePreviewFrame}. */
 export type PagePreviewFrameProps = { readonly layout: "builder" | "route"; readonly preview: PagePreviewView; readonly givingBinding?: GivingBindingView; readonly retry?: PagePreviewRetry; readonly className?: string };
 const FIELD_LABELS = { revision: "Revision", requestedLanguage: "Language requested" } as const;
 const PREVIEW_HEADING = copy.builder.preview;
@@ -61,9 +65,8 @@ const PREVIEW_CONTENT = cn(
   "[&_figcaption]:text-xs [&_figcaption]:text-muted-foreground",
 );
 const BODY_CLASS = "flex min-w-0 flex-col gap-4";
-const HEADING_CLASS = "type-section-title";
 const NOTE_CLASS = "text-xs text-muted-foreground text-pretty wrap-anywhere";
-const PreviewHeading = (): ReactElement => <h2 className={HEADING_CLASS}>{PREVIEW_HEADING}</h2>;
+const PreviewHeading = (): ReactElement => <h2 className={"type-section-title"}>{PREVIEW_HEADING}</h2>;
 const IdentityPair = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
   <div className={"flex items-baseline gap-1.5"}>
     <dt>{label}</dt>
@@ -103,7 +106,6 @@ function retryControlsOf(retry: PagePreviewRetry | undefined): { readonly action
   return retry.onClick === undefined ? {} : { retry: { label: retry.label, onClick: retry.onClick } };
 }
 const UNREADY_MEDIA_TITLE: Readonly<Record<PagePreviewUnreadyMedia["kind"], string>> = copy.preview.unreadyMediaTitle;
-/** One unreadable placement's own words: the source's reason and its next step, then what stands in the placement's place. */
 function unreadyMediaDescriptionOf(placement: PagePreviewUnreadyMedia): string {
   const reason = placement.reason;
   const label = reason === null ? "" : reason.label.trim();
@@ -141,6 +143,12 @@ function previewBody(preview: PagePreviewView, layout: PagePreviewFrameProps["la
       return (
         <div data-slot="page-preview-denied" data-denial-reason={preview.reason}>
           <StateNotice kind="denied" title={copy.states.deniedTitle} headingLevel={3} />
+        </div>
+      );
+    case "withdrawn":
+      return (
+        <div data-slot="page-preview-withdrawn">
+          <StateNotice kind="empty" title={copy.preview.withdrawnTitle} description={copy.preview.withdrawnDescription} headingLevel={3} />
         </div>
       );
     case "unavailable":

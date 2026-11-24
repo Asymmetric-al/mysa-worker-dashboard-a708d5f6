@@ -1,6 +1,6 @@
 /** Success criteria 16 and 19 at the store boundary: a coach's read authorises before it enumerates, and a read from another scope retrieves nothing. */
 import { Temporal } from "temporal-polyfill";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { DENIAL_VALUE_KEYS } from "@/lib/redaction";
 import { mutations, reads, type CoachingGrantRecord, type MutationInput, type Scope } from "@/modules/data-service";
@@ -173,206 +173,204 @@ afterAll(async () => {
   vi.unstubAllEnvs();
   for (const sessionId of [WORKER_SESSION, COACH_SESSION, SECOND_WORKER_SESSION]) await resetSession(sessionId); // Every session here is this file's own, so the store is left holding none of its fixtures.
 });
-describe("coach read boundary", () => {
-  it("refuses a subject read to any principal the grant does not name, disclosing no count, identity or existence flag", async () => {
-    // AAP 0.8.4 and criterion 19: authorisation happens before enumeration. The worker whose record the grant shares holds no coach authority over it, and the second worker holds nothing at all; both receive the one refusal, and it states none of the evidence the denial set withholds.
-    const asWorker = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, WORKER_SOURCE);
-    expect(isReadResult(asWorker)).toBe(true);
-    expect(DENIAL_REASONS).toContain(assertDenied(asWorker).reasonCode);
-    expectDenialWithholds(asWorker, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL, COACH_PRINCIPAL]);
-    const asSecondWorker = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, SECOND_WORKER_SOURCE);
-    expect(assertDenied(asSecondWorker).reasonCode).toBe("no-permission");
-    expectDenialWithholds(asSecondWorker, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL, COACH_PRINCIPAL]);
-    const secondWorkerScope = await selectedScopeOf(SECOND_WORKER_SOURCE); // The scope criterion 19 trusts is the resolver's own answer, and it covers neither party.
-    expect(secondWorkerScope.principalId).toBe(SECOND_WORKER_PRINCIPAL);
-    expect(secondWorkerScope.principalId).not.toBe(WORKER_PRINCIPAL);
-    expect(grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID).ministryIds).not.toContain(secondWorkerScope.ministryId);
-    await layDownSession(COACH_SESSION, coachMeta({ failurePlan: armedScopeDenial() }), COACH_SEAT_SEED); // The armed scope-denial mode (AAP 0.12.5) is armed on the seat and takes effect on the read it names, before the coaching families are decoded, so nothing is enumerated, counted or projected first.
-    const armed = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE);
-    expect(assertDenied(armed).reasonCode).toBe("no-permission");
-    expectDenialWithholds(armed, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL, "target-calls-weekly"]);
-    const listing = assertEnvelope(await reads.coach.readCoachPortfolio(SECOND_WORKER_SOURCE));
-    expect(listing.data.subjects).toHaveLength(0);
-    expect(listing.data.holdsNoSubjects).toBe(true);
-    for (const expected of [ACTIVE_GRANT_ID, WORKER_PRINCIPAL]) expect(serialised(listing)).not.toContain(expected);
-    const own = assertEnvelope(await reads.coach.readCoachPortfolio(COACH_SOURCE)); // The coach's own listing is the one that names the grant, and only because it is theirs.
-    expect(own.data.subjects.map((subject) => subject.grantId)).toContain(ACTIVE_GRANT_ID);
-  });
-  it("shares no module until the worker switches one on, and then only the modules switched on", async () => {
-    const invitation = expectAccepted(await mutations.coaching.inviteCoach(attempt(workerScope, { coachPrincipalId: COACH_PRINCIPAL, organizationId: YOUTH.organizationId, ministryIds: [YOUTH.ministryId], duration: { kind: "through-date", shareThroughDate: "2026-12-31" } }), WORKER_SOURCE));
-    const grantId = requiredSaying(invitation.created[0], "The invitation was accepted without naming the grant it created, so no case can read it.");
-    const invited = grantRecord(await storedStateOf(WORKER_SESSION), grantId); // A fresh invitation shares nothing: the five flags are all off, and the record says so.
-    expect(invited.state).toBe("invited");
-    expect([invited.modules, Object.keys(invited.modules).sort()]).toEqual([NO_MODULES_SELECTED, [...MODULE_KEYS].sort()]);
-    // Acceptance is the coach's own deliberate write, and the service groups it — with the departure — apart from the worker's coaching changes: the identity holds exactly these two.
-    expectAccepted(await mutations.coach.acceptInvitation(attempt(grantAuthorityScope(COACH_PRINCIPAL, YOUTH.ministryId), { grantId }, await currentRevisionOf(WORKER_SESSION, grantId)), COACH_SOURCE));
-    const sharingNothing = assertEnvelope(await reads.coach.readCoachSubject({ grantId }, COACH_SOURCE));
-    expect(sharingNothing.data.sharesNothing).toBe(true);
-    expect(sharingNothing.data.modules).toHaveLength(0);
-    expect(serialised(sharingNothing)).not.toContain("targets");
-    const switchedOn: readonly ModuleKey[] = ["targets", "check-ins"];
-    await shareModules(grantId, switchedOn);
-    const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId }, COACH_SOURCE));
-    expect([envelope.data.sharesNothing, envelope.data.modules.map((view) => view.module).sort()]).toEqual([false, [...switchedOn].sort()]);
-    const modulesInForce = grantRecord(await storedStateOf(WORKER_SESSION), grantId);
-    expect(envelope.data.modules.map((view) => view.module).sort()).toEqual(MODULE_KEYS.filter((key) => modulesInForce.modules[key]).sort());
-    const text = serialised(envelope);
-    for (const unadmitted of MODULE_KEYS.filter((key) => !switchedOn.includes(key))) expect(text).not.toContain(unadmitted);
-  });
-  it("carries no gift row, no commitment row, no donor and no private target label, even with every module shared", async () => {
-    await shareModules(ACTIVE_GRANT_ID, MODULE_KEYS);
-    const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
-    expect(envelope.data.modules).toHaveLength(MODULE_KEYS.length);
-    const state = await storedStateOf(WORKER_SESSION);
-    const text = serialised(envelope);
-    for (const value of [state.gifts.length, state.commitments.length, state.partners.length, state.privateNotes.length, state.coachingTargets.length]) expect(value).toBeGreaterThan(0); // Every family below is held by the world this case reads, so no loop can be satisfied by an empty list.
-    for (const gift of state.gifts) for (const expected of [gift.giftRowId, gift.giftId, gift.provenance.reference]) expect(text).not.toContain(expected);
-    for (const commitment of state.commitments) expect(text).not.toContain(commitment.commitmentRowId);
-    for (const partner of state.partners) expect(text).not.toContain(partner.partnerId);
-    for (const note of state.privateNotes) expect(text).not.toContain(note.body);
-    for (const target of state.coachingTargets) expect(text).not.toContain(target.privateLabel);
-    expect(text).not.toContain("donor");
-    const results = envelope.data.modules.find((view) => view.module === "support-results"); // The one financial module that could state a figure states the reviewed range it was given, and this grant was given none, so there is nothing to disclose and the module says so rather than showing zero.
-    if (results === undefined || results.module !== "support-results") throw new Error("The shared support-results module was not enumerated at all, which would hide a refusal as an absence.");
-    expect(results.range).toBeNull();
-    expect(results.received).toHaveLength(0);
-    expect(results.figureProblem).not.toBeNull();
-    const recorded = Object.entries(envelope.valueStates); // No value is stated as a subtotal, and every value without a datum states that it has none rather than stating zero (AAP 0.8.1: zero, unknown, withheld and unavailable stay distinguishable).
-    expect(recorded.length).toBeGreaterThan(0);
-    expect(Object.values(envelope.valueStates)).not.toContain("incomplete-subtotal");
-    const withoutData = recorded.filter(([path]) => valueAtPath(envelope.data, path) === null);
-    expect(withoutData.filter(([, state]) => state !== "unavailable" && state !== "unknown")).toEqual([]);
-    const statedAsZero = recorded.filter(([, state]) => state === "zero");
-    expect(statedAsZero.filter(([path]) => valueAtPath(envelope.data, path) !== 0)).toEqual([]);
-    expect(envelope.coverage.state).not.toBe("partial");
-  });
-  it("denies a read at the frozen exclusive cutoff while the stored grant still stands active", async () => {
-    const initial = grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID);
-    expect(initial.state).toBe("active");
-    const storedCutoff = initial.duration.cutoffInstant;
-    if (storedCutoff === null) throw new Error("The seeded grant states no cutoff, so no case here has an exclusive endpoint to read at.");
-    const cutoff = Temporal.Instant.from(storedCutoff);
-    const shareThrough = shareThroughDateOfCutoff({ cutoffInstant: cutoff, frozenZone: initial.duration.frozenZone }); // The stored cutoff is the exclusive start of the civil day after the Share-through date the worker chose, resolved by the application's one cutoff function rather than recomputed here.
-    if (shareThrough === null) throw new Error(`The stored cutoff ${storedCutoff} resolves to no Share-through date in ${initial.duration.frozenZone}.`);
-    const resolved = shareCutoff({ shareThroughDate: shareThrough, frozenZone: initial.duration.frozenZone });
-    if (resolved.status !== "bounded") throw new Error(`The cutoff for ${shareThrough.toString()} resolved to no instant: ${resolved.reason}.`);
-    expect(resolved.cutoffInstant.toString()).toBe(storedCutoff);
-    const offsetOf = (instant: Temporal.Instant): number => instant.epochMilliseconds - SEED_INSTANT.epochMilliseconds;
-    const before = await setClock(COACH_SESSION, offsetOf(cutoff) - 1);
-    if (!before.ok) throw new Error(`The coach's clock could not be moved to one millisecond before the cutoff: ${before.error.code}.`);
-    const open = assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)); // One instant before the cutoff the same read is admitted, so both sides of the boundary are asserted.
-    expect([open.data.duration.cutoffInstant, open.data.duration.openAtRead]).toEqual([storedCutoff, true]);
-    const at = await setClock(COACH_SESSION, offsetOf(cutoff));
-    if (!at.ok) throw new Error(`The coach's clock could not be moved to the cutoff: ${at.error.code}.`);
-    const closed = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE);
-    expect(assertDenied(closed).reasonCode).toBe("no-permission");
-    expectDenialWithholds(closed, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL]);
-    const afterwards = grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID);
-    expect([afterwards.state, afterwards.revision, afterwards.duration.cutoffInstant]).toEqual(["active", initial.revision, storedCutoff]);
-  });
-  it("writes nothing when a coach reads, and leaves the worker's own work untouched by a revocation", async () => {
-    const coachDocumentBefore = serialised(await storedStateOf(COACH_SESSION));
-    const recordsDocumentBefore = serialised(await storedStateOf(WORKER_SESSION)); // The document a coach's reads reach is the worker's own, so an enumeration that wrote anything would land there.
-    const coachWorkBefore = await sourceWorkOf(COACH_SESSION);
-    assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
-    assertEnvelope(await reads.coach.readCoachPortfolio(COACH_SOURCE));
-    assertDenied(await reads.coach.readCoachSubject({ grantId: ENDED_GRANT_ID }, COACH_SOURCE));
-    assertDenied(await reads.coach.readCoachSubject({ grantId: REVOKED_GRANT_ID }, COACH_SOURCE));
-    expect(serialised(await storedStateOf(COACH_SESSION))).toBe(coachDocumentBefore);
-    expect(serialised(await storedStateOf(WORKER_SESSION))).toBe(recordsDocumentBefore);
-    expect(await sourceWorkOf(COACH_SESSION)).toEqual(coachWorkBefore);
-    const workerWorkBefore = await sourceWorkOf(WORKER_SESSION);
-    expectAccepted(await mutations.coaching.revokeGrant(attempt(workerScope, { grantId: ACTIVE_GRANT_ID }, await currentRevisionOf(WORKER_SESSION, ACTIVE_GRANT_ID)), WORKER_SOURCE));
-    expect(await sourceWorkOf(WORKER_SESSION)).toEqual(workerWorkBefore);
-    expect(assertDenied(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission"); // The worker's accepted revocation reaches the coach with nothing copied between the two documents.
-    expect([await sourceWorkOf(COACH_SESSION), grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID).state]).toEqual([coachWorkBefore, "revoked"]);
-  });
-  it("keeps the stop types distinct and refuses a stale action on an episode that is already closed", async () => {
-    expect(new Set(GRANT_LIFECYCLE_STATES).size).toBe(GRANT_LIFECYCLE_STATES.length);
-    for (const needle of ["revoked", "ended", "left"]) expect(GRANT_LIFECYCLE_STATES).toContain(needle);
-    const seeded = await storedStateOf(WORKER_SESSION);
-    const active = grantRecord(seeded, ACTIVE_GRANT_ID);
-    const revokedState = grantRecord(seeded, REVOKED_GRANT_ID).state;
-    const endedState = grantRecord(seeded, ENDED_GRANT_ID).state;
-    expect([active.state, revokedState, endedState, assertDenied(await reads.coach.readCoachSubject({ grantId: ENDED_GRANT_ID }, COACH_SOURCE)).reasonCode]).toEqual(["active", "revoked", "ended", "no-permission"]);
-    expect(assertDenied(await reads.coach.readCoachSubject({ grantId: REVOKED_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission");
-    const staleOnEnded = assertConflict(await mutations.coaching.setModule(attempt(workerScope, { grantId: ENDED_GRANT_ID, moduleKey: "targets", enabled: true }, await currentRevisionOf(WORKER_SESSION, ENDED_GRANT_ID)), WORKER_SOURCE));
-    expect(staleOnEnded.reason).toBe("stale-revision");
-    expect(serialised(staleOnEnded.current)).toContain("ended");
-    expect(serialised(staleOnEnded.preservedInput)).toContain("targets");
-    expect(grantRecord(await storedStateOf(WORKER_SESSION), ENDED_GRANT_ID).revision).toBe(grantRecord(seeded, ENDED_GRANT_ID).revision);
-    const revocation = expectAccepted(await mutations.coaching.revokeGrant(attempt(workerScope, { grantId: ACTIVE_GRANT_ID }, await currentRevisionOf(WORKER_SESSION, ACTIVE_GRANT_ID)), WORKER_SOURCE));
-    expect(revocation.revision).not.toBe(active.revision);
-    const staleOnRevoked = assertConflict(await mutations.coaching.setModule(attempt(workerScope, { grantId: ACTIVE_GRANT_ID, moduleKey: "targets", enabled: true }, await currentRevisionOf(WORKER_SESSION, ACTIVE_GRANT_ID)), WORKER_SOURCE));
-    expect(serialised(staleOnRevoked.current)).toContain("revoked");
-    const afterStale = grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID);
-    expect([afterStale.state, afterStale.revision]).toEqual(["revoked", revocation.revision]);
-    const coachScope = grantAuthorityScope(COACH_PRINCIPAL, YOUTH.ministryId);
-    const forbidden: readonly MutationOutcome[] = [
-      await mutations.coaching.setModule(attempt(coachScope, { grantId: ACTIVE_GRANT_ID, moduleKey: "targets", enabled: true }), COACH_SOURCE),
-      await mutations.coaching.revokeGrant(attempt(coachScope, { grantId: ACTIVE_GRANT_ID }), COACH_SOURCE),
-      await mutations.coaching.endCoaching(attempt(coachScope, { grantId: ACTIVE_GRANT_ID }), COACH_SOURCE),
-    ];
-    for (const outcome of forbidden) expect([isOutcome(outcome), outcome.outcome]).toEqual([true, "denied"]);
-    const recordsBefore = serialised(await storedStateOf(WORKER_SESSION));
-    // The grant this case revoked is closed, so the coach's own departure is asserted on the relationship that is still live: both writes address the worker's one record, and each produces its own stop type.
-    expectAccepted(await mutations.coach.leaveCoaching(attempt(coachScope, { grantId: SUPPORT_SHARING_GRANT_ID }, await currentRevisionOf(WORKER_SESSION, SUPPORT_SHARING_GRANT_ID)), COACH_SOURCE));
-    const left = grantRecord(await storedStateOf(WORKER_SESSION), SUPPORT_SHARING_GRANT_ID);
-    expect([left.state, new Set([left.state, revokedState, endedState]).size]).toEqual(["left", 3]);
-    expect(serialised(await storedStateOf(WORKER_SESSION))).not.toBe(recordsBefore); // The coach's own accepted departure is written to the one record both identities address, so the change is visible there and nowhere else.
-    expect(assertDenied(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission");
-  });
-  it("leaves the other admitted modules readable when one shared module's source is unavailable", async () => {
-    await layDownSession(COACH_SESSION, coachMeta({ scenarioId: "coaching-module-unavailable" }), COACH_SEAT_SEED); // The coach's seat runs the unavailable-coaching-module scenario, so the module that reads the support source reports unavailable, the modules that do not stay usable, and neither is presented as the other.
-    await shareModules(ACTIVE_GRANT_ID, ["support-goal"]);
-    const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
-    expect(envelope.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
-    const goal = envelope.data.modules.find((view) => view.module === "support-goal");
-    expect([goal?.module, goal?.state]).toEqual(["support-goal", "unavailable"]);
-    expect(goal?.unavailability).not.toBeNull();
-    const targets = envelope.data.modules.find((view) => view.module === "targets");
-    if (targets === undefined || targets.module !== "targets") throw new Error("The targets module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
-    expect(targets.state).not.toBe("unavailable");
-    expect(targets.progress.length).toBeGreaterThan(0);
-    const checkIns = envelope.data.modules.find((view) => view.module === "check-ins");
-    if (checkIns === undefined || checkIns.module !== "check-ins") throw new Error("The check-ins module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
-    expect(checkIns.state).not.toBe("unavailable");
-    expect(checkIns.sharedCheckIns.length).toBeGreaterThan(0);
-  });
-  it("reports one admitted coaching module unavailable in the seeded scenario while the others stay usable", async () => {
-    // AAP 0.12.5 arms this failure with a seeded scenario flag rather than a hand-edited record, so the case reads the seeded seats themselves: the coach's own seat in the scenario, and the baseline coach's seat as the control proving the scenario is what changed the module rather than the world.
-    await layDownSeededSession(SEEDED_DOWN_MODULE_SESSION); // Each seat is laid down with the world it is seated in, so the coaching record it reads is that world's own rather than a copy the case had to carry across.
-    await layDownSeededSession(SEEDED_DOWN_MODULE_WORLD);
-    await layDownSeededSession(SEEDED_BASELINE_COACH_SESSION);
-    await layDownSeededSession(SEEDED_BASELINE_WORLD);
-    const down = assertEnvelope(await reads.coach.readCoachSubject({ grantId: SUPPORT_SHARING_GRANT_ID }, { sessionId: SEEDED_DOWN_MODULE_SESSION }));
-    expect(down.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
-    const goal = down.data.modules.find((view) => view.module === "support-goal");
-    if (goal === undefined || goal.module !== "support-goal") throw new Error("The shared support-goal module was not enumerated at all, which would hide the outage as an absence.");
-    expect(goal.state).toBe("unavailable");
-    expect(goal.unavailability).not.toBeNull();
-    expect(goal.goal).toBeNull();
-    const targets = down.data.modules.find((view) => view.module === "targets");
-    if (targets === undefined || targets.module !== "targets") throw new Error("The targets module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
-    expect(targets.state).not.toBe("unavailable");
-    expect(targets.unavailability).toBeNull();
-    expect(targets.progress.length).toBeGreaterThan(0);
-    const checkIns = down.data.modules.find((view) => view.module === "check-ins");
-    if (checkIns === undefined || checkIns.module !== "check-ins") throw new Error("The check-ins module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
-    // The module is still enumerated and usable, and the outage of its neighbour changed neither its state nor the reading it carries. This grant shares no check-in of its own, so the module states the empty period it holds: an empty module is its own state, never the neighbour's outage and never a complete share this relationship does not have.
-    expect(checkIns.state).not.toBe("unavailable");
-    expect(checkIns.unavailability).toBeNull();
-    expect(checkIns.state).toBe("empty");
-    expect(checkIns.sharedCheckIns).toHaveLength(0);
-    // The same read of the same grant through the baseline coach's seat. The source is there and holds the goal the grant shares, so the module the scenario made unavailable reads as usable figures there.
-    const baseline = assertEnvelope(await reads.coach.readCoachSubject({ grantId: SUPPORT_SHARING_GRANT_ID }, { sessionId: SEEDED_BASELINE_COACH_SESSION }));
-    expect(baseline.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
-    const baselineGoal = baseline.data.modules.find((view) => view.module === "support-goal");
-    if (baselineGoal === undefined || baselineGoal.module !== "support-goal") throw new Error("The baseline coach's read enumerated no support-goal module, so it cannot stand as the control.");
-    expect(baselineGoal.state).not.toBe("unavailable");
-    expect(baselineGoal.goal).not.toBeNull();
-    const baselineTargets = baseline.data.modules.find((view) => view.module === "targets");
-    if (baselineTargets === undefined || baselineTargets.module !== "targets") throw new Error("The baseline coach's read enumerated no targets module, so it cannot stand as the control.");
-    expect(baselineTargets.state).not.toBe("unavailable");
-  });
+it("coach read boundary: refuses a subject read to any principal the grant does not name, disclosing no count, identity or existence flag", async () => {
+  // AAP 0.8.4 and criterion 19: authorisation happens before enumeration. The worker whose record the grant shares holds no coach authority over it, and the second worker holds nothing at all; both receive the one refusal, and it states none of the evidence the denial set withholds.
+  const asWorker = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, WORKER_SOURCE);
+  expect(isReadResult(asWorker)).toBe(true);
+  expect(DENIAL_REASONS).toContain(assertDenied(asWorker).reasonCode);
+  expectDenialWithholds(asWorker, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL, COACH_PRINCIPAL]);
+  const asSecondWorker = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, SECOND_WORKER_SOURCE);
+  expect(assertDenied(asSecondWorker).reasonCode).toBe("no-permission");
+  expectDenialWithholds(asSecondWorker, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL, COACH_PRINCIPAL]);
+  const secondWorkerScope = await selectedScopeOf(SECOND_WORKER_SOURCE); // The scope criterion 19 trusts is the resolver's own answer, and it covers neither party.
+  expect(secondWorkerScope.principalId).toBe(SECOND_WORKER_PRINCIPAL);
+  expect(secondWorkerScope.principalId).not.toBe(WORKER_PRINCIPAL);
+  expect(grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID).ministryIds).not.toContain(secondWorkerScope.ministryId);
+  await layDownSession(COACH_SESSION, coachMeta({ failurePlan: armedScopeDenial() }), COACH_SEAT_SEED); // The armed scope-denial mode (AAP 0.12.5) is armed on the seat and takes effect on the read it names, before the coaching families are decoded, so nothing is enumerated, counted or projected first.
+  const armed = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE);
+  expect(assertDenied(armed).reasonCode).toBe("no-permission");
+  expectDenialWithholds(armed, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL, "target-calls-weekly"]);
+  const listing = assertEnvelope(await reads.coach.readCoachPortfolio(SECOND_WORKER_SOURCE));
+  expect(listing.data.subjects).toHaveLength(0);
+  expect(listing.data.holdsNoSubjects).toBe(true);
+  for (const expected of [ACTIVE_GRANT_ID, WORKER_PRINCIPAL]) expect(serialised(listing)).not.toContain(expected);
+  const own = assertEnvelope(await reads.coach.readCoachPortfolio(COACH_SOURCE)); // The coach's own listing is the one that names the grant, and only because it is theirs.
+  expect(own.data.subjects.map((subject) => subject.grantId)).toContain(ACTIVE_GRANT_ID);
+});
+it("coach read boundary: shares no module until the worker switches one on, and then only the modules switched on", async () => {
+  const invitation = expectAccepted(await mutations.coaching.inviteCoach(attempt(workerScope, { coachPrincipalId: COACH_PRINCIPAL, organizationId: YOUTH.organizationId, ministryIds: [YOUTH.ministryId], duration: { kind: "through-date", shareThroughDate: "2026-12-31" } }), WORKER_SOURCE));
+  const grantId = requiredSaying(invitation.created[0], "The invitation was accepted without naming the grant it created, so no case can read it.");
+  const invited = grantRecord(await storedStateOf(WORKER_SESSION), grantId); // A fresh invitation shares nothing: the five flags are all off, and the record says so.
+  expect(invited.state).toBe("invited");
+  expect([invited.modules, Object.keys(invited.modules).sort()]).toEqual([NO_MODULES_SELECTED, [...MODULE_KEYS].sort()]);
+  // Acceptance is the coach's own deliberate write, and the service groups it — with the departure — apart from the worker's coaching changes: the identity holds exactly these two.
+  expectAccepted(await mutations.coach.acceptInvitation(attempt(grantAuthorityScope(COACH_PRINCIPAL, YOUTH.ministryId), { grantId }, await currentRevisionOf(WORKER_SESSION, grantId)), COACH_SOURCE));
+  const sharingNothing = assertEnvelope(await reads.coach.readCoachSubject({ grantId }, COACH_SOURCE));
+  expect(sharingNothing.data.sharesNothing).toBe(true);
+  expect(sharingNothing.data.modules).toHaveLength(0);
+  expect(serialised(sharingNothing)).not.toContain("targets");
+  const switchedOn: readonly ModuleKey[] = ["targets", "check-ins"];
+  await shareModules(grantId, switchedOn);
+  const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId }, COACH_SOURCE));
+  expect([envelope.data.sharesNothing, envelope.data.modules.map((view) => view.module).sort()]).toEqual([false, [...switchedOn].sort()]);
+  const modulesInForce = grantRecord(await storedStateOf(WORKER_SESSION), grantId);
+  expect(envelope.data.modules.map((view) => view.module).sort()).toEqual(MODULE_KEYS.filter((key) => modulesInForce.modules[key]).sort());
+  const text = serialised(envelope);
+  for (const unadmitted of MODULE_KEYS.filter((key) => !switchedOn.includes(key))) expect(text).not.toContain(unadmitted);
+});
+it("coach read boundary: carries no gift row, no commitment row, no donor and no private target label, even with every module shared", async () => {
+  await shareModules(ACTIVE_GRANT_ID, MODULE_KEYS);
+  const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
+  expect(envelope.data.modules).toHaveLength(MODULE_KEYS.length);
+  const state = await storedStateOf(WORKER_SESSION);
+  const text = serialised(envelope);
+  for (const value of [state.gifts.length, state.commitments.length, state.partners.length, state.privateNotes.length, state.coachingTargets.length]) expect(value).toBeGreaterThan(0); // Every family below is held by the world this case reads, so no loop can be satisfied by an empty list.
+  for (const gift of state.gifts) for (const expected of [gift.giftRowId, gift.giftId, gift.provenance.reference]) expect(text).not.toContain(expected);
+  for (const commitment of state.commitments) expect(text).not.toContain(commitment.commitmentRowId);
+  for (const partner of state.partners) expect(text).not.toContain(partner.partnerId);
+  for (const note of state.privateNotes) expect(text).not.toContain(note.body);
+  for (const target of state.coachingTargets) expect(text).not.toContain(target.privateLabel);
+  expect(text).not.toContain("donor");
+  const results = envelope.data.modules.find((view) => view.module === "support-results"); // The one financial module that could state a figure states the reviewed range it was given, and this grant was given none, so there is nothing to disclose and the module says so rather than showing zero.
+  if (results === undefined || results.module !== "support-results") throw new Error("The shared support-results module was not enumerated at all, which would hide a refusal as an absence.");
+  expect(results.range).toBeNull();
+  expect(results.received).toHaveLength(0);
+  expect(results.figureProblem).not.toBeNull();
+  const recorded = Object.entries(envelope.valueStates); // No value is stated as a subtotal, and every value without a datum states that it has none rather than stating zero (AAP 0.8.1: zero, unknown, withheld and unavailable stay distinguishable).
+  expect(recorded.length).toBeGreaterThan(0);
+  expect(Object.values(envelope.valueStates)).not.toContain("incomplete-subtotal");
+  const withoutData = recorded.filter(([path]) => valueAtPath(envelope.data, path) === null);
+  expect(withoutData.filter(([, state]) => state !== "unavailable" && state !== "unknown")).toEqual([]);
+  const statedAsZero = recorded.filter(([, state]) => state === "zero");
+  expect(statedAsZero.filter(([path]) => valueAtPath(envelope.data, path) !== 0)).toEqual([]);
+  expect(envelope.coverage.state).not.toBe("partial");
+});
+it("coach read boundary: denies a read at the frozen exclusive cutoff while the stored grant still stands active", async () => {
+  const initial = grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID);
+  expect(initial.state).toBe("active");
+  const storedCutoff = initial.duration.cutoffInstant;
+  if (storedCutoff === null) throw new Error("The seeded grant states no cutoff, so no case here has an exclusive endpoint to read at.");
+  const cutoff = Temporal.Instant.from(storedCutoff);
+  const shareThrough = shareThroughDateOfCutoff({ cutoffInstant: cutoff, frozenZone: initial.duration.frozenZone }); // The stored cutoff is the exclusive start of the civil day after the Share-through date the worker chose, resolved by the application's one cutoff function rather than recomputed here.
+  if (shareThrough === null) throw new Error(`The stored cutoff ${storedCutoff} resolves to no Share-through date in ${initial.duration.frozenZone}.`);
+  const resolved = shareCutoff({ shareThroughDate: shareThrough, frozenZone: initial.duration.frozenZone });
+  if (resolved.status !== "bounded") throw new Error(`The cutoff for ${shareThrough.toString()} resolved to no instant: ${resolved.reason}.`);
+  expect(resolved.cutoffInstant.toString()).toBe(storedCutoff);
+  const offsetOf = (instant: Temporal.Instant): number => instant.epochMilliseconds - SEED_INSTANT.epochMilliseconds;
+  const before = await setClock(COACH_SESSION, offsetOf(cutoff) - 1);
+  if (!before.ok) throw new Error(`The coach's clock could not be moved to one millisecond before the cutoff: ${before.error.code}.`);
+  const open = assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)); // One instant before the cutoff the same read is admitted, so both sides of the boundary are asserted.
+  expect([open.data.duration.cutoffInstant, open.data.duration.openAtRead]).toEqual([storedCutoff, true]);
+  const at = await setClock(COACH_SESSION, offsetOf(cutoff));
+  if (!at.ok) throw new Error(`The coach's clock could not be moved to the cutoff: ${at.error.code}.`);
+  const closed = await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE);
+  expect(assertDenied(closed).reasonCode).toBe("no-permission");
+  expectDenialWithholds(closed, [ACTIVE_GRANT_ID, WORKER_PRINCIPAL]);
+  const afterwards = grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID);
+  expect([afterwards.state, afterwards.revision, afterwards.duration.cutoffInstant]).toEqual(["active", initial.revision, storedCutoff]);
+});
+it("coach read boundary: writes nothing when a coach reads, and leaves the worker's own work untouched by a revocation", async () => {
+  const coachDocumentBefore = serialised(await storedStateOf(COACH_SESSION));
+  const recordsDocumentBefore = serialised(await storedStateOf(WORKER_SESSION)); // The document a coach's reads reach is the worker's own, so an enumeration that wrote anything would land there.
+  const coachWorkBefore = await sourceWorkOf(COACH_SESSION);
+  assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
+  assertEnvelope(await reads.coach.readCoachPortfolio(COACH_SOURCE));
+  assertDenied(await reads.coach.readCoachSubject({ grantId: ENDED_GRANT_ID }, COACH_SOURCE));
+  assertDenied(await reads.coach.readCoachSubject({ grantId: REVOKED_GRANT_ID }, COACH_SOURCE));
+  expect(serialised(await storedStateOf(COACH_SESSION))).toBe(coachDocumentBefore);
+  expect(serialised(await storedStateOf(WORKER_SESSION))).toBe(recordsDocumentBefore);
+  expect(await sourceWorkOf(COACH_SESSION)).toEqual(coachWorkBefore);
+  const workerWorkBefore = await sourceWorkOf(WORKER_SESSION);
+  expectAccepted(await mutations.coaching.revokeGrant(attempt(workerScope, { grantId: ACTIVE_GRANT_ID }, await currentRevisionOf(WORKER_SESSION, ACTIVE_GRANT_ID)), WORKER_SOURCE));
+  expect(await sourceWorkOf(WORKER_SESSION)).toEqual(workerWorkBefore);
+  expect(assertDenied(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission"); // The worker's accepted revocation reaches the coach with nothing copied between the two documents.
+  expect([await sourceWorkOf(COACH_SESSION), grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID).state]).toEqual([coachWorkBefore, "revoked"]);
+});
+it("coach read boundary: keeps the stop types distinct and refuses a stale action on an episode that is already closed", async () => {
+  expect(new Set(GRANT_LIFECYCLE_STATES).size).toBe(GRANT_LIFECYCLE_STATES.length);
+  for (const needle of ["revoked", "ended", "left"]) expect(GRANT_LIFECYCLE_STATES).toContain(needle);
+  const seeded = await storedStateOf(WORKER_SESSION);
+  const active = grantRecord(seeded, ACTIVE_GRANT_ID);
+  const revokedState = grantRecord(seeded, REVOKED_GRANT_ID).state;
+  const endedState = grantRecord(seeded, ENDED_GRANT_ID).state;
+  expect([active.state, revokedState, endedState, assertDenied(await reads.coach.readCoachSubject({ grantId: ENDED_GRANT_ID }, COACH_SOURCE)).reasonCode]).toEqual(["active", "revoked", "ended", "no-permission"]);
+  expect(assertDenied(await reads.coach.readCoachSubject({ grantId: REVOKED_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission");
+  const staleOnEnded = assertConflict(await mutations.coaching.setModule(attempt(workerScope, { grantId: ENDED_GRANT_ID, moduleKey: "targets", enabled: true }, await currentRevisionOf(WORKER_SESSION, ENDED_GRANT_ID)), WORKER_SOURCE));
+  expect(staleOnEnded.reason).toBe("stale-revision");
+  expect(serialised(staleOnEnded.current)).toContain("ended");
+  expect(serialised(staleOnEnded.preservedInput)).toContain("targets");
+  expect(grantRecord(await storedStateOf(WORKER_SESSION), ENDED_GRANT_ID).revision).toBe(grantRecord(seeded, ENDED_GRANT_ID).revision);
+  const revocation = expectAccepted(await mutations.coaching.revokeGrant(attempt(workerScope, { grantId: ACTIVE_GRANT_ID }, await currentRevisionOf(WORKER_SESSION, ACTIVE_GRANT_ID)), WORKER_SOURCE));
+  expect(revocation.revision).not.toBe(active.revision);
+  const staleOnRevoked = assertConflict(await mutations.coaching.setModule(attempt(workerScope, { grantId: ACTIVE_GRANT_ID, moduleKey: "targets", enabled: true }, await currentRevisionOf(WORKER_SESSION, ACTIVE_GRANT_ID)), WORKER_SOURCE));
+  expect(serialised(staleOnRevoked.current)).toContain("revoked");
+  const afterStale = grantRecord(await storedStateOf(WORKER_SESSION), ACTIVE_GRANT_ID);
+  expect([afterStale.state, afterStale.revision]).toEqual(["revoked", revocation.revision]);
+  const coachScope = grantAuthorityScope(COACH_PRINCIPAL, YOUTH.ministryId);
+  const forbidden: readonly MutationOutcome[] = [
+    await mutations.coaching.setModule(attempt(coachScope, { grantId: ACTIVE_GRANT_ID, moduleKey: "targets", enabled: true }), COACH_SOURCE),
+    await mutations.coaching.revokeGrant(attempt(coachScope, { grantId: ACTIVE_GRANT_ID }), COACH_SOURCE),
+    await mutations.coaching.endCoaching(attempt(coachScope, { grantId: ACTIVE_GRANT_ID }), COACH_SOURCE),
+  ];
+  for (const outcome of forbidden) expect([isOutcome(outcome), outcome.outcome]).toEqual([true, "denied"]);
+  const recordsBefore = serialised(await storedStateOf(WORKER_SESSION));
+  // The grant this case revoked is closed, so the coach's own departure is asserted on the relationship that is still live: both writes address the worker's one record, and each produces its own stop type.
+  expectAccepted(await mutations.coach.leaveCoaching(attempt(coachScope, { grantId: SUPPORT_SHARING_GRANT_ID }, await currentRevisionOf(WORKER_SESSION, SUPPORT_SHARING_GRANT_ID)), COACH_SOURCE));
+  const left = grantRecord(await storedStateOf(WORKER_SESSION), SUPPORT_SHARING_GRANT_ID);
+  expect([left.state, new Set([left.state, revokedState, endedState]).size]).toEqual(["left", 3]);
+  expect(serialised(await storedStateOf(WORKER_SESSION))).not.toBe(recordsBefore); // The coach's own accepted departure is written to the one record both identities address, so the change is visible there and nowhere else.
+  expect(assertDenied(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE)).reasonCode).toBe("no-permission");
+});
+it("coach read boundary: leaves the other admitted modules readable when one shared module's source is unavailable", async () => {
+  await layDownSession(COACH_SESSION, coachMeta({ scenarioId: "coaching-module-unavailable" }), COACH_SEAT_SEED); // The coach's seat runs the unavailable-coaching-module scenario, so the module that reads the support source reports unavailable, the modules that do not stay usable, and neither is presented as the other.
+  await shareModules(ACTIVE_GRANT_ID, ["support-goal"]);
+  const envelope = assertEnvelope(await reads.coach.readCoachSubject({ grantId: ACTIVE_GRANT_ID }, COACH_SOURCE));
+  expect(envelope.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
+  const goal = envelope.data.modules.find((view) => view.module === "support-goal");
+  expect([goal?.module, goal?.state]).toEqual(["support-goal", "unavailable"]);
+  expect(goal?.unavailability).not.toBeNull();
+  const targets = envelope.data.modules.find((view) => view.module === "targets");
+  if (targets === undefined || targets.module !== "targets") throw new Error("The targets module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
+  expect(targets.state).not.toBe("unavailable");
+  expect(targets.progress.length).toBeGreaterThan(0);
+  const checkIns = envelope.data.modules.find((view) => view.module === "check-ins");
+  if (checkIns === undefined || checkIns.module !== "check-ins") throw new Error("The check-ins module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
+  expect(checkIns.state).not.toBe("unavailable");
+  expect(checkIns.sharedCheckIns.length).toBeGreaterThan(0);
+});
+it("coach read boundary: reports one admitted coaching module unavailable in the seeded scenario while the others stay usable", async () => {
+  // AAP 0.12.5 arms this failure with a seeded scenario flag rather than a hand-edited record, so the case reads the seeded seats themselves: the coach's own seat in the scenario, and the baseline coach's seat as the control proving the scenario is what changed the module rather than the world.
+  await layDownSeededSession(SEEDED_DOWN_MODULE_SESSION); // Each seat is laid down with the world it is seated in, so the coaching record it reads is that world's own rather than a copy the case had to carry across.
+  await layDownSeededSession(SEEDED_DOWN_MODULE_WORLD);
+  await layDownSeededSession(SEEDED_BASELINE_COACH_SESSION);
+  await layDownSeededSession(SEEDED_BASELINE_WORLD);
+  const down = assertEnvelope(await reads.coach.readCoachSubject({ grantId: SUPPORT_SHARING_GRANT_ID }, { sessionId: SEEDED_DOWN_MODULE_SESSION }));
+  expect(down.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
+  const goal = down.data.modules.find((view) => view.module === "support-goal");
+  if (goal === undefined || goal.module !== "support-goal") throw new Error("The shared support-goal module was not enumerated at all, which would hide the outage as an absence.");
+  expect(goal.state).toBe("unavailable");
+  expect(goal.unavailability).not.toBeNull();
+  expect(goal.goal).toBeNull();
+  const targets = down.data.modules.find((view) => view.module === "targets");
+  if (targets === undefined || targets.module !== "targets") throw new Error("The targets module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
+  expect(targets.state).not.toBe("unavailable");
+  expect(targets.unavailability).toBeNull();
+  expect(targets.progress.length).toBeGreaterThan(0);
+  const checkIns = down.data.modules.find((view) => view.module === "check-ins");
+  if (checkIns === undefined || checkIns.module !== "check-ins") throw new Error("The check-ins module is shared and was not enumerated, which would blank the whole surface for one module's outage.");
+  // The module is still enumerated and usable, and the outage of its neighbour changed neither its state nor the reading it carries. This grant shares no check-in of its own, so the module states the empty period it holds: an empty module is its own state, never the neighbour's outage and never a complete share this relationship does not have.
+  expect(checkIns.state).not.toBe("unavailable");
+  expect(checkIns.unavailability).toBeNull();
+  expect(checkIns.state).toBe("empty");
+  expect(checkIns.sharedCheckIns).toHaveLength(0);
+  // The same read of the same grant through the baseline coach's seat. The source is there and holds the goal the grant shares, so the module the scenario made unavailable reads as usable figures there.
+  const baseline = assertEnvelope(await reads.coach.readCoachSubject({ grantId: SUPPORT_SHARING_GRANT_ID }, { sessionId: SEEDED_BASELINE_COACH_SESSION }));
+  expect(baseline.data.modules.map((view) => view.module).sort()).toEqual(["check-ins", "support-goal", "targets"]);
+  const baselineGoal = baseline.data.modules.find((view) => view.module === "support-goal");
+  if (baselineGoal === undefined || baselineGoal.module !== "support-goal") throw new Error("The baseline coach's read enumerated no support-goal module, so it cannot stand as the control.");
+  expect(baselineGoal.state).not.toBe("unavailable");
+  expect(baselineGoal.goal).not.toBeNull();
+  const baselineTargets = baseline.data.modules.find((view) => view.module === "targets");
+  if (baselineTargets === undefined || baselineTargets.module !== "targets") throw new Error("The baseline coach's read enumerated no targets module, so it cannot stand as the control.");
+  expect(baselineTargets.state).not.toBe("unavailable");
 });

@@ -9,15 +9,14 @@ export const contentIdSchema = z
   .string({ error: "This action applies to one record, so open the record again and retry." })
   .trim()
   .min(1, "This action applies to one record, so open the record again and retry.")
-  .max(128, "That reference is too long to be one record identity, so open the record from its list rather " + "than pasting an address.");
-const AUDIENCE_AXIS = { public: "public", "approved-supporter": "approved-supporter" } as const satisfies Readonly<Record<ContentVariant["audience"], VariantAudience>>;
-export const audienceSchema = z.enum(Object.values(AUDIENCE_AXIS), { error: "Choose the audience this edition serves: public or approved supporters." });
+  .max(128, "That reference is too long to be one record identity, so open the record from its list rather than pasting an address.");
+export const audienceSchema = z.enum(Object.values({ public: "public", "approved-supporter": "approved-supporter" } as const satisfies Readonly<Record<ContentVariant["audience"], VariantAudience>>), { error: "Choose the audience this edition serves: public or approved supporters." });
 export const localeTagSchema = z
   .string({ error: "State the content locale this edition is written in." })
   .trim()
   .min(2, "Use a content-locale tag such as en, fr or ar-EG.")
   .max(35, "Use a content-locale tag of at most 35 characters, such as ar-EG.")
-  .regex(/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/, "Use a content-locale tag such as en, fr or ar-EG: a language subtag, then any hyphen-separated " + "subtags.");
+  .regex(/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/, "Use a content-locale tag such as en, fr or ar-EG: a language subtag, then any hyphen-separated subtags.");
 const PLACEABLE_RENDITION_PURPOSES = { display: "display", playback: "playback", poster: "poster", captions: "captions", transcript: "transcript" } as const satisfies Readonly<Record<MediaRenditionPurpose, MediaRenditionPurpose>>;
 export const mediaPlacementRefSchema = z.strictObject({ assetId: contentIdSchema, purpose: z.enum(Object.values(PLACEABLE_RENDITION_PURPOSES), { error: "Choose the rendition this placement uses: display, playback, poster, captions or transcript." }) });
 export const createVariantSchema = z.strictObject({ documentId: contentIdSchema, audience: audienceSchema, locale: localeTagSchema }).superRefine((payload, ctx) => {
@@ -31,8 +30,7 @@ function bodyFieldPath(documentPath: string): (string | number)[] {
   }
   return segments;
 }
-/** Feeds `saveDraft`: the working revision of one variant, which moves the draft pointer and nothing else — no candidate and no release changes because a draft was saved. */
-export const saveDraftSchema = z
+/** Feeds `saveDraft`: the working revision of one variant, which moves the draft pointer and nothing else — no candidate and no release changes because a draft was saved. */ export const saveDraftSchema = z
   .strictObject({
     variantId: contentIdSchema,
     body: z.unknown(),
@@ -40,7 +38,7 @@ export const saveDraftSchema = z
       .string({ error: "A checksum is either left out or stated as the value the editor holds." })
       .trim()
       .min(1, "A checksum is either left out or stated as the value the editor holds.")
-      .max(64, "That checksum is longer than any this application produces, so save the draft from the " + "editor again rather than pasting one.")
+      .max(64, "That checksum is longer than any this application produces, so save the draft from the editor again rather than pasting one.")
       .optional(),
     mediaPlacements: z.array(mediaPlacementRefSchema).optional(),
   })
@@ -67,10 +65,10 @@ export const approveCandidateSchema = z.strictObject({
   variantId: contentIdSchema,
   revisionId: contentIdSchema,
   contentChecksum: z
-    .string({ error: "Approval names the checksum of the revision you read, so approve the candidate from its " + "review panel rather than here." })
+    .string({ error: "Approval names the checksum of the revision you read, so approve the candidate from its review panel rather than here." })
     .trim()
-    .min(1, "Approve the candidate from its review panel, which carries the checksum of the revision you " + "read. " + REVIEW_ROUND_NOTE.approvalIsPerVariant)
-    .max(64, "That checksum is longer than any this application produces, so approve the candidate from " + "its review panel rather than pasting one."),
+    .min(1, "Approve the candidate from its review panel, which carries the checksum of the revision you read. " + REVIEW_ROUND_NOTE.approvalIsPerVariant)
+    .max(64, "That checksum is longer than any this application produces, so approve the candidate from its review panel rather than pasting one."),
 });
 export const requestChangesSchema = z.strictObject({
   candidateId: contentIdSchema,
@@ -104,15 +102,14 @@ export const publishSelectionSchema = z.strictObject({
   variantId: contentIdSchema,
   revisionId: contentIdSchema,
   mode: z.enum(PUBLISH_MODES, { error: "Choose how this edition is released: publish only, or publish and notify now." }),
-  candidateNotifyAdmitted: z.boolean({ error: "This release needs the candidate's own notification policy, so reopen the review and choose " + "the publish choice again." }),
+  candidateNotifyAdmitted: z.boolean({ error: "This release needs the candidate's own notification policy, so reopen the review and choose the publish choice again." }),
 });
-const DUPLICATE_VARIANT_MESSAGE = "This release lists the same variant edition twice, so remove the repeated entry: one publication " + "releases each edition once.";
 export const publishVariantsSchema = z.strictObject({ documentId: contentIdSchema, variants: z.array(publishSelectionSchema).min(1, "Choose at least one variant edition to release.") }).superRefine((payload, ctx) => {
   const selected = new Set<string>();
   payload.variants.forEach((selection, index) => {
     if (selection.mode === NOTIFY_NOW_MODE && selection.candidateNotifyAdmitted === false) ctx.addIssue({ code: "custom", path: ["variants", index, "mode"], message: REVIEW_ROUND_NOTE.reviewerCannotAddNotify });
     if (selected.has(selection.variantId)) {
-      ctx.addIssue({ code: "custom", path: ["variants", index, "variantId"], message: DUPLICATE_VARIANT_MESSAGE });
+      ctx.addIssue({ code: "custom", path: ["variants", index, "variantId"], message: "This release lists the same variant edition twice, so remove the repeated entry: one publication releases each edition once." });
       return;
     }
     selected.add(selection.variantId);
@@ -120,20 +117,19 @@ export const publishVariantsSchema = z.strictObject({ documentId: contentIdSchem
 });
 export type PublishSelection = z.infer<typeof publishSelectionSchema>;
 export type PublishVariantsPayload = z.infer<typeof publishVariantsSchema>;
-/** A repeat names the notice that recorded the failure rather than the recipients it is about: the service decides which copies definitely failed, and the stated instant is that notice's own, so no recipient list or dedupe key is computed here. */
-export const requestNotificationSchema = z.strictObject(
+/** A repeat names the notice that recorded the failure rather than the recipients it is about: the service decides which copies definitely failed, and the stated instant is that notice's own, so no recipient list or dedupe key is computed here. */ export const requestNotificationSchema = z.strictObject(
   {
     documentId: contentIdSchema,
     variantId: contentIdSchema,
     releaseId: contentIdSchema,
     acknowledgedCeiling: z
-      .number({ error: "A notice request states the ceiling you acknowledged as a number, so submit it from the " + "publish review screen rather than building one by hand." })
+      .number({ error: "A notice request states the ceiling you acknowledged as a number, so submit it from the publish review screen rather than building one by hand." })
       .int("State the ceiling as a whole number — the eligible count the review screen showed you.")
-      .min(0, "A ceiling is a count, so the lowest it can be is zero: zero means nobody is eligible " + "for this notice right now."),
+      .min(0, "A ceiling is a count, so the lowest it can be is zero: zero means nobody is eligible for this notice right now."),
     repeatOfIntentId: contentIdSchema.optional(),
     intendedAt: z.iso.datetime({ offset: true, error: "A notice's intended instant is the one its record states, so take it from the notice rather than writing one here." }).optional(),
   },
-  { error: "A notice request carries the release it is submitted for and the ceiling you acknowledged, and nothing else " + "besides the notice a repeat names and the instant that notice was meant for, so submit it from the publish review " + "screen or the delivery results." },
+  { error: "A notice request carries the release it is submitted for and the ceiling you acknowledged, and nothing else besides the notice a repeat names and the instant that notice was meant for, so submit it from the publish review screen or the delivery results." },
 );
 export type RequestNotificationPayload = z.infer<typeof requestNotificationSchema>;
 export const withdrawUpdateSchema = z.strictObject({ documentId: contentIdSchema });
@@ -142,23 +138,18 @@ export type WithdrawUpdatePayload = z.infer<typeof withdrawUpdateSchema>;
 export type WithdrawLocalePayload = z.infer<typeof withdrawLocaleSchema>;
 export const PLACEMENT_TEXT_MAX_CHARS = 4_000;
 const CAPTION_LABEL_MAX_CHARS = 120;
-const BYTES_PER_MEBIBYTE = 1024 * 1024;
 const REFUSAL_NEXT_STEP = mediaStateReason("rejected").action ?? "";
 const refusal = (problem: string): string => (REFUSAL_NEXT_STEP.length === 0 ? problem : `${problem} ${REFUSAL_NEXT_STEP}`);
 function formatByteLimit(bytes: number): string {
-  const mebibytes = bytes / BYTES_PER_MEBIBYTE;
+  const mebibytes = (bytes / 1024) * 1024;
   return `${Number.isInteger(mebibytes) ? String(mebibytes) : mebibytes.toFixed(1)} MiB`;
 }
-const admittedImageTypes = (): string => ADMITTED_IMAGE_FORMATS.map((format) => `image/${format}`).join(", ");
-const admittedVideoTypes = (): string => ADMITTED_VIDEO_PROFILES.map((profile) => `video/${profile.container}`).join(", ");
-const UNKNOWN_MEDIA_TYPE = "application/octet-stream";
 const declaredMediaType = (file: File): string | null => {
   const trimmed = (file.type.trim().toLowerCase().split(";")[0] ?? "").trim();
-  return trimmed.length === 0 || trimmed === UNKNOWN_MEDIA_TYPE ? null : trimmed;
+  return trimmed.length === 0 || trimmed === "application/octet-stream" ? null : trimmed;
 };
-const tooLargeBytes = (kind: MediaKind, limit: number): string => refusal(`This ${kind} is larger than the ${formatByteLimit(limit)} admitted for one ${kind}, so it was ` + `not opened.`);
-export const MEDIA_KINDS = ["image", "video"] as const satisfies readonly MediaAcceptanceSuccess<MediaAssetScope>["kind"][];
 type MediaKind = (typeof MEDIA_KINDS)[number];
+export const MEDIA_KINDS = ["image", "video"] as const satisfies readonly MediaAcceptanceSuccess<MediaAssetScope>["kind"][];
 const placementTextTooLong = (field: string): string => `The ${field} is longer than the ${PLACEMENT_TEXT_MAX_CHARS} characters one placement field may ` + `hold, so shorten it.`;
 const optionalPlacementText = (field: string) =>
   z
@@ -176,8 +167,7 @@ export const mediaPlacementSchema = z.strictObject({
 });
 /** The poster a video carries: its own image file, prepared into a poster rendition, with the alternative text stated beside it. */
 const posterSchema = z.strictObject({ file: chosenFile("Choose the image a player shows before this video starts, or leave the poster out."), altText: optionalPlacementText("poster alternative text") });
-/** The caption track a video carries: the WebVTT file itself, in the language the placement already states for the media. */
-const captionsSchema = z.strictObject({
+/** The caption track a video carries: the WebVTT file itself, in the language the placement already states for the media. */ const captionsSchema = z.strictObject({
   file: chosenFile("Choose the WebVTT file this video's cues are in, or leave the caption track out."),
   language: localeTagSchema,
   label: z.string({ error: "State the track's label as text, or leave it out." }).trim().min(1, "State the track's label as text, or leave it out.").max(CAPTION_LABEL_MAX_CHARS, `A track label holds at most ${CAPTION_LABEL_MAX_CHARS} characters, so shorten it.`).optional(),
@@ -189,8 +179,8 @@ export const registerMediaAssetSchema = z
     const { file, kind } = payload;
     const declared = declaredMediaType(file);
     const byteLimit = kind === "image" ? IMAGE_MAX_BYTES : VIDEO_MAX_BYTES;
-    if (file.size > byteLimit) refuse(["file"], tooLargeBytes(kind, byteLimit));
-    const admitted = kind === "image" ? admittedImageTypes() : admittedVideoTypes();
+    if (file.size > byteLimit) refuse(["file"], ((kind: MediaKind, limit: number): string => refusal(`This ${kind} is larger than the ${formatByteLimit(limit)} admitted for one ${kind}, so it was ` + `not opened.`))(kind, byteLimit));
+    const admitted = kind === "image" ? ((): string => ADMITTED_IMAGE_FORMATS.map((format) => `image/${format}`).join(", "))() : ((): string => ADMITTED_VIDEO_PROFILES.map((profile) => `video/${profile.container}`).join(", "))();
     if (declared !== null && !declared.startsWith(`${kind}/`)) refuse(["file"], refusal(`This ${kind} placement cannot take a file the browser reports as ${declared}; choose one ` + `of ${admitted}, whose content the local pipeline then checks.`));
     // A poster and a caption track belong to a video, and the service states the same rule in the same words.
     if (kind === "image" && payload.poster !== undefined) refuse(["poster"], "A poster belongs to a video, so an image carries none.");

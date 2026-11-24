@@ -23,13 +23,8 @@ export type MediaRefusalWords = { readonly message: string; readonly action?: st
 const REJECTED_WITHOUT_REFUSAL: MediaStateReason = { label: "This file was not accepted.", action: "Choose a different file." };
 const CANCELLED_REASON: MediaStateReason = { label: "The upload was cancelled; nothing was added and the rest of the draft is unchanged.", action: "Choose the file again when you are ready." };
 const UNAVAILABLE_REASON: MediaStateReason = { label: "This media file is unavailable, so it cannot be shown or played right now.", action: "Try again, or replace the placement with another file." };
-const STATE_REASONS: Readonly<Record<Exclude<MediaPreparationState, "rejected">, MediaStateReason>> = {
-  selected: { label: "Selected; this file has not been checked yet." },
-  preparing: { label: "Checking this file with the local media pipeline." },
-  ready: { label: "Ready." },
-  cancelled: CANCELLED_REASON,
-  unavailable: UNAVAILABLE_REASON,
-};
+type PreparedStateReasons = Readonly<Record<Exclude<MediaPreparationState, "rejected">, MediaStateReason>>;
+const STATE_REASONS: PreparedStateReasons = { selected: { label: "Selected; this file has not been checked yet." }, preparing: { label: "Checking this file with the local media pipeline." }, ready: { label: "Ready." }, cancelled: CANCELLED_REASON, unavailable: UNAVAILABLE_REASON };
 export function mediaStateReason(state: MediaPreparationState, refusal?: MediaRefusalWords): MediaStateReason {
   if (state !== "rejected") return STATE_REASONS[state];
   return refusal === undefined ? REJECTED_WITHOUT_REFUSAL : refusal.action === undefined ? { label: refusal.message } : { label: refusal.message, action: refusal.action };

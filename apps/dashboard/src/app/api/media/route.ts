@@ -18,18 +18,14 @@ const MAX_REQUEST_BYTES = MAX_REQUEST_MIB * BYTES_PER_MEBIBYTE;
 const OVERSIZED_MESSAGE = `This request is larger than the ${MAX_REQUEST_MIB} MiB a media registration may carry as JSON text. A 100 MiB video states as roughly 133 MiB of base64 before its poster and caption track are counted, so anything past this bound is refused here rather than decoded. Choose a smaller file, or prepare the video outside this application.`;
 type RegisterMediaAssetPayload = Parameters<typeof mutations.media.registerMediaAsset>[1]["payload"];
 type PlacementTargetPayload = Parameters<typeof mutations.media.replacePlacement>[1]["payload"];
-type RegisterMediaAssetRequest = RegisterMediaAssetPayload & { readonly operation: "registerMediaAsset" };
-type ReplacePlacementRequest = PlacementTargetPayload & { readonly operation: "replacePlacement" };
-type RemovePlacementRequest = PlacementTargetPayload & { readonly operation: "removePlacement" };
 const MEDIA_KINDS = ["image", "video"] as const satisfies readonly RegisterMediaAssetPayload["kind"][];
 const MEDIA_OPERATIONS = ["registerMediaAsset", "replacePlacement", "removePlacement"] as const;
-type MediaOperation = (typeof MEDIA_OPERATIONS)[number];
 const uploadBytesSchema = z.looseObject({ bytesBase64: z.string({ error: "Choose a file to upload." }).min(1, "Choose a file to upload.") });
 const altTextFieldSchema = z.string({ error: MESSAGES.altTextRequired }).optional();
 const placementDescriptorSchema = z.looseObject({ altText: altTextFieldSchema }).optional();
 // The section a registration binds its asset into: a Page composes media into a section, so the request names the draft edition and the catalogue element that section is read by, and the service judges the binding itself.
 const sectionPlacementSchema = z.looseObject({ sectionElement: z.string({ error: MESSAGES.sectionRequired }).min(1, MESSAGES.sectionRequired), draftRevisionId: z.string().min(1).optional(), variantId: z.string().min(1).optional(), position: z.int().optional() }).optional();
-const registerMediaAssetPayloadSchema: z.ZodType<RegisterMediaAssetRequest> = z
+const registerMediaAssetPayloadSchema: z.ZodType<RegisterMediaAssetPayload & { readonly operation: "registerMediaAsset" }> = z
   .looseObject({
     operation: z.literal("registerMediaAsset", { error: MESSAGES.operationRequired }),
     kind: z.enum(MEDIA_KINDS, { error: "Choose whether this file is an image or a video." }),
@@ -46,13 +42,13 @@ const placementTargetShape = {
   draftRevisionId: z.string().min(1, "Name the draft revision this change edits.").optional(),
   variantId: z.string().min(1, "Name the variant whose draft this change edits.").optional(),
 } as const;
-const replacePlacementPayloadSchema: z.ZodType<ReplacePlacementRequest> = z.looseObject({
+const replacePlacementPayloadSchema: z.ZodType<PlacementTargetPayload & { readonly operation: "replacePlacement" }> = z.looseObject({
   operation: z.literal("replacePlacement", { error: MESSAGES.operationRequired }),
   ...placementTargetShape,
   assetId: z.string().min(1, "Name the asset that replaces this placement's media.").optional(),
   placement: placementDescriptorSchema,
 });
-const removePlacementPayloadSchema: z.ZodType<RemovePlacementRequest> = z.looseObject({ operation: z.literal("removePlacement", { error: MESSAGES.operationRequired }), ...placementTargetShape });
+const removePlacementPayloadSchema: z.ZodType<PlacementTargetPayload & { readonly operation: "removePlacement" }> = z.looseObject({ operation: z.literal("removePlacement", { error: MESSAGES.operationRequired }), ...placementTargetShape });
 const registerMediaAssetBodySchema = mutationInputSchema(registerMediaAssetPayloadSchema);
 const replacePlacementBodySchema = mutationInputSchema(replacePlacementPayloadSchema);
 const removePlacementBodySchema = mutationInputSchema(removePlacementPayloadSchema);
@@ -62,7 +58,7 @@ const MEDIA_WRITES = {
   registerMediaAsset: (raw, { operationId, sessionId }) => dispatch(registerMediaAssetBodySchema, raw, operationId, "operation", (input) => mutations.media.registerMediaAsset(sessionId, input)),
   replacePlacement: (raw, { operationId, sessionId }) => dispatch(replacePlacementBodySchema, raw, operationId, "operation", (input) => mutations.media.replacePlacement(sessionId, input)),
   removePlacement: (raw, { operationId, sessionId }) => dispatch(removePlacementBodySchema, raw, operationId, "operation", (input) => mutations.media.removePlacement(sessionId, input)),
-} satisfies Readonly<Record<MediaOperation, ClaimedWrite>>;
+} satisfies Readonly<Record<(typeof MEDIA_OPERATIONS)[number], ClaimedWrite>>;
 /** Applies one named media mutation — `registerMediaAsset`, `replacePlacement` or `removePlacement` — and answers with one outcome of the closed eight. The body is read under this transport's own ceiling and as valid UTF-8 only, because a base64 document this large is never carried as anything else. */
 async function changeMedia(request: NextRequest): Promise<Response> {
   const body = await readRequestBody(request, MAX_REQUEST_BYTES, true);

@@ -5,7 +5,7 @@ import type { MediaOriginalReference } from "@/modules/media/asset";
 import { assertReadable, type ByteRange, type MediaServingState, type MediaSizedRendition } from "@/modules/media/serve";
 import { readMediaBytes, statMediaBytes, type MediaByteWindow } from "@/modules/store/media";
 import { instantAt } from "@/modules/time/clock";
-import { canView, type ResolvedSession, type SessionSource } from "../authorize";
+import { canView, sessionStateRefusal, type ResolvedSession, type SessionSource } from "../authorize";
 import type { MediaAssetKind, MediaAssetRecord, MediaAssetRenditionPurpose, MediaAssetRenditionRecord, ReadAction, ReadEnvelope, Scope } from "../envelope";
 import type { DenialReason, ReadResult } from "../outcome";
 import { answerOf, deniedRead, sourceUnavailableRead } from "./frame";
@@ -25,12 +25,14 @@ const MISSING_RENDITION_GUIDANCE = "This asset has no prepared rendition for tha
 const SEGMENT_MAX_LENGTH = 160;
 const SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u;
 const KIND_PURPOSES: Readonly<Record<MediaAssetKind, readonly MediaAssetRenditionPurpose[]>> = { image: ["display"], video: ["playback", "poster", "captions", "transcript"] };
-/** Serves one rendition of one asset to one caller — the session the request carries, or the one `source` names — re-authorising it as it stands now. Answers the rendition's `envelope` — the whole entity, a requested range or an unsatisfiable range — or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the asset cannot be read. */
+/** Serves one rendition of one asset to one caller — the session the request carries, or the one `source` names — re-authorising it as it stands now. The session's own state is decided first, before the asset is looked up, so a session that is denied, without access, expired or unavailable answers exactly as an address that was never recorded does and cannot tell the two apart. Answers the rendition's `envelope` — the whole entity, a requested range or an unsatisfiable range — or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the asset cannot be read. */
 export async function readMediaAsset(input: MediaAssetReadInput, source?: SessionSource): Promise<MediaAssetReadResult> {
   if (!isMediaSegment(input.assetId) || !isMediaSegment(input.rendition)) return refused();
   const worlds = await resolveWorlds(JOB, source);
   if (!worlds.ok) return worlds.result;
   const { session, own, published } = worlds;
+  const stateRefusal = sessionStateRefusal(session);
+  if (stateRefusal !== undefined) return { kind: "denied", denied: stateRefusal };
   const reading = published.sessionId !== own.sessionId;
   const asset = (reading ? published : own).state.mediaAssets.find((record) => record.assetId === input.assetId);
   if (asset === undefined) return refused();
@@ -96,5 +98,4 @@ const admittedWindow = (byteRange: ByteRange | null, totalBytes: number): MediaB
 const bytesSourceOf = (asset: MediaAssetRecord): MediaOriginalReference => ({ system: MEDIA_SOURCE_SYSTEM, reference: asset.assetId });
 // The scenario's own media rule, read from the one place that states it: the bytes this route serves and the state every rendering surface states come from the same answer.
 const servingStateOf = (scenarioId: string): MediaServingState => scenarioMediaServing(scenarioId);
-/** The one refusal every failed media authorisation answers with: the request names no record this caller may read. */
-const refused = (): MediaAssetReadResult => deniedRead(MEDIA_REFUSAL_REASON);
+/** The one refusal every failed media authorisation answers with: the request names no record this caller may read. */ const refused = (): MediaAssetReadResult => deniedRead(MEDIA_REFUSAL_REASON);

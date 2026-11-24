@@ -9,7 +9,6 @@ export const metadata: Metadata = { title: "Gift" };
 const LEDGER_HREF = "/support/gifts";
 const RETURN_LABEL = "Back to the gifts ledger";
 /** The title this route states above its own notice, in the words the record itself reads at once the ledger answers, so a refusal keeps a page-level heading rather than reading as a paragraph. */
-const PAGE_TITLE = "Gift record";
 const noticeCopyOf = (giftId: string, carried: string): ReadNoticeCopy => ({
   headingLevel: 1,
   denied: {
@@ -26,6 +25,6 @@ export default async function GiftDetailPage({ params, searchParams }: { readonl
   const stated = await searchParams;
   const carried = searchSuffixOf(stated);
   const result = await reads.support.readGifts({ ...giftQueryOf(stated, statedPageOf(stated)), record: giftId });
-  if (result.kind !== "envelope") return pageRefusalOf(result, noticeCopyOf(giftId, carried), 4, { title: PAGE_TITLE });
+  if (result.kind !== "envelope") return pageRefusalOf(result, noticeCopyOf(giftId, carried), 4, { title: "Gift record" });
   return <GiftDetail scope={result.envelope.scope} giftId={giftId} locale="en-GB" />;
 }

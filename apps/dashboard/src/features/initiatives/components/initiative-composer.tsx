@@ -16,7 +16,6 @@ import { createInitiativePayloadSchema, type CreateInitiativePayload } from "../
 import DiscardConfirmation from "./discard-confirmation";
 import { errorsOf, ReviewFact } from "./figures";
 type InitiativeListEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiatives>>, { readonly kind: "envelope" }>["envelope"];
-const CREATE_INITIATIVE = "createInitiative";
 type ComposerStep = "form" | "review" | "discard";
 type InitiativeFormValues = { name: string; purpose: string; responsiblePrincipalId: string; startOn: string; endOn: string };
 type SettledEffect = { readonly kind: "invalid" } | { readonly kind: "created"; readonly initiativeId: string | null } | { readonly kind: "receipt" };
@@ -24,36 +23,17 @@ export type InitiativeComposerProps = { readonly open: boolean; readonly onOpenC
 const NAME_FIELD = "name";
 const PURPOSE_FIELD = "purpose";
 const RESPONSIBLE_FIELD = "responsiblePrincipalId";
-const PERIOD_FIELD = "period";
 const START_FIELD = "period.startOn";
 const END_FIELD = "period.endOn";
 const FIELD_ORDER = [NAME_FIELD, PURPOSE_FIELD, RESPONSIBLE_FIELD, START_FIELD, END_FIELD] as const;
 const START_DATE_LABEL = "Start date";
 const END_DATE_LABEL = "End date";
 const FIELD_LABELS: Readonly<Record<string, string>> = { [NAME_FIELD]: INITIATIVE_COPY.nameLabel, [PURPOSE_FIELD]: INITIATIVE_COPY.purposeLabel, [RESPONSIBLE_FIELD]: INITIATIVE_COPY.responsibleLabel, [START_FIELD]: START_DATE_LABEL, [END_FIELD]: END_DATE_LABEL };
-const DIALOG_DESCRIPTION = "A named purpose inside the ministry you are acting in, with the person responsible and an optional period of dates. Creating an initiative records no pledge, gift, commitment, membership, notification, task or send.";
 const SCOPE_LABEL = "Ministry";
-const SCOPE_NOTE = "This is the ministry from the selected context. It is stated here and is not a field, because a form may never name a context the session is not admitted to.";
-const NAME_DESCRIPTION = "What this outreach is called — up to 200 characters.";
-const PURPOSE_DESCRIPTION = "What it is for, in your own words — up to 2,000 characters.";
 const SINGLE_PRINCIPAL_DESCRIPTION = "The acting principal is the only person this release admits as responsible, because an initiative carries no delegation. It is shown by its opaque reference and is already selected.";
-const PERIOD_DESCRIPTION = "Optional calendar dates, with no time of day and no zone behind them. Leave both empty when the initiative has no period; filling one requires the other.";
 const START_DATE_DESCRIPTION = "The first civil date of the initiative, as YYYY-MM-DD.";
 const END_DATE_DESCRIPTION = "The last civil date of the initiative, as YYYY-MM-DD. It cannot be before the start date.";
-const CANCEL_LABEL = "Cancel";
-const REVIEW_LABEL = "Review and create";
-const REVIEW_TITLE = "Review this new initiative";
-const CONFIRM_LABEL = "Create initiative";
-const BACK_LABEL = "Back to the details";
 const CLOSE_LABEL = "Close";
-const DONE_LABEL = "Done";
-const OPEN_LABEL = "Open the initiative";
-const KEEP_EDITING_LABEL = "Keep editing";
-const DISCARD_LABEL = "Discard and close";
-const DISCARD_TITLE = "Discard what you entered?";
-const DISCARD_BODY = "Nothing has been created yet. Going back keeps every value you entered; discarding closes this form and loses them.";
-const UNAVAILABLE_TITLE = "An initiative cannot be created here";
-const NO_PERIOD_TEXT = "No period: this initiative has no start date and no end date.";
 const CIVIL_DATE_NOTE = "civil dates, shown exactly as entered";
 const SCOPE_FACT_NOTE = "the ministry from the selected context";
 type ControlAria = { readonly "aria-describedby": string | undefined; readonly "aria-invalid": true | undefined };
@@ -81,7 +61,7 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
         label={INITIATIVE_COPY.periodLabel}
         value={
           period === undefined ? (
-            <span>{NO_PERIOD_TEXT}</span>
+            <span>{"No period: this initiative has no start date and no end date."}</span>
           ) : (
             <span className="flex min-w-0 flex-wrap items-baseline gap-1">
               {" "}
@@ -112,8 +92,7 @@ export default function InitiativeComposer({ open, onOpenChange, envelope, onCre
   const actingPrincipalId = scope.principalId;
   const ministryId = scope.ministryId;
   const organizationId = scope.organizationId;
-  const expectedRevision = envelope.revision;
-  const createAction = envelope.actions.find((action) => action.name === CREATE_INITIATIVE);
+  const createAction = envelope.actions.find((action) => action.name === "createInitiative");
   const unavailableReason = createAction === undefined || createAction.available ? null : (createAction.reason?.trim() ?? "This read does not admit the create action, so no form is offered.");
   const admittedPrincipals = useMemo(() => [actingPrincipalId], [actingPrincipalId]);
   const form = useForm({ defaultValues: defaultValuesFor(actingPrincipalId) });
@@ -217,32 +196,30 @@ export default function InitiativeComposer({ open, onOpenChange, envelope, onCre
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{INITIATIVE_COPY.createLabel}</DialogTitle>
-          <DialogDescription>{DIALOG_DESCRIPTION}</DialogDescription>
+          <DialogDescription>{"A named purpose inside the ministry you are acting in, with the person responsible and an optional period of dates. Creating an initiative records no pledge, gift, commitment, membership, notification, task or send."}</DialogDescription>
         </DialogHeader>
         {unavailableReason !== null ? (
           <div className="flex min-w-0 flex-col gap-4">
             <Alert>
-              <AlertTitle>{UNAVAILABLE_TITLE}</AlertTitle>
+              <AlertTitle>{"An initiative cannot be created here"}</AlertTitle>
               <AlertDescription>{unavailableReason}</AlertDescription>
             </Alert>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={finish}>
-                {CLOSE_LABEL}
-              </Button>
+              <Button {...{ type: "button", variant: "outline", onClick: finish }}>{CLOSE_LABEL}</Button>
             </DialogFooter>
           </div>
         ) : step === "review" && reviewed !== null ? (
           <div className="flex min-w-0 flex-col gap-4">
             <ActionReview<CreateInitiativePayload>
-              title={REVIEW_TITLE}
+              title="Review this new initiative"
               description={<ReviewSummary payload={reviewed} ministryId={ministryId} organizationId={organizationId} />}
-              confirmLabel={CONFIRM_LABEL}
-              cancelLabel={BACK_LABEL}
+              confirmLabel="Create initiative"
+              cancelLabel="Back to the details"
               onCancel={() => {
                 setStep("form");
                 setSettled(null);
               }}
-              input={{ scope, expectedRevision, payload: reviewed }}
+              input={{ scope, expectedRevision: envelope.revision, payload: reviewed }}
               submit={submit}
               onSettled={handleSettled}
               fieldLabels={FIELD_LABELS}
@@ -250,19 +227,13 @@ export default function InitiativeComposer({ open, onOpenChange, envelope, onCre
             />
             {settledEffect === null ? null : (
               <div className="flex flex-wrap items-center gap-2">
-                {settledEffect.kind === "created" && createdId !== null && onCreated !== undefined ? (
-                  <Button type="button" onClick={openCreated}>
-                    {OPEN_LABEL}
-                  </Button>
-                ) : null}
-                <Button type="button" variant="outline" onClick={finish}>
-                  {settledEffect.kind === "created" ? DONE_LABEL : CLOSE_LABEL}
-                </Button>
+                {settledEffect.kind === "created" && createdId !== null && onCreated !== undefined ? <Button {...{ type: "button", onClick: openCreated }}>{"Open the initiative"}</Button> : null}
+                <Button {...{ type: "button", variant: "outline", onClick: finish }}>{settledEffect.kind === "created" ? "Done" : CLOSE_LABEL}</Button>
               </div>
             )}
           </div>
         ) : step === "discard" ? (
-          <DiscardConfirmation title={DISCARD_TITLE} body={DISCARD_BODY} keepEditingLabel={KEEP_EDITING_LABEL} discardLabel={DISCARD_LABEL} onKeepEditing={keepEditing} onDiscard={discardAndClose} />
+          <DiscardConfirmation title={"Discard what you entered?"} body={"Nothing has been created yet. Going back keeps every value you entered; discarding closes this form and loses them."} keepEditingLabel={"Keep editing"} discardLabel={"Discard and close"} onKeepEditing={keepEditing} onDiscard={discardAndClose} />
         ) : (
           <form noValidate className="flex min-w-0 flex-col gap-4" onSubmit={reviewTheDetails}>
             <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/40 p-3 text-sm">
@@ -270,19 +241,19 @@ export default function InitiativeComposer({ open, onOpenChange, envelope, onCre
                 <span className="text-muted-foreground">{`${SCOPE_LABEL}: `}</span>
                 <bdi className="mono-identifier wrap-anywhere">{ministryId}</bdi>
               </p>
-              <p className="text-pretty text-muted-foreground">{SCOPE_NOTE}</p>
+              <p className="text-pretty text-muted-foreground">{"This is the ministry from the selected context. It is stated here and is not a field, because a form may never name a context the session is not admitted to."}</p>
             </div>
             {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={3} />}
             <form.Field name="name">
               {(field) => (
-                <FormField name={NAME_FIELD} label={INITIATIVE_COPY.nameLabel} description={NAME_DESCRIPTION} error={errors?.byField[NAME_FIELD]} required>
+                <FormField name={NAME_FIELD} label={INITIATIVE_COPY.nameLabel} description={"What this outreach is called — up to 200 characters."} error={errors?.byField[NAME_FIELD]} required>
                   {(control) => <Input id={control.id} name={NAME_FIELD} type="text" autoComplete="off" required={control.required} {...entryOf(field)} {...controlAria(control)} />}
                 </FormField>
               )}
             </form.Field>
             <form.Field name="purpose">
               {(field) => (
-                <FormField name={PURPOSE_FIELD} label={INITIATIVE_COPY.purposeLabel} description={PURPOSE_DESCRIPTION} error={errors?.byField[PURPOSE_FIELD]} required>
+                <FormField name={PURPOSE_FIELD} label={INITIATIVE_COPY.purposeLabel} description={"What it is for, in your own words — up to 2,000 characters."} error={errors?.byField[PURPOSE_FIELD]} required>
                   {(control) => <Textarea id={control.id} name={PURPOSE_FIELD} rows={5} required={control.required} {...entryOf(field)} {...controlAria(control)} />}
                 </FormField>
               )}
@@ -302,7 +273,7 @@ export default function InitiativeComposer({ open, onOpenChange, envelope, onCre
                 </FormField>
               )}
             </form.Field>
-            <FormFieldGroup legend={INITIATIVE_COPY.periodLabel} name={PERIOD_FIELD} description={PERIOD_DESCRIPTION} optionalHint>
+            <FormFieldGroup legend={INITIATIVE_COPY.periodLabel} name={"period"} description={"Optional calendar dates, with no time of day and no zone behind them. Leave both empty when the initiative has no period; filling one requires the other."} optionalHint>
               {() => (
                 <>
                   <form.Field name="startOn">
@@ -323,10 +294,8 @@ export default function InitiativeComposer({ open, onOpenChange, envelope, onCre
               )}
             </FormFieldGroup>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={requestClose}>
-                {CANCEL_LABEL}
-              </Button>
-              <Button type="submit">{REVIEW_LABEL}</Button>
+              <Button {...{ type: "button", variant: "outline", onClick: requestClose }}>{"Cancel"}</Button>
+              <Button type="submit">{"Review and create"}</Button>
             </DialogFooter>
           </form>
         )}

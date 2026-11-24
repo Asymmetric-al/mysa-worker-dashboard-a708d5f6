@@ -60,7 +60,7 @@ function resolveCustomPeriod(period: Extract<TargetPeriod, { readonly kind: "cus
 /** The period of `anchor`'s calendar that contains `date`, or `"invalid-period"` for an inverted custom range and `"no-period"` for a date outside a one-off custom range. */
 export const resolvePeriodContaining = (anchor: PeriodAnchor, date: CivilDate): Result<ResolvedPeriod, TargetRefusalReason> =>
   anchor.period.kind === "weekly" ? ok(resolveWeeklyPeriod(anchor, date)) : anchor.period.kind === "monthly" ? ok(resolveMonthlyPeriod(anchor, date)) : anchor.period.kind === "custom" ? resolveCustomPeriod(anchor.period, date) : assertNever(anchor.period, "Unhandled target period");
-/** The period that `now` falls in, read as a civil date in the declared zone before the calendar is resolved — so a monthly or weekly boundary is a civil-date boundary and never an. */
+/** The period that `now` falls in, read as a civil date in the declared zone before the calendar is resolved — so a monthly or weekly boundary is a civil-date boundary and never an elapsed-hour one. */
 export function resolveCurrentPeriod(anchor: PeriodAnchor, zone: string, now: Temporal.Instant): Result<ResolvedPeriod, TargetRefusalReason> {
   const today = todayInZone(zone, now);
   return today.status === "refused" ? err("invalid-zone") : resolvePeriodContaining(anchor, today.date);
@@ -110,8 +110,7 @@ export function startProspectiveVersion(input: TargetVersionPlanInput): Result<r
 export type MeasureQuery = { readonly measure: TargetMeasure; readonly period: ResolvedPeriod; readonly activities: readonly ActivityEvent[]; readonly alreadyCredited: ReadonlySet<string> };
 export type MeasureCount = { readonly measure: TargetMeasure; readonly period: ResolvedPeriod; readonly count: number; readonly creditedActivityIds: readonly string[] };
 const occursIn = (date: CivilDate, period: ResolvedPeriod): boolean => compareCivil(date, period.start) >= 0 && compareCivil(date, period.exclusiveEnd) < 0;
-/** The count of one measure over one period — the only activity counter in the application. */
-export function measureFor(query: MeasureQuery): MeasureCount {
+/** The count of one measure over one period — the only activity counter in the application. */ export function measureFor(query: MeasureQuery): MeasureCount {
   const credited = new Set<string>(query.alreadyCredited);
   const creditedActivityIds: string[] = [];
   for (const activity of query.activities) {

@@ -18,26 +18,22 @@ const UNREACHED_ATTEMPT = "dev-route";
 const WIRE_TEXT_LIMIT = 64;
 const ACTION_MESSAGE = `A development request names the action it asks for: ${DEV_ACTIONS.join(", ")}.`;
 const AMBIGUOUS_ACTION_MESSAGE = `A development request carries exactly one action, and ${DEV_ACTIONS.join(", ")} are six distinct names.`;
-type ScenarioIdWire = Parameters<typeof mutations.dev.setScenario>[0]["payload"]["scenarioId"];
 type SetFailurePlanPayloadWire = Parameters<typeof mutations.dev.setFailurePlan>[0]["payload"];
 type ArmingFailurePlanPayloadWire = Exclude<SetFailurePlanPayloadWire, { plan: null }>;
-type FailureModeWire = ArmingFailurePlanPayloadWire["mode"];
-type FailureTargetNameWire = ArmingFailurePlanPayloadWire["target"]["name"];
 /** What a persona switch reports once it has settled: the outcome it answers with, and the authority the caller's own read established, which is what its diagnostic line states. */
 type PersonaSwitch = { readonly outcome: MutationOutcome; readonly authority: LogScope };
 function serviceWord<Word extends string>(): z.ZodType<Word> {
   return z.custom<Word>((value) => typeof value === "string" && value.trim().length > 0 && value.length <= WIRE_TEXT_LIMIT, `This field is a non-empty name of at most ${String(WIRE_TEXT_LIMIT)} characters.`);
 }
-const setScenarioPayload = z.strictObject({ scenarioId: serviceWord<ScenarioIdWire>() });
+const setScenarioPayload = z.strictObject({ scenarioId: serviceWord<Parameters<typeof mutations.dev.setScenario>[0]["payload"]["scenarioId"]>() });
 const setClockPayload = z.strictObject({ offsetIso: z.string().min(1).max(WIRE_TEXT_LIMIT) });
 const advanceClockPayload = z.strictObject({
   bySeconds: z.int({ error: "A clock advance moves the scenario clock by whole seconds, so state the seconds to move by rather than a fraction of one." }).positive({ error: "A clock advance moves the scenario clock forward, so the seconds it moves by are greater than zero." }),
 });
-const armFailurePlanPayload = z.strictObject({ mode: serviceWord<FailureModeWire>(), target: z.strictObject({ kind: z.enum(["read", "mutation"]), name: serviceWord<FailureTargetNameWire>() }) });
+const armFailurePlanPayload = z.strictObject({ mode: serviceWord<ArmingFailurePlanPayloadWire["mode"]>(), target: z.strictObject({ kind: z.enum(["read", "mutation"]), name: serviceWord<ArmingFailurePlanPayloadWire["target"]["name"]>() }) });
 const disarmFailurePlanPayload = z.strictObject({ plan: z.null() });
-const DISARM_PLAN_MEMBER = "plan";
 const setFailurePlanPayload: z.ZodType<SetFailurePlanPayloadWire> = z.custom<SetFailurePlanPayloadWire>().superRefine((payload, ctx) => {
-  const parsed = isRecord(payload) && Object.hasOwn(payload, DISARM_PLAN_MEMBER) ? disarmFailurePlanPayload.safeParse(payload) : armFailurePlanPayload.safeParse(payload);
+  const parsed = isRecord(payload) && Object.hasOwn(payload, "plan") ? disarmFailurePlanPayload.safeParse(payload) : armFailurePlanPayload.safeParse(payload);
   if (!parsed.success) for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", message: issue.message, path: issue.path });
 });
 const resetSeedPayload = z.custom<Parameters<typeof mutations.dev.resetSeed>[0]["payload"]>((value) => isRecord(value) && Object.keys(value).length === 0, "A seed reset states no fields: it discards every stored session and lays every seeded session down again, so there is nothing to choose.");
@@ -65,7 +61,6 @@ const isDevAction = (value: unknown): value is DevAction => typeof value === "st
 const devActionOf = (body: unknown): DevAction | null => (isRecord(body) && isDevAction(body.action) ? body.action : null);
 const developmentDenial = (): MutationOutcome => denied({ operationId: UNREACHED_ATTEMPT, reasonCode: "capability-absent" });
 const refusalOnAction = (operationId: string, message: string): MutationOutcome => invalid({ operationId, fields: { action: [message] } });
-/** Whether a value names a persona this build seeds, so a roster identifier can address the seed's own row. */
 const isPersonaId = (value: string): value is PersonaId => Object.hasOwn(SEEDED_PERSONAS, value);
 /** Re-bases a read's refusal onto the attempt this request carries: the attempt identity is the caller's own, never the identity a read files its own answer under. */
 function refusalOverRead(read: Exclude<ReadResult<unknown>, { readonly kind: "envelope" }>, operationId: string): MutationOutcome {
@@ -110,7 +105,6 @@ async function selectPersonaDiagnosed(operationId: string, personaId: string): P
   logger.mutation({ operationId, scope: switched.authority, outcome: switched.outcome.outcome, elapsedMs: performance.now() - startedAt });
   return switched.outcome;
 }
-/** Reports this session's development runtime — the scenario, the clock offset and the instant it derives, the one armed failure plan, the advertised modes and named targets, the seeded state and the reset control. */
 const readDevState = (): Promise<Response> => (isDevelopment() ? readResponse(READ_ATTEMPT, () => reads.dev.readDevState()) : Promise.resolve(toResponse(developmentDenial())));
 /** Operates exactly one of the six named development controls — the five the service mutates this session's runtime with, and the persona switch this transport grants from the cookie it owns — and answers with one of the closed outcomes: `accepted`, `alreadyAccepted` for a replay of the same `operationId` with the same intent, `unchanged` when the payload would change nothing, and otherwise the refusal that names what to correct. */
 async function operateDevControl(request: Request): Promise<Response> {

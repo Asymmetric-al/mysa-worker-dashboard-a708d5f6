@@ -11,39 +11,9 @@ import { instantAt } from "@/modules/time/clock";
 import { serialiseCivilDate, todayInZone, type CivilDate } from "@/modules/time/civil";
 import { REFERRAL_SOURCE_ZONE } from "@/modules/time/window";
 import { canView, type AuthorizationTarget, type ResolvedSession, type SessionSource } from "../authorize";
-import {
-  commitmentRowRecordSchema,
-  coverageSchema,
-  giftRowRecordSchema,
-  initiativeMemberRecordSchema,
-  initiativeRecordSchema,
-  interactionRecordSchema,
-  partnerRecordSchema,
-  principalIdSchema,
-  privateNoteRecordSchema,
-  project,
-  recordRevisionSchema,
-  referralCycleRecordSchema,
-  sessionContextRecordSchema,
-  supportProjectionRecordSchema,
-  taskRecordSchema,
-  type ContactMethodKind,
-  type Coverage,
-  type GiftRowRecord,
-  type InitiativeRecord,
-  type InteractionRecord,
-  type PartnerKind,
-  type PartnerRecord,
-  type PrivateNoteRecord,
-  type ReadAction,
-  type ReadEnvelope,
-  type RecordedValueState,
-  type ReferralCycleRecord,
-  type Scope,
-  type SupportProjectionRecord,
-  type TaskRecord,
-  type ValueState,
-} from "../envelope";
+import { commitmentRowRecordSchema, coverageSchema, giftRowRecordSchema, initiativeMemberRecordSchema, initiativeRecordSchema, interactionRecordSchema, partnerRecordSchema, principalIdSchema, privateNoteRecordSchema, project, recordRevisionSchema, referralCycleRecordSchema } from "../envelope";
+import { sessionContextRecordSchema, supportProjectionRecordSchema, taskRecordSchema } from "../envelope";
+import type { ContactMethodKind, Coverage, GiftRowRecord, InitiativeRecord, InteractionRecord, PartnerKind, PartnerRecord, PrivateNoteRecord, ReadAction, ReadEnvelope, RecordedValueState, ReferralCycleRecord, Scope, SupportProjectionRecord, TaskRecord, ValueState } from "../envelope";
 import { LOCAL_STORE_SYSTEM, type ReadResult } from "../outcome";
 import { answerOf, cachedDecoder, civilDateOf, commitmentRowsOf, countState, deniedRead, giftRowsOf, hashedRevision, mergedCoverage, openRead, readStoreDocument, recordedStateOf, sourceUnavailableRead, knownExponentsOf } from "./frame";
 const PARTNERS_SOURCE_REFERENCE = "partners";
@@ -165,8 +135,7 @@ interface PartnerReadContext {
   readonly session: ResolvedSession;
   readonly scope: Scope;
   readonly document: PartnerStateDocument;
-  /** The session's generated workload, or nothing where this session holds none: decoded once, then read by every partner read of the same request. */
-  readonly workload: WorkloadDocument | undefined;
+  /** The session's generated workload, or nothing where this session holds none: decoded once, then read by every partner read of the same request. */ readonly workload: WorkloadDocument | undefined;
 }
 type ContextOutcome = { readonly ok: true; readonly context: PartnerReadContext } | { readonly ok: false; readonly result: ReadResult<never> };
 const PARTNER_SOURCE: SourceReference = Object.freeze({ system: LOCAL_STORE_SYSTEM, reference: PARTNERS_SOURCE_REFERENCE });
@@ -446,8 +415,7 @@ function flatMapPartners(records: readonly PartnerRecord[], pick: (record: Partn
   for (const record of records) values.push(...pick(record));
   return values;
 }
-/** Whether one record carries the task state a `task-state` filter names: an open task, an overdue one, or one with no due date at all. */
-function taskStateMatches(record: PartnerRecord, value: string, facts: RosterFacts): boolean {
+/** Whether one record carries the task state a `task-state` filter names: an open task, an overdue one, or one with no due date at all. */ function taskStateMatches(record: PartnerRecord, value: string, facts: RosterFacts): boolean {
   const counts = taskFactsOrNone(facts, record.partnerId);
   return value === "open" ? counts.open > 0 : value === "overdue" ? counts.overdue > 0 : value === "no-date" ? counts.undated > 0 : false;
 }

@@ -24,8 +24,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: "The dated agenda could not be read", action: { label: "Try this read again", href: "/work/agenda" } },
   refused: { title: "This view's request was refused", body: "This route states only the display time zone and a page size the read admits, so a request the read refuses is answered here rather than thrown, and the source behind it did not fail." },
 };
-/** The dated agenda: one read, one snapshot, and the family's own agenda rendering it. */
-export default async function WorkAgendaPage(): Promise<ReactElement> {
+/** The dated agenda: one read, one snapshot, and the family's own agenda rendering it. */ export default async function WorkAgendaPage(): Promise<ReactElement> {
   const [agenda, partners] = await Promise.all([reads.work.readAgenda({ displayTimeZone: DISPLAY_TIME_ZONE, pageSize: AGENDA_PAGE_SIZE }), reads.partners.findPartners({ page: { index: FIRST_PAGE, size: PARTNER_LABEL_PAGE_SIZE } })]);
   const partnerLabels = partnerLabelsOf(partners.kind === "envelope" ? partners.envelope.data.rows : []);
   return (

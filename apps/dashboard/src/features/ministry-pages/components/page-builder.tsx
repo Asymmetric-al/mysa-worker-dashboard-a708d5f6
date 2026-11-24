@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { DirectionProvider } from "@/components/ui/direction";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
-import type { Reach } from "@/modules/content/reach";
 import type { ContentVariant } from "@/modules/content/variant";
 import { PAGE_SECTION_TYPES, type PageSectionType, type ReadEnvelope } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
@@ -18,19 +17,17 @@ import { useGivingBinding, usePage, usePageCatalogues, usePageLocales, usePagePr
 import FamilyCatalogue, { type FamilyCatalogueView } from "./family-catalogue";
 import GivingDesignation, { type GivingBindingView } from "./giving-designation";
 import LocaleEditionSwitcher, { type EditionView } from "./locale-edition-switcher";
-import PagePreviewFrame, { type PagePreviewView } from "./page-preview-frame";
+import PagePreviewFrame, { previewRefusalViewOf, type PagePreviewView } from "./page-preview-frame";
 import PresetChooser from "./preset-chooser";
 import ReachControl from "./reach-control";
 import ReleaseControls, { type ReleaseVariantView } from "./release-controls";
 import SectionFields, { type PageBuilderSection as FieldsSection, type SectionPlacement, type SectionSaveState } from "./section-fields";
 import SectionOutline, { type PageBuilderSection as OutlineSection } from "./section-outline";
 import StopShowingPublicly from "./stop-showing-publicly";
-/** One Page as `readPage` states it: the document, its locked fields, its giving binding, the composed draft, that draft's sections, the presets, every language edition and the reach values those releases may carry. */
 export type PageBuilderView = PageDetailData;
 type SectionRecord = PageBuilderView["sections"][number];
 type PlacementRecord = SectionRecord["placements"][number];
 type EditionRecord = PageBuilderView["editions"][number];
-/** One section as both the outline and the field form read it: the identity a change addresses, the catalogue type it was composed from, its fields and presentation, and the media it places. */
 export type PageBuilderSection = OutlineSection & FieldsSection;
 const PANES = ["outline", "fields", "preview"] as const;
 type Pane = (typeof PANES)[number];
@@ -42,7 +39,6 @@ const GIVING_UNAVAILABLE_TITLE = "The giving placement could not be read";
 const DENIED_DESCRIPTION = "The answer is the same whether or not this Page exists, so nothing here states a title, a section, an edition or how many of either there are.";
 const REFUSED_DESCRIPTION = "The request this Page was read with is not one the read admits, so nothing was read here and nothing stands in its place.";
 const GIVING_LOADING_DESCRIPTION = "The approved giving designation for this Page is being read. No other fund and no default designation is shown in the meantime, and no amount is shown at all.";
-const GIVING_REFUSED_DESCRIPTION = "The request for this Page's giving designation is not one that read admits, so this placement states no destination rather than an invented one.";
 const SECTION_CLASS = "flex min-w-0 flex-col gap-4";
 const HEADING_CLASS = "type-section-title text-pretty wrap-anywhere";
 const NOTE_CLASS = "type-supporting text-pretty wrap-anywhere";
@@ -51,20 +47,16 @@ function otherEditionDescription(composedLocale: string, openLocale: string): st
   if (composedLocale === "") return `The Page read named no edition to compose, so no section can be changed here. ${openLocale === "" ? "No language edition is open either." : "This edition can still be previewed, reviewed, released and set to its own reach."}`;
   return `The Page read composes the ${composedLocale} draft, so its sections are the ones that can be changed. The ${openLocale === "" ? "edition" : `${openLocale} edition`} you have open can still be previewed, reviewed, released and set to its own reach.`;
 }
-const openComposedDraftLabel = (composedLocale: string): string => `Work on the ${composedLocale} draft`;
-const editionPreviewPathOf = (documentId: string, locale: string): string => `${"/pages/"}${encodeURIComponent(documentId)}/${encodeURIComponent(locale)}${"/preview"}`;
 const isSectionType = (element: string): element is PageSectionType => (PAGE_SECTION_TYPES as readonly string[]).includes(element);
 const managedReasonKeyOf = (value: string | null): ManagedFieldKey | null => (value !== null && (MANAGED_FIELD_KEYS as readonly string[]).includes(value) ? (value as ManagedFieldKey) : null);
-const sectionIdOf = (position: number): string => `section-${String(position)}`;
 const placementsOf = (section: SectionRecord): readonly SectionPlacement[] =>
   section.placements.map((placement: PlacementRecord) => ({ placementId: placement.placementId, kind: placement.kind, altText: placement.altText, ...(placement.caption === null ? {} : { caption: placement.caption }), ...(placement.credit === null ? {} : { credit: placement.credit }), state: placement.state }));
 function builderSectionOf(section: SectionRecord, position: number): PageBuilderSection | undefined {
   if (!isSectionType(section.element)) return undefined;
   const managedReason = managedReasonKeyOf(section.lockReasonKey);
-  return { sectionId: sectionIdOf(position), sectionType: section.element, managed: section.managed, ...(managedReason === null ? {} : { managedReasonKey: managedReason }), index: position, fields: section.fields, presentation: section.presentation, placements: placementsOf(section) };
+  return { sectionId: `section-${String(position)}`, sectionType: section.element, managed: section.managed, ...(managedReason === null ? {} : { managedReasonKey: managedReason }), index: position, fields: section.fields, presentation: section.presentation, placements: placementsOf(section) };
 }
 const sectionsOf = (builder: PageBuilderView): readonly PageBuilderSection[] => builder.sections.flatMap((section, position) => builderSectionOf(section, position) ?? []);
-const outsideCatalogueCountOf = (builder: PageBuilderView): number => builder.sections.filter((section) => !isSectionType(section.element)).length;
 const variantRecordOf = (documentId: string, edition: EditionRecord): ContentVariant => ({
   variantId: edition.variantId,
   documentId,
@@ -76,10 +68,8 @@ const variantRecordOf = (documentId: string, edition: EditionRecord): ContentVar
 });
 const editionViewsOf = (documentId: string, editions: readonly EditionRecord[]): readonly EditionView[] =>
   editions.map((edition) => ({ locale: edition.locale.tag, direction: edition.locale.direction, variant: variantRecordOf(documentId, edition), ...(edition.headRelease === null ? {} : { release: edition.headRelease }), ...(edition.candidateId === null ? {} : { candidateId: edition.candidateId }) }));
-function editionListOf(localesRead: PageLocalesReadResult | undefined, seed: ReadEnvelope<readonly EditionView[]>, documentId: string, editions: readonly EditionRecord[]): readonly EditionView[] {
-  return localesRead === undefined ? seed.data : editionViewsOf(documentId, localesRead.kind === "envelope" ? localesRead.envelope.data.editions : editions);
-}
-const reachOf = (edition: EditionRecord | undefined): Reach | null => edition?.headRelease?.reach ?? null;
+const editionListOf = (localesRead: PageLocalesReadResult | undefined, seed: ReadEnvelope<readonly EditionView[]>, documentId: string, editions: readonly EditionRecord[]): readonly EditionView[] =>
+  localesRead === undefined ? seed.data : editionViewsOf(documentId, localesRead.kind === "envelope" ? localesRead.envelope.data.editions : editions);
 const releaseVariantsOf = (documentId: string, editions: readonly EditionRecord[]): readonly ReleaseVariantView[] =>
   editions.map((edition) => ({
     variantId: edition.variantId,
@@ -98,7 +88,7 @@ function previewViewOf(result: PagePreviewReadResult): PagePreviewView {
     case "envelope": {
       const data = result.envelope.data;
       if (data.status === "authorised") return { status: "authorised", variantId: data.variantId, revisionId: data.revision.revisionId, servedLocale: data.locale.tag, direction: data.locale.direction, html: data.renderedHtml, unreadyMedia: data.unreadyMedia, inert: true, givingAction: "none" };
-      if (data.status === "denied") return { status: "denied", reason: data.reason };
+      if (data.status === "denied") return previewRefusalViewOf(data.reason);
       return { status: "unavailable", source: result.envelope.source };
     }
     case "denied":
@@ -128,7 +118,7 @@ function refusalNotice(answer: Refusal, words: RefusalWords, retry: () => void, 
 }
 const PAGE_REFUSAL: RefusalWords = { headingLevel: 2, unavailableTitle: copy.states.unavailableTitle, retryLabel: "Read this Page again", refusedDescription: REFUSED_DESCRIPTION };
 const CATALOGUE_REFUSAL: RefusalWords = { headingLevel: 3, unavailableTitle: "The section catalogue could not be read", retryLabel: "Read the catalogue again", refusedDescription: REFUSED_DESCRIPTION };
-const GIVING_REFUSAL: RefusalWords = { headingLevel: 3, unavailableTitle: GIVING_UNAVAILABLE_TITLE, retryLabel: "Read the giving designation again", refusedDescription: GIVING_REFUSED_DESCRIPTION };
+const GIVING_REFUSAL: RefusalWords = { headingLevel: 3, unavailableTitle: GIVING_UNAVAILABLE_TITLE, retryLabel: "Read the giving designation again", refusedDescription: "The request for this Page's giving designation is not one that read admits, so this placement states no destination rather than an invented one." };
 const LOADING_NOTICE = (headingLevel: NoticeHeadingLevel, title: string, description: string): ReactElement => <StateNotice kind="loading" headingLevel={headingLevel} title={title} description={description} />;
 /** The exact, currently authorised, inert preview the route already read for the edition this builder opens on. It is shown until the surface's own preview read answers, and it is never shown for another edition. */
 export type PageBuilderProps = { readonly page: ReadEnvelope<PageBuilderView>; readonly locales: ReadEnvelope<readonly EditionView[]>; readonly givingBinding: ReadEnvelope<GivingBindingView>; readonly preview?: PagePreviewView; readonly className?: string };
@@ -187,20 +177,17 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
   const givingView: ReadEnvelope<GivingBindingView> | undefined = givingResult === undefined ? givingBinding : givingResult.kind === "envelope" ? { ...givingResult.envelope, data: givingResult.envelope.data.binding } : undefined;
   const givingProblem = givingResult === undefined || givingResult.kind === "envelope" ? undefined : givingResult;
   const otherEditionNote = otherEditionDescription(composedLocale, activeLocale);
+  const composedAction = composedLocale === "" ? undefined : { label: `Work on the ${composedLocale} draft`, onClick: () => setSelection((current) => ({ ...current, locale: composedLocale })) };
   return (
     <div data-slot="page-builder" data-document-id={documentId} data-family={family} data-locale={activeLocale} data-composing={composingDraft ? "true" : "false"} className={cn("flex min-w-0 flex-col gap-8 text-start", className)}>
       <div className={"order-2 flex min-w-0 flex-col gap-6 lg:order-1"}>
         <div className={SECTION_CLASS}>
-          <Badge variant="secondary" className="self-start">
-            {copy.families[family].label}
-          </Badge>
+          <Badge {...{ variant: "secondary" as const, className: "self-start" as const }}>{copy.families[family].label}</Badge>
           <p className={NOTE_CLASS}>{copy.families[family].description}</p>
           <LocaleEditionSwitcher editions={editionList} selectedLocale={activeLocale} onSelectLocale={(locale) => setSelection((current) => ({ ...current, locale }))} />
         </div>
         <section aria-labelledby={controlsHeadingId} className={SECTION_CLASS}>
-          <h2 id={controlsHeadingId} className={HEADING_CLASS}>
-            {"Review, release, reach and giving"}
-          </h2>
+          <h2 {...{ id: controlsHeadingId, className: HEADING_CLASS }}>{"Review, release, reach and giving"}</h2>
           <div className={"grid min-w-0 gap-6 lg:grid-cols-2"}>
             <div className={SECTION_CLASS}>
               <p className={NOTE_CLASS}>{"The editions chosen here are the ones a release covers. Each edition reports its own result, and a Page release sends no notice."}</p>
@@ -215,7 +202,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
               />
             </div>
             <div className={SECTION_CLASS}>
-              <ReachControl variantId={activeEdition?.variant.variantId ?? ""} documentId={documentId} scope={scope} expectedRevision={documentRevision} current={reachOf(activeRecord)} />
+              <ReachControl variantId={activeEdition?.variant.variantId ?? ""} documentId={documentId} scope={scope} expectedRevision={documentRevision} current={activeRecord?.headRelease?.reach ?? null} />
               <Separator />
               <StopShowingPublicly scope={scope} documentId={documentId} expectedRevision={documentRevision} editionCount={editionList.length} />
             </div>
@@ -236,26 +223,18 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
           </fieldset>
           <div className={"grid min-w-0 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.3fr)]"}>
             <section data-pane="outline" aria-labelledby={outlineHeadingId} className={paneClass("outline", selection.pane)}>
-              <h2 id={outlineHeadingId} className={HEADING_CLASS}>
-                {copy.builder.outline}
-              </h2>
+              <h2 {...{ id: outlineHeadingId, className: HEADING_CLASS }}>{copy.builder.outline}</h2>
               {editionList.length === 0 ? (
                 <StateNotice kind="empty" headingLevel={3} title={"This Page has no language edition yet"} description={copy.states.emptyEditions} />
               ) : composingDraft ? (
                 <>
                   <SectionOutline sections={sections} selectedSectionId={chosenSectionId} onSelect={chooseSection} variantId={draftVariantId} expectedRevision={draftExpectedRevision} />
-                  {outsideCatalogueCountOf(builder) === 0 ? null : <p className={NOTE_CLASS}>{copy.catalogue.outsideCatalogue}</p>}
+                  {builder.sections.filter((section) => !isSectionType(section.element)).length === 0 ? null : <p className={NOTE_CLASS}>{copy.catalogue.outsideCatalogue}</p>}
                 </>
               ) : builder.draft === null ? (
                 <StateNotice kind="empty" headingLevel={3} title={"This Page has nothing composed yet"} description={NO_DRAFT_DESCRIPTION} />
               ) : (
-                <StateNotice
-                  kind="empty"
-                  headingLevel={3}
-                  title={"Sections are composed in one edition at a time"}
-                  description={otherEditionNote}
-                  action={composedLocale === "" ? undefined : { label: openComposedDraftLabel(composedLocale), onClick: () => setSelection((current) => ({ ...current, locale: composedLocale })) }}
-                />
+                <StateNotice kind="empty" headingLevel={3} title={"Sections are composed in one edition at a time"} description={otherEditionNote} action={composedAction} />
               )}
               {catalogue === undefined ? (
                 cataloguesRead.data === undefined ? (
@@ -273,9 +252,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
               {composingDraft && builder.draft !== null ? <PresetChooser family={family} presets={builder.presets} baseVariantId={draftVariantId} locale={composedLocale} expectedRevision={draftExpectedRevision} scope={scope} documentId={documentId} /> : null}
             </section>
             <section data-pane="fields" aria-labelledby={fieldsHeadingId} className={paneClass("fields", selection.pane)}>
-              <h2 id={fieldsHeadingId} className={HEADING_CLASS}>
-                {copy.builder.fields}
-              </h2>
+              <h2 {...{ id: fieldsHeadingId, className: HEADING_CLASS }}>{copy.builder.fields}</h2>
               {activeRecord?.translation.status === "stale" ? (
                 <Alert>
                   <AlertDescription>{copy.editions.translationSourceNote}</AlertDescription>
@@ -290,14 +267,10 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
               )}
             </section>
             <section data-pane="preview" aria-labelledby={previewHeadingId} className={paneClass("preview", selection.pane)}>
-              <h2 id={previewHeadingId} className={HEADING_CLASS}>
-                {copy.builder.preview}
-              </h2>
+              <h2 {...{ id: previewHeadingId, className: HEADING_CLASS }}>{copy.builder.preview}</h2>
               {activeLocale === "" ? null : (
                 <div className="flex min-w-0 flex-col gap-1">
-                  <Link href={editionPreviewPathOf(documentId, activeLocale)} className={PREVIEW_LINK_CLASS}>
-                    {copy.builder.openEditionPreview}
-                  </Link>
+                  <Link {...{ href: `${"/pages/"}${encodeURIComponent(documentId)}/${encodeURIComponent(activeLocale)}${"/preview"}`, className: PREVIEW_LINK_CLASS }}>{copy.builder.openEditionPreview}</Link>
                   <p className={NOTE_CLASS}>{copy.builder.openEditionPreviewNote}</p>
                 </div>
               )}

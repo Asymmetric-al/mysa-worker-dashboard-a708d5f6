@@ -6,60 +6,12 @@ import { compareCodeUnits } from "@/lib/ordering";
 import { err, ok, type Result } from "@/lib/result";
 import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failures";
 import { isScenarioId, scenarioFlagsFor } from "@/modules/dev-runtime/scenario";
-import {
-  CHECKIN_MAX_ANSWER_SCALARS,
-  CHECKIN_MAX_QUESTIONS,
-  CHECKIN_MAX_QUESTION_SCALARS,
-  CHECKIN_MAX_REQUEST_BYTES,
-  checkInReadState,
-  validateCheckInRequest,
-  type CheckIn,
-  type CheckInAnswer,
-  type CheckInPayload,
-  type CheckInPrivateDraftRevision,
-  type CheckInQuestion,
-  type CheckInShareDuration,
-  type CheckInSharedRevision,
-  type CheckInState,
-} from "@/modules/coaching/checkin";
-import {
-  MODULE_KEYS,
-  activeGrant,
-  moduleReadState,
-  type CoachingAccessContext,
-  type CoachingGrant,
-  type CoachingRefusal,
-  type GrantDuration,
-  type GrantLifecycleState,
-  type ModuleContentPresence,
-  type ModuleKey,
-  type ModuleObservation,
-  type ModuleReadState,
-  type PermissionHold,
-  type SubjectAvailability,
-} from "@/modules/coaching/grant";
-import {
-  TARGET_MEASURES,
-  coachTargetProgress,
-  measureFor,
-  resolveCurrentPeriod,
-  resolvePeriodContaining,
-  resolveTargetState,
-  resolveTargetVersion,
-  workerTargetProgress,
-  type ActivityEvent,
-  type ActivityEventKind,
-  type PeriodAnchor,
-  type PeriodBoundaryResolution,
-  type ResolvedPeriod,
-  type TargetHomePlacement,
-  type TargetMeasure,
-  type TargetPeriod,
-  type TargetRecord,
-  type TargetRefusalReason,
-  type TargetState,
-  type TargetVersion,
-} from "@/modules/coaching/target";
+import { CHECKIN_MAX_ANSWER_SCALARS, CHECKIN_MAX_QUESTIONS, CHECKIN_MAX_QUESTION_SCALARS, CHECKIN_MAX_REQUEST_BYTES, checkInReadState, validateCheckInRequest } from "@/modules/coaching/checkin";
+import type { CheckIn, CheckInAnswer, CheckInPayload, CheckInPrivateDraftRevision, CheckInQuestion, CheckInShareDuration, CheckInSharedRevision, CheckInState } from "@/modules/coaching/checkin";
+import { MODULE_KEYS, activeGrant, moduleReadState } from "@/modules/coaching/grant";
+import type { CoachingAccessContext, CoachingGrant, CoachingRefusal, GrantDuration, GrantLifecycleState, ModuleContentPresence, ModuleKey, ModuleObservation, ModuleReadState, PermissionHold, SubjectAvailability } from "@/modules/coaching/grant";
+import { TARGET_MEASURES, coachTargetProgress, measureFor, resolveCurrentPeriod, resolvePeriodContaining, resolveTargetState, resolveTargetVersion, workerTargetProgress } from "@/modules/coaching/target";
+import type { ActivityEvent, ActivityEventKind, PeriodAnchor, PeriodBoundaryResolution, ResolvedPeriod, TargetHomePlacement, TargetMeasure, TargetPeriod, TargetRecord, TargetRefusalReason, TargetState, TargetVersion } from "@/modules/coaching/target";
 import { TASK_SUMMARY_MAX_CODE_POINTS, safeTaskSummary, taskShareReadState, type TaskShare, type TaskShareSummaryState, type TaskStatus, type TaskSummaryDueDate } from "@/modules/coaching/taskshare";
 import { minorUnitsOf, type Money } from "@/modules/money/amount";
 import { exponentOf } from "@/modules/money/currency";
@@ -84,9 +36,11 @@ import {
   privateNoteRecordSchema,
   project,
   scopeSchema,
+  sessionContextRecordSchema,
   supportProjectionRecordSchema,
   taskRecordSchema,
   taskReviewedFingerprint,
+  type AdmittedMembership,
   type CoachingCheckInRecord,
   type CoachingDurationRecord,
   type CoachingGrantRecord,
@@ -111,8 +65,10 @@ const COACHING_PLANNING_ZONE = "UTC";
 const COACHING_SOURCE_REFERENCE = "coaching";
 const SUPPORT_PROJECTION_REFERENCE = "support-projection";
 const COACHING_MODULE_SOURCE_DOWN_REASON = "The source behind this module is reported unavailable in this scenario, so nothing is shown for it rather than a zero or an empty reading.";
+const UNREADABLE_DURATION_SENTENCE = "The duration this invitation was made for cannot be read from its record, so none is stated here.";
 type StoredCoachingTaskShare = CoachingTaskShareRecord;
 const coachingStateSchema = z.object({
+  context: sessionContextRecordSchema,
   coachingGrants: z.array(coachingGrantRecordSchema),
   coachingTargets: z.array(coachingTargetRecordSchema),
   coachingCheckIns: z.array(coachingCheckInRecordSchema),
@@ -194,8 +150,7 @@ function asOfDate(at: Temporal.Instant): string | null {
 const coverageOf = (from: string | null, at: Temporal.Instant): Coverage => ({ from, to: asOfDate(at), state: "complete" });
 const collectionRevision = (members: readonly { readonly id: string; readonly revision: string }[]): string => (members.length === 0 ? "empty" : members.map((member) => `${member.id}@${member.revision}`).join("|"));
 type OpenedWorkerRead = { readonly ok: true; readonly session: CoachingReadContext["session"]; readonly state: CoachingState; readonly at: CoachingReadContext["at"]; readonly scope: Scope } | { readonly ok: false; readonly result: ReadResult<never> };
-/** Opens the coaching state and the worker scope one read answers from, or answers the read's own refusal. */
-async function openWorkerRead(job: string, source?: SessionSource): Promise<OpenedWorkerRead> {
+/** Opens the coaching state and the worker scope one read answers from, or answers the read's own refusal. */ async function openWorkerRead(job: string, source?: SessionSource): Promise<OpenedWorkerRead> {
   const loaded = await loadCoachingState(job, source);
   if (!loaded.ok) return loaded;
   const scoped = workerScope(loaded.context);
@@ -204,8 +159,7 @@ async function openWorkerRead(job: string, source?: SessionSource): Promise<Open
   return { ok: true, session, state, at, scope: scoped.scope };
 }
 type EnvelopeFields<T> = { readonly scope: Scope; readonly source: Parameters<typeof buildEnvelope>[0]["source"]; readonly revision: string; readonly data: T; readonly valueStates: Readonly<Record<string, RecordedValueState>>; readonly actions: readonly ReadAction[] };
-/** The result a read answers with, assembled through this file's own envelope builder. */
-function respond<T>(at: Temporal.Instant, coverageFrom: string | null, fields: EnvelopeFields<T>): ReadResult<ReadEnvelope<T>> {
+/** The result a read answers with, assembled through this file's own envelope builder. */ function respond<T>(at: Temporal.Instant, coverageFrom: string | null, fields: EnvelopeFields<T>): ReadResult<ReadEnvelope<T>> {
   return answerOf(fields.scope, at.toString(), { data: fields.data, source: fields.source, revision: fields.revision, coverage: coverageOf(coverageFrom, at), valueStates: fields.valueStates, actions: fields.actions });
 }
 function pageOf<T>(items: readonly T[], page: number | undefined, pageSize: number | undefined): { readonly items: readonly T[]; readonly page: CoachingPageView } {
@@ -442,8 +396,7 @@ type WorkerRelationshipView = { readonly grantId: string; readonly recipientPrin
   readonly invitation: { readonly issuedAt: string; readonly expiresAt: string; readonly supersededBy: string | null; readonly acceptanceWindowOpen: boolean };
 } & { readonly outcomes: CoachingOutcomesView; readonly readRefusal: CoachingRefusal | null; readonly revision: string };
 type CoachingOverviewView = { readonly preparation: readonly PrivatePreparationView[]; readonly relationships: readonly WorkerRelationshipView[]; readonly activeGrantId: string | null; readonly activeModuleCount: number; readonly invitableCoaches: readonly InvitableCoachView[] } & {
-  /** The currencies this session's support source holds, which a reviewed range must name exactly one of. */
-  readonly reviewedRangeCurrencies: readonly string[];
+  /** The currencies this session's support source holds, which a reviewed range must name exactly one of. */ readonly reviewedRangeCurrencies: readonly string[];
 };
 function latestPrivateNoteOf(notes: readonly PrivateNoteRecord[], partnerId: string, principalId: string): { readonly body: string; readonly updatedOn: string | null } | null {
   let latest: PrivateNoteRecord | null = null;
@@ -461,8 +414,7 @@ function latestPrivateNoteOf(notes: readonly PrivateNoteRecord[], partnerId: str
   const day = civilDateAt(latestAt, COACHING_PLANNING_ZONE);
   return { body: latest.body, updatedOn: day.status === "resolved" ? serialiseCivilDate(day.date) : null };
 }
-/** One person an invitation can name: the principal this session's own coaching records name as a coach, and nothing those records do not hold. */
-type InvitableCoachView = { readonly principalId: string; readonly displayName: string };
+/** One person an invitation can name: the principal this session's own coaching records name as a coach, and nothing those records do not hold. */ type InvitableCoachView = { readonly principalId: string; readonly displayName: string };
 /** The people an invitation can name, taken from this session's own coaching records — the coach principals its grants already name — rather than from the development runtime's persona catalogue, which belongs to the preview switcher, or from the store's listing of other sessions, which belong to whoev. */
 function invitableCoachesOf(coachPrincipalIds: readonly string[], actingPrincipalId: string): readonly InvitableCoachView[] {
   const coaches = new Map<string, InvitableCoachView>();
@@ -693,17 +645,17 @@ export async function readCheckIns(input: { readonly page?: number; readonly pag
     readAction(
       "shareCheckIn",
       checkIns.some((checkIn) => checkIn.privateDraft !== null && checkIn.shared === null),
-      "No check-in holds a private draft that could be shared.",
+      "Nothing awaits a share. A check-in is shared from a saved private draft, and one that already holds a shared revision is changed with Update shared check-in.",
     ),
     readAction(
       "updateSharedCheckIn",
       checkIns.some((checkIn) => checkIn.shared !== null && checkIn.shared.withdrawnAt === null),
-      "No check-in has a shared revision to update.",
+      "No check-in has a live shared revision to update. A withdrawn share cannot be updated, and a share is created from a saved private draft.",
     ),
     readAction(
       "withdrawCheckIn",
       checkIns.some((checkIn) => checkIn.shared !== null && checkIn.shared.withdrawnAt === null),
-      "No check-in has a shared revision to withdraw.",
+      "No check-in has a live shared revision to withdraw. A withdrawn share is already withdrawn, and a private draft is not a share.",
     ),
   ];
   return respond(at, null, { data, scope, source: { system: LOCAL_STORE_SYSTEM, reference: "coaching-check-ins" }, revision: collectionRevision(checkIns.map((checkIn) => ({ id: checkIn.checkInId, revision: checkIn.revision }))), valueStates, actions });
@@ -846,23 +798,59 @@ export async function readTaskShares(input: { readonly page?: number; readonly p
   return respond(at, null, { data, scope, source: { system: LOCAL_STORE_SYSTEM, reference: "coaching-task-shares" }, revision: collectionRevision(shares.map((share) => ({ id: share.shareId, revision: String(share.revision) }))), valueStates, actions });
 }
 type CoachPortfolioSubjectView = { readonly grantId: string; readonly workerPrincipalId: string; readonly ministryId: string; readonly duration: CoachingDurationView; readonly admittedModules: readonly CoachingModuleAdmissionView[]; readonly revision: string };
-type CoachPortfolioView = { readonly subjects: readonly CoachPortfolioSubjectView[]; readonly holdsNoSubjects: boolean };
+type CoachPendingInvitationView = {
+  readonly grantId: string;
+  readonly state: "delivered";
+  readonly recipientPrincipalId: string;
+  readonly workerPrincipalId: string;
+  readonly organizationId: string | null;
+  readonly organizationLabel: string | null;
+  readonly ministries: readonly { readonly ministryId: string; readonly ministryLabel: string | null }[];
+  readonly modules: readonly ModuleKey[];
+  readonly durationLabel: string;
+  readonly issuedAt: string;
+  readonly expiresAt: string;
+  readonly revision: string;
+};
+type CoachPortfolioView = { readonly subjects: readonly CoachPortfolioSubjectView[]; readonly pendingInvitations: readonly CoachPendingInvitationView[]; readonly holdsNoSubjects: boolean };
+/** One invitation this coach may accept, named from the records themselves: the principals it connects, the organization and the ministries the worker's own admission records state, the modules the grant names and the duration wording the domain already owns. Nothing here is inferred from a name or an address, and the grant's own revision is the one its acceptance is compared against. */
+function pendingInvitationViewOf(record: CoachingGrantRecord, membershipsByMinistry: ReadonlyMap<string, AdmittedMembership>): CoachPendingInvitationView {
+  const ministries = record.ministryIds.map((ministryId) => ({ ministryId, ministryLabel: membershipsByMinistry.get(ministryId)?.ministryLabel ?? null }));
+  const home = record.ministryIds.flatMap((ministryId) => membershipsByMinistry.get(ministryId) ?? []).at(0);
+  const duration = workingDurationOf(record);
+  return {
+    grantId: record.grantId,
+    state: "delivered",
+    recipientPrincipalId: record.coachPrincipalId,
+    workerPrincipalId: record.workerPrincipalId,
+    organizationId: home?.organizationId ?? null,
+    organizationLabel: home?.organizationLabel ?? null,
+    ministries,
+    modules: MODULE_KEYS.filter((key) => record.modules[key]),
+    durationLabel: duration === null ? UNREADABLE_DURATION_SENTENCE : duration.nominalWording,
+    issuedAt: record.invitation.issuedAt,
+    expiresAt: record.invitation.expiresAt,
+    revision: record.revision,
+  };
+}
 function coachPortfolioScope(session: ResolvedSession, ministryIds: readonly string[]): Scope {
   const first = ministryIds.at(0);
   return first !== undefined ? coachScope(session, first) : scopeSchema.parse({ organizationId: "grant-authority:portfolio", ministryId: "grant-authority:portfolio", supportSubjectId: "grant-authority:portfolio", principalId: session.principalId });
 }
-/** The subjects this coach holds an open, in-cutoff grant for. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
+/** The subjects this coach holds an open, in-cutoff grant for, and the invitations addressed to this coach that still await their own decision. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readCoachPortfolio(source?: SessionSource): Promise<ReadResult<ReadEnvelope<CoachPortfolioView>>> {
   const loaded = await loadCoachingState("readCoachPortfolio", source);
   if (!loaded.ok) return loaded.result;
   const { session, state, at } = loaded.context;
   const subjects: CoachPortfolioSubjectView[] = [];
+  const pendingInvitations: CoachPendingInvitationView[] = [];
   const valueStates: Record<string, RecordedValueState> = {};
-  let invitationOutstanding = false;
+  // The worker's own admission records indexed once: an invitation names its organization and ministries from the membership that admits them, never from a name or an address.
+  const membershipsByMinistry = new Map(state.context.admittedMemberships.map((membership) => [membership.ministryId, membership]));
   for (const record of state.coachingGrants) {
     if (record.coachPrincipalId !== session.principalId) continue;
     const expiresAt = instantOf(record.invitation.expiresAt);
-    if (record.state === "invited" && record.invitation.supersededBy === null && expiresAt !== null && Temporal.Instant.compare(at, expiresAt) < 0) invitationOutstanding = true;
+    if (record.state === "invited" && record.invitation.supersededBy === null && expiresAt !== null && Temporal.Instant.compare(at, expiresAt) < 0) pendingInvitations.push(pendingInvitationViewOf(record, membershipsByMinistry));
     if (!canView(session, { kind: "coaching-grant", grant: record, now: at }).allowed) continue;
     const working = toWorkingGrant(record);
     if (!working.ok) continue;
@@ -880,12 +868,13 @@ export async function readCoachPortfolio(source?: SessionSource): Promise<ReadRe
     const byMinistry = compareCodeUnits(one.ministryId, two.ministryId);
     return byMinistry === 0 ? compareCodeUnits(one.grantId, two.grantId) : byMinistry;
   });
+  pendingInvitations.sort((one, two) => compareCodeUnits(one.grantId, two.grantId));
   const scope = coachPortfolioScope(
     session,
     subjects.map((subject) => subject.ministryId),
   );
-  const data: CoachPortfolioView = { subjects, holdsNoSubjects: subjects.length === 0 };
-  const actions = [readAction("acceptInvitation", invitationOutstanding, "No invitation addressed to you is awaiting acceptance."), readAction("leaveCoaching", subjects.length > 0, "No coaching relationship of yours is open to leave.")];
+  const data: CoachPortfolioView = { subjects, pendingInvitations, holdsNoSubjects: subjects.length === 0 };
+  const actions = [readAction("acceptInvitation", pendingInvitations.length > 0, "No invitation addressed to you is awaiting acceptance."), readAction("leaveCoaching", subjects.length > 0, "No coaching relationship of yours is open to leave.")];
   return respond(at, null, { data, scope, source: { system: LOCAL_STORE_SYSTEM, reference: COACHING_SOURCE_REFERENCE }, revision: collectionRevision(subjects.map((subject) => ({ id: subject.grantId, revision: subject.revision }))), valueStates, actions });
 }
 type CoachTargetProgressView = { readonly revisionId: string; readonly measure: TargetMeasure; readonly quantity: number; readonly start: string; readonly endInclusive: string; readonly count: number | null; readonly countState: RecordedValueState; readonly state: TargetState };

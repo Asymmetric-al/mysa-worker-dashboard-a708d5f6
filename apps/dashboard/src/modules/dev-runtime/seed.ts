@@ -112,8 +112,7 @@ export interface SeededSession {
   readonly scenarioId: ScenarioId;
   readonly selectedContext: SeededContext | null;
   readonly workspace: SeededWorkspace;
-  /** The session whose documents hold this seat's coaching records, or null when they are its own; a coach seat names the worker whose shared records it reads. */
-  readonly coachingRecordsSessionId: string | null;
+  /** The session whose documents hold this seat's coaching records, or null when they are its own; a coach seat names the worker whose shared records it reads. */ readonly coachingRecordsSessionId: string | null;
   readonly documents?: SeededSessionDocuments;
 }
 export type SeededSessionDocuments = { readonly state: SessionStateDocument; readonly operations: OperationLedgerDocument; readonly meta: SessionMetaDocument };
@@ -483,23 +482,11 @@ const harbourReferrals = (): readonly ReferralCycleRecord[] => [
   buildReferral("referral-hana-approximate", "partner-hana-nakamura", "2026-09-10", { datePrecision: "approximate" }),
   buildReferral("referral-sara-unknown", "partner-sara-al-hassan", null, { datePrecision: "unknown" }),
 ];
-function harbourSupportProjection(): SupportProjectionRecord {
-  return {
-    supportSubjectId: SUPPORT_SUBJECT_YOUTH,
-    basis: "effective_cash_allocation",
-    currencyExponents: { USD: 2, EUR: 2, KWD: 3, JPY: 0 },
-    coverage: { from: "2023-01-01", to: "2026-11-20", state: "partial" },
-    asOf: SEED_INSTANT.toString(),
-    lastSourceUpdate: "2026-11-18T09:30:00Z",
-    goal: {
-      amount: money("USD", 2500000),
-      measure: GOAL_MEASURE,
-      effectiveFrom: "2026-01-01",
-      revision: "1", // A goal's revision is the base revision an edit presents, and the report reads it as a whole number: it is the one seeded revision that is not an opaque token, so it is not "rev-1".
-    },
-    source: source("finance", "ledger-harbour-2026"),
-    revision: INITIAL_REVISION,
-  };
+const harbourSupportProjection = (): SupportProjectionRecord =>
+  supportProjectionOf({ supportSubjectId: SUPPORT_SUBJECT_YOUTH, currencyExponents: { USD: 2, EUR: 2, KWD: 3, JPY: 0 }, coverage: { from: "2023-01-01", to: "2026-11-20", state: "partial" }, lastSourceUpdate: "2026-11-18T09:30:00Z", sourceReference: "ledger-harbour-2026", goal: harbourGoal() });
+/** The seeded goal: its revision is the base revision an edit presents, and the report reads it as a whole number, so it is the one seeded revision that is not an opaque token rather than "rev-1". */
+function harbourGoal(): SupportProjectionRecord["goal"] {
+  return { amount: money("USD", 2500000), measure: GOAL_MEASURE, effectiveFrom: "2026-01-01", revision: "1" };
 }
 function harbourGifts(): readonly GiftRowRecord[] {
   return [
@@ -517,16 +504,14 @@ function harbourGifts(): readonly GiftRowRecord[] {
     buildGift("gift-row-harbour-0011", "gift-harbour-0011", "USD", 3000, "2026-06-01", { datePrecision: "approximate", attribution: { kind: "partner", partnerId: "partner-ruth-okafor" } }), // An approximate gift date: the precision travels with the date rather than being invented.
   ];
 }
-function harbourCommitments(): readonly CommitmentRowRecord[] {
-  return [
-    buildCommitment("commitment-harbour-0001", "automatic-recurring", "received", "USD", 5000, { cadence: "Monthly", lastSuccessfulOn: "2026-11-05", nextEligibleOn: "2026-12-05" }),
-    buildCommitment("commitment-harbour-0002", "automatic-recurring", "processing", "EUR", 1500, { lastSuccessfulOn: "2026-10-25", nextEligibleOn: "2026-11-25" }),
-    buildCommitment("commitment-harbour-0003", "manual-recurring", "upcoming", "USD", 2500, { nextEligibleOn: "2026-12-01" }),
-    buildCommitment("commitment-harbour-0004", "manual-recurring", "recovery-needs-attention", "USD", 1000, { lastSuccessfulOn: "2026-09-10", nextEligibleOn: "2026-09-10" }),
-    buildCommitment("commitment-harbour-0005", "fixed-total", "not-received", "USD", 5000, { cadence: "Once", fixedTotal: { promised: money("USD", 250000), fulfilled: money("USD", 100000), released: money("USD", 25000), remaining: money("USD", 125000) } }),
-    buildCommitment("commitment-harbour-0006", "automatic-recurring", "outside-partition", "KWD", 1000, { pause: { state: "paused", resumeOn: "2026-12-01" }, lastSuccessfulOn: "2026-08-02" }),
-  ];
-}
+const harbourCommitments = (): readonly CommitmentRowRecord[] => [
+  buildCommitment("commitment-harbour-0001", "automatic-recurring", "received", "USD", 5000, { cadence: "Monthly", lastSuccessfulOn: "2026-11-05", nextEligibleOn: "2026-12-05" }),
+  buildCommitment("commitment-harbour-0002", "automatic-recurring", "processing", "EUR", 1500, { lastSuccessfulOn: "2026-10-25", nextEligibleOn: "2026-11-25" }),
+  buildCommitment("commitment-harbour-0003", "manual-recurring", "upcoming", "USD", 2500, { nextEligibleOn: "2026-12-01" }),
+  buildCommitment("commitment-harbour-0004", "manual-recurring", "recovery-needs-attention", "USD", 1000, { lastSuccessfulOn: "2026-09-10", nextEligibleOn: "2026-09-10" }),
+  buildCommitment("commitment-harbour-0005", "fixed-total", "not-received", "USD", 5000, { cadence: "Once", fixedTotal: { promised: money("USD", 250000), fulfilled: money("USD", 100000), released: money("USD", 25000), remaining: money("USD", 125000) } }),
+  buildCommitment("commitment-harbour-0006", "automatic-recurring", "outside-partition", "KWD", 1000, { pause: { state: "paused", resumeOn: "2026-12-01" }, lastSuccessfulOn: "2026-08-02" }),
+];
 type HarbourContent = Pick<SessionStateDocument, "contentDocuments" | "contentVariants" | "contentRevisions" | "contentReviews" | "releases" | "mediaAssets">;
 function harbourContentDocuments(): readonly ContentDocumentRecord[] {
   return [
@@ -603,12 +588,11 @@ const harbourReleases = (): readonly ReleaseRecord[] => [
 ];
 const harbourContent = (session: SeededSession): HarbourContent => ({ contentDocuments: harbourContentDocuments(), contentVariants: harbourContentVariants(), contentRevisions: harbourContentRevisions(), contentReviews: harbourContentReviews(), releases: harbourReleases(), mediaAssets: harbourMediaAssets(session) });
 const PARTIAL_RELEASE_HEADS: Readonly<Record<string, string>> = { "variant-update-autumn-en-public": "release-update-en-2", "variant-update-autumn-ar-public": "release-update-ar-1" };
-function partialReleaseContentVariants(): readonly ContentVariantRecord[] {
-  return harbourContentVariants().map((variant) => {
+const partialReleaseContentVariants = (): readonly ContentVariantRecord[] =>
+  harbourContentVariants().map((variant) => {
     const head = PARTIAL_RELEASE_HEADS[variant.variantId];
     return head === undefined ? variant : { ...variant, releaseHeadId: head };
   });
-}
 function partialReleaseContentRevisions(): readonly ContentRevisionRecord[] {
   const author = PRINCIPAL_ESTABLISHED;
   return [
@@ -624,17 +608,13 @@ function partialReleaseContentRevisions(): readonly ContentRevisionRecord[] {
     ),
   ];
 }
-function partialReleaseReleases(): readonly ReleaseRecord[] {
-  return [
-    ...harbourReleases().map((release) => (release.releaseId === "release-update-en-1" ? { ...release, supersededBy: "release-update-en-2" } : release)),
-    buildRelease("release-update-ar-1", "variant-update-autumn-ar-public", "rev-update-ar-1", "public", "ar", "2026-10-24T09:00:00Z", "link-public"),
-    buildRelease("release-update-en-2", "variant-update-autumn-en-public", "rev-update-en-2", "public", "en", "2026-11-18T09:00:00Z", "link-public"),
-  ];
-}
+const partialReleaseReleases = (): readonly ReleaseRecord[] => [
+  ...harbourReleases().map((release) => (release.releaseId === "release-update-en-1" ? { ...release, supersededBy: "release-update-en-2" } : release)),
+  buildRelease("release-update-ar-1", "variant-update-autumn-ar-public", "rev-update-ar-1", "public", "ar", "2026-10-24T09:00:00Z", "link-public"),
+  buildRelease("release-update-en-2", "variant-update-autumn-en-public", "rev-update-en-2", "public", "en", "2026-11-18T09:00:00Z", "link-public"),
+];
 /** The receiving reader's own membership: its approval is the protected-reading grant, the row is the membership a notification copy is addressed at, and it is the record that reader's own preference, confirmation and unsubscribe controls write. */
-function approvedSupporterMembership(): MembershipRecord {
-  return buildMembership(PRINCIPAL_READER_SUPPORTER, "supporter@example.org", "active", { displayName: "Approved supporter", acceptedAt: "2026-07-22T10:30:00Z", languagePreference: "en" });
-}
+const approvedSupporterMembership = (): MembershipRecord => buildMembership(PRINCIPAL_READER_SUPPORTER, "supporter@example.org", "active", { displayName: "Approved supporter", acceptedAt: "2026-07-22T10:30:00Z", languagePreference: "en" });
 function harbourMemberships(): readonly MembershipRecord[] {
   return [
     buildMembership("membership-ada-active", "ada.quinn@example.org", "active", { displayName: "Ada Quinn", acceptedAt: "2026-03-02T08:00:00Z", languagePreference: "en" }),
@@ -766,9 +746,7 @@ function subscriberWorkspace(session: SeededSession): SessionStateDocument {
   return stateDocument(session, { memberships });
 }
 /** The approved-supporter reader's own world: the record its own Off/Immediate choice, reading language, confirmation and unsubscribe write. A session sees only its own files, so the membership a reader changes is this copy, while the publisher's world carries the copy a receiving read reaches across for the grant and the notice addressed at it, both built by `approvedSupporterMembership` so they start identical. */
-function approvedSupporterWorkspace(session: SeededSession): SessionStateDocument {
-  return stateDocument(session, { memberships: [approvedSupporterMembership()] });
-}
+const approvedSupporterWorkspace = (session: SeededSession): SessionStateDocument => stateDocument(session, { memberships: [approvedSupporterMembership()] });
 const WORKSPACE_BUILDERS: Readonly<Record<SeededWorkspace, (session: SeededSession) => SessionStateDocument>> = {
   "new-worker": newWorkerWorkspace,
   "established-worker": establishedWorkerWorkspace,
@@ -779,8 +757,7 @@ const WORKSPACE_BUILDERS: Readonly<Record<SeededWorkspace, (session: SeededSessi
   "reader-approved-supporter": approvedSupporterWorkspace,
   empty: (session) => stateDocument(session, {}),
 };
-/** Builds the state document a seeded session starts with, from the workspace its row names. */
-export const seedWorkspace = (session: SeededSession): SessionStateDocument => WORKSPACE_BUILDERS[session.workspace](session);
+/** Builds the state document a seeded session starts with, from the workspace its row names. */ export const seedWorkspace = (session: SeededSession): SessionStateDocument => WORKSPACE_BUILDERS[session.workspace](session);
 function buildSessionDocuments(session: SeededSession): SeededSessionDocuments {
   const selected = session.selectedContext;
   return {
@@ -798,8 +775,7 @@ function buildSessionDocuments(session: SeededSession): SeededSessionDocuments {
     operations: EMPTY_OPERATION_LEDGER,
   };
 }
-/** Builds the three documents a session id names, in the store's own document shape. */
-export function seedSessionDocuments(sessionId: string): SessionDocuments {
+/** Builds the three documents a session id names, in the store's own document shape. */ export function seedSessionDocuments(sessionId: string): SessionDocuments {
   const session = findSeededSession(sessionId);
   if (session === undefined) throw new RangeError(`No seeded session ${JSON.stringify(sessionId)}: the seed lays down ${SEEDED_SESSION_IDS.join(", ")}.`);
   return buildSessionDocuments(session);

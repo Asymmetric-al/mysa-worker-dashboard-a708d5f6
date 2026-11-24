@@ -53,8 +53,7 @@ export function confirmAt(membership: MembershipRecord, now: Temporal.Instant): 
   if (!isAwaitingProofState(membership.state) || acceptedAt === undefined) return { status: "refused", reason: "not-awaiting-proof" };
   return !isConfirmationOpen(membership, now) ? { status: "refused", reason: "confirmation-expired" } : { status: "confirmed", membership: { ...membership, state: "active", confirmedAt: now, revision: membership.revision + 1 } };
 }
-/** Records the Off/Immediate decision, and only that decision. */
-export function withChoice(membership: MembershipRecord, choice: MemberChoice, now: Temporal.Instant): MembershipRecord {
+/** Records the Off/Immediate decision, and only that decision. */ export function withChoice(membership: MembershipRecord, choice: MemberChoice, now: Temporal.Instant): MembershipRecord {
   if (isExcludedSourceMembership(membership) || membership.state === "restricted") return membership;
   if (choice === "off") return membership.state === "off" && membership.choice === "off" ? membership : { ...membership, state: "off", choice: "off", revision: membership.revision + 1 };
   if (membership.confirmedAt !== undefined || membership.state === "active") return membership.state === "active" && membership.choice === "immediate" ? membership : { ...membership, state: "active", choice: "immediate", revision: membership.revision + 1 };
@@ -63,7 +62,7 @@ export function withChoice(membership: MembershipRecord, choice: MemberChoice, n
   return { ...membership, state: "awaiting-proof", choice: "immediate", acceptedAt: now, confirmationDeadline: deadlineInstant, revision: membership.revision + 1 };
 }
 export const withLanguagePreference = (membership: MembershipRecord, languagePreference: string): MembershipRecord => (membership.languagePreference === languagePreference ? membership : { ...membership, languagePreference, revision: membership.revision + 1 });
-/** Represents a membership the source supplied rather than the person: a held or unqualified row is recorded as `off` with its disposition and no acceptance, so the row is visible while no. */
+/** Represents a membership the source supplied rather than the person: a held or unqualified row is recorded as `off` with its disposition and no acceptance, so the row is visible while no send may treat it as the person's own. */
 export const excludedSourceMembership = (input: ExcludedSourceMembershipInput): MembershipRecord => ({ ...membershipIdentity(input), state: "off", choice: "off", sourceDisposition: input.sourceDisposition, revision: 1 });
 /** Whether a record is a source-supplied membership that is excluded from every send: the guard every consumer uses instead of activating such a row. */
 export const isExcludedSourceMembership = (membership: MembershipRecord): membership is MembershipRecord & { sourceDisposition: SourceMembershipDisposition } => membership.sourceDisposition !== undefined;

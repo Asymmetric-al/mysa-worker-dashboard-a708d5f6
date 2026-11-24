@@ -18,9 +18,6 @@ import { useSetModule } from "../hooks/use-coaching";
 import { moduleChangePayloadSchema, type ModuleChangePayload } from "../schemas";
 import { ModuleReadStateNotice } from "./sharing-summary";
 const OFF_WORD = "Switched off";
-const INVITED_REASON = "Modules are chosen after the invitation is accepted: nothing is shared before that, so there is no selection to change yet.";
-const ACCEPTED_REASON = "The invitation is accepted and access is not live yet, so a module cannot be switched until it is. Accepting on its own makes no module readable.";
-const NOT_SENT_FALLBACK = "The change stated no coaching relationship it belongs to, so it was not sent.";
 const SET_INCOMPLETE_DESCRIPTION =
   "This surface states exactly the five modules a grant can share, and it was handed a different set. No switch is offered, because a missing module would read as switched off when nothing said it was, and a sixth would be a module no grant shares. Nothing was changed and nothing is hidden: the set itself is what does not match.";
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { grantId: "Coaching relationship", moduleKey: "Module", enabled: "Sharing of this module" };
@@ -51,8 +48,8 @@ const OPEN_GATE: ShareGate = { selectable: false, stateCopy: null, reason: null,
 function gateFor(grantState: GrantLifecycleState, cutoffInstant: string | null): ShareGate {
   const open: ShareGate = { ...OPEN_GATE, selectable: true };
   if (grantState === "active") return open;
-  if (grantState === "invited") return { selectable: false, stateCopy: GRANT_STATE_COPY.invited, reason: INVITED_REASON, cutoffInstant: null };
-  if (grantState === "accepted") return { selectable: false, stateCopy: GRANT_STATE_COPY.accepted, reason: ACCEPTED_REASON, cutoffInstant: null };
+  if (grantState === "invited") return { selectable: false, stateCopy: GRANT_STATE_COPY.invited, reason: "Modules are chosen after the invitation is accepted: nothing is shared before that, so there is no selection to change yet.", cutoffInstant: null };
+  if (grantState === "accepted") return { selectable: false, stateCopy: GRANT_STATE_COPY.accepted, reason: "The invitation is accepted and access is not live yet, so a module cannot be switched until it is. Accepting on its own makes no module readable.", cutoffInstant: null };
   const closed = GRANT_STATE_COPY[grantState];
   return { selectable: false, stateCopy: closed, reason: null, cutoffInstant: grantState === "expired" ? cutoffInstant : null };
 }
@@ -68,7 +65,7 @@ function payloadForChange(grantId: string, moduleKey: ModuleKey, enabled: boolea
   const parsed = moduleChangePayloadSchema.safeParse({ grantId, moduleKey, enabled });
   if (parsed.success) return { payload: parsed.data };
   const messages = parsed.error.issues.map((issue) => issue.message);
-  return { refusal: messages.length === 0 ? NOT_SENT_FALLBACK : messages.join(" ") };
+  return { refusal: messages.length === 0 ? "The change stated no coaching relationship it belongs to, so it was not sent." : messages.join(" ") };
 }
 type ModuleReceiptProps = { readonly outcome: MutationOutcome; readonly heading: string; readonly onCheckResult?: (() => void) | undefined; readonly onRetrySameWork?: (() => void) | undefined; readonly onReapply?: (() => void) | undefined };
 function ModuleReceipt({ outcome, heading, onCheckResult, onRetrySameWork, onReapply }: ModuleReceiptProps): ReactElement {
@@ -160,7 +157,7 @@ function ModuleRow({ entry, grantId, scope, expectedRevision, gate, gateId, rowH
       </div>
       <p {...{ id: descriptionId, className: "type-supporting text-pretty" }}>{copy.description}</p>
       {direct.pending ? <output {...{ "aria-live": "polite", className: "block text-sm text-muted-foreground" }}>{"Applying this module change, and nothing else…"}</output> : null}
-      {refusal === null ? null : <StateNotice kind="refused" title={"This module change was not sent"} description={refusal} headingLevel={rowHeadingLevel} />}
+      {refusal === null ? null : <StateNotice kind="refused" title="This module change was not sent" description={refusal} headingLevel={rowHeadingLevel} />}
       {entry.enabled ? null : (
         <p className="type-supporting text-pretty">
           <bdi>{OFF_WORD}</bdi>
@@ -222,7 +219,7 @@ export default function ModuleToggles({ grantId, modules, scope, expectedRevisio
   const CardHeading = CARD_HEADING_TAG[headingLevel];
   const cutoff = cutoffInstant === null || cutoffInstant === undefined || cutoffInstant.trim() === "" ? null : cutoffInstant;
   const gate = gateFor(grantState, cutoff);
-  if (!hasClosedModuleSet(modules)) return <StateNotice kind="refused" title={"These five modules could not be stated"} description={SET_INCOMPLETE_DESCRIPTION} headingLevel={headingLevel} className={className} />;
+  if (!hasClosedModuleSet(modules)) return <StateNotice kind="refused" title="These five modules could not be stated" description={SET_INCOMPLETE_DESCRIPTION} headingLevel={headingLevel} className={className} />;
   const rowHeadingLevel = ROW_HEADING_LEVEL[headingLevel];
   const rows = MODULE_KEYS.map((key) => ({ key, entry: entryFor(modules, key) }));
   const stateCopy = gate.stateCopy;
@@ -230,9 +227,7 @@ export default function ModuleToggles({ grantId, modules, scope, expectedRevisio
     <Card data-slot="module-toggles" data-grant-state={grantState} className={cn("min-w-0", className)}>
       <CardHeader>
         <CardTitle>
-          <CardHeading id={headingId} className={CARD_HEADING_SCALE[headingLevel]}>
-            {"Modules you share"}
-          </CardHeading>
+          <CardHeading {...{ id: headingId, className: CARD_HEADING_SCALE[headingLevel] }}>{"Modules you share"}</CardHeading>
         </CardTitle>
         <CardDescription>
           <p>{COACHING_COPY.sharing.purpose}</p>

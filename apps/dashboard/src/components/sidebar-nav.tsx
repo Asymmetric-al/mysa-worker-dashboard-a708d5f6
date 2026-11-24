@@ -4,12 +4,10 @@ import { useId, useState, type MouseEvent } from "react";
 import { ChevronDownIcon, CircleHelpIcon, CompassIcon, HandCoinsIcon, HomeIcon, LayoutTemplateIcon, ListChecksIcon, MegaphoneIcon, SettingsIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import { SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarSeparator } from "@/components/ui/sidebar";
 import { cn } from "@/lib/cn";
-/** A sub-surface of a section: a page that belongs to a destination rather than being one. */
-export type NavSubItem = { readonly href: string; readonly label: string };
+/** A sub-surface of a section: a page that belongs to a destination rather than being one. */ export type NavSubItem = { readonly href: string; readonly label: string };
 export type NavSection = "primary" | "secondary";
 export type NavItem = { readonly href: string; readonly label: string; readonly icon?: LucideIcon; readonly section?: NavSection; readonly children?: readonly NavSubItem[] };
-/** The navigation model: the seven everyday destinations in the order the questions are asked, then Settings and Help. */
-export const PRIMARY_NAV: readonly NavItem[] = [
+/** The navigation model: the seven everyday destinations in the order the questions are asked, then Settings and Help. */ export const PRIMARY_NAV: readonly NavItem[] = [
   { href: "/", label: "Home", icon: HomeIcon },
   {
     href: "/partners",
@@ -59,8 +57,7 @@ export const PRIMARY_NAV: readonly NavItem[] = [
   { href: "/settings", label: "Settings", icon: SettingsIcon, section: "secondary" },
   { href: "/help", label: "Help", icon: CircleHelpIcon, section: "secondary" },
 ];
-/** Whether `currentPath` is the destination `href`: an exact match for the root, and otherwise the destination itself or anything beneath it. */
-export function isCurrent(currentPath: string, href: string): boolean {
+/** Whether `currentPath` is the destination `href`: an exact match for the root, and otherwise the destination itself or anything beneath it. */ export function isCurrent(currentPath: string, href: string): boolean {
   const path = normalisePath(currentPath);
   const destination = normalisePath(href);
   return destination === "/" ? path === "/" : path === destination || path.startsWith(`${destination}/`);

@@ -1,8 +1,7 @@
 /** Criterion 14 — outreach and Requests. */
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { expect, test } from "../playwright.config"; // The runner's own entry points: `test` carries the seeded-persona fixture and `expect` the web-first matchers, and `resetSeed` restores the deterministic world through the application's own control.
 const INITIATIVES_PATH = "/partners/initiatives";
-const initiativePath = (initiativeId: string): string => `${INITIATIVES_PATH}/${encodeURIComponent(initiativeId)}`;
 const SEEDED_INITIATIVE = { initiativeId: "initiative-autumn-appeal", name: "Autumn appeal" } as const; // The seeded initiative: the one whose working list carries all three states and whose Request has moved on a version.
 const NEW_INITIATIVE = { name: "Spring partner conversations", purpose: "Invite the partners we already know to a spring conversation." } as const;
 const SEEDED_REQUEST = { presentedVersion: "terms-v1", currentVersion: "terms-v2", amount: "50.00 USD", currency: "USD", cadence: "Monthly", term: "12 months", respondent: "partner-grace-adeyemi", recordedAt: "2026-11-06T16:20:00Z" } as const; // The seeded Request: presented at version 1, carrying version 2 now, answered against the version that was presented.
@@ -55,7 +54,7 @@ function initiativeIdOf(page: Page): string {
   return decodeURIComponent(match.groups.initiativeId);
 }
 async function openInitiative(page: Page, initiativeId: string): Promise<string> {
-  await page.goto(initiativePath(initiativeId));
+  await page.goto(`${INITIATIVES_PATH}/${encodeURIComponent(initiativeId)}`);
   await expect(page.locator('[data-slot="initiative-detail"]')).toBeVisible();
   await expect(page.getByRole("heading", { name: SEEDED_INITIATIVE.name }).first()).toBeVisible();
   await expect(page.getByRole("tab", { name: "Working list" })).toBeVisible();
@@ -314,6 +313,14 @@ test("presents a Request and records a late answer bound to the terms version it
   await expect(recordBody(page)).toHaveAttribute("data-initiative-state", "open");
   expect(await countsOf(page), "Agreement created no gift, no commitment, no task and no message: the four whole-result counts are the same integers they were before the journey began").toEqual(before);
 });
+async function expectBothRequestsCounted(results: Locator): Promise<void> {
+  // The whole-result base and shares a second presented Request moves: every response kind is counted against the two Requests the initiative now holds, and the one still unanswered is 1 of those 2.
+  await expect(results.getByText("2 Requests recorded for this initiative").filter({ visible: true })).toHaveCount(RESPONSE_KINDS.length);
+  const unansweredRow = results.getByRole("row").filter({ hasText: "Unanswered" }).first();
+  await expect(unansweredRow.getByText("1", { exact: true }).first()).toBeVisible();
+  await expect(unansweredRow.getByText("2 Requests recorded for this initiative")).toBeVisible();
+  await expect(unansweredRow.getByText("50%", { exact: true })).toBeVisible();
+}
 test("states every result count against the denominator it is measured by", async ({ page }) => {
   await openInitiative(page, SEEDED_INITIATIVE.initiativeId);
   await openSection(page, "Results");
@@ -330,14 +337,12 @@ test("states every result count against the denominator it is measured by", asyn
   await openSection(page, "Requests"); // One more presented Request moves the whole base and its shares: the denominator is the whole result, and every kind is counted against it rather than against the page on screen.
   await draftRequest(page, { recipient: "Grace Adeyemi", purpose: SECOND_PURPOSE, version: "1", currency: "EUR", minorUnits: "1500", cadence: "Monthly", term: "12 months" });
   await presentRequest(page, SECOND_PURPOSE, "By email, on 20 November.");
-  await page.reload(); // The results section states the counts the page's own read composed, so the journey returns to this address and the section reads the initiative again rather than a snapshot taken before the second ask.
+  await openSection(page, "Results"); // Opening the section mounts its read again, so these are the counts the store holds now rather than the snapshot this page was loaded with: a presentation recorded while the section was closed is never left for a reload to correct.
+  await expectBothRequestsCounted(results);
+  await page.reload(); // The same counts survive a reload: opening the section already re-read them above, so a figure only a full page load could correct would have failed there.
   await expect(page.getByRole("tab", { name: "Results" })).toBeVisible();
   await openSection(page, "Results");
-  await expect(results.getByText("2 Requests recorded for this initiative").filter({ visible: true })).toHaveCount(RESPONSE_KINDS.length);
-  const unansweredRow = results.getByRole("row").filter({ hasText: "Unanswered" }).first();
-  await expect(unansweredRow.getByText("1", { exact: true }).first()).toBeVisible();
-  await expect(unansweredRow.getByText("2 Requests recorded for this initiative")).toBeVisible();
-  await expect(unansweredRow.getByText("50%", { exact: true })).toBeVisible();
+  await expectBothRequestsCounted(results);
 });
 const CLOSURE_DISPOSITION = "Invited by phone; no further asks this year."; // The disposition, the account of the work the closure does not complete, and the reason it was reopened.
 const CLOSURE_NOTE = "Every open item was a call already made.";

@@ -131,7 +131,7 @@ export const parseRosterQuery = (params: RosterSearchParams, admittedColumnKeys?
     period: periodOf(params.get(URL_PARAM.from), params.get(URL_PARAM.to)),
     timeZone: params.get(URL_PARAM.timeZone),
   });
-/** Writes the query state back as the one canonical query string this surface uses: the same state always produces the same string, and defaults are left out of the address, the giving scope included — a state that asks for none is the address it was. */
+/** Writes the query state back as the one canonical query string this surface uses: the same state always produces the same string, and defaults are left out of the address, the giving scope included — a state that asks for none is the address it was asked with. */
 export function rosterQuerySearch(state: RosterQueryState): string {
   const query = clampRosterQuery(state);
   const params = new URLSearchParams();

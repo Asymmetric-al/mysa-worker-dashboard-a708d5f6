@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useId, useMemo, useState, type FormEvent, type ReactElement } from "react";
+import { useCallback, useId, useMemo, useState, type ChangeEvent, type FormEvent, type ReactElement } from "react";
 import ActionReview from "@/components/action-review";
 import { CONTENT_LIFECYCLE_STATES, DraftStatus, LIFECYCLE_STATUS } from "@/components/draft-status";
 import { fieldErrorsFromInvalid, FormErrorSummary, FormField, FormFieldGroup, refusalSummary, type FieldErrorLookup } from "@/components/form-field";
@@ -22,21 +22,14 @@ import { useCreateVariant } from "../hooks/use-update-mutations";
 import { useUpdatesRoster, useVariantOverview, type UpdatesRosterReadResult, type VariantOverviewData } from "../hooks/use-update-queries";
 import { createVariantSchema, type CreateVariantPayload } from "../schemas";
 type CreateOutcome = NonNullable<ReturnType<typeof useCreateVariant>["outcome"]>;
-type CreateInput = Omit<MutationInput<CreateVariantPayload>, "operationId">;
 const PAGE_SIZE_DEFAULT = 50;
 const PAGE_SIZE_CAP = 200;
 const PAGE_SIZE_OPTIONS: readonly number[] = [PAGE_SIZE_DEFAULT, PAGE_SIZE_CAP];
 const FIRST_PAGE = 1;
-const ITEM_NOUN = "editions";
 const UPDATES_ROUTE = "/communication";
 const REVIEW_ROUTE = "/communication/review";
-const CREATE_VARIANT_ACTION = "create-variant";
-const REVIEW_CANDIDATE_ACTION = "review-candidate";
-const HELP_HREF = "/help";
 const DEFAULT_LOCALE = "en";
-/** The audience a new edition starts from, which the variant rule admits for an Update in every locale. */
-const DEFAULT_AUDIENCE: EditionAudience = "public";
-const DOCUMENTS_MEMBER = "documents";
+/** The audience a new edition starts from, which the variant rule admits for an Update in every locale. */ const DEFAULT_AUDIENCE: EditionAudience = "public";
 const NO_ORDER: RecordListQueryState["sort"] = [];
 const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
 const ROW_LINK_CLASS = "inline-link rounded-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
@@ -44,8 +37,6 @@ const CELL_TEXT_CLASS = "min-w-0 text-xs text-pretty text-muted-foreground wrap-
 const CELL_STACK_CLASS = "flex min-w-0 flex-col gap-1";
 const IDENTIFIER_CLASS = "mono-identifier text-xs break-all";
 const MUTED_PARAGRAPH_CLASS = "type-supporting text-pretty";
-const NOTE_LEAD_CLASS = "text-sm font-medium";
-const STATE_NOTE_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const SURFACE_COPY = {
   heading: "Updates",
   purpose: "Every Update this ministry's content holds, with each edition's own draft, its one review step and its own release.",
@@ -122,7 +113,6 @@ const CREATE_COPY = {
   fieldLabels: { documentId: "Update", audience: "Audience", locale: "Content language" } as Readonly<Record<string, string>>,
 } as const;
 type RosterRow = { readonly key: string; readonly document: RosterDocument; readonly edition: RosterEdition };
-const rowsOf = (roster: UpdatesRoster): readonly RosterRow[] => roster.documents.flatMap((document) => document.editions.map((edition) => ({ key: `${document.documentId}:${edition.variantId}`, document, edition })));
 const pageSizeOf = (stated: number): number => (stated === PAGE_SIZE_CAP ? PAGE_SIZE_CAP : PAGE_SIZE_DEFAULT);
 const endonymOf = (tag: string): string => LOCALE_DISPLAY_NAMES[tag] ?? tag;
 function lookupOfIssues(issues: readonly { readonly path: readonly PropertyKey[]; readonly message: string }[]): FieldErrorLookup {
@@ -185,10 +175,8 @@ function ReviewCell({ edition, reviewAvailable }: { readonly edition: RosterEdit
     </div>
   );
 }
-/** The divider between two facts stated on one line: a sighted reader's dot is not a word, so assistive technology skips it and hears each fact's own label instead. */
-const FACT_SEPARATOR = <span aria-hidden="true">{" · "}</span>;
-/** One fact on the release line: a sighted reader reads the value, and assistive technology still hears the label it belongs to. */
-const LabelledFact = ({ label, value }: { readonly label: string; readonly value: string }): ReactElement => (
+/** The divider between two facts stated on one line: a sighted reader's dot is not a word, so assistive technology skips it and hears each fact's own label instead. */ const FACT_SEPARATOR = <span aria-hidden="true">{" · "}</span>;
+/** One fact on the release line: a sighted reader reads the value, and assistive technology still hears the label it belongs to. */ const LabelledFact = ({ label, value }: { readonly label: string; readonly value: string }): ReactElement => (
   <>
     <span className="sr-only">{`${label}: `}</span>
     <bdi className={IDENTIFIER_CLASS}>{value}</bdi>
@@ -229,21 +217,19 @@ function ReleaseCell({ edition }: { readonly edition: RosterEdition }): ReactEle
   );
 }
 type StateNote = { readonly term: string; readonly detail: string };
-/** The prose a dense row leaves out, gathered: every lifecycle state the listed editions actually hold, in the vocabulary's own order, plus the two compact badges' own sentences. */
-function stateNotesOf(rows: readonly RosterRow[]): readonly StateNote[] {
+/** The prose a dense row leaves out, gathered: every lifecycle state the listed editions actually hold, in the vocabulary's own order, plus the two compact badges' own sentences. */ function stateNotesOf(rows: readonly RosterRow[]): readonly StateNote[] {
   const held = new Set(rows.map((row) => row.edition.lifecycle));
   const notes: StateNote[] = CONTENT_LIFECYCLE_STATES.filter((state) => held.has(state)).map((state) => ({ term: LIFECYCLE_STATUS[state].label, detail: LIFECYCLE_STATUS[state].explanation }));
   if (rows.some((row) => row.edition.translationStatus === "unresolved")) notes.push({ term: SURFACE_COPY.translationStateUnknown, detail: SURFACE_COPY.translationUnresolved });
   if (rows.some((row) => row.edition.awaitingRelease)) notes.push({ term: SURFACE_COPY.candidateAwaitingRelease, detail: SURFACE_COPY.awaitingRelease });
   return notes;
 }
-/** The sentences the cells no longer carry, stated once under the table: the state word or badge label, then what it permits. */
-const StateNotes = ({ notes }: { readonly notes: readonly StateNote[] }): ReactElement => (
+/** The sentences the cells no longer carry, stated once under the table: the state word or badge label, then what it permits. */ const StateNotes = ({ notes }: { readonly notes: readonly StateNote[] }): ReactElement => (
   <div className="flex min-w-0 flex-col gap-1">
-    <p className={NOTE_LEAD_CLASS}>{SURFACE_COPY.statesLead}</p>
+    <p className="text-sm font-medium">{SURFACE_COPY.statesLead}</p>
     <dl className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
       {notes.map((note) => (
-        <div key={note.term} className={STATE_NOTE_ROW_CLASS}>
+        <div key={note.term} className="flex min-w-0 flex-wrap items-baseline gap-x-2">
           <dt className="font-medium">{note.term}</dt>
           <dd className="min-w-0 text-pretty wrap-anywhere">{note.detail}</dd>
         </div>
@@ -291,7 +277,7 @@ export function CreateEditionDialog({ roster, open, onOpenChange }: CreateEditio
   const [locale, setLocale] = useState(DEFAULT_LOCALE);
   const [step, setStep] = useState<"form" | "review">("form");
   const [errors, setErrors] = useState<FieldErrorLookup | null>(null);
-  const [frozen, setFrozen] = useState<CreateInput | null>(null);
+  const [frozen, setFrozen] = useState<Omit<MutationInput<CreateVariantPayload>, "operationId"> | null>(null);
   const overview = useVariantOverview({ scope: roster.scope, documentId });
   const create = useCreateVariant();
   const submitCreate = create.submit;
@@ -299,7 +285,7 @@ export function CreateEditionDialog({ roster, open, onOpenChange }: CreateEditio
   const liveEnvelope = answered !== undefined && answered.kind === "envelope" && !overview.isStale(answered) ? answered.envelope : undefined;
   const admitted = AUDIENCE_ORDER.filter((option) => liveEnvelope === undefined || liveEnvelope.data.audiences.includes(option));
   const effectiveAudience = admitted.includes(audience) ? audience : (admitted[0] ?? DEFAULT_AUDIENCE);
-  const createAction = liveEnvelope === undefined ? undefined : liveEnvelope.actions.find((action) => action.name === CREATE_VARIANT_ACTION);
+  const createAction = liveEnvelope === undefined ? undefined : liveEnvelope.actions.find((action) => action.name === "create-variant");
   const chosenDocument = roster.documents.find((candidate) => candidate.documentId === documentId);
   const chooseAudience = (next: string): void => {
     const chosen = admitted.find((option) => option === next);
@@ -352,23 +338,15 @@ export function CreateEditionDialog({ roster, open, onOpenChange }: CreateEditio
     setFrozen({ scope: liveEnvelope.scope, expectedRevision: liveEnvelope.revision, payload: checked.data });
     setStep("review");
   };
+  const documentChange = (event: ChangeEvent<HTMLSelectElement>): void => {
+    setDocumentId(event.currentTarget.value);
+    setErrors(null);
+  };
   const documentField =
     roster.documents.length > 1 ? (
       <FormField name="documentId" label={CREATE_COPY.updateLabel} description={CREATE_COPY.updateDescription} error={errors?.byField["documentId"]} required>
         {(control) => (
-          <NativeSelect
-            id={control.id}
-            name="documentId"
-            className="w-full"
-            value={documentId}
-            required={control.required}
-            aria-invalid={control.invalid || undefined}
-            aria-describedby={control.describedBy}
-            onChange={(event) => {
-              setDocumentId(event.currentTarget.value);
-              setErrors(null);
-            }}
-          >
+          <NativeSelect {...{ id: control.id, name: "documentId", className: "w-full", value: documentId, required: control.required, "aria-invalid": control.invalid || undefined, "aria-describedby": control.describedBy, onChange: documentChange }}>
             <NativeSelectOption value="">{CREATE_COPY.chooseUpdate}</NativeSelectOption>
             {roster.documents.map((document) => (
               <NativeSelectOption key={document.documentId} value={document.documentId}>
@@ -494,9 +472,7 @@ export type UpdatesListProps = {
   /** The level this surface's own heading occupies, so a page that already states an `h1` keeps one. */ readonly headingLevel?: 1 | 2;
   readonly className?: string;
 };
-const HEADING_TAG = { 1: "h1", 2: "h2" } as const;
-/** The one type scale's heading utility for each level this surface may take, so its own heading measures the same as every other heading at that level. */
-const HEADING_SCALE: Readonly<Record<1 | 2, string>> = { 1: "type-page-title", 2: "type-section-title" };
+/** The one type scale's heading utility for each level this surface may take, so its own heading measures the same as every other heading at that level. */ const HEADING_SCALE: Readonly<Record<1 | 2, string>> = { 1: "type-page-title", 2: "type-section-title" };
 export default function UpdatesList({ roster, initialResult, headingLevel = 2, className }: UpdatesListProps): ReactElement {
   const headingId = useId();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -521,8 +497,8 @@ export default function UpdatesList({ roster, initialResult, headingLevel = 2, c
   const answer = result === undefined || read.isStale(result) ? undefined : result; // A result read under a context this session no longer shows is never presented as the current one, so it is dropped here rather than rendered with the previous context's authority behind it.
   const answeredRoster = useMemo(() => (answer !== undefined && answer.kind === "envelope" ? rosterOf(answer.envelope) : undefined), [answer]); // The answer on show, mapped once per answer: the read's own page, its own totals and its own words, never a second derivation rebuilt on every render.
   const current = answeredRoster ?? roster;
-  const rows = useMemo(() => rowsOf(current), [current]);
-  const reviewAvailable = current.actions.some((action) => action.name === REVIEW_CANDIDATE_ACTION && action.available);
+  const rows = useMemo(() => ((roster: UpdatesRoster): readonly RosterRow[] => roster.documents.flatMap((document) => document.editions.map((edition) => ({ key: `${document.documentId}:${edition.variantId}`, document, edition }))))(current), [current]);
+  const reviewAvailable = current.actions.some((action) => action.name === "review-candidate" && action.available);
   const stateNotes = stateNotesOf(rows); // The states the rows on show actually hold, so the notes under the table explain what a reader can see and nothing they cannot.
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<RosterRow>>>(
     () => [
@@ -535,10 +511,10 @@ export default function UpdatesList({ roster, initialResult, headingLevel = 2, c
     ],
     [reviewAvailable],
   );
-  const documentsState: ValueState = current.valueStates[DOCUMENTS_MEMBER] ?? "value";
+  const documentsState: ValueState = current.valueStates["documents"] ?? "value";
   const noticeLevel: NoticeHeadingLevel = headingLevel === 1 ? 2 : 3;
   const offersCreate = answeredRoster !== undefined && answeredRoster.documents.length > 0;
-  const HeadingTag = HEADING_TAG[headingLevel];
+  const HeadingTag = ({ 1: "h1", 2: "h2" } as const)[headingLevel];
   let content: ReactElement;
   if (answer === undefined) {
     // No answer describes the context this surface now shows — one is in flight, or the held one belonged to a context the session has left — so nothing is counted and no empty result is implied.
@@ -555,22 +531,12 @@ export default function UpdatesList({ roster, initialResult, headingLevel = 2, c
     content = <StateNotice kind="unavailable" headingLevel={noticeLevel} title={SURFACE_COPY.unavailableTitle} description={SURFACE_COPY.unavailableBody} source={current.source} />;
   } else if (documentsState === "zero") {
     // An empty collection offers a real destination rather than a control that could only fail. A page of a collection that holds documents is never this state, so a window is never reported as an empty ministry.
-    content = <StateNotice kind="empty" headingLevel={noticeLevel} title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} action={{ label: SURFACE_COPY.emptyAction, href: HELP_HREF }} />;
+    content = <StateNotice kind="empty" headingLevel={noticeLevel} title={SURFACE_COPY.emptyTitle} description={SURFACE_COPY.emptyBody} action={{ label: SURFACE_COPY.emptyAction, href: "/help" }} />;
   } else {
+    const queryState: RecordListQueryState = { sort: NO_ORDER, page: current.page.page, pageSize: current.page.pageSize, columnVisibility };
     content = (
       <>
-        <RecordList
-          label={SURFACE_COPY.tableLabel}
-          columns={columns}
-          rows={rows}
-          rowCount={current.page.total}
-          queryState={{ sort: NO_ORDER, page: current.page.page, pageSize: current.page.pageSize, columnVisibility }}
-          onQueryStateChange={handleQueryStateChange}
-          getRowId={(row) => row.key}
-          itemNoun={ITEM_NOUN}
-          pageSizeOptions={PAGE_SIZE_OPTIONS}
-          isLoading={read.isFetching}
-        />
+        <RecordList<RosterRow> {...{ label: SURFACE_COPY.tableLabel, columns, rows, rowCount: current.page.total, queryState, onQueryStateChange: handleQueryStateChange, getRowId: (row) => row.key, itemNoun: "editions", pageSizeOptions: PAGE_SIZE_OPTIONS, isLoading: read.isFetching }} />
         {stateNotes.length === 0 ? null : <StateNotes notes={stateNotes} />}
       </>
     );

@@ -1,8 +1,7 @@
 import { SIMULATION_LABELS } from "@/components/simulation-label";
 import { MEMBER_CHOICES, type MemberChoice } from "@/modules/audience/membership";
 import { CONFIRMATION_WINDOW_HOURS } from "@/modules/time/window";
-type PreferenceChoiceCopy = { readonly label: string; readonly description: string; readonly announcement: string };
-export const PREFERENCE_CHOICE_COPY: Record<MemberChoice, PreferenceChoiceCopy> = {
+export const PREFERENCE_CHOICE_COPY: Record<MemberChoice, { readonly label: string; readonly description: string; readonly announcement: string }> = {
   off: {
     label: "Off",
     description: "No notices are submitted for you from this publisher for this purpose. Other publishers, other purposes and every other record about you stay as they are, and this is your own choice rather than a restriction placed on you.",
@@ -33,9 +32,7 @@ export const PROOF_FLOW_COPY = {
   confirmedState: { title: "This address is confirmed", description: "This publisher's Update email for this purpose is now active for this address. A confirmed membership is not a delivery, and it subscribes you to no other purpose, publisher or record." },
   expiryStatement: `The address can be confirmed within ${CONFIRMATION_WINDOW_HOURS} elapsed hours of accepting. The window is measured in elapsed hours from the moment you accept, and reloading this page, retrying or resending the message never extends it.`,
 };
-export function CONFIRMATION_DEADLINE_COPY(deadlineLabel: string, expired: boolean): string {
-  return expired ? `The confirmation window closed at ${deadlineLabel}. A new request for notices starts a new window.` : `This address can be confirmed until ${deadlineLabel}.`;
-}
+export const CONFIRMATION_DEADLINE_COPY = (deadlineLabel: string, expired: boolean): string => (expired ? `The confirmation window closed at ${deadlineLabel}. A new request for notices starts a new window.` : `This address can be confirmed until ${deadlineLabel}.`);
 export const PREFERENCES_ENTRY_COPY: { readonly description: string; readonly linkLabel: string } = {
   description:
     "Your own preference and consent for this publisher's Update email sit on a page of your own: the Off or Immediate choice, the language you read it in, the proof of your address, and turning these notices off. That page states what this session actually holds, including the case where no membership is recorded, and opening it changes nothing.",

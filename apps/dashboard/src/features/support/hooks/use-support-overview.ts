@@ -7,16 +7,8 @@ import type { Scope, reads } from "@/modules/data-service";
 export type SupportOverviewRead = Awaited<ReturnType<typeof reads.support.readSupportOverview>>;
 type SupportOverviewEnvelope = Extract<SupportOverviewRead, { readonly kind: "envelope" }>["envelope"];
 export type UseSupportOverviewOptions = { readonly scope: Scope; readonly initialEnvelope?: SupportOverviewRead | undefined };
-const OVERVIEW_STALE_TIME_MS = 30_000;
 /** Reads the Support overview in the given scope: wraps `reads.support.readSupportOverview` and answers `envelope | denied | unavailable | refused`, unchanged. */ export const useSupportOverview = ({ scope, initialEnvelope }: UseSupportOverviewOptions): UseQueryResult<SupportOverviewRead> =>
-  useQuery({
-    queryKey: [...scopeKey(scope), "overview"],
-    queryFn: fetchSupportOverview,
-    staleTime: OVERVIEW_STALE_TIME_MS,
-    refetchOnMount: false,
-    initialData: initialEnvelope,
-    initialDataUpdatedAt: initialEnvelope === undefined || initialEnvelope.kind !== "envelope" ? undefined : asOfInstant(initialEnvelope.envelope.asOf),
-  });
+  useQuery({ queryKey: [...scopeKey(scope), "overview"], queryFn: fetchSupportOverview, staleTime: 30_000, refetchOnMount: false, initialData: initialEnvelope, initialDataUpdatedAt: initialEnvelope === undefined || initialEnvelope.kind !== "envelope" ? undefined : asOfInstant(initialEnvelope.envelope.asOf) });
 const isOverviewData = (value: unknown): boolean => isRecord(value) && isRecord(value.report) && Array.isArray(value.monthlyEquivalent) && Array.isArray(value.buckets) && Array.isArray(value.commitmentKinds);
 async function fetchSupportOverview(): Promise<SupportOverviewRead> {
   return fetchRead<SupportOverviewEnvelope["data"], SupportOverviewEnvelope["coverage"]>({ url: "/api/support", admits: isOverviewData });

@@ -1,8 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { access, mkdir, open, readFile, rename, rm, type FileHandle } from "node:fs/promises";
 import { dirname } from "node:path";
-/** A document that exists but cannot be decoded: carries the path and the parse cause, never the bytes. */
-export class CorruptJsonError extends Error {
+/** A document that exists but cannot be decoded: carries the path and the parse cause, never the bytes. */ export class CorruptJsonError extends Error {
   readonly file: string;
   constructor(file: string, cause: unknown) {
     super(`Corrupt JSON document at ${file}: the bytes could not be decoded as JSON`, { cause });
@@ -15,8 +14,7 @@ export function serialiseJson(value: unknown): string {
   if (text === undefined) throw new Error("serialiseJson: the value is not JSON-serialisable (JSON.stringify produced no text)");
   return `${text}\n`;
 }
-/** The canonical digest of a value's JSON form: two values share a digest exactly when `serialiseJson` would write the same bytes for them. */
-export function canonicalDigest(value: unknown): string {
+/** The canonical digest of a value's JSON form: two values share a digest exactly when `serialiseJson` would write the same bytes for them. */ export function canonicalDigest(value: unknown): string {
   const tokens: string[] = [];
   feedCanonicalJson(tokens, value, new WeakSet<object>());
   return createHash("sha256").update(tokens.join("")).digest("hex");
@@ -83,8 +81,7 @@ export async function writeBytesAtomic(file: string, bytes: string | Uint8Array)
 }
 /** Writes a document through {@link writeBytesAtomic}, serialising it first so a rejected value leaves no file behind. */
 export const writeJsonAtomic = async (file: string, value: unknown): Promise<void> => writeBytesAtomic(file, serialiseJson(value));
-/** Reads a document: `undefined` only when the file is absent, and every other fault or corrupt body thrown. */
-export async function readJson<T = unknown>(file: string): Promise<T | undefined> {
+/** Reads a document: `undefined` only when the file is absent, and every other fault or corrupt body thrown. */ export async function readJson<T = unknown>(file: string): Promise<T | undefined> {
   let bytes: Buffer;
   try {
     bytes = await readFile(file);
@@ -98,8 +95,7 @@ export async function readJson<T = unknown>(file: string): Promise<T | undefined
     throw new CorruptJsonError(file, error);
   }
 }
-/** Reports whether a path exists, and is the probe that lets a caller tell an absent store root from an absent document. */
-export async function existsOnDisk(target: string): Promise<boolean> {
+/** Reports whether a path exists, and is the probe that lets a caller tell an absent store root from an absent document. */ export async function existsOnDisk(target: string): Promise<boolean> {
   try {
     await access(target);
     return true;

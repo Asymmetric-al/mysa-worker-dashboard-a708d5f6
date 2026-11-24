@@ -6,10 +6,6 @@ import { READ_ATTEMPT, readResponse } from "../read";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 type InitiativeListQuery = NonNullable<Parameters<typeof reads.outreach.readInitiatives>[0]>;
-type InitiativeStateName = NonNullable<InitiativeListQuery["state"]>;
-type InitiativeSortName = NonNullable<InitiativeListQuery["sort"]>;
-type InitiativeDetailQuery = NonNullable<Parameters<typeof reads.outreach.readInitiative>[1]>;
-type InitiativeMemberStateName = NonNullable<InitiativeDetailQuery["memberState"]>;
 const READ_MESSAGES = {
   stateInvalid: "Read initiatives in one of the states an initiative can stand in — open or closed — or leave the state out to read both.",
   sortInvalid: "Read the list in one of its own orders — name, period-start or state — or leave the order out to read by name.",
@@ -18,9 +14,9 @@ const READ_MESSAGES = {
   memberStateInvalid: "Read the working list in one of its three membership states — included, removed or excluded — or leave the state out to read every member.",
   initiativeIdRequired: "Name the initiative to open by an identifier that is not blank, or leave the identifier out to read the list.",
 } as const;
-const INITIATIVE_STATES = ["open", "closed"] as const satisfies readonly InitiativeStateName[];
-const INITIATIVE_SORTS = ["name", "period-start", "state"] as const satisfies readonly InitiativeSortName[];
-const INITIATIVE_MEMBER_STATES = ["included", "removed", "excluded"] as const satisfies readonly InitiativeMemberStateName[];
+const INITIATIVE_STATES = ["open", "closed"] as const satisfies readonly NonNullable<InitiativeListQuery["state"]>[];
+const INITIATIVE_SORTS = ["name", "period-start", "state"] as const satisfies readonly NonNullable<InitiativeListQuery["sort"]>[];
+const INITIATIVE_MEMBER_STATES = ["included", "removed", "excluded"] as const satisfies readonly NonNullable<NonNullable<Parameters<typeof reads.outreach.readInitiative>[1]>["memberState"]>[];
 const nonBlank = (message: string): z.ZodString => z.string().refine((value) => value.trim().length > 0, message);
 const createInitiativePayloadSchema = z.strictObject({
   name: nonBlank("Give the initiative a name."),
@@ -49,7 +45,6 @@ const initiativeDetailQuerySchema = z.strictObject({
   nextWorkPage: z.coerce.number({ error: READ_MESSAGES.pageInvalid }).int({ error: READ_MESSAGES.pageInvalid }).min(1, { error: READ_MESSAGES.pageInvalid }).optional(),
   nextWorkPageSize: z.coerce.number({ error: READ_MESSAGES.pageSizeInvalid }).int({ error: READ_MESSAGES.pageSizeInvalid }).min(1, { error: READ_MESSAGES.pageSizeInvalid }).optional(),
 });
-type InitiativeDetailQueryParams = z.output<typeof initiativeDetailQuerySchema>;
 const rawInitiativeDetailParams = (search: URLSearchParams): Record<string, unknown> => ({
   initiativeId: search.get(INITIATIVE_ID_PARAM) ?? undefined,
   memberState: search.get("memberState") ?? undefined,
@@ -60,18 +55,16 @@ const rawInitiativeDetailParams = (search: URLSearchParams): Record<string, unkn
   nextWorkPage: search.get("nextWorkPage") ?? undefined,
   nextWorkPageSize: search.get("nextWorkPageSize") ?? undefined,
 });
-/** One page of initiatives as the request asked for it, or the one initiative the request named: the read's envelope, or the read's own `denied` or `unavailable` refusal, with a query the read does not admit answered `invalid` at the field that carries it. */
 async function readInitiatives(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   if (!search.has(INITIATIVE_ID_PARAM)) {
     const list = initiativeListQuerySchema.safeParse(rawInitiativeListParams(search));
     return list.success ? readResponse(READ_ATTEMPT, () => reads.outreach.readInitiatives(list.data)) : toResponse(refusedRead(READ_ATTEMPT, list.error));
   }
-  const detail: z.ZodSafeParseResult<InitiativeDetailQueryParams> = initiativeDetailQuerySchema.safeParse(rawInitiativeDetailParams(search));
+  const detail: z.ZodSafeParseResult<z.output<typeof initiativeDetailQuerySchema>> = initiativeDetailQuerySchema.safeParse(rawInitiativeDetailParams(search));
   if (!detail.success) return toResponse(refusedRead(READ_ATTEMPT, detail.error));
   const { initiativeId, ...narrowing } = detail.data;
   return readResponse(READ_ATTEMPT, () => reads.outreach.readInitiative(initiativeId, narrowing));
 }
-/** Creates one initiative in the ministry this session is acting in. Outcomes are `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 const createInitiative = (request: Request): Promise<Response> => writeRoute(request, createInitiativeRequestSchema, mutations.outreach.createInitiative);
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readInitiatives, POST: createInitiative });

@@ -17,7 +17,7 @@ import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { exponentOf, UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { SUPPORT_BASIS } from "@/modules/support/basis";
 import { GOAL_CAPABILITY, type GoalProgress, type GoalProgressState } from "@/modules/support/goal";
-import { EMPTY_STATES, GOAL_CURRENCY_CHOICE, GOAL_CURRENCY_UNSTATED, MEASURE_LABELS, NO_PERCENTAGE, VALUE_STATE_MEANING, type NoPercentageReason } from "../copy";
+import { EMPTY_STATES, GOAL_CURRENCY_CHOICE, GOAL_CURRENCY_UNSTATED, MEASURE_LABELS, NO_PERCENTAGE, VALUE_STATE_MEANING } from "../copy";
 import { useGoal, type GoalEnvelope } from "../hooks/use-goal";
 import { useSaveGoal, type GoalSaveFormPayload } from "../hooks/use-save-goal";
 import { goalSavePayloadSchema } from "../schemas";
@@ -44,22 +44,18 @@ const goalAmountStateOf = (envelope: GoalEnvelope): ValueState => envelope.value
 const goalPercentageStateOf = (envelope: GoalEnvelope): ValueState => envelope.valueStates["goal.percentage"] ?? "unknown";
 type StatedPercentageState = Exclude<ValueState, "unknown" | "withheld" | "unavailable">;
 type ProgressFigure = { readonly text: string; readonly label: string; readonly note: string };
-type ProgressPresentation = { readonly figure: ProgressFigure | null; readonly sentence: string };
-const INCOMPLETE_MARKER = " (incomplete)";
-const PARTIAL_COVERAGE_CLAUSE = " The source holds only part of that period, so the numerator of this percentage covers only the part it holds, and the figure is not a percentage of the whole period.";
 const statesPercentage = (state: ValueState): state is StatedPercentageState => state === "value" || state === "zero" || state === "incomplete-subtotal";
 const percentageFigureOf = (percentage: string, state: StatedPercentageState): ProgressFigure => {
-  const text = state === "incomplete-subtotal" ? `${percentage}${INCOMPLETE_MARKER}` : percentage;
+  const text = state === "incomplete-subtotal" ? `${percentage}${" (incomplete)"}` : percentage;
   const note = VALUE_STATE_MEANING[state];
   return { text, label: `${text}. ${note}`, note };
 };
-const absentPercentageReason = (goal: GoalFigure | null): NoPercentageReason => (goal === null ? "no-goal" : goal.amount.minorUnits === 0 ? "zero-denominator" : "unknown-denominator");
-function progressPresentation(progress: GoalProgress, goal: GoalFigure | null, measureLabel: string, from: string, to: string, percentage: string | null, percentageState: ValueState): ProgressPresentation {
+function progressPresentation(progress: GoalProgress, goal: GoalFigure | null, measureLabel: string, from: string, to: string, percentage: string | null, percentageState: ValueState): { readonly figure: ProgressFigure | null; readonly sentence: string } {
   const figure = (progress.state === "value" || progress.state === "zero") && percentage !== null && statesPercentage(percentageState) ? percentageFigureOf(percentage, percentageState) : null;
-  const partialCoverage = percentageState === "incomplete-subtotal" ? PARTIAL_COVERAGE_CLAUSE : "";
+  const partialCoverage = percentageState === "incomplete-subtotal" ? " The source holds only part of that period, so the numerator of this percentage covers only the part it holds, and the figure is not a percentage of the whole period." : "";
   const stated: Readonly<Record<Exclude<GoalProgressState, "value" | "zero">, string>> = {
     "no-goal": NO_PERCENTAGE["no-goal"],
-    "no-percentage": NO_PERCENTAGE[absentPercentageReason(goal)],
+    "no-percentage": NO_PERCENTAGE[goal === null ? "no-goal" : goal.amount.minorUnits === 0 ? "zero-denominator" : "unknown-denominator"],
     incompatible: NO_PERCENTAGE["incompatible-measure"],
     paused: "This goal is paused, so no percentage is shown. A paused goal is not 0%: it is a goal the source is not measuring right now.",
     ended: "This goal has ended, so no percentage is shown. An ended goal is not 0%.",
@@ -82,38 +78,33 @@ function precisionDescription(currency: string, exponent: number): string {
   return `Enter the amount in ${currency} as figures, with a full stop before the decimals. ${currency} amounts have ${places}, so a longer fraction is refused rather than rounded.`;
 }
 const Fact = factFrame({ rowClassName: "flex flex-wrap items-baseline gap-x-1.5", termClassName: "font-medium", valueClassName: "min-w-0 break-words" });
-function GoalFacts({ goal, locale, measureLabel, valueState }: { readonly goal: GoalFigure; readonly locale: string; readonly measureLabel: string; readonly valueState: ValueState }): ReactElement {
-  return (
-    <dl className="grid gap-2 text-sm">
-      <Fact term={FACT_LABELS.amount}>
-        <span className="flex flex-wrap items-baseline gap-x-2">
-          <AmountValue money={goal.amount} valueState={valueState} locale={locale} emphasis="headline" />
-          <bdi className="text-sm text-muted-foreground">{goal.amount.currency}</bdi>
-        </span>
-      </Fact>
-      <Fact term={FACT_LABELS.measure} value={<bdi>{measureLabel}</bdi>} />
-      <Fact term={FACT_LABELS.effectiveFrom}>
-        <bdi>{goal.effectiveFrom}</bdi> <span className="text-muted-foreground">({CIVIL_DAY_NOTE})</span>
-      </Fact>
-      <Fact term={FACT_LABELS.revision}>
-        <bdi className="mono-identifier">{goal.revision}</bdi> <span className="text-muted-foreground">(the revision a change must present; a stale one is a conflict rather than an overwrite)</span>
-      </Fact>
-    </dl>
-  );
-}
-function GoalComparison({ current, currentState, locale, amount, currency, effectiveFrom }: { readonly current: GoalFigure | null; readonly currentState: ValueState; readonly locale: string; readonly amount: string; readonly currency: string; readonly effectiveFrom: string }): ReactElement {
-  return (
-    <dl className="grid gap-1.5">
-      <Fact term="Current goal" value={current === null ? "No goal is set" : <AmountValue money={current.amount} valueState={currentState} locale={locale} />} />
-      <Fact term="This change">
-        <bdi>{amount.trim() === "" ? "an amount you have not entered yet" : amount}</bdi> <bdi>{currency.trim() === "" ? GOAL_CURRENCY_CHOICE.unchosen : currency}</bdi>
-      </Fact>
-      <Fact term="Effective from" value={effectiveFrom.trim() === "" ? "a day you have not chosen yet" : <bdi>{effectiveFrom}</bdi>} />
-    </dl>
-  );
-}
-type GoalFormProps = { readonly envelope: GoalEnvelope; readonly locale: string; readonly onClose: () => void; readonly onCheckResult: () => void };
-function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): ReactElement {
+const GoalFacts = ({ goal, locale, measureLabel, valueState }: { readonly goal: GoalFigure; readonly locale: string; readonly measureLabel: string; readonly valueState: ValueState }): ReactElement => (
+  <dl className="grid gap-2 text-sm">
+    <Fact term={FACT_LABELS.amount}>
+      <span className="flex flex-wrap items-baseline gap-x-2">
+        <AmountValue money={goal.amount} valueState={valueState} locale={locale} emphasis="headline" />
+        <bdi className="text-sm text-muted-foreground">{goal.amount.currency}</bdi>
+      </span>
+    </Fact>
+    <Fact term={FACT_LABELS.measure} value={<bdi>{measureLabel}</bdi>} />
+    <Fact term={FACT_LABELS.effectiveFrom}>
+      <bdi>{goal.effectiveFrom}</bdi> <span className="text-muted-foreground">({CIVIL_DAY_NOTE})</span>
+    </Fact>
+    <Fact term={FACT_LABELS.revision}>
+      <bdi className="mono-identifier">{goal.revision}</bdi> <span className="text-muted-foreground">(the revision a change must present; a stale one is a conflict rather than an overwrite)</span>
+    </Fact>
+  </dl>
+);
+const GoalComparison = ({ current, currentState, locale, amount, currency, effectiveFrom }: { readonly current: GoalFigure | null; readonly currentState: ValueState; readonly locale: string; readonly amount: string; readonly currency: string; readonly effectiveFrom: string }): ReactElement => (
+  <dl className="grid gap-1.5">
+    <Fact term="Current goal" value={current === null ? "No goal is set" : <AmountValue money={current.amount} valueState={currentState} locale={locale} />} />
+    <Fact term="This change">
+      <bdi>{amount.trim() === "" ? "an amount you have not entered yet" : amount}</bdi> <bdi>{currency.trim() === "" ? GOAL_CURRENCY_CHOICE.unchosen : currency}</bdi>
+    </Fact>
+    <Fact term="Effective from" value={effectiveFrom.trim() === "" ? "a day you have not chosen yet" : <bdi>{effectiveFrom}</bdi>} />
+  </dl>
+);
+function GoalForm({ envelope, locale, onClose, onCheckResult }: { readonly envelope: GoalEnvelope; readonly locale: string; readonly onClose: () => void; readonly onCheckResult: () => void }): ReactElement {
   const { data } = envelope;
   const goal = data.goal;
   const measureLabel = MEASURE_LABELS[data.measure];
@@ -233,11 +224,7 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
         fieldLabels={FORM_LABELS}
         headingLevel={3}
       />
-      {settled ? (
-        <Button type="button" variant="outline" onClick={onClose}>
-          Close
-        </Button>
-      ) : null}
+      {settled ? <Button {...{ type: "button", variant: "outline", onClick: onClose }}>Close</Button> : null}
     </div>
   );
 }
@@ -268,16 +255,12 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: GoalFormProps): 
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h2 id={titleId} className="type-section-title">
-              Support goal
-            </h2>
+            <h2 {...{ id: titleId, className: "type-section-title" }}>Support goal</h2>
           </CardTitle>
           <CardDescription>{"One target, set against received gifts on the one named basis this application measures. Changing the goal changes only the goal: no gift, commitment, earlier report or public progress is written, and no message is sent."}</CardDescription>
           {canEdit && !showForm ? (
             <CardAction>
-              <Button type="button" onClick={() => setEditing(true)}>
-                {goal === null ? "Set a goal" : "Change the goal"}
-              </Button>
+              <Button {...{ type: "button", onClick: () => setEditing(true) }}>{goal === null ? "Set a goal" : "Change the goal"}</Button>
             </CardAction>
           ) : null}
         </CardHeader>

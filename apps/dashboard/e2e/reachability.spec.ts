@@ -1,14 +1,12 @@
-/** Criterion 21 — reachability and commands: every destination the application serves is one a person can */
+/** Criterion 21 — reachability and commands: every destination the application serves is one a person can reach by operating the shell. */
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Page } from "@playwright/test";
 import { RESET_URL, SEEDED_PERSONAS, SESSION_COOKIE, describeInventoryDifference, expect, matchesTemplate, pageRoutesUnder, pathnameOf, templateOf, test, type PersonaName } from "../playwright.config";
-const PERSONA: PersonaName = "established-worker";
 const ENTRY_PATH = "/"; // Where every crawl starts, and where each identity hop begins: the entry route, never a destination.
 const ORIGIN = new URL(RESET_URL).origin; // The origin the session cookie is set on, taken from the runner's own control address rather than restated.
 const MAIN_LANDMARK = "#main-content";
-const ROUTER_DIRECTORY = join(import.meta.dirname, "..", "src", "app");
 const APPLICATION_DIRECTORY = join(import.meta.dirname, "..");
 const REPOSITORY_DIRECTORY = join(APPLICATION_DIRECTORY, "..", "..");
 const ALIAS_PATH = "/feed"; // The legacy alias, named once so the exception list, its probe and the sweep cannot disagree about which address it is.
@@ -82,14 +80,8 @@ const ABSENT_PROVIDER_VARIABLES: readonly string[] = [
   "AWS_ACCESS_KEY_ID",
   "AWS_SECRET_ACCESS_KEY",
 ];
-const CRAWL_TIMEOUT_MS = 600_000;
 const COMMAND_TIMEOUT_MS = 300_000;
-interface Visit {
-  readonly path: string;
-  readonly url: string;
-  readonly via: string;
-  readonly from: string;
-}
+type Visit = { readonly path: string; readonly url: string; readonly via: string; readonly from: string };
 type SweepReport = { readonly visits: readonly Visit[]; readonly ignored: readonly string[] }; // What one sweep found: the destinations it reached, and every link it did not follow because it addresses no page.
 const NO_PAGE = "(nothing above it)"; // What the entry route has above it, stated rather than left blank.
 const DESTINATION_TIMEOUT_MS = 30_000;
@@ -108,7 +100,6 @@ async function expandCollapsedSections(page: Page): Promise<void> {
   }
   throw new Error(`The rail still offered a collapsed section after ${String(SECTION_TOGGLE_LIMIT)} expansions on ${pathnameOf(page.url())}, so this sweep cannot tell a reachable destination from one hidden behind a toggle.`);
 }
-const LINK_SETTLE_INTERVALS: readonly number[] = [400, 400];
 async function navigationTargetsOn(page: Page): Promise<readonly string[]> {
   await expandCollapsedSections(page); // Every internal address the page currently offers, once each and in a stable order.
   let settled: readonly string[] = [];
@@ -123,7 +114,7 @@ async function navigationTargetsOn(page: Page): Promise<readonly string[]> {
         settled = sample === "" ? [] : sample.split("\n");
         return agreements >= 3 - 1;
       },
-      { message: `The links ${pathnameOf(page.url())} offers never stopped changing, so this sweep cannot tell which destinations the page really leads to.`, timeout: DESTINATION_TIMEOUT_MS, intervals: [...LINK_SETTLE_INTERVALS] },
+      { message: `The links ${pathnameOf(page.url())} offers never stopped changing, so this sweep cannot tell which destinations the page really leads to.`, timeout: DESTINATION_TIMEOUT_MS, intervals: [400, 400] },
     )
     .toBe(true);
   return settled;
@@ -304,20 +295,18 @@ function runDocumentedCommand(args: readonly string[]): void {
     throw new Error(`\`bun ${args.join(" ")}\` run in ${APPLICATION_DIRECTORY} did not exit 0: ${describeCommandFailure(error)}`);
   }
 }
-test.use({ persona: PERSONA }); // Every test here acts as the established worker; the sweep switches session only for the three surfaces that belong to another identity.; Every test starts from the deterministic seed.
+test.use({ persona: "established-worker" }); // Every test here acts as the established worker; the sweep switches session only for the three surfaces that belong to another identity.; Every test starts from the deterministic seed.
 test("every page route is a destination the shell reaches, and no route exists without a path to it", async ({ page }) => {
-  test.setTimeout(CRAWL_TIMEOUT_MS);
-  const served = pageRoutesUnder(ROUTER_DIRECTORY, []);
+  test.setTimeout(600_000);
+  const served = pageRoutesUnder(join(import.meta.dirname, "..", "src", "app"), []);
   expect(describeInventoryDifference(EXPECTED_ROUTES, served), "The route inventory this file states and the router it sweeps must describe the same application, or the sweep proves coverage of a set nobody serves.").toBe("");
   expect(ROUTE_EXCEPTIONS, "Exactly one address may be excepted from the sweep, and it is the legacy alias that resolves instead of rendering.").toEqual(["/feed"]);
   const report = await sweepTheShell(page, served);
   const unreached = served.filter((template) => (ROUTE_EXCEPTIONS.includes(template) ? false : !report.visits.some((visit) => matchesTemplate(template, visit.path))));
   expect(unreached, describeUnreached(unreached, report.visits)).toEqual([]);
   const outsideInventory = report.visits.filter((visit) => templateOf(visit.path, served) === undefined); // The other direction: nothing the sweep landed on may be outside the inventory. A redirect that carried it somewhere the inventory does not name is exactly the kind of orphan this assertion exists to catch.
-  expect(
-    outsideInventory.map((visit) => visit.url),
-    "The sweep reached an address the router's own page templates do not account for, so a destination exists that the inventory never described.",
-  ).toEqual([]);
+  const outsideUrls = outsideInventory.map((visit) => visit.url);
+  expect(outsideUrls, "The sweep reached an address the router's own page templates do not account for, so a destination exists that the inventory never described.").toEqual([]);
   const pageShaped = report.ignored.filter((href) => templateOf(pathnameOf(href), served) !== undefined); // And the links it did not follow must address no page at all: a static fixture, an icon or another asset.
   expect(pageShaped, "A link the sweep skipped actually addresses a page route, which would mean the inventory and the crawl disagree about what a destination is.").toEqual([]);
   process.stdout.write(`${routeMappingReport(report.visits)}\nLinks followed by nothing because they address no page: ${report.ignored.length === 0 ? "none" : report.ignored.join(", ")}\n`);

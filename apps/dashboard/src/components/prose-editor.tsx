@@ -242,9 +242,7 @@ function LinkDestinationDialog({ open, href, error, onHrefChange, onApply, onCan
     </EditorDialog>
   );
 }
-/**
- * The single editing surface for Update prose and Page section prose. It edits the document and reports every change through `onChange`; the surface that owns the draft owns the autosave, its save state and its recovery, so exactly one place states whether this text is saved.
- */
+/** The single editing surface for Update prose and Page section prose. It edits the document and reports every change through `onChange`; the surface that owns the draft owns the autosave, its save state and its recovery, so exactly one place states whether this text is saved. */
 export function ProseEditor({ initialDocument, direction, label, onChange, onRequestMedia, readOnly = false }: ProseEditorProps) {
   const labelId = useId();
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);

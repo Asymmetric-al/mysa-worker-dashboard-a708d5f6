@@ -39,8 +39,6 @@ const idOrUndefined = (value: string | null | undefined): string | undefined => 
   const commitmentId = idOrUndefined(params.get(PARAM.commitmentId));
   return { page, ...(commitmentId === undefined ? {} : { commitmentId }) };
 }
-const COMMITMENTS_ENDPOINT = "/api/support/commitments";
-const COMMITMENTS_STALE_TIME_MS = 30_000;
 const isCommitmentsData = (value: unknown): boolean => isRecord(value) && Array.isArray(value.commitments) && typeof value.total === "number" && isRecord(value.page);
 export type CommitmentsSeed = { readonly initialData: CommitmentsReadResult; readonly initialDataUpdatedAt: number };
 export type UseCommitmentsInput = { readonly scope: Scope; readonly query: CommitmentsQuery; readonly initialEnvelope?: CommitmentsEnvelope };
@@ -54,8 +52,8 @@ export function useCommitments({ scope, query, initialEnvelope }: UseCommitments
   const queryString = toCommitmentsParams(query).toString();
   return useQuery<CommitmentsReadResult, Error>({
     queryKey: [...scopeKey(scope), "commitments", query],
-    queryFn: () => fetchRead<CommitmentsEnvelope["data"], CommitmentsEnvelope["coverage"]>({ url: queryString.length === 0 ? COMMITMENTS_ENDPOINT : `${COMMITMENTS_ENDPOINT}?${queryString}`, admits: isCommitmentsData }),
-    staleTime: COMMITMENTS_STALE_TIME_MS,
+    queryFn: () => fetchRead<CommitmentsEnvelope["data"], CommitmentsEnvelope["coverage"]>({ url: queryString.length === 0 ? "/api/support/commitments" : `${"/api/support/commitments"}?${queryString}`, admits: isCommitmentsData }),
+    staleTime: 30_000,
     ...seeded,
   });
 }

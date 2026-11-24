@@ -13,12 +13,10 @@ import { ARCHIVE_COPY, type Copy } from "../copy/privacy";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY } from "../copy/states";
 import { useArchivePreparation, useRestorePreparation, type PartnerMutationHandle, type PartnerMutationInput } from "../hooks/use-partner-mutations";
 import type { ArchivePreparationPayload } from "../schemas/preparation";
-const PREPARATION_KIND: PartnerKind = "private-preparation";
 const ARCHIVE_LABEL = "Archive preparation";
 const RESTORE_LABEL = "Restore preparation";
 const UNAVAILABLE_TITLE = "This change did not reach the source";
 const UNAVAILABLE_DESCRIPTION = "The preparation record keeps its place in the source: the request did not arrive, so nothing about it changed.";
-const UNKNOWN_TITLE = "This change is not confirmed";
 const DENIED_TITLE = SURFACE_STATE_COPY["private-preparation"].denied.title;
 const DENIED_DESCRIPTION = SURFACE_STATE_COPY["private-preparation"].denied.body;
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { partnerId: "Preparation record" };
@@ -38,7 +36,7 @@ export interface PreparationArchiveActionsProps {
   readonly className?: string;
 }
 type OutcomeReceiptProps = { readonly outcome: MutationOutcome; readonly onCheckResult: (() => void) | undefined; readonly onReplay: (() => void) | undefined; readonly onReapply: ((revision: string) => void) | undefined };
-const NOTICE_COPY: OutcomeNoticeCopy = { denied: { title: DENIED_TITLE, description: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE, description: UNAVAILABLE_DESCRIPTION }, unknown: { title: UNKNOWN_TITLE }, retryLabel: PARTNER_ACTION_LABELS.retry, checkResultLabel: "Check the result" };
+const NOTICE_COPY: OutcomeNoticeCopy = { denied: { title: DENIED_TITLE, description: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE, description: UNAVAILABLE_DESCRIPTION }, unknown: { title: "This change is not confirmed" }, retryLabel: PARTNER_ACTION_LABELS.retry, checkResultLabel: "Check the result" };
 function OutcomeReceipt({ outcome, onCheckResult, onReplay, onReapply }: OutcomeReceiptProps): ReactElement {
   const notice = outcomeNotice(outcome, NOTICE_COPY, { onRetrySameWork: onReplay, onCheckResult, headingLevel: RECEIPT_HEADING_LEVEL });
   return notice === null ? <OperationResult outcome={outcome} headingLevel={RECEIPT_HEADING_LEVEL} onReapply={outcome.outcome === "conflict" && onReapply !== undefined ? () => onReapply(outcome.currentRevision) : undefined} fieldLabels={FIELD_LABELS} /> : <StateNotice {...notice} />;
@@ -63,7 +61,7 @@ export default function PreparationArchiveActions({ partnerId, kind, archived, e
   }, [settled]);
   const direction: ArchiveDirection = archived ? "restore" : "archive";
   const admitted = availableActions.find((entry) => entry.name === (archived ? "restorePreparation" : "archivePreparation"));
-  if (kind !== PREPARATION_KIND || admitted === undefined || !admitted.available) return null;
+  if (kind !== "private-preparation" || admitted === undefined || !admitted.available) return null;
   const handle: PartnerMutationHandle<ArchivePreparationPayload> = archived ? restore : archive;
   const label = archived ? RESTORE_LABEL : ARCHIVE_LABEL;
   const statements = archived ? RESTORE_STATEMENTS : ARCHIVE_STATEMENTS;
@@ -104,9 +102,7 @@ export default function PreparationArchiveActions({ partnerId, kind, archived, e
           </Alert>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction type="button" onClick={confirm} disabled={pending}>
-              {label}
-            </AlertDialogAction>
+            <AlertDialogAction {...{ type: "button" as const, onClick: confirm, disabled: pending }}>{label}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

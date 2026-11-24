@@ -6,7 +6,6 @@ import { fetchRead } from "@/lib/read-transport";
 import type { reads } from "@/modules/data-service";
 import type { Scope } from "@/modules/data-service/envelope";
 const GOAL_QUERY_JOB = "goal";
-const GOAL_STALE_TIME_MS = 30_000;
 export type GoalReadResult = Awaited<ReturnType<typeof reads.support.readGoal>>;
 export type GoalEnvelope = Extract<GoalReadResult, { kind: "envelope" }>["envelope"];
 export type GoalQueryKey = readonly [...ScopeKey, typeof GOAL_QUERY_JOB];
@@ -18,7 +17,7 @@ export const goalQueryKey = (scope: Scope): GoalQueryKey => [...scopeKey(scope),
   return useQuery({
     queryKey: goalQueryKey(scope),
     queryFn: () => fetchRead<GoalEnvelope["data"], GoalEnvelope["coverage"]>({ url: "/api/support/goal", admits: isRecord }),
-    staleTime: GOAL_STALE_TIME_MS,
+    staleTime: 30_000,
     refetchOnMount: false,
     initialData: initialEnvelope === undefined ? undefined : { kind: "envelope", envelope: initialEnvelope },
     initialDataUpdatedAt: asOfInstant === undefined || Number.isNaN(asOfInstant) ? undefined : asOfInstant,

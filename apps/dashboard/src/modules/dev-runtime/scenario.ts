@@ -27,8 +27,7 @@ export const SCENARIO_DEFINITIONS: Readonly<Record<ScenarioId, ScenarioDefinitio
   ),
 });
 export const isScenarioId = (value: unknown): value is ScenarioId => typeof value === "string" && Object.hasOwn(SCENARIO_DEFINITIONS, value);
-/** The flags a scenario sets. */
-export function scenarioFlagsFor(scenarioId: ScenarioId): ScenarioFlags {
+/** The flags a scenario sets. */ export function scenarioFlagsFor(scenarioId: ScenarioId): ScenarioFlags {
   if (!isScenarioId(scenarioId)) throw new RangeError(`Unknown scenario ${describeValue(scenarioId)}: this release defines ${SCENARIO_IDS.join(", ")}.`);
   return SCENARIO_DEFINITIONS[scenarioId].flags;
 }
@@ -56,11 +55,8 @@ export interface SessionMetaDocument {
   coachingRecordsSessionId: string | null;
   personas: PersistedPersonaRecord[];
 }
-const DEV_SOURCE_SYSTEM = "dev-runtime";
-const DEV_SOURCE_REFERENCE = "session-meta";
-export const DEV_SOURCE = Object.freeze({ system: DEV_SOURCE_SYSTEM, reference: DEV_SOURCE_REFERENCE });
-/** The revision a caller would present as `expectedRevision` if a development mutation took one. */
-export function devStateRevision(meta: SessionMetaDocument, principalId: string): string {
+export const DEV_SOURCE = Object.freeze({ system: "dev-runtime", reference: "session-meta" });
+/** The revision a caller would present as `expectedRevision` if a development mutation took one. */ export function devStateRevision(meta: SessionMetaDocument, principalId: string): string {
   const plan = meta.failurePlan === EMPTY_FAILURE_PLAN ? "none" : `${meta.failurePlan.mode}:${meta.failurePlan.target.kind}:${meta.failurePlan.target.name}@${meta.failurePlan.armedAt}`;
   return ["dev-state.1", `scenario=${meta.scenarioId}`, `offset=${meta.clockOffsetMs}`, `state=${meta.sessionState}`, `principal=${principalId}`, `plan=${plan}`].join("|");
 }
@@ -149,8 +145,7 @@ export function buildSessionMeta(input: SessionMetaSeedInput): SessionMetaDocume
   if (parsed.ok) return parsed.value;
   throw parsed.error.code === "unknown-scenario" || parsed.error.code === "invalid-offset" || parsed.error.code === "out-of-range-offset" ? new RangeError(parsed.error.message) : new TypeError(parsed.error.message);
 }
-/** Reads a document back from its stored form, refusing rather than throwing on anything unusable. */
-export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, SessionMetaRefusal> {
+/** Reads a document back from its stored form, refusing rather than throwing on anything unusable. */ export function parseSessionMeta(value: unknown): Result<SessionMetaDocument, SessionMetaRefusal> {
   if (!isRecord(value)) return err(refuse("meta-unreadable", "A session meta document is an object carrying a version, a scenario, a clock offset, a failure plan, an admission state, a principal and its admitted memberships."));
   const { version } = value;
   if (version !== SESSION_META_VERSION) return err(refuse("meta-unreadable", `A session meta document is version ${String(SESSION_META_VERSION)}; the stored document states ${describeValue(version)}.`));
@@ -221,8 +216,7 @@ export async function advanceClock(sessionId: string, byMs: number): Promise<Res
   advanceClockOffset(byMs);
   return updated;
 }
-/** Re-applies a document's stored offset to the process clock, writing nothing. */
-export function applySessionClock(meta: SessionMetaDocument): void {
+/** Re-applies a document's stored offset to the process clock, writing nothing. */ export function applySessionClock(meta: SessionMetaDocument): void {
   const refusal = offsetRefusalFor(meta.clockOffsetMs);
   if (refusal !== undefined) throw new RangeError(refusal.message);
   setClockOffset(meta.clockOffsetMs);

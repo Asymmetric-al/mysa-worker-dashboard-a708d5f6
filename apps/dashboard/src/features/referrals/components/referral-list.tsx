@@ -68,24 +68,22 @@ function ExpiredReferralHistorySection({ items, searchEmpty, dir, headingLevel }
     </ul>
   );
 }
-function ViewSwitcher({ current, hrefOf }: { readonly current: ReferralView; readonly hrefOf: (view: ReferralView) => string }): ReactElement {
-  return (
-    <nav aria-label={LIST_COPY.viewSwitcherLabel} className="min-w-0">
-      <ul className="flex min-w-0 flex-wrap items-center gap-1">
-        {REFERRAL_VIEWS.map((view) => {
-          const isCurrent = view === current;
-          return (
-            <li key={view} className="min-w-0">
-              <Link href={hrefOf(view)} aria-current={isCurrent ? "page" : undefined} data-slot="button" className={cn(buttonVariants({ variant: isCurrent ? "secondary" : "ghost", size: "sm" }), "max-w-full whitespace-normal")}>
-                <bdi>{LIST_COPY.views[view].heading}</bdi>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
-}
+const ViewSwitcher = ({ current, hrefOf }: { readonly current: ReferralView; readonly hrefOf: (view: ReferralView) => string }): ReactElement => (
+  <nav aria-label={LIST_COPY.viewSwitcherLabel} className="min-w-0">
+    <ul className="flex min-w-0 flex-wrap items-center gap-1">
+      {REFERRAL_VIEWS.map((view) => {
+        const isCurrent = view === current;
+        return (
+          <li key={view} className="min-w-0">
+            <Link href={hrefOf(view)} aria-current={isCurrent ? "page" : undefined} data-slot="button" className={cn(buttonVariants({ variant: isCurrent ? "secondary" : "ghost", size: "sm" }), "max-w-full whitespace-normal")}>
+              <bdi>{LIST_COPY.views[view].heading}</bdi>
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  </nav>
+);
 /** One referral list in the presentation its address names: the switcher, the heading and explanation, the search and the whole-result count. */
 export function ReferralList({ scope, initialResult, dir, className }: ReferralListProps): ReactElement {
   const router = useRouter();
@@ -115,12 +113,7 @@ export function ReferralList({ scope, initialResult, dir, className }: ReferralL
     commit({ ...latestQuery.current, page: lastPage });
   }, [commit, data, query.page, query.list]);
   const hrefOf = useCallback((next: ReferralView): string => `${pathname}?${listParams(next === query.list ? query : { ...query, list: next, page: FIRST_PAGE }).toString()}`, [pathname, query]);
-  const commitPatch = useCallback(
-    (patch: Partial<ReferralListQuery>) => {
-      commit({ ...latestQuery.current, ...patch });
-    },
-    [commit],
-  );
+  const commitPatch = useCallback((patch: Partial<ReferralListQuery>) => commit({ ...latestQuery.current, ...patch }), [commit]);
   const handleSearchChange = useCallback((value: string) => commitPatch({ search: value, page: FIRST_PAGE }), [commitPatch]);
   const handleClearSearch = useCallback(() => commitPatch({ search: "", page: FIRST_PAGE }), [commitPatch]);
   const handleAppliedChange = useCallback((_next: Record<string, string[]>) => {}, []);
@@ -187,19 +180,10 @@ export function ReferralList({ scope, initialResult, dir, className }: ReferralL
         );
     } else if (list.items.length === 0) body = <StateNotice kind="loading" title={LIST_COPY.heading} headingLevel={3} loadingLines={6} />;
     else {
+      const listState = { sort: [], page: query.page, pageSize: query.pageSize, columnVisibility };
       body = (
         <>
-          <RecordList
-            label={LIST_COPY.views[query.list].heading}
-            columns={columns}
-            rows={list.items}
-            rowCount={list.total}
-            queryState={{ sort: [], page: query.page, pageSize: query.pageSize, columnVisibility }}
-            onQueryStateChange={handleQueryStateChange}
-            getRowId={(row) => row.referralId}
-            itemNoun={ITEM_NOUN}
-            pageSizeOptions={REFERRAL_PAGE_SIZES}
-          />
+          <RecordList label={LIST_COPY.views[query.list].heading} columns={columns} rows={list.items} rowCount={list.total} queryState={listState} onQueryStateChange={handleQueryStateChange} getRowId={(row) => row.referralId} itemNoun={ITEM_NOUN} pageSizeOptions={REFERRAL_PAGE_SIZES} />
           <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{LIST_COPY.columnHelp.windowEnd}</p>
         </>
       );

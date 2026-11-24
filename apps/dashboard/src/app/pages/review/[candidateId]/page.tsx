@@ -11,16 +11,11 @@ type CandidateData = CandidateEnvelope["data"];
 type ReviewableCandidate = Extract<CandidateData, { status: "reviewable" }>;
 type PageLocalesEnvelope = Extract<Awaited<ReturnType<typeof reads.pages.readPageLocales>>, { kind: "envelope" }>["envelope"];
 type EditionView = PageLocalesEnvelope["data"]["editions"][number];
-type FailedRead = Exclude<ReadResult<never>, { kind: "envelope" }>;
-/** The title this route states, whether it renders the review or a refusal in its place: the page keeps its own heading and states the refusal beneath it. */
-const PAGE_TITLE = "Page review";
-/** The level a refusal nests at, because the page's title is the route's one heading and the notice sits beneath it. */
-const REFUSAL_LEVEL = 2;
-const NO_CANDIDATE_ID = "";
+/** The title this route states, whether it renders the review or a refusal in its place: the page keeps its own heading and states the refusal beneath it. */ const PAGE_TITLE = "Page review";
+/** The level a refusal nests at, because the page's title is the route's one heading and the notice sits beneath it. */ const REFUSAL_LEVEL = 2;
 const REFUSED_TITLE = "This review's request was refused";
 const UPDATE_CANDIDATE_TITLE = "This address reviews an Update, not a Page";
 const UPDATE_CANDIDATE_DESCRIPTION = "This route reviews the frozen candidates of Worker and Project Pages, and what this address names belongs to a Ministry Update, so no Page review is composed here. " + "The action below opens the same identity on the Updates review, which is the family that owns it.";
-const UPDATE_CANDIDATE_ACTION_LABEL = "Open the Updates review";
 const UPDATE_REVIEW_HREF_PREFIX = "/communication/review/";
 const UNRENDERABLE_TITLE = "The frozen revision cannot be shown";
 const UNRENDERABLE_DESCRIPTION = "This edition's frozen revision cannot be read as the content profile requires, so no reviewer can be asked to " + "approve it. Nothing has been approved, nothing has been released, and the revision keeps its identity until the " + "author submits one that can be shown.";
@@ -32,8 +27,7 @@ type ReviewedCandidate = {
   readonly renderedHtml: string;
   readonly mediaRenditions: NonNullable<ReviewEditionView["mediaRenditions"]>;
   readonly decisionRecord: NonNullable<ReviewEditionView["decisionRecord"]> | null;
-  /** Whether the principal reading this page wrote the frozen revision, as the candidate read states it. */
-  readonly reviewedByAuthor: boolean;
+  /** Whether the principal reading this page wrote the frozen revision, as the candidate read states it. */ readonly reviewedByAuthor: boolean;
   readonly headRelease: ReviewableCandidate["headRelease"];
 };
 function variantRecordOf(documentId: string, edition: EditionView): Parameters<typeof lifecycleOf>[0] {
@@ -81,16 +75,15 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: "The review could not be read", body: "The records behind this review could not be read, so nothing is shown here in place of them. " + "No decision is offered until the read succeeds: an empty review would state that nothing is frozen, " + "which this read does not say." },
   refused: { title: REFUSED_TITLE },
 };
-/** A notice stated inside the page it belongs to: the route's own title first, the refusal beneath it, so a screen that could not be read still says which page it is. */
-const titledNoticeOf = (notice: ReactElement): ReactElement => (
+/** A notice stated inside the page it belongs to: the route's own title first, the refusal beneath it, so a screen that could not be read still says which page it is. */ const titledNoticeOf = (notice: ReactElement): ReactElement => (
   <PageColumn gap={6}>
     <PageHeading title={PAGE_TITLE} />
     {notice}
   </PageColumn>
 );
-const failureNoticeOf = (result: FailedRead): ReactElement => titledNoticeOf(<ReadNotices failure={result} copy={NOTICE_COPY} />);
+const failureNoticeOf = (result: Exclude<ReadResult<never>, { kind: "envelope" }>): ReactElement => titledNoticeOf(<ReadNotices failure={result} copy={NOTICE_COPY} />);
 /** A candidate that belongs to an Update rather than a Page: stated under the page's own title, with the one action that completes the review on the family that owns it. */
-const updateCandidateNoticeOf = (candidateId: string): ReactElement => titledNoticeOf(<StateNotice kind="refused" headingLevel={REFUSAL_LEVEL} title={UPDATE_CANDIDATE_TITLE} description={UPDATE_CANDIDATE_DESCRIPTION} action={{ label: UPDATE_CANDIDATE_ACTION_LABEL, href: updateReviewHrefOf(candidateId) }} />);
+const updateCandidateNoticeOf = (candidateId: string): ReactElement => titledNoticeOf(<StateNotice kind="refused" headingLevel={REFUSAL_LEVEL} title={UPDATE_CANDIDATE_TITLE} description={UPDATE_CANDIDATE_DESCRIPTION} action={{ label: "Open the Updates review", href: updateReviewHrefOf(candidateId) }} />);
 async function pageReviewOf(envelope: CandidateEnvelope, reviewed: ReviewedCandidate | undefined): Promise<ReactElement> {
   const { documentId } = envelope.data.document;
   const locales = await reads.pages.readPageLocales({ pageId: documentId });
@@ -106,7 +99,7 @@ async function pageReviewOf(envelope: CandidateEnvelope, reviewed: ReviewedCandi
   const document: ReviewDocumentView = { documentId, family, recordRevision: page.document.recordRevision, editions: page.editions.map((edition) => editionViewOf(edition, documentId, reviewed)) };
   return (
     <PageSurface headingId="page-review-heading" title={PAGE_TITLE}>
-      <PageReviewSurface document={document} candidateId={reviewed === undefined ? NO_CANDIDATE_ID : reviewed.candidateId} expectedRevision={envelope.revision} scope={envelope.scope} givingBinding={givingBinding} {...(reach === undefined ? {} : { reach })} />
+      <PageReviewSurface document={document} candidateId={reviewed === undefined ? "" : reviewed.candidateId} expectedRevision={envelope.revision} scope={envelope.scope} givingBinding={givingBinding} {...(reach === undefined ? {} : { reach })} />
     </PageSurface>
   );
 }
@@ -125,8 +118,7 @@ async function reviewOf(envelope: CandidateEnvelope, candidateId: string): Promi
       return titledNoticeOf(<StateNotice kind="unavailable" headingLevel={REFUSAL_LEVEL} title={UNRENDERABLE_TITLE} description={data.reason} source={envelope.source} />);
   }
 }
-/** The review of one frozen Page candidate: one read, one branch, one surface. */
-export default async function PageReviewCandidatePage({ params }: { readonly params: Promise<{ candidateId: string }> }): Promise<ReactElement> {
+/** The review of one frozen Page candidate: one read, one branch, one surface. */ export default async function PageReviewCandidatePage({ params }: { readonly params: Promise<{ candidateId: string }> }): Promise<ReactElement> {
   const { candidateId } = await params;
   const result = await reads.updates.readCandidate({ variantId: candidateId });
   return result.kind === "envelope" ? reviewOf(result.envelope, candidateId) : failureNoticeOf(result);

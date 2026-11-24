@@ -1,7 +1,6 @@
 import { z } from "zod";
 const PAGE_NUMBER = /^[1-9][0-9]*$/u;
-/** One paging parameter as a URL carries it: trimmed, a whole number of one or more, and a safe integer, refused with the message its own route states. */
-export function pagingParameter(message: string) {
+/** One paging parameter as a URL carries it: trimmed, a whole number of one or more, and a safe integer, refused with the message its own route states. */ export function pagingParameter(message: string) {
   return z
     .string()
     .trim()

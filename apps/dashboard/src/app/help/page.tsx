@@ -10,7 +10,6 @@ const INTRODUCTION =
   "This page covers the five workflows of the first release and nothing outside them. Every record in the application is synthetic, and every external effect is simulated and labelled where you trigger it. The Development data label sits in the application shell on every screen, including this one, and cannot be dismissed.";
 const BODY_TEXT = "type-supporting text-pretty wrap-anywhere";
 const STEP_HEADING = "type-subsection-title text-pretty wrap-anywhere";
-const TERM_TEXT = "text-sm font-medium text-pretty wrap-anywhere";
 const INLINE_LINK = "inline-flex min-h-6 items-center rounded-sm font-medium inline-link";
 const SECTIONS = [
   { id: "journey-import-a-contact", label: "Add a contact and create the next task" },
@@ -27,7 +26,6 @@ const SECTIONS = [
 type SectionEntry = (typeof SECTIONS)[number];
 type SectionId = SectionEntry["id"];
 type JourneyId = Extract<SectionId, `journey-${string}`>;
-type ProseSectionId = Exclude<SectionId, JourneyId | "simulated-effects" | "session-context-settings">;
 type StepLink = { readonly href: string; readonly label: string };
 type JourneyStep = { readonly title: string; readonly body: string; readonly boundary: string; readonly links?: readonly StepLink[] };
 type Journey = { readonly heading: string; readonly steps: readonly JourneyStep[] };
@@ -191,9 +189,8 @@ const SIMULATED_EFFECTS = [
   { effect: "importer-safety", title: "Importer safety", where: "Labelled when you submit a file to the import journey, where a successful local parse says nothing about whether the file was safe." },
   { effect: "media-preparation", title: "Media preparation", where: "Labelled while an image or a video is prepared, here in the Update editor and in the Page builder." },
 ] as const;
-type ProseItem = { readonly title: string; readonly body: string };
-type ProseSection = { readonly intro: string; readonly items: readonly ProseItem[] };
-const PROSE_SECTIONS: Readonly<Record<ProseSectionId, ProseSection>> = {
+type ProseSection = { readonly intro: string; readonly items: readonly { readonly title: string; readonly body: string }[] };
+const PROSE_SECTIONS: Readonly<Record<Exclude<SectionId, JourneyId | "simulated-effects" | "session-context-settings">, ProseSection>> = {
   "development-controls": {
     intro: "The development panel switches the identity this session acts as and selects a scenario, a clock and a failure plan, and offers the same reset Settings offers. None of them is a permission, and none of them changes anything outside this session.",
     items: [
@@ -280,7 +277,7 @@ const ProseBody = ({ section }: { readonly section: ProseSection }) => (
     <dl className="flex min-w-0 flex-col gap-4">
       {section.items.map((item) => (
         <div key={item.title} className="flex min-w-0 flex-col gap-1">
-          <dt className={TERM_TEXT}>{item.title}</dt>
+          <dt className={"text-sm font-medium text-pretty wrap-anywhere"}>{item.title}</dt>
           <dd className={BODY_TEXT}>{item.body}</dd>
         </div>
       ))}
@@ -315,8 +312,7 @@ function sectionBody(section: SectionEntry) {
 function unhandledSection(section: never): never {
   throw new Error(`The Help page has no content for the section "${String(section)}".`);
 }
-/** The Help screen: one `h1`, the in-page contents, then every section in the one order the contents lists. */
-export default function HelpPage() {
+/** The Help screen: one `h1`, the in-page contents, then every section in the one order the contents lists. */ export default function HelpPage() {
   return (
     <article className="flex min-w-0 flex-col gap-6 text-start">
       <header className="flex min-w-0 flex-col gap-3">

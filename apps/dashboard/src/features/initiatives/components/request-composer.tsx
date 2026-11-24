@@ -25,14 +25,12 @@ const TERMS_SHAPES = ["financial", "non-financial"] as const;
 type TermsShape = (typeof TERMS_SHAPES)[number];
 const HEADING_TAG = { 3: "h3", 4: "h4" } as const;
 const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 3: "type-subsection-title", 4: "type-group-title" };
-const CHILD_HEADING_LEVEL = 4;
 /** The level of this section's heading, so the composing page keeps one outline. */
 export type RequestComposerProps = { readonly initiativeId: string; readonly envelope: InitiativeDetailEnvelope; readonly onDrafted?: (outcome: MutationOutcome) => void; readonly onCheckResult?: () => void; readonly locale?: string; readonly headingLevel?: 3 | 4; readonly className?: string };
 const RECIPIENT_FIELD = "recipientPartnerId";
 const REPRESENTED_FIELD = "representedOrganizationId";
 const PURPOSE_FIELD = "purpose";
 const VERSION_FIELD = "terms.version";
-const TERMS_FIELD = "terms";
 const TERMS_GAP_FIELD = "terms.nonFinancial";
 const CURRENCY_FIELD = "terms.currency";
 const AMOUNT_FIELD = "terms.minorUnits";
@@ -40,8 +38,6 @@ const CADENCE_FIELD = "terms.cadence";
 const TERM_FIELD = "terms.term";
 const NON_FINANCIAL_FIELD = "terms.nonFinancial.description";
 const FIELD_ORDER = [RECIPIENT_FIELD, REPRESENTED_FIELD, PURPOSE_FIELD, VERSION_FIELD, CURRENCY_FIELD, AMOUNT_FIELD, CADENCE_FIELD, TERM_FIELD, NON_FINANCIAL_FIELD] as const;
-const DRAFT_REQUEST = "draftRequest";
-const FALLBACK_LOCALE = "en-GB";
 const STATED_AMOUNT_STATE: ValueState = "value";
 const SURFACE_COPY = {
   heading: "Draft a request",
@@ -93,7 +89,6 @@ const FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
 };
 type RequestFormValues = { recipientPartnerId: string; representedOrganizationId: string; purpose: string; version: string; termsShape: TermsShape; currency: string; minorUnits: string; cadence: string; term: string; nonFinancialDescription: string };
 const INITIAL_VALUES: RequestFormValues = { recipientPartnerId: "", representedOrganizationId: "", purpose: "", version: "", termsShape: "financial", currency: "", minorUnits: "", cadence: "", term: "", nonFinancialDescription: "" };
-type ReviewedRequest = { readonly scope: Scope; readonly expectedRevision: string; readonly payload: DraftRequestPayload };
 const isTermsShape = (value: unknown): value is TermsShape => typeof value === "string" && (TERMS_SHAPES as readonly string[]).includes(value);
 const numberOrUndefined = (text: string): number | undefined => (text.trim() === "" ? undefined : Number(text.trim()));
 const WHOLE_MINOR_UNITS = /^\d+$/;
@@ -153,13 +148,12 @@ function ReviewedRequestFacts({ payload, recipient, locale }: { readonly payload
   return <FactList className="flex min-w-0 flex-col gap-3 text-sm" rows={facts} row={(fact) => <ReviewFact key={fact.term} label={fact.term} value={fact.value} />} />;
 }
 /** The request composer: the form, the review that names what it will draft, and the receipt for one attempt. */
-export default function RequestComposer({ initiativeId, envelope, onDrafted, onCheckResult, locale = FALLBACK_LOCALE, headingLevel = 3, className }: RequestComposerProps): ReactElement {
+export default function RequestComposer({ initiativeId, envelope, onDrafted, onCheckResult, locale = "en-GB", headingLevel = 3, className }: RequestComposerProps): ReactElement {
   const scope = envelope.scope;
-  const expectedRevision = envelope.revision;
   const headingId = useId();
   const optionIdPrefix = useId();
   const noRecipientNoteId = useId();
-  const draftAction = envelope.actions.find((action) => action.name === DRAFT_REQUEST);
+  const draftAction = envelope.actions.find((action) => action.name === "draftRequest");
   const unavailableReason = draftAction === undefined || draftAction.available ? null : (draftAction.reason?.trim() ?? SURFACE_COPY.unavailableBody);
   const workingList = envelope.data.workingList.items;
   const eligible = useMemo(() => workingList.filter((member) => member.state === "included"), [workingList]);
@@ -168,7 +162,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
   const submit = useAttemptSubmit(draft);
   const [step, setStep] = useState<"form" | "review">("form");
   const [errors, setErrors] = useState<FieldErrorLookup | null>(null);
-  const [reviewed, setReviewed] = useState<ReviewedRequest | null>(null);
+  const [reviewed, setReviewed] = useState<{ readonly scope: Scope; readonly expectedRevision: string; readonly payload: DraftRequestPayload } | null>(null);
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
   const handleSettled = useCallback(
     (outcome: MutationOutcome): void => {
@@ -187,7 +181,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
       return;
     }
     setErrors(null);
-    setReviewed({ scope, expectedRevision, payload: checked.data });
+    setReviewed({ scope, expectedRevision: envelope.revision, payload: checked.data });
     setSettled(null);
     setStep("review");
   };
@@ -207,9 +201,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
   return (
     <section aria-labelledby={headingId} data-slot="request-composer" className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-pretty")}>
-          {SURFACE_COPY.heading}
-        </Heading>
+        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty") }}>{SURFACE_COPY.heading}</Heading>
         <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.intro}</p>
       </div>
       <ul className="flex min-w-0 flex-col gap-1 text-xs text-pretty text-muted-foreground">{[REQUESTED_TERMS_COPY.notReceivedSupport, RESPONSE_AGREEMENT_COPY.agreementCreatesNothing, SURFACE_COPY.draftCreatesNothing, SURFACE_COPY.lifecycle].map(markedStatement)}</ul>
@@ -235,15 +227,13 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
           />
           {settled === null || settled.outcome === "invalid" ? null : (
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" onClick={startAnother}>
-                {SURFACE_COPY.anotherLabel}
-              </Button>
+              <Button {...{ type: "button", variant: "outline", onClick: startAnother }}>{SURFACE_COPY.anotherLabel}</Button>
             </div>
           )}
         </div>
       ) : (
         <form noValidate className="flex min-w-0 flex-col gap-4" onSubmit={reviewTheDetails}>
-          {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={CHILD_HEADING_LEVEL} />}
+          {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={4} />}
           {eligible.length === 0 ? (
             <Alert>
               <AlertTitle>{SURFACE_COPY.noRecipientTitle}</AlertTitle>
@@ -276,9 +266,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
           </form.Field>
           <form.Field name="purpose">
             {(field) => (
-              <FormField name={PURPOSE_FIELD} label={INITIATIVE_COPY.purposeLabel} description={SURFACE_COPY.purposeHelp} error={errors?.byField[PURPOSE_FIELD]} required>
-                {(control) => <Textarea {...valuePropsOf(field, control)} name={PURPOSE_FIELD} rows={4} required={control.required} />}
-              </FormField>
+              <FormField {...{ name: PURPOSE_FIELD, label: INITIATIVE_COPY.purposeLabel, description: SURFACE_COPY.purposeHelp, error: errors?.byField[PURPOSE_FIELD], required: true }}>{(control) => <Textarea {...valuePropsOf(field, control)} name={PURPOSE_FIELD} rows={4} required={control.required} />}</FormField>
             )}
           </form.Field>
           <form.Field name="version">
@@ -288,7 +276,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
               </FormField>
             )}
           </form.Field>
-          <FormFieldGroup legend={REQUESTED_TERMS_COPY.heading} name={TERMS_FIELD} description={SURFACE_COPY.termsHelp} error={errors?.byField[TERMS_GAP_FIELD]} required>
+          <FormFieldGroup legend={REQUESTED_TERMS_COPY.heading} name={"terms"} description={SURFACE_COPY.termsHelp} error={errors?.byField[TERMS_GAP_FIELD]} required>
             {(group) => (
               <div className="flex min-w-0 flex-col gap-4">
                 <form.Field name="termsShape">
@@ -313,9 +301,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
                             <RadioGroupItem id={optionId} value={shape} aria-label={wording.label} aria-describedby={hintId} className="mt-0.5" />
                             <span className="flex min-w-0 flex-col gap-0.5">
                               <span className="text-sm font-medium text-pretty">{wording.label}</span>
-                              <span id={hintId} className="text-sm text-pretty text-muted-foreground">
-                                {wording.hint}
-                              </span>
+                              <span {...{ id: hintId, className: "text-sm text-pretty text-muted-foreground" }}>{wording.hint}</span>
                             </span>
                           </label>
                         );
@@ -378,9 +364,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
                         </form.Field>
                         <form.Field name="term">
                           {(field) => (
-                            <FormField name={TERM_FIELD} label={REQUESTED_TERMS_COPY.termLabel} description={SURFACE_COPY.termHelp} error={errors?.byField[TERM_FIELD]} optionalHint>
-                              {(control) => <Input {...valuePropsOf(field, control)} name={TERM_FIELD} type="text" autoComplete="off" />}
-                            </FormField>
+                            <FormField {...{ name: TERM_FIELD, label: REQUESTED_TERMS_COPY.termLabel, description: SURFACE_COPY.termHelp, error: errors?.byField[TERM_FIELD], optionalHint: true }}>{(control) => <Input {...valuePropsOf(field, control)} name={TERM_FIELD} type="text" autoComplete="off" />}</FormField>
                           )}
                         </form.Field>
                       </div>
@@ -391,9 +375,7 @@ export default function RequestComposer({ initiativeId, envelope, onDrafted, onC
             )}
           </FormFieldGroup>
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="submit" disabled={eligible.length === 0} aria-describedby={eligible.length === 0 ? noRecipientNoteId : undefined}>
-              {SURFACE_COPY.reviewLabel}
-            </Button>
+            <Button {...{ type: "submit", disabled: eligible.length === 0, "aria-describedby": eligible.length === 0 ? noRecipientNoteId : undefined }}>{SURFACE_COPY.reviewLabel}</Button>
           </div>
         </form>
       )}

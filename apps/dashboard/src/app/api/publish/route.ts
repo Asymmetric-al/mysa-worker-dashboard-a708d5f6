@@ -19,11 +19,10 @@ const publishSelectionSchema = z.strictObject({ variantId: recordReferenceSchema
     context.addIssue({ code: "custom", path: ["candidateId"], message: "This selection names two different revisions. Name the one frozen candidate it releases: the candidate is the revision." });
 });
 const publishPayloadSchema = z.strictObject({ documentId: recordReferenceSchema.optional(), mode: releaseChoiceSchema.optional(), variants: z.array(publishSelectionSchema).min(1, "Choose one or more selected variants to release, so a release names every edition it publishes.") });
-type PublishPayload = z.infer<typeof publishPayloadSchema>;
 const publishRequestSchema = mutationInputSchema(publishPayloadSchema);
 type ServicePublishPayload = Parameters<typeof mutations.updates.publishVariants>[1]["payload"];
 const recordedChoiceOf = (choice: ReleaseChoice | undefined): RecordedReleaseChoice | undefined => (choice === undefined ? undefined : RECORDED_RELEASE_CHOICES[choice]);
-function releasePayloadOf(payload: PublishPayload): ServicePublishPayload {
+function releasePayloadOf(payload: z.infer<typeof publishPayloadSchema>): ServicePublishPayload {
   const mode = recordedChoiceOf(payload.mode);
   return {
     ...(payload.documentId === undefined ? {} : { documentId: payload.documentId }),

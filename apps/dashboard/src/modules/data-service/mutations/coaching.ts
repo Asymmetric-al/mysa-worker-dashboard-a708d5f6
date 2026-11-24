@@ -72,22 +72,22 @@ type CoachingFamilies = {
 type FamiliesLoad = { readonly ok: true; readonly families: CoachingFamilies } | { readonly ok: false; readonly reference: string };
 function familiesOf(context: MutationContext): CoachingFamilies {
   const loaded = readFamilies(context.docs);
-  if (!loaded.ok) refuseUnavailable({ operationId: context.operationId, reference: loaded.reference, guidance: STATE_UNAVAILABLE_GUIDANCE });
+  if (!loaded.ok) return refuseUnavailable({ operationId: context.operationId, reference: loaded.reference, guidance: STATE_UNAVAILABLE_GUIDANCE });
   return loaded.families;
 }
 function requireWorkingGrant(record: CoachingGrantRecord, operationId: string): CoachingGrant {
   const working = workingGrantOf(record);
-  if (working === null) refuseUnavailable({ operationId, reference: "coaching-grant", guidance: STATE_UNAVAILABLE_GUIDANCE });
+  if (working === null) return refuseUnavailable({ operationId, reference: "coaching-grant", guidance: STATE_UNAVAILABLE_GUIDANCE });
   return working;
 }
 function requireWorkingCheckIn(record: CoachingCheckInRecord, operationId: string): CheckIn {
   const working = workingCheckInOf(record);
-  if (working === null) refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
+  if (working === null) return refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
   return working;
 }
 function requireGrant(families: CoachingFamilies, grantId: string, principalId: string, role: "worker" | "coach", operationId: string): CoachingGrantRecord {
   const record = families.grants.find((candidate) => candidate.grantId === grantId);
-  if (record === undefined || (role === "coach" ? record.coachPrincipalId : record.workerPrincipalId) !== principalId) refuseDenied(operationId);
+  if (record === undefined || (role === "coach" ? record.coachPrincipalId : record.workerPrincipalId) !== principalId) return refuseDenied(operationId);
   return record;
 }
 const plainRecordOf = (value: unknown): Record<string, unknown> | null => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null);
@@ -431,8 +431,7 @@ function applyInviteCoach(context: MutationContext, payload: InvitationPayload):
   context.docs.state = withFamily(families.document, "coachingGrants", [...families.grants, record]);
   return { changed: true, revision: FIRST_REVISION, created: [grantId], result: { grantId, state: record.state, revision: FIRST_REVISION } };
 }
-/** Accepts an invitation, as the coach it names, freezing the share cutoff at this instant. */
-export const acceptInvitation = async (input: MutationInput<AcceptancePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Accepts an invitation, as the coach it names, freezing the share cutoff at this instant. */ export const acceptInvitation = async (input: MutationInput<AcceptancePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, acceptancePayload, "acceptInvitation", { scopeAuthority: "grant", readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyAcceptInvitation(context, input.payload) });
 function applyAcceptInvitation(context: MutationContext, payload: AcceptancePayload): ApplyResult<GrantResult> {
   const { operationId } = context;
@@ -447,14 +446,11 @@ function applyAcceptInvitation(context: MutationContext, payload: AcceptancePayl
   context.docs.state = withFamily(families.document, "coachingGrants", replacingRecord(families.grants, grantIdOf, record.grantId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.grantId], result: grantStandingOf(next) };
 }
-/** Revokes a grant: the worker's own stop of the sharing, kept apart from ending the relationship. */
-export const revokeGrant = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Revokes a grant: the worker's own stop of the sharing, kept apart from ending the relationship. */ export const revokeGrant = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, grantReferencePayload, "revokeGrant", { readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "revoke") });
-/** Ends the coaching relationship, as the worker. */
-export const endCoaching = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Ends the coaching relationship, as the worker. */ export const endCoaching = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, grantReferencePayload, "endCoaching", { readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "end") });
-/** Records that the coach left: the coach identity's second and last write. */
-export const leaveCoaching = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Records that the coach left: the coach identity's second and last write. */ export const leaveCoaching = async (input: MutationInput<GrantReferencePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, grantReferencePayload, "leaveCoaching", { scopeAuthority: "grant", readCurrent: (docs) => currentGrantTarget(docs, rawGrantIdOf(input)), apply: (context) => applyGrantClosure(context, input.payload, "leave") });
 type GrantClosure = "revoke" | "end" | "leave";
 function applyGrantClosure(context: MutationContext, payload: GrantReferencePayload, closure: GrantClosure): ApplyResult<GrantResult> {
@@ -593,8 +589,7 @@ function applyEditTarget(context: MutationContext, payload: TargetEditPayload): 
   context.docs.state = withFamily(families.document, "coachingTargets", replacingRecord(families.targets, targetIdOf, record.targetId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.targetId], result: { targetId: record.targetId, state: next.state, revision: nextRevision, ...(openedVersionId === undefined ? {} : { versionRevisionId: openedVersionId }) } };
 }
-/** Pauses a target: distinct from ending it and from a source that cannot be read. */
-export const pauseTarget = async (input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Pauses a target: distinct from ending it and from a source that cannot be read. */ export const pauseTarget = async (input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, targetStatePayload, "pauseTarget", { readCurrent: (docs) => currentTargetTarget(docs, rawTargetIdOf(input)), apply: (context) => applyTargetLifecycle(context, input.payload, "paused") });
 /** Ends a target: its history is kept, its closed periods keep the version they were measured against, and no later action reopens it. */
 export const endTarget = async (input: MutationInput<TargetStatePayload>, source?: SessionSource): Promise<MutationOutcome> =>
@@ -641,8 +636,7 @@ function refuseFromCheckIn(operationId: string, refusal: CheckInRefusal, record:
   if (refusal.reason === "unavailable") return refuseUnavailable({ operationId, reference: "coaching-check-in", guidance: STATE_UNAVAILABLE_GUIDANCE });
   return refusal.reason === "no-private-draft" || refusal.reason === "no-recipients" ? refuseInvalid(operationId, { [ROOT_FIELD_KEY]: [refusal.message] }) : refuseConflict({ operationId, currentRevision: record.revision, current: checkInStandingOf(record), preservedInput: preservedInput });
 }
-/** Saves the worker's private draft of a check-in. */
-export const saveCheckIn = async (input: MutationInput<SaveCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Saves the worker's private draft of a check-in. */ export const saveCheckIn = async (input: MutationInput<SaveCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, saveCheckInPayload, "saveCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applySaveCheckIn(context, input.payload, input.scope) });
 function applySaveCheckIn(context: MutationContext, payload: SaveCheckInPayload, scope: Scope): ApplyResult<CheckInResult> {
   const { operationId } = context;
@@ -675,8 +669,7 @@ function applySaveCheckIn(context: MutationContext, payload: SaveCheckInPayload,
   context.docs.state = withFamily(families.document, "coachingCheckIns", payload.checkInId === undefined ? [...families.checkIns, next] : replacingRecord(families.checkIns, checkInIdOf, record.checkInId, next));
   return { changed: true, revision: nextRevision, ...(payload.checkInId === undefined ? { created: [record.checkInId] } : { changedIds: [record.checkInId] }), result: checkInStandingOf(next) };
 }
-/** Shares the saved private draft, creating the one revision a named coach may read. */
-export const shareCheckIn = async (input: MutationInput<ShareCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Shares the saved private draft, creating the one revision a named coach may read. */ export const shareCheckIn = async (input: MutationInput<ShareCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, shareCheckInPayload, "shareCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyShareCheckIn(context, input.payload, input.scope) });
 function applyShareCheckIn(context: MutationContext, payload: ShareCheckInPayload, scope: Scope): ApplyResult<CheckInResult> {
   const { operationId } = context;
@@ -710,8 +703,7 @@ function applyShareCheckIn(context: MutationContext, payload: ShareCheckInPayloa
   context.docs.state = withFamily(families.document, "coachingCheckIns", replacingRecord(families.checkIns, checkInIdOf, record.checkInId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.checkInId], result: checkInStandingOf(next) };
 }
-/** Changes the shared revision of a check-in, which no other operation may. */
-export const updateSharedCheckIn = async (input: MutationInput<UpdateSharedCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Changes the shared revision of a check-in, which no other operation may. */ export const updateSharedCheckIn = async (input: MutationInput<UpdateSharedCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, updateSharedCheckInPayload, "updateSharedCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyUpdateSharedCheckIn(context, input.payload) });
 function applyUpdateSharedCheckIn(context: MutationContext, payload: UpdateSharedCheckInPayload): ApplyResult<CheckInResult> {
   const { operationId } = context;
@@ -734,8 +726,7 @@ function applyUpdateSharedCheckIn(context: MutationContext, payload: UpdateShare
   context.docs.state = withFamily(families.document, "coachingCheckIns", replacingRecord(families.checkIns, checkInIdOf, record.checkInId, next));
   return { changed: true, revision: nextRevision, changedIds: [record.checkInId], result: checkInStandingOf(next) };
 }
-/** Withdraws a shared check-in, so a coach can no longer open it. */
-export const withdrawCheckIn = async (input: MutationInput<WithdrawCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Withdraws a shared check-in, so a coach can no longer open it. */ export const withdrawCheckIn = async (input: MutationInput<WithdrawCheckInPayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, withdrawCheckInPayload, "withdrawCheckIn", { readCurrent: (docs) => currentCheckInTarget(docs, rawCheckInIdOf(input)), apply: (context) => applyWithdrawCheckIn(context, input.payload) });
 function applyWithdrawCheckIn(context: MutationContext, payload: WithdrawCheckInPayload): ApplyResult<CheckInResult> {
   const { operationId } = context;
@@ -758,8 +749,7 @@ function applyWithdrawCheckIn(context: MutationContext, payload: WithdrawCheckIn
 const currentCheckInTarget = (docs: StateDocumentCarrier, checkInId: string | undefined): CurrentTarget => currentStandingTarget(docs, checkInId, (families) => families.checkIns, checkInIdOf, checkInStandingOf);
 const rawCheckInIdOf = (input: unknown): string | undefined => rawIdentifierOf(input, "checkInId");
 const taskShareStandingOf = (record: CoachingTaskShareRecord): TaskShareResult => ({ shareId: record.shareId, taskId: record.taskId, state: record.state, revision: String(record.revision) });
-/** Shares a reviewed description of one task occurrence with the coach the worker shares with. */
-export const shareTaskSummary = async (input: MutationInput<TaskSharePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Shares a reviewed description of one task occurrence with the coach the worker shares with. */ export const shareTaskSummary = async (input: MutationInput<TaskSharePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, taskSharePayload, "shareTaskSummary", { readCurrent: (docs) => currentTaskTarget(docs, rawTaskIdOf(input)), apply: (context) => applyShareTaskSummary(context, input.payload) });
 function applyShareTaskSummary(context: MutationContext, payload: TaskSharePayload): ApplyResult<TaskShareResult> {
   const { operationId } = context;
@@ -780,8 +770,7 @@ function applyShareTaskSummary(context: MutationContext, payload: TaskSharePaylo
   context.docs.state = withFamily(families.document, "coachingTaskShares", [...families.taskShares, record]);
   return { changed: true, revision: String(record.revision), created: [shareId], result: taskShareStandingOf(record) };
 }
-/** Stops sharing one occurrence's summary. */
-export const stopTaskShare = async (input: MutationInput<StopTaskSharePayload>, source?: SessionSource): Promise<MutationOutcome> =>
+/** Stops sharing one occurrence's summary. */ export const stopTaskShare = async (input: MutationInput<StopTaskSharePayload>, source?: SessionSource): Promise<MutationOutcome> =>
   runCoachingMutation(input, source, stopTaskSharePayload, "stopTaskShare", { readCurrent: (docs) => currentShareTarget(docs, rawShareIdOf(input)), apply: (context) => applyStopTaskShare(context, input.payload) });
 function applyStopTaskShare(context: MutationContext, payload: StopTaskSharePayload): ApplyResult<TaskShareResult> {
   const { operationId } = context;

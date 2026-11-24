@@ -7,7 +7,6 @@ import { readResponse } from "../read";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const READ_ATTEMPT_ID = "read";
-const UNATTEMPTED_REQUEST_ID = "no-operation-attempted";
 const MESSAGES = {
   body: "Send the invitation as a JSON object carrying operationId, the scope it claims, the revision it read and its payload.",
   reference: "Name the coach, the organization and the ministry by the opaque identifier this application uses. An email address, a name, a job title or a postal address establishes neither identity nor authority, so a value of that kind invites nobody.",
@@ -61,7 +60,7 @@ function scopeSelectionRefusal(request: NextRequest): Response | undefined {
   }
   return undefined;
 }
-const refusalIdentityOf = refusalIdentityGiven(UNATTEMPTED_REQUEST_ID);
+const refusalIdentityOf = refusalIdentityGiven("no-operation-attempted");
 type ParsedBody = { readonly kind: "refused"; readonly response: Response } | { readonly kind: "ready"; readonly body: unknown };
 function parseBody(raw: unknown, operationId: string): ParsedBody {
   const claimed = jsonObjectBody.safeParse(raw);

@@ -10,8 +10,6 @@ import { decideReach, REACH_VALUES, type Reach } from "@/modules/content/reach";
 import { copy } from "../copy";
 import { openRevisionOf, settledRevisionOf, useSetPageReach, type SetReachVariables } from "../hooks/page-mutations";
 import type { SetReachPayload } from "../schemas/reach";
-type ReachScope = SetReachVariables["scope"];
-type ReachOutcome = Awaited<ReturnType<ReturnType<typeof useSetPageReach>["mutateAsync"]>>;
 const FIELD_LABELS: Readonly<Record<string, string>> = { documentId: "Page", reach: "Reach" };
 const REACH_CONTROL_COPY = {
   scopeNote: "Reach belongs to a release, so this sets how far every released language edition of this page reaches. It releases nothing and sends no notice: an edition reaches only at the reach it already had when it was released.",
@@ -30,7 +28,7 @@ const REACH_CONTROL_COPY = {
 export type ReachControlProps = {
   readonly variantId: string;
   readonly documentId: string;
-  readonly scope: ReachScope;
+  readonly scope: SetReachVariables["scope"];
   readonly expectedRevision: string;
   readonly current: Reach | null;
   readonly onSaved?: (reach: Reach) => void;
@@ -99,7 +97,7 @@ export default function ReachControl({ variantId, documentId, scope, expectedRev
     setChosen(null);
     setSettled(false);
   };
-  const handleSettled = (outcome: ReachOutcome): void => {
+  const handleSettled = (outcome: Awaited<ReturnType<ReturnType<typeof useSetPageReach>["mutateAsync"]>>): void => {
     const settledRevision = settledRevisionOf(outcome);
     if (settledRevision === null) return;
     setAcceptedRevision(settledRevision);
@@ -109,17 +107,9 @@ export default function ReachControl({ variantId, documentId, scope, expectedRev
   return (
     <div data-slot="reach-control" data-variant-id={variantId} data-current-reach={current} data-selected-reach={shown} data-reach-set="true" data-state={chosen === null ? "recorded" : settled ? "settled" : "review"} className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
       <fieldset className="min-w-0 border-0 p-0" disabled={disabled}>
-        <legend id={legendId} className="pb-2 text-start text-sm font-medium">
-          {copy.release.reachHeading}
-        </legend>
-        <p id={scopeNoteId} className="max-w-prose pb-3 text-sm text-pretty text-muted-foreground">
-          {REACH_CONTROL_COPY.scopeNote}
-        </p>
-        {refusal === null ? null : (
-          <p id={disabledReasonId} className="pb-3 text-sm text-pretty text-muted-foreground">
-            {refusal}
-          </p>
-        )}
+        <legend {...{ id: legendId, className: "pb-2 text-start text-sm font-medium" as const }}>{copy.release.reachHeading}</legend>
+        <p {...{ id: scopeNoteId, className: "max-w-prose pb-3 text-sm text-pretty text-muted-foreground" as const }}>{REACH_CONTROL_COPY.scopeNote}</p>
+        {refusal === null ? null : <p {...{ id: disabledReasonId, className: "pb-3 text-sm text-pretty text-muted-foreground" as const }}>{refusal}</p>}
         <RadioGroup value={shown} onValueChange={choose} disabled={disabled} aria-labelledby={legendId} aria-describedby={refusal === null ? scopeNoteId : `${scopeNoteId} ${disabledReasonId}`}>
           {REACH_VALUES.map((option) => {
             const wording = copy.reach[option];
@@ -130,9 +120,7 @@ export default function ReachControl({ variantId, documentId, scope, expectedRev
                 <RadioGroupItem id={optionId} value={option} aria-label={wording.label} aria-describedby={descriptionId} className="mt-0.5" />
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-sm font-medium">{wording.label}</span>
-                  <span id={descriptionId} className="text-sm font-normal text-pretty text-muted-foreground">
-                    {wording.explanation}
-                  </span>
+                  <span {...{ id: descriptionId, className: "text-sm font-normal text-pretty text-muted-foreground" as const }}>{wording.explanation}</span>
                 </span>
               </Label>
             );
@@ -160,9 +148,7 @@ export default function ReachControl({ variantId, documentId, scope, expectedRev
       )}
       {settled ? (
         <div>
-          <Button type="button" variant="outline" onClick={keepRecorded}>
-            {REACH_CONTROL_COPY.doneLabel}
-          </Button>
+          <Button {...{ type: "button" as const, variant: "outline" as const, onClick: keepRecorded }}>{REACH_CONTROL_COPY.doneLabel}</Button>
         </div>
       ) : null}
     </div>

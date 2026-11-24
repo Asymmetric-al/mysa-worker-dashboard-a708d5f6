@@ -23,19 +23,14 @@ import RequestResponseForm from "./request-response-form";
 import { errorsOf, FactList, ReviewFact, StatedInstant, TermFact } from "./figures";
 type InitiativeDetailEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"];
 type RequestRow = InitiativeDetailEnvelope["data"]["requests"]["items"][number];
-type PresentationRow = NonNullable<RequestRow["presentation"]>;
-type RequestedMoney = NonNullable<RequestRow["terms"]["money"]>;
-const FALLBACK_LOCALE = "en-GB";
 const HEADING_TAG = { 3: "h3", 4: "h4" } as const;
 type RequestPresentationHeadingLevel = keyof typeof HEADING_TAG;
 const HEADING_SCALE: Readonly<Record<RequestPresentationHeadingLevel, string>> = { 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING_LEVEL = 4;
+const FALLBACK_LOCALE = "en-GB";
 const NestedHeading = HEADING_TAG[NESTED_HEADING_LEVEL];
-const PRESENT_ACTION = "presentRequest";
-const RESPOND_ACTION = "recordRequestResponse";
 const PRESENTED_ON_FIELD = "presentedOn";
 const MANNER_FIELD = "manner";
-const MANNER_LIMIT = 200;
 const FIELD_ORDER = [PRESENTED_ON_FIELD, MANNER_FIELD] as const;
 const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", requestId: "Request", [PRESENTED_ON_FIELD]: PRESENTATION_COPY.presentedOnLabel, [MANNER_FIELD]: PRESENTATION_COPY.mannerLabel };
 const SURFACE_COPY = {
@@ -75,7 +70,6 @@ const SURFACE_COPY = {
   ministryLabel: "Ministry",
 } as const;
 type PresentStep = "details" | "review";
-type PresentFormValues = { presentedOn: string; manner: string };
 /** Props of {@link RequestPresentation}. */
 export interface RequestPresentationProps {
   readonly initiativeId: string;
@@ -112,7 +106,7 @@ const VERSION_STANDING: Readonly<Record<VersionRelation, VersionStanding>> = {
   current: { label: SURFACE_COPY.currentVersionLabel, tone: "info", heading: null, statement: SURFACE_COPY.currentVersionStatement },
   earlier: { label: SURFACE_COPY.earlierVersionLabel, tone: "caution", heading: SURFACE_COPY.earlierVersionHeading, statement: SURFACE_COPY.earlierVersionStatement },
 };
-function RecordedFacts({ request, presentation }: { readonly request: RequestRow; readonly presentation: PresentationRow }): ReactElement {
+function RecordedFacts({ request, presentation }: { readonly request: RequestRow; readonly presentation: NonNullable<RequestRow["presentation"]> }): ReactElement {
   const standing = VERSION_STANDING[presentation.citesCurrentVersion ? "current" : "earlier"];
   const lifecycleCopy = REQUEST_LIFECYCLE_COPY[request.response === null ? "presented" : "answered"];
   const facts: ReadonlyArray<{ readonly term: string; readonly value: ReactNode }> = [
@@ -150,7 +144,7 @@ function RecordedFacts({ request, presentation }: { readonly request: RequestRow
     </div>
   );
 }
-function RequestedAmount({ money, valueState, locale }: { readonly money: RequestedMoney; readonly valueState: ValueState; readonly locale: string }): ReactElement {
+function RequestedAmount({ money, valueState, locale }: { readonly money: NonNullable<RequestRow["terms"]["money"]>; readonly valueState: ValueState; readonly locale: string }): ReactElement {
   if (!Number.isSafeInteger(money.minorUnits)) return <StatusBadge label={REQUESTED_TERMS_COPY.amountLabel} valueState="unknown" srPrefix={REQUESTED_TERMS_COPY.heading} />;
   const { text, accessibleLabel } = formatMinor({ currency: money.currency, minorUnits: minorUnitsOf(money.minorUnits) }, valueState, locale);
   return (
@@ -187,7 +181,7 @@ function RequestedTerms({ request, valueStates, locale }: { readonly request: Re
     </Card>
   );
 }
-const EMPTY_PRESENT_VALUES: PresentFormValues = { presentedOn: "", manner: "" };
+const EMPTY_PRESENT_VALUES: { presentedOn: string; manner: string } = { presentedOn: "", manner: "" };
 const ReviewSummary = ({ payload, request, scope, valueStates }: { readonly payload: PresentRequestPayload; readonly request: RequestRow; readonly scope: Scope; readonly valueStates: Readonly<Record<string, ValueState>> }): ReactElement => (
   <dl className="flex min-w-0 flex-col gap-3 text-sm">
     <ReviewFact label={SURFACE_COPY.recipientLabel} value={<RecipientFact request={request} valueStates={valueStates} />} />
@@ -290,9 +284,7 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
       <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.formBoundary}</p>
       <div className="flex min-w-0 flex-col gap-1">
         <div>
-          <Button type="button" aria-expanded={open} aria-controls={open ? formId : undefined} onClick={() => setOpen((current) => !current)}>
-            {SURFACE_COPY.presentLabel}
-          </Button>
+          <Button {...{ type: "button", "aria-expanded": open, "aria-controls": open ? formId : undefined, onClick: () => setOpen((current) => !current) }}>{SURFACE_COPY.presentLabel}</Button>
         </div>
         <p className="text-xs text-pretty text-muted-foreground">{SURFACE_COPY.presentHelp}</p>
       </div>
@@ -309,7 +301,7 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
           <form.Field name={MANNER_FIELD}>
             {(field) => (
               <FormField name={MANNER_FIELD} label={PRESENTATION_COPY.mannerLabel} description={SURFACE_COPY.mannerDescription} error={errors?.byField[MANNER_FIELD]} required>
-                {(control) => <Textarea {...valuePropsOf(field, control)} name={MANNER_FIELD} rows={2} maxLength={MANNER_LIMIT} required={control.required} />}
+                {(control) => <Textarea {...valuePropsOf(field, control)} name={MANNER_FIELD} rows={2} maxLength={200} required={control.required} />}
               </FormField>
             )}
           </form.Field>
@@ -319,9 +311,7 @@ function PresentAction({ initiativeId, request, scope, valueStates, presentActio
           <p className="text-xs text-pretty text-muted-foreground">{SURFACE_COPY.versionRefReadOnly}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit">{SURFACE_COPY.reviewLabel}</Button>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-              {SURFACE_COPY.cancelLabel}
-            </Button>
+            <Button {...{ type: "button", variant: "outline", onClick: () => setOpen(false) }}>{SURFACE_COPY.cancelLabel}</Button>
           </div>
         </form>
       ) : null}
@@ -336,9 +326,7 @@ export default function RequestPresentation({ initiativeId, request, envelope, o
   return (
     <section aria-labelledby={headingId} data-slot="request-presentation" data-state={presentation === null ? "unpresented" : "presented"} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-pretty")}>
-          {SURFACE_COPY.heading}
-        </Heading>
+        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty") }}>{SURFACE_COPY.heading}</Heading>
         <p className="text-sm text-pretty text-muted-foreground">{SURFACE_COPY.intro}</p>
         <p className="text-xs text-pretty text-muted-foreground">{SURFACE_COPY.invitationBoundary}</p>
       </div>
@@ -358,8 +346,8 @@ export default function RequestPresentation({ initiativeId, request, envelope, o
         <RecordedFacts request={request} presentation={presentation} />
       )}
       <RequestedTerms request={request} valueStates={envelope.valueStates} locale={locale} />
-      <PresentAction initiativeId={initiativeId} request={request} scope={envelope.scope} valueStates={envelope.valueStates} presentAction={actionOf(envelope.actions, PRESENT_ACTION)} onRecorded={onRecorded} onCheckResult={onCheckResult} />
-      <RequestResponseForm initiativeId={initiativeId} request={request} scope={envelope.scope} expectedRevision={request.revision} responseAction={actionOf(envelope.actions, RESPOND_ACTION)} onRecorded={onRecorded} headingLevel={NESTED_HEADING_LEVEL} />
+      <PresentAction initiativeId={initiativeId} request={request} scope={envelope.scope} valueStates={envelope.valueStates} presentAction={actionOf(envelope.actions, "presentRequest")} onRecorded={onRecorded} onCheckResult={onCheckResult} />
+      <RequestResponseForm initiativeId={initiativeId} request={request} scope={envelope.scope} expectedRevision={request.revision} responseAction={actionOf(envelope.actions, "recordRequestResponse")} onRecorded={onRecorded} headingLevel={NESTED_HEADING_LEVEL} />
     </section>
   );
 }

@@ -26,20 +26,14 @@ const RECEIPT_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's utility per level, so a receipt states its own heading at the measure of the level it lands at. */
 const RECEIPT_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
 export type ReceiptHeadingLevel = keyof typeof RECEIPT_HEADING_TAG;
-/** The closed per-item vocabulary, listed once so the set has a runtime form as well as a type. */
-export const PER_ITEM_RESULT_STATES = ["accepted", "unchanged", "excluded", "failed"] as const;
+/** The closed per-item vocabulary, listed once so the set has a runtime form as well as a type. */ export const PER_ITEM_RESULT_STATES = ["accepted", "unchanged", "excluded", "failed"] as const;
 export type PerItemResultState = (typeof PER_ITEM_RESULT_STATES)[number];
 export const PER_ITEM_RESULT_STATUS: Readonly<Record<PerItemResultState, StatusBadgeSpec>> = { accepted: { label: "Accepted", tone: "positive" }, unchanged: { label: "Unchanged", tone: "neutral" }, excluded: { label: "Excluded", tone: "caution" }, failed: { label: "Failed", tone: "danger" } };
 const NO_REASON_TEXT = "No reason was stated for this row.";
 const PER_ITEM_HEADING = "Result for each row";
-const PER_ITEM_MIXED_NOTE = "Each row below reports its own result, and rows can differ, so read them one at a time rather than as one result for the whole batch.";
 const NOT_STATED_TEXT = "Not stated";
 const CONFLICT_CURRENT_LABEL = "The value the record holds now";
 const CONFLICT_INPUT_LABEL = "Your input, kept as you entered it";
-const CONFLICT_FIELDS_HEADING = "Fields that differ";
-const CONFLICT_FIELDS_NOTE = "Only the fields where the record and your input disagree are listed, each with the value the record holds now beside what you entered. Every other field of the record stays as it is, so it is not restated here.";
-const CONFLICT_NO_DIFFERENCE = "Your input states no value the record holds differently, so no field is listed here: what this conflict refuses is the revision, not a value.";
-const CONFLICT_FIELD_HEAD = "Field";
 const CONFLICT_VALUE_CLASS = "min-w-0 rounded-md bg-muted p-2 text-sm whitespace-pre-wrap wrap-anywhere text-foreground";
 const FIELD_KEY_SEPARATOR = /[_-]+/u;
 const CAMEL_WORD_BREAK = /(?<=[a-z0-9])(?=[A-Z])/u;
@@ -110,8 +104,7 @@ export type PerItemColumn = { readonly key: string; readonly label: string };
 const PER_ITEM_CELL_CLASS = "min-w-0 border-b border-border px-2 py-2 align-top text-start wrap-anywhere";
 const PER_ITEM_HEAD_CLASS = cn(PER_ITEM_CELL_CLASS, "font-medium text-muted-foreground");
 export type PerItemResultsProps = { readonly items: readonly PerItemResult[]; readonly columns?: readonly PerItemColumn[]; readonly renderItemAction?: (item: PerItemResult) => ReactNode; readonly heading?: string; readonly className?: string };
-/** One row per item, each carrying its own result. */
-export function PerItemResults({ items, columns = [], renderItemAction, heading = PER_ITEM_HEADING, className }: PerItemResultsProps): ReactElement | null {
+/** One row per item, each carrying its own result. */ export function PerItemResults({ items, columns = [], renderItemAction, heading = PER_ITEM_HEADING, className }: PerItemResultsProps): ReactElement | null {
   const headingId = useId();
   if (items.length === 0) return null;
   const hasAction = renderItemAction !== undefined;
@@ -127,7 +120,7 @@ export function PerItemResults({ items, columns = [], renderItemAction, heading 
         <p id={headingId} className="text-sm font-medium">
           {heading}
         </p>
-        <p className="text-sm text-muted-foreground">{PER_ITEM_MIXED_NOTE}</p>
+        <p className="text-sm text-muted-foreground">{"Each row below reports its own result, and rows can differ, so read them one at a time rather than as one result for the whole batch."}</p>
       </div>
       <ul aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2 sm:hidden">
         {rows.map((row) => (
@@ -193,7 +186,6 @@ export function PerItemResults({ items, columns = [], renderItemAction, heading 
     </section>
   );
 }
-/** The label a field is stated under: the surface's own stem, or a readable one derived from the last name the field's path carries. */
 function conflictFieldLabel(path: string, fieldLabels: Readonly<Record<string, string | undefined>> | undefined): string {
   const stated = fieldLabels?.[path]?.trim() ?? "";
   if (stated !== "") return stated;
@@ -206,10 +198,8 @@ function conflictFieldLabel(path: string, fieldLabels: Readonly<Record<string, s
   const text = words.join(" ");
   return text === "" ? name : text.charAt(0).toUpperCase() + text.slice(1);
 }
-/** The keys a record actually states, so a key holding no value is not read as a field. */
-const statedKeys = (record: Record<string, unknown>): readonly string[] => Object.keys(record).filter((key) => record[key] !== undefined);
-/** Whether the record's value agrees with every field the caller's input states for it, in any key order and in any order the keys were written. */
-function valuesAgree(held: unknown, entered: unknown): boolean {
+/** The keys a record actually states, so a key holding no value is not read as a field. */ const statedKeys = (record: Record<string, unknown>): readonly string[] => Object.keys(record).filter((key) => record[key] !== undefined);
+/** Whether the record's value agrees with every field the caller's input states for it, in any key order and in any order the keys were written. */ function valuesAgree(held: unknown, entered: unknown): boolean {
   if (held === entered) return true;
   if (Array.isArray(entered)) return Array.isArray(held) && held.length === entered.length && entered.every((member: unknown, index: number) => valuesAgree(held[index], member));
   if (!isRecord(entered)) return false;
@@ -248,16 +238,15 @@ function conflictDifferences(current: unknown, preservedInput: unknown, fieldLab
   }
   return statements;
 }
-/** The fields a stale-revision conflict disagrees on, each with what the record holds beside what the caller entered. */
-function ConflictFields({ fields }: { readonly fields: readonly ConflictDifference[] }): ReactElement {
+/** The fields a stale-revision conflict disagrees on, each with what the record holds beside what the caller entered. */ function ConflictFields({ fields }: { readonly fields: readonly ConflictDifference[] }): ReactElement {
   const headingId = useId();
   return (
     <section className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 flex-col gap-1">
         <p id={headingId} className="text-sm font-medium">
-          {CONFLICT_FIELDS_HEADING}
+          {"Fields that differ"}
         </p>
-        <p className="text-sm text-muted-foreground">{CONFLICT_FIELDS_NOTE}</p>
+        <p className="text-sm text-muted-foreground">{"Only the fields where the record and your input disagree are listed, each with the value the record holds now beside what you entered. Every other field of the record stays as it is, so it is not restated here."}</p>
       </div>
       <ul aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2 sm:hidden">
         {fields.map((field) => (
@@ -282,7 +271,7 @@ function ConflictFields({ fields }: { readonly fields: readonly ConflictDifferen
         <thead>
           <tr>
             <th scope="col" className={PER_ITEM_HEAD_CLASS}>
-              {CONFLICT_FIELD_HEAD}
+              {"Field"}
             </th>
             <th scope="col" className={PER_ITEM_HEAD_CLASS}>
               {CONFLICT_CURRENT_LABEL}
@@ -326,7 +315,6 @@ type ReceiptContext = {
   readonly renderItemAction: ((item: PerItemResult) => ReactNode) | undefined;
   readonly fieldLabels: Readonly<Record<string, string | undefined>> | undefined;
 };
-type ReceiptOutcome = Exclude<MutationOutcome, { readonly outcome: "invalid" }>;
 function unknownRecoverySentence(offersCheck: boolean, offersReplay: boolean): string | null {
   if (offersCheck && offersReplay) return "Nothing here starts a second attempt: checking the result reads what happened, and retrying " + "sends this same operation, which answers with its original result instead of repeating the " + "effect.";
   if (offersCheck) return "Nothing here starts a second attempt: checking the result reads what happened, and applies " + "nothing.";
@@ -334,7 +322,7 @@ function unknownRecoverySentence(offersCheck: boolean, offersReplay: boolean): s
   return null;
 }
 const receipt = (summary: ReactNode, details: ReactNode): ReceiptBody => ({ summary, details });
-function receiptBody(outcome: ReceiptOutcome, context: ReceiptContext): ReceiptBody {
+function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "invalid" }>, context: ReceiptContext): ReceiptBody {
   switch (outcome.outcome) {
     case "accepted": {
       const items = outcome.items ?? [];
@@ -387,7 +375,7 @@ function receiptBody(outcome: ReceiptOutcome, context: ReceiptContext): ReceiptB
               <ValueBlock label={CONFLICT_INPUT_LABEL} value={outcome.preservedInput} />
             </div>
           ) : differences.length === 0 ? (
-            <p className="text-sm text-pretty">{CONFLICT_NO_DIFFERENCE}</p>
+            <p className="text-sm text-pretty">{"Your input states no value the record holds differently, so no field is listed here: what this conflict refuses is the revision, not a value."}</p>
           ) : (
             <ConflictFields fields={differences} />
           )}
@@ -473,6 +461,14 @@ function InvalidReceipt({ outcome, title, headingLevel, fieldLabels, className }
       </CardContent>
     </Card>
   );
+}
+/** The element a receipt states its outcome in: the outcome's own role, its accessible name, and the programmatic focus stop that lets a surface move a keyboard user onto it. */
+const ANNOUNCED_REGION_SELECTOR = '[role="status"][tabindex], [role="alert"][tabindex]';
+/** Moves focus onto the region a rendered receipt announces its outcome in, so a settled change is read where it is named rather than on an unnamed wrapper beside it; the container stands in only when the receipt it holds states no such region. */
+export function focusAnnouncedRegion(container: HTMLElement | null): void {
+  if (container === null) return;
+  const region = container.querySelector<HTMLElement>(ANNOUNCED_REGION_SELECTOR);
+  (region ?? container).focus();
 }
 export type OperationResultProps = {
   readonly outcome: MutationOutcome;

@@ -13,11 +13,9 @@ import type { ReadEnvelope } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
 import { copy, type PageFamily } from "../copy";
 import FamilyCatalogue, { builderPathOf, type FamilyCatalogueView } from "./family-catalogue";
-/** One language edition of one Page as the index states it: the language it is read in, the lifecycle it is in, — once it is released — the reach that release carries, and — while it holds one — the frozen candidate a reviewer answers. */
 export type PageIndexEdition = { readonly locale: string; readonly lifecycle: ContentLifecycleState; readonly reach?: Reach; readonly candidateId?: string };
 /** One Page as the index lists it: its identity, its family and its editions, exactly as the reads state them. No count, title or lifecycle is derived here. */
 export type PageIndexRow = { readonly documentId: string; readonly family: PageFamily; readonly title: string; readonly editions: readonly PageIndexEdition[] };
-/** One read this surface renders: the envelope the service answered with, or the refusal that stands in its place. */
 export type PagesIndexAnswer<T> = ReadEnvelope<T> | ReadResult<ReadEnvelope<T>>;
 type ReadRefusal = Exclude<ReadResult<ReadEnvelope<unknown>>, { readonly kind: "envelope" }>;
 /** Called once the service accepts a started edition, so the route can re-read the index it owns. */
@@ -101,9 +99,7 @@ export function PagesIndex({ pages, catalogues, onStarted, className }: PagesInd
     <div data-slot="pages-index" className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
       <section aria-labelledby={headingId} className={"flex min-w-0 flex-col gap-4"}>
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 id={headingId} className={"type-section-title text-pretty wrap-anywhere"}>
-            {"Your Pages"}
-          </h2>
+          <h2 {...{ id: headingId, className: "type-section-title text-pretty wrap-anywhere" }}>{"Your Pages"}</h2>
           <p className={NOTE_CLASS}>{"Every Page this ministry admits, with the language editions each one carries. A row opens that Page's builder, where an edition is composed as a draft and nothing is released."}</p>
         </div>
         {pagesEnvelope === undefined ? null : <SimulationLabel effect={"publication-reach"} />}

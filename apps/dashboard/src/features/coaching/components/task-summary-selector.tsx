@@ -25,27 +25,16 @@ const SELECT_LABEL = "Task to share";
 const PREVIEW_DUE_TERM = "Due date";
 const PREVIEW_STATUS_TERM = "Status";
 const NO_DUE_DATE = "No due date";
-const DATE_NOT_KNOWN = "Date not known";
-const SHARED_COUNT_NOUN = "summary shared with your coach";
-const SHARED_COUNT_NOUN_PLURAL = "summaries shared with your coach";
-const EMPTY_ACTION_LABEL = "Go to Work";
-const EMPTY_ACTION_HREF = "/work";
-const OCCURRENCE_MISSING_HEADING = "This occurrence cannot be shared yet";
 const OCCURRENCE_MISSING_BODY = "This task repeats, and the list states no occurrence of it: a repeating task's summary is shared only for the occurrence you select, so nothing can be shared from it here. The task itself is unchanged, and a summary can still be shared from a task that does not repeat.";
-const FINGERPRINT_MISSING_HEADING = "This task cannot be shared yet";
 const FINGERPRINT_MISSING_BODY = "The list did not carry the fingerprint of this task's reviewed meaning, so a description could not be tied to what was reviewed. Reload the list and choose the task again.";
-const RELOAD_LABEL = "Reload the list";
 const FIELD_LABELS: Readonly<Record<string, string>> = { taskId: SELECT_LABEL, safeDescription: "Reviewed description", occurrenceId: "Occurrence", reviewedFingerprint: "Reviewed meaning" };
-const DEFAULT_HEADING_LEVEL: ReviewHeadingLevel = 2;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's heading utility per level, so the selector's card states its heading at the level it sits at with the same measure as every other heading there. */
 const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
-const ROOT_CLASS = "flex min-w-0 flex-col gap-4";
 const SENTENCE_CLASS = "type-supporting text-pretty";
 const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const FACT_TERM_CLASS = "text-muted-foreground";
 const AUTHORED_TEXT_CLASS = "min-w-0 break-words text-pretty whitespace-pre-wrap";
-const CONTROL_CLASS = "min-h-target";
 const REFUSAL_COPY: Readonly<Record<Exclude<TaskShareRefusalReason, "description-too-long">, string>> = {
   "description-empty": "A shared summary states what you want your coach to read, so write the description before you share it.",
   "not-reviewed": "This summary has no reviewed description attached, so nothing is shared until it is reviewed again.",
@@ -109,7 +98,7 @@ function dueTextOf(candidate: TaskSummaryCandidate): string {
     case "approximate":
       return `About ${date}`;
     case "unknown":
-      return DATE_NOT_KNOWN;
+      return "Date not known";
   }
 }
 function reviewInstantOf(asOf: string | undefined): Temporal.Instant | undefined {
@@ -133,7 +122,7 @@ function decideShare({ selected, shares, description, selectedOccurrenceId, revi
   if (blocking !== undefined) return { kind: "refused", message: blocking === "shared" ? REFUSAL_COPY["occurrence-already-shared"] : TASK_SHARE_STATE_COPY["needs-review"].description, about: "selection" };
   const occurrenceId = selected.occurrenceId;
   // No reload is offered here: the surface states that it can name no occurrence, so re-reading the same list would answer the same way.
-  if (selected.isRecurringSuccessor && occurrenceId === undefined) return { kind: "cannot", heading: OCCURRENCE_MISSING_HEADING, description: OCCURRENCE_MISSING_BODY, reloadable: false };
+  if (selected.isRecurringSuccessor && occurrenceId === undefined) return { kind: "cannot", heading: "This occurrence cannot be shared yet", description: OCCURRENCE_MISSING_BODY, reloadable: false };
   let reviewedFingerprint = selected.reviewedFingerprint;
   if (selected.isRecurringSuccessor) {
     if (occurrenceId === undefined || selectedOccurrenceId !== occurrenceId) return { kind: "refused", message: describeRefusal({ reason: "successor-needs-fresh-selection" }), about: "selection" };
@@ -144,7 +133,7 @@ function decideShare({ selected, shares, description, selectedOccurrenceId, revi
       reviewedFingerprint = reviewedFingerprint ?? admitted.value.reviewedFingerprint;
     }
   }
-  if (reviewedFingerprint === undefined || reviewedFingerprint.trim() === "") return { kind: "cannot", heading: FINGERPRINT_MISSING_HEADING, description: FINGERPRINT_MISSING_BODY, reloadable: true };
+  if (reviewedFingerprint === undefined || reviewedFingerprint.trim() === "") return { kind: "cannot", heading: "This task cannot be shared yet", description: FINGERPRINT_MISSING_BODY, reloadable: true };
   if (reviewInstant !== undefined) {
     const reviewed = reviewTaskSummary(description, reviewInstant);
     if (!reviewed.ok) return { kind: "refused", message: describeRefusal(reviewed.error), about: "description" };
@@ -163,14 +152,13 @@ function optionLabelOf(candidate: TaskSummaryCandidate, state: TaskShareSummaryS
   return state === "shared" || state === "needs-review" ? `${standing} — ${TASK_SHARE_STATE_COPY[state].label}` : standing;
 }
 const describedByWith = (base: string | undefined, extra: string): string => (base === undefined || base.trim() === "" ? extra : `${base} ${extra}`);
-type CoachPreviewProps = { readonly candidate: TaskSummaryCandidate; readonly description: string; readonly locale: string; readonly labelId: string };
-function CoachPreview({ candidate, description, locale, labelId }: CoachPreviewProps): ReactElement {
+function CoachPreview({ candidate, description, locale, labelId }: { readonly candidate: TaskSummaryCandidate; readonly description: string; readonly locale: string; readonly labelId: string }): ReactElement {
   const status = TASK_STATUS[candidate.status];
   const written = description.trim();
   return (
-    <div data-slot="task-summary-preview" className={"flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3"}>
+    <div data-slot="task-summary-preview" className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3">
       <p {...{ id: labelId, className: "text-sm font-medium" }}>{"What your coach will read"}</p>
-      <dl aria-labelledby={labelId} className={"flex min-w-0 flex-col gap-1.5 text-sm"}>
+      <dl aria-labelledby={labelId} className="flex min-w-0 flex-col gap-1.5 text-sm">
         <div className={FACT_ROW_CLASS}>
           <dt className={FACT_TERM_CLASS}>{PREVIEW_DUE_TERM}</dt>
           <dd className="min-w-0">
@@ -203,14 +191,14 @@ function SuccessorSelection({ candidate, selectedOccurrenceId, onSelectOccurrenc
         {selected ? (
           <p className="text-pretty wrap-anywhere">{"You selected this occurrence in this session. It is the one this description will be shared for."}</p>
         ) : (
-          <Button {...{ type: "button", variant: "outline", size: "sm", className: cn(CONTROL_CLASS, "max-w-full whitespace-normal"), onClick: onSelectOccurrence }}>{"Select this occurrence"}</Button>
+          <Button {...{ type: "button", variant: "outline", size: "sm", className: cn("min-h-target", "max-w-full whitespace-normal"), onClick: onSelectOccurrence }}>{"Select this occurrence"}</Button>
         )}
       </AlertDescription>
     </Alert>
   );
 }
 type AttemptInput = Omit<MutationInput<TaskSharePayload>, "operationId">;
-export function TaskSummarySelector({ candidates, existing, scope, locale, initialTaskId, asOf, onCheckResult, onReload, headingLevel = DEFAULT_HEADING_LEVEL, dir, className }: TaskSummarySelectorProps): ReactElement {
+export function TaskSummarySelector({ candidates, existing, scope, locale, initialTaskId, asOf, onCheckResult, onReload, headingLevel = 2, dir, className }: TaskSummarySelectorProps): ReactElement {
   const { mutateAsync } = useShareTaskSummary();
   const headingId = useId();
   const counterId = useId();
@@ -224,7 +212,6 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
   const noticeHeading = headingLevel === 2 ? 3 : 4;
   const selected = candidates.find((candidate) => candidate.taskId === selectedTaskId);
   const sharedCount = existing.filter((share) => share.state === "shared").length;
-  const codePoints = Array.from(description).length;
   const reviewInstant = useMemo(() => reviewInstantOf(asOf), [asOf]);
   const selectedOccurrenceId = selected !== undefined && selectedOccurrence !== null && selectedOccurrence.taskId === selected.taskId ? selectedOccurrence.occurrenceId : undefined;
   const decision = useMemo<ShareDecision>(() => decideShare({ selected, shares: existing, description, selectedOccurrenceId, reviewInstant }), [selected, existing, description, selectedOccurrenceId, reviewInstant]);
@@ -269,33 +256,31 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
   const cannot = decision.kind === "cannot" ? decision : null;
   const statusSpec = selected === undefined ? undefined : TASK_STATUS[selected.status];
   return (
-    <section aria-labelledby={headingId} dir={dir} data-slot="task-summary-selector" data-decision={decision.kind} className={cn(ROOT_CLASS, className)}>
+    <section aria-labelledby={headingId} dir={dir} data-slot="task-summary-selector" data-decision={decision.kind} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="wrap-anywhere">
-            <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
-              {"Share a task summary"}
-            </Heading>
+            <Heading {...{ id: headingId, className: HEADING_SCALE[headingLevel] }}>{"Share a task summary"}</Heading>
           </CardTitle>
           <CardDescription className="text-pretty wrap-anywhere">{SURFACE_PURPOSE}</CardDescription>
         </CardHeader>
-        <CardContent className={"flex min-w-0 flex-col gap-5"}>
+        <CardContent className="flex min-w-0 flex-col gap-5">
           <p className={SENTENCE_CLASS}>
             <bdi>{COACH_SEES}</bdi>
           </p>
           {sharedCount === 0 ? null : (
             <p className={SENTENCE_CLASS}>
-              <bdi className="tabular-figures">{String(sharedCount)}</bdi> {sharedCount === 1 ? SHARED_COUNT_NOUN : SHARED_COUNT_NOUN_PLURAL}.{" "}
+              <bdi className="tabular-figures">{String(sharedCount)}</bdi> {sharedCount === 1 ? "summary shared with your coach" : "summaries shared with your coach"}.{" "}
             </p>
           )}
           <Separator />
           {candidates.length === 0 ? (
-            <StateNotice kind="empty" title={"No task to share yet"} description={"A summary is shared from a task you already have. Add the work you want your coach to see, then come back and review a description of it."} action={{ label: EMPTY_ACTION_LABEL, href: EMPTY_ACTION_HREF }} headingLevel={noticeHeading} />
+            <StateNotice kind="empty" title="No task to share yet" description="A summary is shared from a task you already have. Add the work you want your coach to see, then come back and review a description of it." action={{ label: "Go to Work", href: "/work" }} headingLevel={noticeHeading} />
           ) : (
             <>
-              <FormField label={SELECT_LABEL} name="task-summary-task" description={"Choose one task. Its due date and status travel with the summary and stay live; the wording is yours."} required>
+              <FormField label={SELECT_LABEL} name="task-summary-task" description="Choose one task. Its due date and status travel with the summary and stay live; the wording is yours." required>
                 {(field) => (
-                  <NativeSelect id={field.id} className={"w-full max-w-full"} value={selectedTaskId} onChange={(event) => chooseTask(event.target.value)} aria-describedby={field.describedBy} aria-invalid={field.invalid} aria-required={field.required}>
+                  <NativeSelect id={field.id} className="w-full max-w-full" value={selectedTaskId} onChange={(event) => chooseTask(event.target.value)} aria-describedby={field.describedBy} aria-invalid={field.invalid} aria-required={field.required}>
                     <NativeSelectOption value="">{"Choose a task"}</NativeSelectOption>
                     {candidates.map((candidate) => {
                       const state = shareStateOf(existing, candidate.taskId);
@@ -311,7 +296,7 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
               {selected === undefined || statusSpec === undefined ? null : (
                 <>
                   <CoachPreview candidate={selected} description={description} locale={locale} labelId={previewLabelId} />
-                  <FormField label={"Reviewed description — a coach will read exactly this"} name="task-summary-description" description={"Write what you want your coach to understand about this piece of work. The task's own title, notes and history stay with you."} error={descriptionError} required>
+                  <FormField label="Reviewed description — a coach will read exactly this" name="task-summary-description" description="Write what you want your coach to understand about this piece of work. The task's own title, notes and history stay with you." error={descriptionError} required>
                     {(field) => (
                       <>
                         <Textarea
@@ -325,12 +310,12 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
                           aria-invalid={field.invalid}
                           aria-required={field.required}
                         />
-                        <p {...{ id: counterId, "aria-live": "polite", className: "text-xs text-muted-foreground tabular-figures" }}>{`Written: ${String(codePoints)} / ${String(TASK_SUMMARY_MAX_CODE_POINTS)} code points`}</p>
+                        <p {...{ id: counterId, "aria-live": "polite", className: "text-xs text-muted-foreground tabular-figures" }}>{`Written: ${String(Array.from(description).length)} / ${String(TASK_SUMMARY_MAX_CODE_POINTS)} code points`}</p>
                       </>
                     )}
                   </FormField>
                   {selected.isRecurringSuccessor ? <SuccessorSelection candidate={selected} selectedOccurrenceId={selectedOccurrenceId} onSelectOccurrence={confirmOccurrence} /> : null}
-                  {cannot === null ? null : <StateNotice kind="unavailable" title={cannot.heading} description={cannot.description} headingLevel={noticeHeading} retry={cannot.reloadable && onReload !== undefined ? { label: RELOAD_LABEL, onClick: onReload } : undefined} />}
+                  {cannot === null ? null : <StateNotice kind="unavailable" title={cannot.heading} description={cannot.description} headingLevel={noticeHeading} retry={cannot.reloadable && onReload !== undefined ? { label: "Reload the list", onClick: onReload } : undefined} />}
                   {selectionRefusal === undefined ? null : (
                     <Alert variant="destructive">
                       <AlertTitle>{"This summary cannot be shared yet"}</AlertTitle>
@@ -339,7 +324,7 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
                   )}
                   {input === null ? null : (
                     <ActionReview<TaskSharePayload>
-                      title={"Share this summary with your coach"}
+                      title="Share this summary with your coach"
                       description={
                         <div className="flex min-w-0 flex-col gap-2">
                           <bdi {...{ lang: locale, className: cn("block rounded-lg border border-border p-2", AUTHORED_TEXT_CLASS) }}>{description}</bdi>
@@ -353,8 +338,8 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
                           </p>
                         </div>
                       }
-                      consequence={"Sharing writes this summary once. It sends no notice, records no interaction, creates no task and proves nothing about contact or payment."}
-                      confirmLabel={"Share this summary"}
+                      consequence="Sharing writes this summary once. It sends no notice, records no interaction, creates no task and proves nothing about contact or payment."
+                      confirmLabel="Share this summary"
                       input={input}
                       submit={submit}
                       onSettled={setSettled}

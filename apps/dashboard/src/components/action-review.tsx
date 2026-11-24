@@ -13,15 +13,13 @@ import type { MutationOutcome } from "@/modules/data-service/outcome";
 export { attemptForIntent, intentKeyOf, mayReplay, reappliableRevision, useReviewedMutation } from "@/components/attempt";
 export type { MutationSubmit, ReviewedAttempt, UseReviewedMutationResult } from "@/components/attempt";
 const CONTAINMENT_SENTENCE = "Confirming applies this change once. Nothing outside the summary above changes: this step sends " + "no notice, creates no financial record and subscribes no one unless the summary names it.";
-const CONFIRM_EFFECT_SENTENCE = "It takes effect as soon as you confirm it.";
 const SETTLED_SENTENCE = "This step is complete for this attempt, and the result below is its record. Changing what this " + "step would apply begins a new attempt with its own identity.";
 const NOTHING_SELECTED_SENTENCE = "Nothing is selected, so this step has nothing to apply. Select at least one row in the list, then " + "return here.";
 const COUNT_CLASS = "tabular-figures font-medium text-foreground";
 const STEP_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's utility per level, so a review step and its receipt state the level they sit at with the same measure on every surface. */
 const STEP_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
-/** The heading level a step renders at when the caller states none. */
-export type ReviewHeadingLevel = keyof typeof STEP_HEADING_TAG;
+/** The heading level a step renders at when the caller states none. */ export type ReviewHeadingLevel = keyof typeof STEP_HEADING_TAG;
 export type ActionReviewSelection = { readonly count: number; readonly noun: string; readonly excluded?: number };
 export type ActionReviewProps<P = unknown> = {
   readonly title: string;
@@ -124,7 +122,7 @@ export function ActionReview<P = unknown>({ title, description, consequence, con
                         <AlertDialogTitle>{confirmLabel}</AlertDialogTitle>
                         <AlertDialogDescription className="flex flex-col gap-2">
                           <span className="font-medium text-foreground">{title}</span>
-                          <span>{CONFIRM_EFFECT_SENTENCE}</span>
+                          <span>{"It takes effect as soon as you confirm it."}</span>
                           {selection === undefined ? null : (
                             <span>
                               It applies to <bdi className={COUNT_CLASS}>{String(selection.count)}</bdi> selected {selection.noun}

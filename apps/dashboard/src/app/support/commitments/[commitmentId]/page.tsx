@@ -13,8 +13,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: "The commitment could not be read" },
   refused: { title: "This commitment's request was refused" },
 };
-/** One commitment: the envelope for it, or the read's own refusal stated as `denied` or `unavailable`. */
-export default async function CommitmentDetailPage({ params, searchParams }: CommitmentDetailRouteProps): Promise<ReactElement> {
+/** One commitment: the envelope for it, or the read's own refusal stated as `denied` or `unavailable`. */ export default async function CommitmentDetailPage({ params, searchParams }: CommitmentDetailRouteProps): Promise<ReactElement> {
   const { commitmentId } = await params;
   const carried = searchSuffixOf(await searchParams);
   const result = await reads.support.readCommitments({ commitmentId });

@@ -7,7 +7,6 @@ import { IMPORT_MAX_CELL_CODE_POINTS } from "@/modules/import/parse";
 import { UNIDENTIFIED_ATTEMPT, jsonBodyOf, mutate, operationIdentityOf } from "../../handler";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-type RowDecisionPayload = Parameters<typeof mutations.import.setRowDecision>[0]["payload"];
 const positionSchema = z
   .number({ error: "A position is the number the proposal reported for it, counted from 1: a row number is that row's identity on the review screen and a column number is that column's place in the file, never an array index." })
   .int({ error: "A position is a whole number, because rows and columns are counted rather than measured." })
@@ -27,12 +26,11 @@ const reuseDecisionSchema = z.strictObject({ kind: z.literal("reuse"), rowNumber
 const skipDecisionSchema = z.strictObject({ kind: z.literal("skip"), rowNumber: positionSchema, reason: z.string().optional() }) satisfies z.ZodType<ImportSkipDecisionInput>;
 const unresolvedDecisionSchema = z.strictObject({ kind: z.literal("unresolved"), rowNumber: positionSchema }) satisfies z.ZodType<ImportUnresolvedDecisionInput>;
 const ROW_DECISION_SHAPES = { create: createDecisionSchema, reuse: reuseDecisionSchema, skip: skipDecisionSchema, unresolved: unresolvedDecisionSchema } satisfies Record<ImportDecisionKind, z.ZodObject>;
-const rowDecisionPayloadSchema: z.ZodType<RowDecisionPayload> = z.discriminatedUnion("kind", [ROW_DECISION_SHAPES.create, ROW_DECISION_SHAPES.reuse, ROW_DECISION_SHAPES.skip, ROW_DECISION_SHAPES.unresolved], {
+const rowDecisionPayloadSchema: z.ZodType<Parameters<typeof mutations.import.setRowDecision>[0]["payload"]> = z.discriminatedUnion("kind", [ROW_DECISION_SHAPES.create, ROW_DECISION_SHAPES.reuse, ROW_DECISION_SHAPES.skip, ROW_DECISION_SHAPES.unresolved], {
   error: "A decision is one of the four the review step offers: create a new private entry, reuse an authorised identity, skip the row, or leave it unresolved.",
 });
 const rowDecisionRequestSchema = mutationInputSchema(rowDecisionPayloadSchema);
 const UNREADABLE_BODY = new z.ZodError([{ code: "custom", path: ["payload"], message: "The request body must be valid JSON: the four-field envelope and the row decision are both read from it, so a body that cannot be decoded states no decision about any row." }]);
-/** Records one import row's decision; answers with exactly one of the service's eight outcomes. */
 async function recordRowDecision(request: Request): Promise<Response> {
   const body = await jsonBodyOf(request);
   if (body === undefined) return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, UNREADABLE_BODY));

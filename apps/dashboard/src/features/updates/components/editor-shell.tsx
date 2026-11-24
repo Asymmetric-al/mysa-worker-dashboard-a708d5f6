@@ -31,36 +31,24 @@ import { AutosaveStatus } from "./autosave-status";
 import { CompareWithRelease } from "./compare-with-release";
 import { DEFAULT_SUBMISSION_RELEASE_MODE, SubmissionReleaseMode } from "./submission-release-mode";
 type DraftData = UpdateDraftData;
-type SavedDraft = Extract<DraftData, { readonly status: "draft" }>;
-type PlacementView = SavedDraft["placements"][number];
+type PlacementView = Extract<DraftData, { readonly status: "draft" }>["placements"][number];
 type EditorDocument = ProseEditorProps["initialDocument"];
 type EditorDirection = ContentLocale["direction"];
 type EditorHeadingLevel = 2 | 3 | 4;
-type PickerTarget = { readonly kind: MediaPickerKind; readonly placementId?: string };
 const descriptorOf = (placement: PlacementView): PlacementDescriptor => ({ altText: placement.altText, ...(placement.caption === null ? {} : { caption: placement.caption }), ...(placement.credit === null ? {} : { credit: placement.credit }) });
 const onScreenPlacementOf = (placement: PlacementView): OnScreenPlacement => ({ placementId: placement.placementId, ...descriptorOf(placement) });
-const SURFACE_TITLE = "Write this Update edition";
 const READING = { title: "This edition is being read", description: "The draft, the edition's own lifecycle and the placement it holds are read together, so nothing is shown until the read answers. An unread draft is never presented as an empty one." } as const;
 const DENIED = { title: "This edition is not available in this session", description: "This session may not write this edition, so no text, revision, placement or release is stated here. A refusal is not an edition with nothing written." } as const;
 const UNAVAILABLE = { title: "This edition could not be read", description: "The records behind this edition could not be read, so no editor, revision or placement is shown in their place. Nothing is written until the read succeeds." } as const;
 const REFUSED = { title: "This editor's address was refused", description: "The request this editor would make is not one the read admits, so nothing was read and nothing is written. Open the Update from its list and choose the edition again." } as const;
-const EDITION_SWITCHING_NOTE = "Each edition keeps its own draft. Moving to another edition leaves this one's text in this browser until a save is acknowledged, and offers it back when you return.";
 const DRAFT_FACTS = { revision: "Draft revision", checksum: "Content checksum", savedAt: "Read at" } as const;
-const REVIEW_TITLE = "Submit this edition for review";
-const REVIEW_CONFIRM = "Submit for review";
-const REVIEW_DESCRIPTION = "Submitting freezes the exact revision named here as the candidate one review step answers. Editing the draft afterwards changes nothing about what was submitted.";
 const REVIEW_CONSEQUENCE = REVIEW_ROUND_NOTE.approvalIsPerVariant + " " + REVIEW_ROUND_NOTE.furtherRoundIsNewSubmission;
-/** The release mode the submission records, in the words the review step states it with: the release does the work, and a mode sends no notice by itself. */
-const REVIEW_MODE_SENTENCES: Readonly<Record<SubmissionNotifyMode, string>> = {
+/** The release mode the submission records, in the words the review step states it with: the release does the work, and a mode sends no notice by itself. */ const REVIEW_MODE_SENTENCES: Readonly<Record<SubmissionNotifyMode, string>> = {
   "publish-only": "It asks for Publish only, so its release publishes the exact frozen candidate and submits no notice.",
   "publish-and-notify": "It asks for Publish and notify now, so its release also asks for one simulated notice for each eligible recipient.",
 };
-const REVIEW_UNAVAILABLE_TITLE = "This draft cannot be submitted yet";
 const REVIEW_UNAVAILABLE_FALLBACK = "The read this editor is composed from does not offer submission for this edition yet. Saving a revision is what a submission freezes.";
-const SUBMIT_ACTION = "submit-for-review";
 const MEDIA_PANE_TITLE = "Media in this draft";
-const MEDIA_GROUP_LEGEND = "Add media to this draft";
-const MEDIA_GROUP_DESCRIPTION = "An image or a video is prepared on this device before it is placed, and the limits it must meet are stated in the picker. The editor's own media buttons bring you here.";
 const MEDIA_LISTS = { image: "Images", video: "Videos" } as const;
 const MEDIA_EMPTY = {
   image: { title: "No image in this draft yet", description: "An image is placed from this panel and travels with the draft: a page or a notice shows only what the released revision places." },
@@ -68,18 +56,11 @@ const MEDIA_EMPTY = {
 } as const;
 const PLACEMENT_FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({ mediaPlacements: "Media placements", altText: "Alternative text", caption: "Caption", credit: "Credit", transcript: "Transcript" });
 const PLACEMENT_LABELS = { kind: "Kind", purpose: "Placed for", altText: "Alternative text", caption: "Caption", credit: "Credit", poster: "Poster", captions: "Caption track", transcript: "Transcript", state: "State" } as const;
-const PLACEMENT_STATE_WORDS = { ready: "Ready" } as const;
-const NO_CAPTION = "No caption";
 const PRESENT = "Present";
 const ABSENT = "None";
 const PICKER_LABELS = { manage: "Manage this placement", addImage: "Add an image", addVideo: "Add a video" } as const;
 const PANE_LABELS = { group: "Which part of this editor to show", write: "Write", media: "Media" } as const;
-const BODY_PANE_TITLE = "The text of this edition";
-const EDITOR_LABEL = "The text of this Update edition";
-const EDITOR_DESCRIPTION = "Write the edition's own text. A save is sent after a short pause, carries the revision the service last acknowledged, and states the media this draft holds.";
-const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-/** The one type scale's utility for each level, so every heading this surface renders takes the measure of the level it is given rather than one fixed size. */
-const HEADING_SCALE: Readonly<Record<EditorHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The one type scale's utility for each level, so every heading this surface renders takes the measure of the level it is given rather than one fixed size. */ const HEADING_SCALE: Readonly<Record<EditorHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING_LEVEL: Readonly<Record<EditorHeadingLevel, EditorHeadingLevel>> = { 2: 3, 3: 4, 4: 4 };
 const LOCAL_RECOVERY = {
   title: "This browser kept text the service never acknowledged",
@@ -91,6 +72,8 @@ const COMPARE_UNAVAILABLE = {
   withdrawn: { title: "The last release of this edition was withdrawn", description: "A withdrawn release is not content a reader can open, so it is not compared with this draft. Restoring an earlier revision as a new draft is offered from the Update's edition list." },
   unreadable: { title: "The last release could not be read", description: "The revision standing at this edition's head could not be read, so no comparison is shown and nothing is claimed about what is published." },
 } as const;
+const RELEASE_DENIED = { title: "The last release cannot be compared in this session", description: "This session may not read the release standing at this edition's head, so the comparison states nothing about it — not its revision, its checksum or its content." } as const;
+const EDITIONS_ABSENT = { title: "This Update's other editions could not be listed", description: "The editions of this Update could not be read, so this editor lists no edition to switch to and hides no fact about one. The edition you opened is still editable here." } as const;
 function placementRefOf(placement: PlacementView): DraftPlacementRef | null {
   const main = placement.renditions.find((rendition) => rendition.purpose === "display" || rendition.purpose === "playback");
   return main === undefined ? null : { assetId: placement.assetId, purpose: main.purpose };
@@ -119,7 +102,6 @@ function statedRefsWith(placements: readonly PlacementView[], added: DraftPlacem
 }
 const samePlacements = (left: readonly DraftPlacementRef[], right: readonly DraftPlacementRef[]): boolean => left.length === right.length && left.every((ref, index) => ref.assetId === right[index]?.assetId && ref.purpose === right[index]?.purpose);
 const holdsStatedPlacements = (outcome: MediaPickerOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged" || outcome.outcome === "unknown";
-const startingDocument = (direction: EditorDirection): EditorDocument => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: [{ type: "paragraph" }], sections: [] });
 function tabsOf(overview: VariantOverviewData): readonly VariantTab[] {
   return overview.editions.map((edition) => ({
     variantId: edition.variantId,
@@ -129,26 +111,23 @@ function tabsOf(overview: VariantOverviewData): readonly VariantTab[] {
     ...(edition.translation.status === "stale" ? { staleSince: edition.translation.sourceUpdatedAt } : {}),
   }));
 }
-function localesOfAudience(overview: VariantOverviewData, audience: VariantOverviewData["editions"][number]["audience"]): readonly LocaleEdition[] {
-  return [...new Map(overview.editions.filter((edition) => edition.audience === audience).map((edition) => [edition.locale.tag, edition])).values()].map((edition) => ({ tag: edition.locale.tag, direction: edition.locale.direction, endonym: endonymOf(edition.locale.tag) }));
-}
+const localesOfAudience = (overview: VariantOverviewData, audience: VariantOverviewData["editions"][number]["audience"]): readonly LocaleEdition[] =>
+  [...new Map(overview.editions.filter((edition) => edition.audience === audience).map((edition) => [edition.locale.tag, edition])).values()].map((edition) => ({ tag: edition.locale.tag, direction: edition.locale.direction, endonym: endonymOf(edition.locale.tag) }));
 const editionInLocale = (overview: VariantOverviewData, audience: VariantOverviewData["editions"][number]["audience"], tag: string): VariantOverviewData["editions"][number] | undefined =>
   overview.editions.find((edition) => edition.audience === audience && edition.locale.tag === tag) ?? overview.editions.find((edition) => edition.locale.tag === tag);
 function Heading({ level, id, className, children }: { readonly level: EditorHeadingLevel; readonly id: string; readonly className: string; readonly children: ReactNode }): ReactElement {
-  const Tag = HEADING_TAG[level];
+  const Tag = ({ 2: "h2", 3: "h3", 4: "h4" } as const)[level];
   return <Tag {...{ id, className: cn(HEADING_SCALE[level], className) }}>{children}</Tag>;
 }
-const REMOVAL_ON_SAVE = "This session cannot place this file, so saving this draft removes the placement. Everything the record holds about the rest of the draft is unchanged.";
 const KIND_WORDS = { image: "Image", video: "Video" } as const;
-type PlacementRowProps = { readonly placement: PlacementView; readonly onManage: () => void };
-function PlacementRow({ placement, onManage }: PlacementRowProps): ReactElement {
+function PlacementRow({ placement, onManage }: { readonly placement: PlacementView; readonly onManage: () => void }): ReactElement {
   const purposes = placement.renditions.map((rendition) => rendition.purpose);
   const placeable = placementRefOf(placement) !== null;
   const facts: readonly { readonly label: string; readonly value: ReactNode }[] = [
     { label: PLACEMENT_LABELS.kind, value: KIND_WORDS[placement.kind] },
     { label: PLACEMENT_LABELS.purpose, value: purposes.length === 0 ? ABSENT : <bdi>{purposes.join(", ")}</bdi> },
     { label: PLACEMENT_LABELS.altText, value: <bdi>{placement.altText}</bdi> },
-    { label: PLACEMENT_LABELS.caption, value: placement.caption === null ? NO_CAPTION : <bdi>{placement.caption}</bdi> },
+    { label: PLACEMENT_LABELS.caption, value: placement.caption === null ? "No caption" : <bdi>{placement.caption}</bdi> },
   ];
   const withCredit = placement.credit === null ? facts : [...facts, { label: PLACEMENT_LABELS.credit, value: <bdi>{placement.credit}</bdi> }];
   const rows =
@@ -161,7 +140,7 @@ function PlacementRow({ placement, onManage }: PlacementRowProps): ReactElement 
         <span className="text-sm font-medium">{KIND_WORDS[placement.kind]}</span>
         <span className="min-w-0 type-supporting wrap-anywhere">
           <span className="sr-only">{`${PLACEMENT_LABELS.state}: `}</span>
-          <bdi>{placement.state === "ready" ? PLACEMENT_STATE_WORDS.ready : (placement.reason?.label ?? "")}</bdi>
+          <bdi>{placement.state === "ready" ? ({ ready: "Ready" } as const).ready : (placement.reason?.label ?? "")}</bdi>
         </span>
       </div>
       <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 type-body">
@@ -175,7 +154,7 @@ function PlacementRow({ placement, onManage }: PlacementRowProps): ReactElement 
       {placement.state === "ready" ? null : (
         <div className="flex min-w-0 flex-col gap-1">
           {placement.reason?.action === undefined ? null : <p className="type-supporting text-pretty wrap-anywhere">{placement.reason.action}</p>}
-          {placeable ? null : <p className="type-supporting text-pretty wrap-anywhere">{REMOVAL_ON_SAVE}</p>}
+          {placeable ? null : <p className="type-supporting text-pretty wrap-anywhere">{"This session cannot place this file, so saving this draft removes the placement. Everything the record holds about the rest of the draft is unchanged."}</p>}
         </div>
       )}
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -190,13 +169,13 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   const nestedLevel = NESTED_HEADING_LEVEL[headingLevel];
   const placements = useMemo<readonly PlacementView[]>(() => (data.status === "draft" ? data.placements : []), [data]);
   const readRefs = useMemo<readonly DraftPlacementRef[]>(() => restatableRefs(placements), [placements]);
-  const initialBody = useMemo<EditorDocument>(() => (data.status === "draft" ? data.revision.body : startingDocument(direction)), [data, direction]);
+  const initialBody = useMemo<EditorDocument>(() => (data.status === "draft" ? data.revision.body : ((direction: EditorDirection): EditorDocument => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: [{ type: "paragraph" }], sections: [] }))(direction)), [data, direction]);
   const [pendingRefs, setPendingRefs] = useState<readonly DraftPlacementRef[] | null>(null);
   const statedRefs = pendingRefs !== null && samePlacements(pendingRefs, readRefs) ? readRefs : (pendingRefs ?? readRefs);
   const recovery = useDraftRecovery({ scope, variantId, initialRevision: recordRevision, initialBody, placements: statedRefs });
   const register = useRegisterMediaAsset();
   const removePlacement = useRemovePlacement();
-  const [picker, setPicker] = useState<PickerTarget | null>(null);
+  const [picker, setPicker] = useState<{ readonly kind: MediaPickerKind; readonly placementId?: string } | null>(null);
   const [mediaRefusal, setMediaRefusal] = useState<FieldErrorLookup | null>(null);
   const [pane, setPane] = useState<"write" | "media">("write");
   const [mediaRequests, setMediaRequests] = useState(0);
@@ -250,7 +229,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   const revision = data.status === "draft" ? data.revision : null;
   const editorPane = (
     <div className={cn("flex min-w-0 flex-col gap-4", pane === "write" ? "flex" : "hidden", "md:flex")}>
-      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{EDITOR_DESCRIPTION}</p>
+      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"Write the edition's own text. A save is sent after a short pause, carries the revision the service last acknowledged, and states the media this draft holds."}</p>
       {keptText === null ? null : (
         <Alert>
           <AlertTitle>{LOCAL_RECOVERY.title}</AlertTitle>
@@ -268,7 +247,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
         <div dir={direction} lang={localeTag} className="min-w-0">
           {/* The editor reports every change here and holds no save state of its own: the recovery hook is the one owner of
               the draft, so it carries the revision each save states and the one place that says whether the text is saved. */}
-          <ProseEditor key={`draft-${String(editorInstance)}`} initialDocument={adoptedBody ?? initialBody} direction={direction} label={EDITOR_LABEL} onChange={reportChange} onRequestMedia={requestMedia} />
+          <ProseEditor key={`draft-${String(editorInstance)}`} initialDocument={adoptedBody ?? initialBody} direction={direction} label="The text of this Update edition" onChange={reportChange} onRequestMedia={requestMedia} />
         </div>
       </DirectionProvider>
       <AutosaveStatus recovery={recovery} acknowledgedAsOf={asOf} />
@@ -289,8 +268,8 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   };
   const mediaPane = (
     <section ref={mediaPaneRef} tabIndex={-1} aria-label={MEDIA_PANE_TITLE} data-slot="editor-media-pane" className={cn("min-w-0 flex-col gap-4 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]", pane === "media" ? "flex" : "hidden", "md:flex")}>
-      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{MEDIA_GROUP_DESCRIPTION}</p>
-      <FormFieldGroup legend={MEDIA_GROUP_LEGEND} name="add-media" description="The picker states the formats, sizes and lengths it admits before any work begins, requires alternative text, and never keeps the file's own name.">
+      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"An image or a video is prepared on this device before it is placed, and the limits it must meet are stated in the picker. The editor's own media buttons bring you here."}</p>
+      <FormFieldGroup legend="Add media to this draft" name="add-media" description="The picker states the formats, sizes and lengths it admits before any work begins, requires alternative text, and never keeps the file's own name.">
         {() => (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Button {...{ type: "button", size: "sm", variant: "outline", onClick: () => setPicker({ kind: "image" }) }}>{PICKER_LABELS.addImage}</Button>
@@ -310,11 +289,18 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
       </Tabs>
     </section>
   );
+  const managedPickerProps = managed === undefined ? {} : { placement: onScreenPlacementOf(managed), onRemove: (input: { readonly placementId: string }) => removeMedia(input.placementId), onReplace: (input: { readonly placementId: string } & MediaRegisterInput) => placeMedia(input, managed.placementId) };
+  const pickerOpenChange = (next: boolean): void => {
+    if (!next) setPicker(null);
+  };
+  const pickerSettled = (outcome: MediaPickerOutcome): void => {
+    if (outcome.outcome === "invalid") setMediaRefusal(fieldErrorsFromInvalid(outcome));
+  };
   return (
     <Card data-slot="editor-shell-body" data-edition={variantId} className="min-w-0">
       <CardHeader>
         <CardTitle>
-          <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty" }}>{BODY_PANE_TITLE}</Heading>
+          <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty" }}>{"The text of this edition"}</Heading>
         </CardTitle>
         {revision === null ? (
           <p className="min-w-0 type-supporting text-pretty wrap-anywhere">Nothing has been saved for this edition yet. The first save records the text as its draft; nothing is published by it.</p>
@@ -347,18 +333,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
         {editorPane}
         {mediaPane}
       </CardContent>
-      <MediaPicker
-        kind={picker?.kind ?? "image"}
-        open={picker !== null}
-        onOpenChange={(next) => {
-          if (!next) setPicker(null);
-        }}
-        {...(managed === undefined ? {} : { placement: onScreenPlacementOf(managed), onRemove: (input: { readonly placementId: string }) => removeMedia(input.placementId), onReplace: (input: { readonly placementId: string } & MediaRegisterInput) => placeMedia(input, managed.placementId) })}
-        onRegister={(input: MediaRegisterInput) => placeMedia(input, null)}
-        onSettled={(outcome: MediaPickerOutcome) => {
-          if (outcome.outcome === "invalid") setMediaRefusal(fieldErrorsFromInvalid(outcome));
-        }}
-      />
+      <MediaPicker {...{ kind: picker?.kind ?? "image", open: picker !== null, onOpenChange: pickerOpenChange, ...managedPickerProps, onRegister: (input: MediaRegisterInput) => placeMedia(input, null), onSettled: pickerSettled }} />
     </Card>
   );
 }
@@ -391,17 +366,8 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
     case "denied":
       return <StateNotice kind="denied" title={DENIED.title} description={DENIED.description} reasonCode={draftResult.denied.reasonCode} operationId={draftResult.denied.operationId} headingLevel={headingLevel} className={className} />;
     case "unavailable":
-      return (
-        <StateNotice
-          kind="unavailable"
-          title={UNAVAILABLE.title}
-          description={draftResult.unavailable.guidance.trim() === "" ? UNAVAILABLE.description : draftResult.unavailable.guidance}
-          source={draftResult.unavailable.source}
-          retry={{ label: "Read this edition again", onClick: () => draft.refetch() }}
-          headingLevel={headingLevel}
-          className={className}
-        />
-      );
+      const unavailableDescription = draftResult.unavailable.guidance.trim() === "" ? UNAVAILABLE.description : draftResult.unavailable.guidance;
+      return <StateNotice kind="unavailable" title={UNAVAILABLE.title} description={unavailableDescription} source={draftResult.unavailable.source} retry={{ label: "Read this edition again", onClick: () => draft.refetch() }} headingLevel={headingLevel} className={className} />;
     case "refused":
       return <StateNotice kind="refused" title={REFUSED.title} description={REFUSED.description} headingLevel={headingLevel} className={className} />;
     case "envelope":
@@ -425,7 +391,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
     const target = overviewData === undefined ? undefined : editionInLocale(overviewData, data.audience, tag);
     if (target !== undefined) openEdition(target.variantId);
   };
-  const submitAction = envelope.actions.find((action) => action.name === SUBMIT_ACTION);
+  const submitAction = envelope.actions.find((action) => action.name === "submit-for-review");
   const submissionOffered = draftRevisionId !== undefined && (submitAction === undefined || submitAction.available);
   const submitPayload: SubmitForReviewPayload | null = draftRevisionId === undefined ? null : { variantId, revisionId: draftRevisionId, notifyMode: releaseMode };
   let comparison: ReactElement;
@@ -433,16 +399,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
   if (releaseResult === undefined || release.isStale(releaseResult)) {
     comparison = <StateNotice kind="loading" title="Reading the last release" description="The release standing at this edition's head is being read, so no comparison is shown yet. The editor stays usable while it is." headingLevel={headingLevel} />;
   } else if (releaseResult.kind === "denied") {
-    comparison = (
-      <StateNotice
-        kind="denied"
-        title="The last release cannot be compared in this session"
-        description="This session may not read the release standing at this edition's head, so the comparison states nothing about it — not its revision, its checksum or its content."
-        reasonCode={releaseResult.denied.reasonCode}
-        operationId={releaseResult.denied.operationId}
-        headingLevel={headingLevel}
-      />
-    );
+    comparison = <StateNotice {...{ kind: "denied", ...RELEASE_DENIED, reasonCode: releaseResult.denied.reasonCode, operationId: releaseResult.denied.operationId, headingLevel }} />;
   } else if (releaseResult.kind === "unavailable") {
     comparison = <StateNotice kind="unavailable" title={COMPARE_UNAVAILABLE.unreadable.title} description={COMPARE_UNAVAILABLE.unreadable.description} source={releaseResult.unavailable.source} retry={{ label: "Read the last release again", onClick: () => release.refetch() }} headingLevel={headingLevel} />;
   } else if (releaseResult.kind === "refused") {
@@ -458,14 +415,12 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
       comparison = <CompareWithRelease variant={data.variant} draft={draftSide} release={{ status: "none" }} headingLevel={headingLevel} />;
     } else if (releaseData.status === "withdrawn") {
       comparison = <StateNotice kind="empty" title={COMPARE_UNAVAILABLE.withdrawn.title} description={COMPARE_UNAVAILABLE.withdrawn.description} headingLevel={headingLevel} />;
-    } else {
-      comparison = <StateNotice kind="unavailable" title={COMPARE_UNAVAILABLE.unreadable.title} description={COMPARE_UNAVAILABLE.unreadable.description} headingLevel={headingLevel} />;
-    }
+    } else comparison = <StateNotice kind="unavailable" title={COMPARE_UNAVAILABLE.unreadable.title} description={COMPARE_UNAVAILABLE.unreadable.description} headingLevel={headingLevel} />;
   }
   return (
     <section aria-labelledby={titleId} data-slot="editor-shell" data-edition={variantId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
       <header className="flex min-w-0 flex-col gap-3">
-        <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty wrap-anywhere" }}>{SURFACE_TITLE}</Heading>
+        <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty wrap-anywhere" }}>{"Write this Update edition"}</Heading>
         <p className="min-w-0 type-supporting text-pretty wrap-anywhere">
           {audience.label} edition in <bdi lang={data.locale.tag}>{languageName === "" ? data.locale.tag : languageName}</bdi>. {audience.whoReceives}
         </p>
@@ -481,29 +436,25 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
         </Alert>
       </header>
       {tabs === undefined ? (
-        <StateNotice
-          kind="empty"
-          title="This Update's other editions could not be listed"
-          description="The editions of this Update could not be read, so this editor lists no edition to switch to and hides no fact about one. The edition you opened is still editable here."
-          headingLevel={NESTED_HEADING_LEVEL[headingLevel]}
-        />
+        <StateNotice {...{ kind: "empty", ...EDITIONS_ABSENT, headingLevel: NESTED_HEADING_LEVEL[headingLevel] }} />
       ) : (
         <div className="flex min-w-0 flex-col gap-4">
           <VariantSwitcher family="update" variants={tabs} activeVariantId={variantId} onSelect={openEdition} label="Edition being written" />
           <LocaleSwitcher locales={locales ?? []} requested={data.locale.tag} served={data.locale.tag} onRequest={openLocale} onDirectionChange={(servedDirection: EditorDirection) => setReportedDirection({ edition: variantId, direction: servedDirection })} label="Language edition" />
-          <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{EDITION_SWITCHING_NOTE}</p>
+          <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"Each edition keeps its own draft. Moving to another edition leaves this one's text in this browser until a save is acknowledged, and offers it back when you return."}</p>
         </div>
       )}
       <DraftEditor scope={scope} variantId={variantId} recordRevision={envelope.revision} asOf={envelope.asOf} data={data} direction={direction} localeTag={data.locale.tag} headingLevel={NESTED_HEADING_LEVEL[headingLevel]} />
       {comparison}
       {submissionOffered && submitPayload !== null ? (
         <ActionReview<SubmitForReviewPayload>
-          title={REVIEW_TITLE}
+          title="Submit this edition for review"
           description={
             // A block container rather than an inline one: the release choice below is a fieldset of real radio inputs.
             <div className="flex min-w-0 flex-col gap-1">
-              <span>{REVIEW_DESCRIPTION}</span>
-              {publishing === undefined ? null : <span>{REVIEW_MODE_SENTENCES[publishing]}</span>}
+              <span>{"Submitting freezes the exact revision named here as the candidate one review step answers. Editing the draft afterwards changes nothing about what was submitted."}</span>
+              {/* The sentence states the mode this submission carries, so it follows the choice recorded above rather than the preference the editor started with. */}
+              <span>{REVIEW_MODE_SENTENCES[releaseMode]}</span>
               <span className="min-w-0 wrap-anywhere">
                 Revision <bdi className="mono-identifier">{submitPayload.revisionId}</bdi>
                 {draftChecksum === "" ? null : (
@@ -520,14 +471,14 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
             </div>
           }
           consequence={REVIEW_CONSEQUENCE}
-          confirmLabel={REVIEW_CONFIRM}
+          confirmLabel="Submit for review"
           consequential
           input={{ scope, expectedRevision: envelope.revision, payload: submitPayload }}
           submit={submitForReview.submit}
           headingLevel={headingLevel}
         />
       ) : (
-        <StateNotice kind="empty" title={REVIEW_UNAVAILABLE_TITLE} description={submitAction?.reason?.trim() === undefined || submitAction.reason.trim() === "" ? REVIEW_UNAVAILABLE_FALLBACK : submitAction.reason.trim()} headingLevel={headingLevel} />
+        <StateNotice kind="empty" title="This draft cannot be submitted yet" description={submitAction?.reason?.trim() === undefined || submitAction.reason.trim() === "" ? REVIEW_UNAVAILABLE_FALLBACK : submitAction.reason.trim()} headingLevel={headingLevel} />
       )}
     </section>
   );

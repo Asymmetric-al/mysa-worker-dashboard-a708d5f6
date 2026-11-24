@@ -6,12 +6,13 @@ import { RecordList, type RecordListColumnDef, type RecordListQueryState } from 
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { statusBadgeProps, type StatusBadgeSpec } from "@/components/status-badge";
 import { cn } from "@/lib/cn";
+import { countFormatOf } from "@/lib/count-format";
 import { assertNever } from "@/lib/result";
 import type { Coverage, ReadEnvelope, ValueState, reads } from "@/modules/data-service";
 import { PAGE_SIZE_DEFAULT } from "@/modules/support/report";
 import { RESPONSE_AGREEMENT_COPY, RESPONSE_KIND_COPY, RESULTS_COPY, STATE_NOTICE_COPY, type ResponseKind } from "../copy";
 import { useInitiativeResults, type InitiativeResultsEnvelope } from "../hooks/use-initiative-results";
-import { CountFigure, countFormat, integerOf, pageNumberOf, pageSizeNumberOf, statedState } from "./figures";
+import { CountFigure, integerOf, pageNumberOf, pageSizeNumberOf, statedState } from "./figures";
 type ResultsEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiativeResults>>, { readonly kind: "envelope" }>["envelope"];
 type ResultsData = ResultsEnvelope["data"];
 type MeasuredCount = ResultsData["requests"]["presented"];
@@ -43,7 +44,6 @@ const NO_VALUE_STATES: ValueStates = {};
 const NO_COLUMNS_HIDDEN: ColumnVisibility = {};
 const RESULT_PARAM = { page: "page", pageSize: "pageSize" } as const;
 const FIRST_PAGE = 1;
-/** The page window this surface states: the page it shows and how many rows one page holds. */
 export type InitiativeResultsQuery = { readonly page: number; readonly pageSize: number };
 /** Writes the page window as URL parameters, so a pager change, a reload and a return from a Request all state the same window. */
 export function toInitiativeResultsParams(query: InitiativeResultsQuery): URLSearchParams {
@@ -78,7 +78,7 @@ function DenominatorFigure({ measured }: { readonly measured: MeasuredCount }): 
   if (!Number.isFinite(measured.denominator) || measured.denominator <= 0) return <span className="text-pretty text-muted-foreground">{RESULTS_COPY.denominatorMissingNote}</span>;
   return (
     <span className="break-words">
-      <span className="tabular-figures">{countFormat.format(measured.denominator)}</span> {measured.denominatorMeaning}
+      <span className="tabular-figures">{countFormatOf().format(measured.denominator)}</span> {measured.denominatorMeaning}
     </span>
   );
 }
@@ -127,8 +127,7 @@ function termsVersionColumns(valueStates: ValueStates): ReadonlyArray<RecordList
 }
 const responseKindRowId = (row: ResponseKindRow): string => row.kind;
 const termsVersionRowId = (row: TermsVersionRow): string => row.termsVersion;
-type KindListProps = { readonly rows: readonly ResponseKindRow[]; readonly valueStates: ValueStates; readonly showsShare: boolean; readonly label: string };
-const KindList = ({ rows, valueStates, showsShare, label }: KindListProps): ReactElement => (
+const KindList = ({ rows, valueStates, showsShare, label }: { readonly rows: readonly ResponseKindRow[]; readonly valueStates: ValueStates; readonly showsShare: boolean; readonly label: string }): ReactElement => (
   <div data-slot="initiative-results-kinds" className="min-w-0 md:hidden">
     <ul aria-label={label} className="flex min-w-0 flex-col gap-4">
       {rows.map((row) => (
@@ -161,12 +160,9 @@ const KindList = ({ rows, valueStates, showsShare, label }: KindListProps): Reac
     </ul>
   </div>
 );
-type SurfaceProps = { readonly headingId: string; readonly children: ReactNode; readonly className?: string };
-const Surface = ({ headingId, children, className }: SurfaceProps): ReactElement => (
+const Surface = ({ headingId, children, className }: { readonly headingId: string; readonly children: ReactNode; readonly className?: string }): ReactElement => (
   <section aria-labelledby={headingId} data-slot="initiative-results" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
-    <h3 id={headingId} className="type-subsection-title text-pretty">
-      {RESULTS_COPY.heading}
-    </h3>
+    <h3 {...{ id: headingId, className: "type-subsection-title text-pretty" }}>{RESULTS_COPY.heading}</h3>
     {children}
   </section>
 );
@@ -178,6 +174,11 @@ const ResultsStatement = (): ReactElement => (
   </div>
 );
 type InitiativeResultsSurfaceProps = { readonly initiativeId: string; readonly queryState?: RecordListQueryState; readonly initialEnvelope: ReadEnvelope<ResultsData>; readonly onQueryStateChange?: (next: RecordListQueryState) => void; readonly className?: string };
+const loadingSurface = (headingId: string, className: string | undefined): ReactElement => (
+  <Surface headingId={headingId} className={className}>
+    <StateNotice kind="loading" title={SURFACE_COPY.readingTitle} description={SURFACE_COPY.readingDescription} loadingLines={7} />
+  </Surface>
+);
 function InitiativeResultsSurface({ initiativeId, queryState: controlledState, initialEnvelope, onQueryStateChange, className }: InitiativeResultsSurfaceProps): ReactElement {
   const headingId = useId();
   const router = useRouter();
@@ -217,13 +218,7 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
     writeWindow(next.page, next.pageSize);
     onQueryStateChange?.({ sort: NO_SORT, page: next.page, pageSize: next.pageSize, columnVisibility });
   }
-  if (result === undefined) {
-    return (
-      <Surface headingId={headingId} className={className}>
-        <StateNotice kind="loading" title={SURFACE_COPY.readingTitle} description={SURFACE_COPY.readingDescription} loadingLines={7} />
-      </Surface>
-    );
-  }
+  if (result === undefined) return loadingSurface(headingId, className);
   if (result.kind !== "envelope") {
     return (
       <Surface headingId={headingId} className={className}>
@@ -240,7 +235,6 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
   const results = result.envelope.data;
   const { coverage, asOf } = result.envelope;
   const requestBase = results.requests.presented.denominator;
-  const hasRequests = Number.isFinite(requestBase) && requestBase > 0;
   const coverageText = coverageSentence(coverage);
   const kindsLabel = `${RESULTS_COPY.heading} for ${results.initiative.name}, ${SURFACE_COPY.kindsLabelSuffix}: ${coverageText}`;
   return (
@@ -249,13 +243,11 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
       <p className="text-xs text-pretty text-muted-foreground">
         {"As of "}
         <bdi>
-          <time className="tabular-figures" dateTime={asOf}>
-            {asOf}
-          </time>
+          <time {...{ className: "tabular-figures", dateTime: asOf }}>{asOf}</time>
         </bdi>
         {` · ${coverageText}`}
       </p>
-      {hasRequests ? (
+      {Number.isFinite(requestBase) && requestBase > 0 ? (
         results.requests.answered.count === 0 ? (
           <p className="type-supporting text-pretty">{RESULTS_COPY.noResultsNote}</p>
         ) : null
@@ -283,12 +275,6 @@ export type InitiativeResultsProps = { readonly initiativeId: string; readonly q
 /** The initiative results surface. */
 export default function InitiativeResults({ initiativeId, queryState, initialEnvelope, onQueryStateChange, className }: InitiativeResultsProps): ReactElement {
   const headingId = useId();
-  if (initialEnvelope === undefined) {
-    return (
-      <Surface headingId={headingId} className={className}>
-        <StateNotice kind="loading" title={SURFACE_COPY.readingTitle} description={SURFACE_COPY.readingDescription} loadingLines={7} />
-      </Surface>
-    );
-  }
+  if (initialEnvelope === undefined) return loadingSurface(headingId, className);
   return <InitiativeResultsSurface initiativeId={initiativeId} queryState={queryState} initialEnvelope={initialEnvelope} onQueryStateChange={onQueryStateChange} className={className} />;
 }

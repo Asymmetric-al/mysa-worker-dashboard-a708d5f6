@@ -42,7 +42,6 @@ export type SeriesEditorCurrent = { readonly title: string; readonly rule: Serie
 type SeriesFormValues = { title: string; category: string; note: string; firstDueOn: string; planningTimeZone: string; profile: RepeatProfile; interval: string; dayOfMonth: string; endKind: SeriesEnd["kind"]; endOn: string; endCount: string };
 export type SeriesEditorInitialValues = Partial<SeriesFormValues>;
 type SeriesPayload = CreateSeriesPayload | EditThisAndFuturePayload;
-type AppliedOutcome = Extract<MutationOutcome, { readonly outcome: "accepted" | "alreadyAccepted" }>;
 interface SeriesEditorCommonProps {
   readonly scope: Scope;
   readonly expectedRevision: string;
@@ -50,7 +49,7 @@ interface SeriesEditorCommonProps {
   readonly ongoingPolicyAdmitted: boolean;
   readonly initialValues?: SeriesEditorInitialValues;
   readonly headingLevel?: 2 | 3 | 4;
-  readonly onSaved?: (outcome: AppliedOutcome) => void;
+  readonly onSaved?: (outcome: Extract<MutationOutcome, { readonly outcome: "accepted" | "alreadyAccepted" }>) => void;
   readonly onCheckResult?: () => void;
   readonly onCancel?: () => void;
   readonly dir?: "ltr" | "rtl";
@@ -61,11 +60,9 @@ export type SeriesEditorProps =
   | (SeriesEditorCommonProps & { readonly mode: "edit-this-and-future"; readonly current: SeriesEditorCurrent; readonly seriesId: string; readonly effectiveFrom: string; readonly state: SeriesState; readonly actions: readonly ReadAction[] });
 const EMPTY_ACTIONS: readonly ReadAction[] = [];
 const HEADING_TAG: Readonly<Record<2 | 3 | 4, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
-/** The one type scale's heading utility per level, so the editor's own title states the level it is rendered at with the same measure on every surface. */
-const HEADING_SCALE: Readonly<Record<2 | 3 | 4, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+/** The one type scale's heading utility per level, so the editor's own title states the level it is rendered at with the same measure on every surface. */ const HEADING_SCALE: Readonly<Record<2 | 3 | 4, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const END_KIND_ORDER = ["on-date", "after-count", "ongoing-personal-policy"] as const satisfies readonly SeriesEnd["kind"][];
 const INTERVAL_UNIT_OF_PROFILE: Readonly<Record<RepeatProfile, "weeks" | "months" | null>> = { none: null, weekly: null, everyNWeeks: "weeks", monthlyOnDay: null, everyNMonths: "months" };
-const DEFAULT_PROFILE: RepeatProfile = "weekly";
 const DEFAULT_END_KIND: SeriesEnd["kind"] = "on-date";
 const HEADINGS = { create: "New repeating plan", revise: "Revise this plan from a boundary", receiptCreate: "Creating this plan", receiptRevise: "Revising the plan", currentRule: "The rule in force now", stopped: "This plan is stopped" } as const;
 const HELP = {
@@ -117,9 +114,6 @@ const intervalSpec = (unit: "weeks" | "months"): TextSpec<SeriesTextKey> => ({ .
 const PROFILE_OPTIONS = REPEAT_PROFILE_ORDER.map((profile) => ({ value: profile, label: REPEAT_PROFILE_LABELS[profile], hint: REPEAT_PROFILE_DESCRIPTIONS[profile] }));
 const END_OPTIONS = END_KIND_ORDER.map((kind) => ({ value: kind, label: END_CONDITION_LABELS[kind] }));
 const blankToUndefined = (value: string): string | undefined => (value.trim() === "" ? undefined : value);
-const isRepeatProfile = (value: string): value is RepeatProfile => REPEAT_PROFILE_ORDER.some((profile) => profile === value);
-const isEndKind = (value: string): value is SeriesEnd["kind"] => END_KIND_ORDER.some((kind) => kind === value);
-const admittedEndKindOf = (value: string, fallback: SeriesEnd["kind"]): SeriesEnd["kind"] => (isEndKind(value) ? value : fallback);
 const isRevisionPayload = (payload: SeriesPayload): payload is EditThisAndFuturePayload => "seriesId" in payload;
 function composePayload(values: SeriesFormValues, seriesId: string | null, effectiveFrom: string): SeriesPayload {
   const intervalUnit = INTERVAL_UNIT_OF_PROFILE[values.profile];
@@ -152,7 +146,7 @@ function defaultsOf(current: SeriesEditorCurrent | null, admittedEndKinds: reado
     note: stated.note ?? "",
     firstDueOn: stated.firstDueOn ?? rule?.firstDueOn ?? "",
     planningTimeZone: stated.planningTimeZone ?? rule?.planningTimeZone ?? zoneFallback,
-    profile: stated.profile ?? rule?.profile ?? DEFAULT_PROFILE,
+    profile: stated.profile ?? rule?.profile ?? "weekly",
     interval: stated.interval ?? (rule === null ? "" : String(rule.interval)),
     dayOfMonth: stated.dayOfMonth ?? (rule?.dayOfMonth === null || rule?.dayOfMonth === undefined ? "" : String(rule.dayOfMonth)),
     endKind: stated.endKind !== undefined && admittedEndKinds.includes(stated.endKind) ? stated.endKind : admittedEndKind(rule, admittedEndKinds),
@@ -263,14 +257,14 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
     clearRefusal();
   };
   const changeProfile = (next: string): void => {
-    if (!isRepeatProfile(next)) return;
+    if (!((value: string): value is RepeatProfile => REPEAT_PROFILE_ORDER.some((profile) => profile === value))(next)) return;
     form.setFieldValue("profile", next);
     if (INTERVAL_UNIT_OF_PROFILE[next] === null) form.setFieldValue("interval", "");
     if (!REPEAT_PROFILE_FIELDS[next].includes("dayOfMonth")) form.setFieldValue("dayOfMonth", "");
     clearRefusal();
   };
   const changeEndKind = (next: string): void => {
-    const admitted = admittedEndKindOf(next, form.state.values.endKind);
+    const admitted = ((value: string, fallback: SeriesEnd["kind"]): SeriesEnd["kind"] => (((value: string): value is SeriesEnd["kind"] => END_KIND_ORDER.some((kind) => kind === value))(value) ? value : fallback))(next, form.state.values.endKind);
     form.setFieldValue("endKind", admitted);
     if (admitted !== "on-date") form.setFieldValue("endOn", "");
     if (admitted !== "after-count") form.setFieldValue("endCount", "");

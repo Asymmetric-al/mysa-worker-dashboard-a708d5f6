@@ -19,8 +19,7 @@ export interface ResolvedSession {
   readonly capabilities: readonly string[];
   readonly scenarioId: string;
   readonly clockOffsetMs: number;
-  /** The session whose documents hold this seat's coaching records, or null when they are its own. */
-  readonly coachingRecordsSessionId: string | null;
+  /** The session whose documents hold this seat's coaching records, or null when they are its own. */ readonly coachingRecordsSessionId: string | null;
 }
 /** A seat's coaching records may live in the world it is seated in, so the session to address is that world when one is named and the seat itself otherwise. */
 export const coachingRecordsSessionIdOf = (session: ResolvedSession): string => session.coachingRecordsSessionId ?? session.sessionId;
@@ -42,6 +41,8 @@ function sessionGate(session: ResolvedSession): DeniedOutcome | undefined {
   const { sessionState } = session;
   return sessionState === "signed-in" ? undefined : refuse(SESSION_GATE_REASONS[sessionState]);
 }
+/** The refusal a session's own state answers with before any scope is consulted: `expired`, `unavailable`, `denied` and no access each by their own reason, and nothing at all for a signed-in session. */
+export const sessionStateRefusal = (session: ResolvedSession): DeniedOutcome | undefined => sessionGate(session);
 const storedSessionMetaSchema = z.object({
   scenarioId: z.string().min(1),
   clockOffsetMs: z.int(),
@@ -70,7 +71,7 @@ async function requestSessionId(): Promise<string | undefined> {
   const jar = await cookies();
   return readSessionId(jar.get(SESSION_COOKIE)?.value);
 }
-export async function resolveSession(source?: SessionSource): Promise<SessionResolution> {
+/** Resolves the acting session from the request's cookie or from an explicit source, stating the authority it established or why none was: an unresolved cookie is `session-unavailable` rather than an anonymous reader. */ export async function resolveSession(source?: SessionSource): Promise<SessionResolution> {
   let sessionId: string | undefined;
   if (source === undefined) sessionId = await requestSessionId();
   else sessionId = readSessionId(source.sessionId);
@@ -88,17 +89,31 @@ export async function resolveSession(source?: SessionSource): Promise<SessionRes
   return !parsed.success ? refusedSession("session-unavailable") : { ok: true, session: resolvedSession(sessionId, parsed.data) };
 }
 export type ScopeDecision = { readonly ok: true } | { readonly ok: false; readonly denial: DeniedOutcome };
-function admitsScope(session: ResolvedSession, scope: Pick<Scope, "organizationId" | "ministryId" | "supportSubjectId">): boolean {
-  return session.admittedMemberships.some((membership) => membership.organizationId === scope.organizationId && membership.ministryId === scope.ministryId && membership.supportSubjectId === scope.supportSubjectId);
+/** The authority an attempt is admitted under, together with the scope that admission establishes and a durable entry for the attempt records. */
+export type AdmittedScope = { readonly ok: true; readonly scope: Scope } | { readonly ok: false; readonly denial: DeniedOutcome };
+function admittedMembershipOf(session: ResolvedSession, scope: Pick<Scope, "organizationId" | "ministryId" | "supportSubjectId">): AdmittedMembership | undefined {
+  return session.admittedMemberships.find((membership) => membership.organizationId === scope.organizationId && membership.ministryId === scope.ministryId && membership.supportSubjectId === scope.supportSubjectId);
 }
 const admitsContext = (session: ResolvedSession, organizationId: string, ministryId: string): boolean => session.admittedMemberships.some((membership) => membership.organizationId === organizationId && membership.ministryId === ministryId);
 export type ScopeAuthority = "membership" | "grant" | "owner";
-export function assertScopeUnder(session: ResolvedSession, scope: Scope, authority: ScopeAuthority): ScopeDecision {
+// A membership authority always requires an admitted membership. The grant and owner authorities exist for a seat that holds no membership in the record's context at all — a coach acting under a grant, a reader acting on the record it owns — so they exempt it only from a membership it does not hold: a caller that does hold admitted memberships is still held to them, and the context it claims has to be one of theirs.
+const holdsToMembership = (session: ResolvedSession, authority: ScopeAuthority): boolean => authority === "membership" || session.admittedMemberships.length > 0;
+/** Admits one attempt under the authority it holds, and answers the scope it is admitted under: the matched membership's own context with the caller's principal, or, for a membership-less grant or owner seat, the claim under that same principal. The admission is the only source of that scope, so an entry recording it can state neither a principal the session resolver did not establish nor a context the caller's own memberships exclude. */
+export function assertScopeAdmitted(session: ResolvedSession, claimed: Scope, authority: ScopeAuthority): AdmittedScope {
   const gate = sessionGate(session);
-  return gate !== undefined ? { ok: false, denial: gate } : scope.principalId !== session.principalId ? { ok: false, denial: refuse("not-admitted") } : authority !== "membership" ? { ok: true } : admitsScope(session, scope) ? { ok: true } : { ok: false, denial: refuse("no-membership") };
+  if (gate !== undefined) return { ok: false, denial: gate };
+  if (claimed.principalId !== session.principalId) return { ok: false, denial: refuse("not-admitted") };
+  if (!holdsToMembership(session, authority)) return { ok: true, scope: { ...claimed, principalId: session.principalId } };
+  const admitted = admittedMembershipOf(session, claimed);
+  return admitted === undefined ? { ok: false, denial: refuse("no-membership") } : { ok: true, scope: { organizationId: admitted.organizationId, ministryId: admitted.ministryId, supportSubjectId: admitted.supportSubjectId, principalId: session.principalId } };
+}
+/** Admits one attempt's scope under the authority it holds, for a caller that needs only the answer; the scope the admission established comes from `assertScopeAdmitted`. */
+export function assertScopeUnder(session: ResolvedSession, scope: Scope, authority: ScopeAuthority): ScopeDecision {
+  const decision = assertScopeAdmitted(session, scope, authority);
+  return decision.ok ? { ok: true } : decision;
 }
 export const assertScope = (session: ResolvedSession, scope: Scope): ScopeDecision => assertScopeUnder(session, scope, "membership");
-export function assertScopeUnchangedUnder(session: ResolvedSession, before: Scope, after: Scope, authority: ScopeAuthority): ScopeDecision {
+/** Refuses a write whose context no longer matches the scope it was read under, answering the same refusal a stale revision gets. */ export function assertScopeUnchangedUnder(session: ResolvedSession, before: Scope, after: Scope, authority: ScopeAuthority): ScopeDecision {
   const started = assertScopeUnder(session, before, authority);
   if (!started.ok) return started;
   const produced = assertScopeUnder(session, after, authority);
@@ -192,14 +207,13 @@ function cutoffNotReached(grant: CoachingGrantRecord, now: Temporal.Instant): bo
     return false;
   }
 }
-export function canExport(session: ResolvedSession, scope: Scope): AccessDecision {
+/** Whether this session may export the addressed scope: an export carries the whole query, so it is authorised on its own rather than inferred from a read. */ export function canExport(session: ResolvedSession, scope: Scope): AccessDecision {
   const gate = sessionGate(session);
   return gate !== undefined ? refusedBy(gate) : session.admittedMemberships.length === 0 ? refused("no-export-permission") : inScope(session, scope);
 }
 export type ProtectedReader = { readonly recipientId: string; readonly publisherId: string; readonly purpose: AudiencePurpose; readonly memberships: readonly MembershipRecord[] };
 export type ProtectedReadGrant = { readonly audience: ContentAudience; readonly reader: ProtectedReader | null };
-/** The protected read being asked about: the audience of the exact variant or release, and the reader whose grant is in question. */
-export function canReadProtected(session: ResolvedSession, grant: ProtectedReadGrant): AccessDecision {
+/** The protected read being asked about: the audience of the exact variant or release, and the reader whose grant is in question. */ export function canReadProtected(session: ResolvedSession, grant: ProtectedReadGrant): AccessDecision {
   const gate = sessionGate(session);
   if (gate !== undefined) return refusedBy(gate);
   if (grant.audience === "public") return permitted();

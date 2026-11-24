@@ -11,10 +11,8 @@ const ADMITTED_JOBS: ReadonlySet<string> = new Set([RECORD_READ_JOB, PREPARATION
 const INTERACTIONS_PAGING_MESSAGES = { page: "State the page of recorded activity as a whole number from 1, the first page a person reads.", pageSize: "State how many records of activity one page holds as a whole number." };
 const interactionsQuerySchema = pagingQuerySchema(INTERACTIONS_PAGING_MESSAGES);
 const FIRST_PAGE = 1;
-type PartnerRecordParams = { readonly partnerId: string };
 const activityWindowOf = (page: number | undefined, pageSize: number | undefined) => (page === undefined && pageSize === undefined ? undefined : { index: (page ?? FIRST_PAGE) - FIRST_PAGE, ...(pageSize === undefined ? {} : { size: pageSize }) });
-/** Answers the read the request names — the record's shared facts, the caller's own private preparation, or the activity that actually happened — or, when it names none, the record body folded into one envelope by the service's own record read. */
-async function readPartnerRecord(request: Request, context: { params: Promise<PartnerRecordParams> }): Promise<Response> {
+async function readPartnerRecord(request: Request, context: { params: Promise<{ readonly partnerId: string }> }): Promise<Response> {
   const { partnerId } = await context.params;
   const search = new URL(request.url).searchParams;
   const job = search.get("job");

@@ -137,7 +137,6 @@ const completeTaskBodySchema = mutationInputSchema(completeTaskPayloadSchema);
 const reopenTaskBodySchema = mutationInputSchema(reopenTaskPayloadSchema);
 const cancelTaskBodySchema = mutationInputSchema(cancelTaskPayloadSchema);
 const TASK_OPERATIONS = ["createTask", "editTask", "completeTask", "reopenTask", "cancelTask"] as const;
-type TaskOperation = (typeof TASK_OPERATIONS)[number];
 type TaskListQuery = Parameters<typeof reads.work.listTasks>[0];
 type TaskSortInstruction = NonNullable<TaskListQuery["sort"]>[number];
 const TASK_LIST_NAMES = ["today", "upcoming", "overdue", "all", "undated"] as const satisfies readonly TaskListQuery["list"][];
@@ -171,36 +170,24 @@ const sortSchema = z.array(z.string()).transform((tokens: readonly string[], con
   return instructions;
 });
 const taskListQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema, list: listNameSchema.optional(), sort: sortSchema.optional(), page: pagingParameter(MESSAGES.pageInvalid).optional(), pageSize: pagingParameter(MESSAGES.pageSizeInvalid).optional() });
-type TaskListQueryParams = z.output<typeof taskListQuerySchema>;
 function rawTaskListParams(search: URLSearchParams): Record<string, unknown> {
   const sort = search.getAll("sort").flatMap((value) => value.split(","));
   return { ...pagingParamsOf(search), displayTimeZone: search.get("displayTimeZone") ?? undefined, list: search.get("list") ?? undefined, sort: sort.length === 0 ? undefined : sort };
 }
-function taskListQueryOf(params: TaskListQueryParams): TaskListQuery {
-  return { list: params.list ?? "all", displayTimeZone: params.displayTimeZone, page: params.page, pageSize: params.pageSize, ...(params.sort === undefined ? {} : { sort: params.sort }) };
-}
-type AgendaReadQuery = Parameters<typeof reads.work.readAgenda>[0];
-const READ_PARAM = "read";
-const AGENDA_READ = "readAgenda";
+const taskListQueryOf = (params: z.output<typeof taskListQuerySchema>): TaskListQuery => ({ list: params.list ?? "all", displayTimeZone: params.displayTimeZone, page: params.page, pageSize: params.pageSize, ...(params.sort === undefined ? {} : { sort: params.sort }) });
 const agendaQuerySchema = z.object({ displayTimeZone: displayTimeZoneSchema, page: pagingParameter(MESSAGES.pageInvalid).optional(), pageSize: pagingParameter(MESSAGES.pageSizeInvalid).optional() });
-type AgendaQueryParams = z.output<typeof agendaQuerySchema>;
 const rawAgendaParams = (search: URLSearchParams): Record<string, unknown> => ({ ...pagingParamsOf(search), displayTimeZone: search.get("displayTimeZone") ?? undefined });
-function agendaQueryOf(params: AgendaQueryParams): AgendaReadQuery {
-  return { displayTimeZone: params.displayTimeZone, page: params.page, pageSize: params.pageSize };
-}
+const agendaQueryOf = (params: z.output<typeof agendaQuerySchema>): Parameters<typeof reads.work.readAgenda>[0] => ({ displayTimeZone: params.displayTimeZone, page: params.page, pageSize: params.pageSize });
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(TASK_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
 const LIST_ROUTE = readRoute(readGrammar(taskListQuerySchema, rawTaskListParams), (params) => reads.work.listTasks(taskListQueryOf(params)), READ_ATTEMPT);
 const AGENDA_ROUTE = readRoute(readGrammar(agendaQuerySchema, rawAgendaParams), (params) => reads.work.readAgenda(agendaQueryOf(params)), READ_ATTEMPT);
-/** One page of one task list or of the dated agenda, exactly as the request asked for it. */
-const readTasks = (request: Request): Promise<Response> => (new URL(request.url).searchParams.get(READ_PARAM) === AGENDA_READ ? AGENDA_ROUTE(request) : LIST_ROUTE(request));
-/** The five named task mutations, each judged by its own payload schema before it runs. */
-const TASK_WRITES = claimedWrites<TaskOperation>("operation", {
+const readTasks = (request: Request): Promise<Response> => (new URL(request.url).searchParams.get("read") === "readAgenda" ? AGENDA_ROUTE(request) : LIST_ROUTE(request));
+/** The five named task mutations, each judged by its own payload schema before it runs. */ const TASK_WRITES = claimedWrites<(typeof TASK_OPERATIONS)[number]>("operation", {
   createTask: [createTaskBodySchema, mutations.work.createTask],
   editTask: [editTaskBodySchema, mutations.work.editTask],
   completeTask: [completeTaskBodySchema, mutations.work.completeTask],
   reopenTask: [reopenTaskBodySchema, mutations.work.reopenTask],
   cancelTask: [cancelTaskBodySchema, mutations.work.cancelTask],
 });
-/** One named task mutation, selected by `payload.operation`. */
 const changeTask = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, discriminantSchema, (claim) => claim.payload.operation, TASK_WRITES);
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readTasks, POST: changeTask });

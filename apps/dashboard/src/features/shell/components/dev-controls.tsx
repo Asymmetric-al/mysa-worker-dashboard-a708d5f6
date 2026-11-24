@@ -21,12 +21,7 @@ import { useDevState } from "../hooks/use-dev-state";
 const UNREACHED_ATTEMPT = "dev-controls";
 const NOTICE_HEADING_LEVEL = 2;
 type ClockPreset = (typeof CLOCK_PRESETS)[number];
-type PresetReceipt = { readonly preset: string; readonly outcome: MutationOutcome };
-const noticeFrame = (state: string, className: string | undefined, notice: ReactElement): ReactElement => (
-  <div data-slot="dev-controls" data-state={state} className={cn("min-w-0", className)}>
-    {notice}
-  </div>
-);
+const noticeFrame = (state: string, className: string | undefined, notice: ReactElement): ReactElement => <div {...{ "data-slot": "dev-controls", "data-state": state, className: cn("min-w-0", className) }}>{notice}</div>;
 export type DevControlsProps = { readonly scope: Scope; readonly developmentControls: boolean; readonly className?: string };
 /** The single composition of this session's development controls, or nothing at all in a build without them. */ export function DevControls({ scope, developmentControls, className }: DevControlsProps): ReactElement | null {
   const devRead = useDevState(scope, developmentControls);
@@ -47,10 +42,9 @@ export type DevControlsProps = { readonly scope: Scope; readonly developmentCont
   if (read.kind === "refused") return noticeFrame("refused", className, <StateNotice kind="refused" title={DEV_READ_COPY.refusedTitle} description={refusalSummary(read.refused)} headingLevel={NOTICE_HEADING_LEVEL} />);
   return transports !== null ? <ReadyControls devState={read.envelope.data} transports={transports} onReread={reread} className={className} /> : null;
 }
-type ReadyControlsProps = { readonly devState: DevState; readonly transports: DevMutationTransports; readonly onReread: () => void; readonly className?: string };
-function ReadyControls({ devState, transports, onReread, className }: ReadyControlsProps): ReactElement {
+function ReadyControls({ devState, transports, onReread, className }: { readonly devState: DevState; readonly transports: DevMutationTransports; readonly onReread: () => void; readonly className?: string }): ReactElement {
   const presetsHintId = useId();
-  const [receipt, setReceipt] = useState<PresetReceipt | null>(null);
+  const [receipt, setReceipt] = useState<{ readonly preset: string; readonly outcome: MutationOutcome } | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const advancingRef = useRef(false);
   const lastPreset = useRef<ClockPreset | null>(null);
@@ -80,14 +74,13 @@ function ReadyControls({ devState, transports, onReread, className }: ReadyContr
   }, [advanceBy]);
   const receiptReplay = receipt !== null && mayReplay(receipt.outcome) ? replay : undefined;
   const receiptCheck = receipt !== null && receipt.outcome.outcome === "unknown" ? onReread : undefined;
+  const receiptHeading = receipt !== null && (receipt.outcome.outcome === "accepted" || receipt.outcome.outcome === "alreadyAccepted" || receipt.outcome.outcome === "unchanged") ? `${CLOCK_COPY.advanceLabel}: ${receipt.preset}` : undefined;
   return (
     <div data-slot="dev-controls" data-state="ready" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <DevPanel devState={devState} onSetScenario={transports.onSetScenario} onSetClock={transports.onSetClock} onAdvanceClock={transports.onAdvanceClock} onSetFailurePlan={transports.onSetFailurePlan} reset={transports.reset} />
       <fieldset data-slot="dev-controls-presets" aria-describedby={presetsHintId} aria-busy={advancing ? true : undefined} className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4">
         <legend className="px-1 text-sm font-medium">{CLOCK_COPY.presetsLabel}</legend>
-        <p id={presetsHintId} className="type-supporting text-pretty">
-          {CLOCK_COPY.body}
-        </p>
+        <p {...{ id: presetsHintId, className: "type-supporting text-pretty" }}>{CLOCK_COPY.body}</p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {CLOCK_PRESETS.map((preset) => (
             <Button key={preset.label} type="button" variant="outline" size="sm" onClick={() => void advanceBy(preset)}>
@@ -98,13 +91,7 @@ function ReadyControls({ devState, transports, onReread, className }: ReadyContr
         {advancing ? <output className="block type-supporting text-pretty">{CLOCK_COPY.presetPendingNote}</output> : null}
         {receipt === null ? null : (
           <div data-slot="dev-controls-preset-result" data-outcome={receipt.outcome.outcome} className="min-w-0">
-            <OperationResult
-              outcome={receipt.outcome}
-              heading={receipt !== null && (receipt.outcome.outcome === "accepted" || receipt.outcome.outcome === "alreadyAccepted" || receipt.outcome.outcome === "unchanged") ? `${CLOCK_COPY.advanceLabel}: ${receipt.preset}` : undefined}
-              headingLevel={4}
-              onCheckResult={receiptCheck}
-              onRetrySameWork={receiptReplay}
-            />
+            <OperationResult outcome={receipt.outcome} heading={receiptHeading} headingLevel={4} onCheckResult={receiptCheck} onRetrySameWork={receiptReplay} />
           </div>
         )}
       </fieldset>
@@ -112,13 +99,12 @@ function ReadyControls({ devState, transports, onReread, className }: ReadyContr
     </div>
   );
 }
-type PersonaReceipt = { readonly personaId: string; readonly outcome: MutationOutcome };
 const isSettledOutcome = (outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged";
 /** The identity this browser acts as, and the one control that changes it: the seeded sessions the development read lists, offered exactly as that read lists them. */
 function PersonaControl({ devState, onSelectPersona, onReread }: { readonly devState: DevState; readonly onSelectPersona: (personaId: string) => Promise<MutationOutcome>; readonly onReread: () => void }): ReactElement {
   const { personaCatalogue: catalogue, activePersonaId, sessionState } = devState;
   const activePersona = catalogue.personas.find((persona) => persona.id === activePersonaId);
-  const [receipt, setReceipt] = useState<PersonaReceipt | null>(null);
+  const [receipt, setReceipt] = useState<{ readonly personaId: string; readonly outcome: MutationOutcome } | null>(null);
   const [switching, setSwitching] = useState(false);
   const switchingRef = useRef(false);
   const lastPersonaId = useRef<string | null>(null);
@@ -158,11 +144,7 @@ function PersonaControl({ devState, onSelectPersona, onReread }: { readonly devS
         <div className="flex min-w-0 flex-col gap-1">
           <Label htmlFor={selectId}>{PERSONA_SWITCH_COPY.selectLabel}</Label>
           <NativeSelect id={selectId} className="w-full max-w-full" value={activePersonaId ?? ""} aria-busy={switching ? true : undefined} disabled={switching} onChange={(event) => void switchPersona(event.currentTarget.value)}>
-            {activePersonaId === null ? (
-              <NativeSelectOption value="" disabled>
-                No persona selected
-              </NativeSelectOption>
-            ) : null}
+            {activePersonaId === null ? <NativeSelectOption {...{ value: "", disabled: true }}>No persona selected</NativeSelectOption> : null}
             {catalogue.personas.map((persona) => (
               <NativeSelectOption key={persona.id} value={persona.id}>
                 {`${persona.label} — ${PERSONA_KIND_LABELS[persona.kind].label}`}
@@ -170,11 +152,7 @@ function PersonaControl({ devState, onSelectPersona, onReread }: { readonly devS
             ))}
           </NativeSelect>
           <p className="type-supporting text-pretty">{activePersona === undefined ? PERSONA_SWITCH_COPY.unlistedIdentityNote : activePersona.description}</p>
-          {activePersona === undefined ? null : (
-            <output aria-atomic="true" className="mono-identifier text-xs break-all text-muted-foreground">
-              {activePersona.id}
-            </output>
-          )}
+          {activePersona === undefined ? null : <output {...{ "aria-atomic": "true", className: "mono-identifier text-xs break-all text-muted-foreground" }}>{activePersona.id}</output>}
         </div>
       )}
       <p className="flex min-w-0 flex-wrap items-center gap-2 type-supporting">

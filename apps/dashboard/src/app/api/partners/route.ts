@@ -111,7 +111,6 @@ const givingSelectionOf = (params: RosterQueryParams): NonNullable<Parameters<ty
   ...(params.from === undefined || params.to === undefined ? {} : { period: { from: params.from, to: params.to } }),
   ...(params.timeZone === undefined ? {} : { timeZone: params.timeZone }),
 });
-/** Reads the partner roster, with the facet set describing the same query, as one envelope — or, when another job is named, the caller's own saved views with the drift each one now carries, or the facet set on its own. */
 async function readRoster(request: NextRequest): Promise<Response> {
   const search = new URL(request.url).searchParams;
   const params = rosterQuerySchema.safeParse(rawRosterParams(search));
@@ -120,7 +119,6 @@ async function readRoster(request: NextRequest): Promise<Response> {
   if (params.data.job === FACETS_JOB) return readResponse(UNATTEMPTED_REQUEST_ID, () => reads.partners.readFacets(givingSelectionOf(params.data)));
   return readResponse(UNATTEMPTED_REQUEST_ID, () => reads.partners.findPartners(assembleRosterQuery(params.data)));
 }
-/** Creates the worker's own private preparation record for a contact. */
 const createPreparation = (request: NextRequest): Promise<Response> => writeRoute(request, createPreparationRequestSchema, mutations.partnerPreparation.createPrivatePreparation, refusalIdentityOf);
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readRoster, POST: createPreparation });
 export const runtime = "nodejs";

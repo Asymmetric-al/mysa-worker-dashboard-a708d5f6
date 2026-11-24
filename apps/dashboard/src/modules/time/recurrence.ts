@@ -28,8 +28,7 @@ function isKnownTimeZone(timeZone: unknown): timeZone is string {
 const takesDayOfMonth = (profile: RepeatProfile): boolean => profile === "monthlyOnDay" || profile === "everyNMonths";
 const takesInterval = (profile: RepeatProfile): boolean => profile === "everyNWeeks" || profile === "everyNMonths";
 export type MonthDayResolution = { status: "resolved"; date: CivilDate; requestedDay: number; resolvedDay: number; lastDayOfMonthResolved: boolean } | { status: "refused"; reason: "invalid-month" | "invalid-day" };
-/** Resolves a day of a month to a date that exists, disclosing any resolution it had to make. */
-export function monthlyOnDay(year: number, month: number, day: number): MonthDayResolution {
+/** Resolves a day of a month to a date that exists, disclosing any resolution it had to make. */ export function monthlyOnDay(year: number, month: number, day: number): MonthDayResolution {
   if (!Number.isInteger(year) || year < MIN_STORED_YEAR || year > MAX_STORED_YEAR) return { status: "refused", reason: "invalid-month" };
   if (!Number.isInteger(month) || month < 1 || month > 12) return { status: "refused", reason: "invalid-month" };
   if (!Number.isInteger(day) || day < 1 || day > 31) return { status: "refused", reason: "invalid-day" };
@@ -105,8 +104,7 @@ function occurrencesAfter(rule: SeriesRule, from: CivilDate, wanted: number): Oc
 const previewCountOf = (count: number): number => (!Number.isFinite(count) ? DEFAULT_PREVIEW_COUNT : Math.min(MAX_PREVIEW_COUNT, Math.max(MIN_PREVIEW_COUNT, Math.trunc(count))));
 export type DisclosedMonthDayResolution = { dueOn: CivilDate; requestedDay: number; resolvedDay: number };
 export type OccurrencePreview = { status: "preview"; dates: CivilDate[]; monthDayResolutions: DisclosedMonthDayResolution[] } | { status: "refused"; reason: "invalid-rule" | "end-reached" | "unbounded" };
-/** The next due dates strictly after `from` — three by default, clamped to 1-12 — as a preview. */
-export function nextOccurrences(rule: SeriesRule, from: CivilDate, count: number = DEFAULT_PREVIEW_COUNT): OccurrencePreview {
+/** The next due dates strictly after `from` — three by default, clamped to 1-12 — as a preview. */ export function nextOccurrences(rule: SeriesRule, from: CivilDate, count: number = DEFAULT_PREVIEW_COUNT): OccurrencePreview {
   if (validateSeriesRule(rule).status === "invalid") return { status: "refused", reason: "invalid-rule" };
   const walk = occurrencesAfter(rule, from, previewCountOf(count));
   if (walk.status === "ceiling-reached") return { status: "refused", reason: "unbounded" };
@@ -115,8 +113,7 @@ export function nextOccurrences(rule: SeriesRule, from: CivilDate, count: number
 }
 export type SuccessorRequest = { rule: SeriesRule; occurrence: CivilDate; existingSuccessorDueOn?: CivilDate; state?: SeriesState };
 export type SuccessorAdmission = { status: "admitted"; nextDueOn: CivilDate } | { status: "refused"; reason: "successor-already-admitted" | "series-ended" | "series-stopped" | "series-paused" };
-/** Admits one successor for a completed or skipped occurrence, and never more than one. */
-export function admitSuccessor(request: SuccessorRequest): SuccessorAdmission {
+/** Admits one successor for a completed or skipped occurrence, and never more than one. */ export function admitSuccessor(request: SuccessorRequest): SuccessorAdmission {
   const state = request.state ?? "active";
   if (state === "stopped") return { status: "refused", reason: "series-stopped" };
   if (state === "paused") return { status: "refused", reason: "series-paused" };
@@ -138,8 +135,7 @@ export type PlanReview = { state: "on-track" } | { state: "planNeedsReview"; mis
 export type MissedPlanQuestion = { rule: SeriesRule; occurrences: readonly SeriesOccurrence[]; now: Temporal.Instant };
 const PLAN_RESOLUTIONS: PlanResolutions = ["keep-this-occurrence", "move-next-date-forward", "stop-series"];
 const isAwaitingAction = (status: SeriesOccurrenceState): boolean => status === "open" || status === "reopened";
-/** Reviews a series' plan against "today" in the series' own planning zone. */
-export function missedPlan(question: MissedPlanQuestion): PlanReview {
+/** Reviews a series' plan against "today" in the series' own planning zone. */ export function missedPlan(question: MissedPlanQuestion): PlanReview {
   const today = todayInZone(question.rule.planningTimeZone, question.now);
   if (today.status === "refused") return { state: "on-track" };
   const missedDates = question.occurrences

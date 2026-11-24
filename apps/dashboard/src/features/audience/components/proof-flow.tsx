@@ -59,9 +59,7 @@ function DeadlineStatement({ deadlineLabel, expired, id }: { readonly deadlineLa
   const sentence = CONFIRMATION_DEADLINE_COPY(deadlineLabel, expired);
   const at = sentence.indexOf(deadlineLabel);
   return at <= 0 ? (
-    <p id={id} className="text-sm text-pretty text-muted-foreground">
-      {sentence}
-    </p>
+    <p {...{ id, className: "text-sm text-pretty text-muted-foreground" }}>{sentence}</p>
   ) : (
     <p id={id} className="text-sm text-pretty text-muted-foreground">
       {sentence.slice(0, at)}
@@ -182,9 +180,7 @@ export function ProofFlow({ scope, publisherId, publisherLabel, purpose, state, 
               <div className="flex min-w-0 flex-col gap-2">
                 <SimulationLabel effect="mail-submission" />
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" className={BUTTON_WRAP_CLASS} onClick={requestNotices} disabled={signupReview.pending}>
-                    {signupReview.pending ? `${PROOF_FLOW_COPY.requestStep.label} — working` : PROOF_FLOW_COPY.requestStep.label}
-                  </Button>
+                  <Button {...{ type: "button", className: BUTTON_WRAP_CLASS, onClick: requestNotices, disabled: signupReview.pending }}>{signupReview.pending ? `${PROOF_FLOW_COPY.requestStep.label} — working` : PROOF_FLOW_COPY.requestStep.label}</Button>
                 </div>
               </div>
             </div>

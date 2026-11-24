@@ -25,10 +25,7 @@ export type TargetProgressProps = {
 };
 type Progress = NonNullable<TargetProgressProps["progress"]>;
 type RecordedPeriod = Progress["recorded"][number];
-type ComparisonRow = NonNullable<TargetProgressProps["comparison"]>[number];
 type BanneredState = Exclude<TargetState, "no-target" | "unavailable">;
-const TARGET_FORM_HREF = "/coaching/targets#target-form";
-const SET_TARGET_LABEL = "Set a target";
 const COMPARISON_HEADING = "The four measures";
 const TABLE_COLUMNS = [
   { key: "period", label: "Period" },
@@ -70,7 +67,7 @@ function StateStatement({ state }: { readonly state: BanneredState }): ReactElem
     </div>
   );
 }
-const NoTargetNotice = (): ReactElement => <StateNotice kind="empty" title={TARGET_STATE_COPY["no-target"].label} description={TARGET_STATE_COPY["no-target"].description} action={{ label: SET_TARGET_LABEL, href: TARGET_FORM_HREF }} headingLevel={2} />;
+const NoTargetNotice = (): ReactElement => <StateNotice kind="empty" title={TARGET_STATE_COPY["no-target"].label} description={TARGET_STATE_COPY["no-target"].description} action={{ label: "Set a target", href: "/coaching/targets#target-form" }} headingLevel={2} />;
 function ProgressFigure({ progress, locale }: { readonly progress: Progress; readonly locale: string }): ReactElement {
   const measureLabel = MEASURE_COPY[progress.measure].label;
   const measureNoun = measureLabel.toLowerCase();
@@ -96,8 +93,8 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
     />
   );
 }
-const ComparisonRegion = ({ rows }: { readonly rows: ReadonlyArray<ComparisonRow> }): ReactElement => (
-  <Panel headingLevel={2} title={COMPARISON_HEADING} description={"Each measure is counted on its own from the activity you recorded, so a conversation inside a call is counted as a conversation and the call remains one call."} contentClassName="flex min-w-0 flex-col gap-3">
+const ComparisonRegion = ({ rows }: { readonly rows: ReadonlyArray<NonNullable<TargetProgressProps["comparison"]>[number]> }): ReactElement => (
+  <Panel headingLevel={2} title={COMPARISON_HEADING} description="Each measure is counted on its own from the activity you recorded, so a conversation inside a call is counted as a conversation and the call remains one call." contentClassName="flex min-w-0 flex-col gap-3">
     <ul aria-label={COMPARISON_HEADING} className="flex min-w-0 flex-col gap-3">
       {rows.map((row, index) => {
         const reading = RECORDED_READING[row.valueState];
@@ -139,11 +136,10 @@ export default function TargetProgress({ progress, comparison, locale, className
       </section>
     );
   }
-  const showsFigure = progress.state !== "unavailable" || statesAFigure(progress);
   return (
     <section className={cn("flex min-w-0 flex-col gap-4", className)} data-interface-locale={locale}>
       {progress.state === "unavailable" ? <StateNotice kind="unavailable" title={TARGET_STATE_COPY.unavailable.label} description={TARGET_STATE_COPY.unavailable.description} headingLevel={2} /> : <StateStatement state={progress.state} />}
-      {showsFigure ? <ProgressFigure progress={progress} locale={locale} /> : null}
+      {progress.state !== "unavailable" || statesAFigure(progress) ? <ProgressFigure progress={progress} locale={locale} /> : null}
       {comparisonRegion}
     </section>
   );

@@ -10,17 +10,16 @@ import { useReferral } from "../hooks/use-referral";
 import { useContinueReferral } from "../hooks/use-referral-mutations";
 import type { ContinueReferralPayload } from "../schemas";
 const CYCLE_TERM = EXPIRED_HISTORY_COPY.fieldLabels.cycleIndex;
-const DEFAULT_HEADING_LEVEL: ReviewHeadingLevel = 2;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+const DEFAULT_HEADING_LEVEL: ReviewHeadingLevel = 2;
 const PANEL_CLASS = "flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3";
 const SENTENCE_CLASS = "type-supporting text-pretty";
 const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const FACT_TERM_CLASS = "text-muted-foreground";
 const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
 type ReferralDetailReadResult = Awaited<ReturnType<typeof reads.referrals.readReferral>>;
-type ReferralDetailEnvelope = Extract<ReferralDetailReadResult, { readonly kind: "envelope" }>["envelope"];
-type ReferralDetailView = Extract<ReferralDetailEnvelope["data"], { readonly view: "detail" }>;
+type ReferralDetailView = Extract<Extract<ReferralDetailReadResult, { readonly kind: "envelope" }>["envelope"]["data"], { readonly view: "detail" }>;
 /** The cycle this action acts on: exactly the members the narrow permitted Expired projection carries, so one action serves the full detail body and the permitted history alike. The revision the command presents is the envelope's own and is handed over separately, because that projection carries no revision of its own. */
 export type ContinueReferralCycle = Pick<ReferralDetailView["referral"], "referralId" | "cycleIndex" | "datePrecision" | "windowKind" | "status" | "continuation">;
 export type ContinuePolicyFacts = ReferralDetailView["continuationPolicy"];
@@ -39,7 +38,6 @@ export type ContinueReferralActionProps = {
   readonly className?: string;
 };
 type ContinueInput = Omit<MutationInput<ContinueReferralPayload>, "operationId">;
-const asRecord = (value: unknown): Readonly<Record<string, unknown>> | null => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Readonly<Record<string, unknown>>) : null);
 function stringMember(record: Readonly<Record<string, unknown>>, key: string): string | null {
   const value = record[key];
   return typeof value === "string" && value.trim() !== "" ? value : null;
@@ -51,20 +49,18 @@ function numberMember(record: Readonly<Record<string, unknown>>, key: string): n
 function reportedContinuationOf(outcome: MutationOutcome | null): { readonly successorId: string | null; readonly endsAt: string | null; readonly elapsedSeconds: number | null } | null {
   if (outcome === null || (outcome.outcome !== "accepted" && outcome.outcome !== "alreadyAccepted")) return null;
   const created = outcome.created?.find((id) => id.trim() !== "") ?? null;
-  const stored = outcome.outcome === "alreadyAccepted" ? asRecord(outcome.result) : null;
+  const stored = outcome.outcome === "alreadyAccepted" ? ((value: unknown): Readonly<Record<string, unknown>> | null => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Readonly<Record<string, unknown>>) : null))(outcome.result) : null;
   const identified = (stored === null ? null : stringMember(stored, "successorId")) ?? created;
   return identified === null ? null : { successorId: identified, endsAt: stored === null ? null : stringMember(stored, "windowEnd"), elapsedSeconds: stored === null ? null : numberMember(stored, "elapsedSeconds") };
 }
-type SuccessorWindow = { readonly endsAt: string; readonly elapsedSeconds: number };
-const MILLIS_PER_SECOND = 1_000;
 /** The whole seconds between the two instants a record states, or null when either is absent or unreadable: a continuation is measured in elapsed seconds, so its figure is the distance between those instants. */
 function elapsedBetween(start: string | null, end: string | null): number | null {
   if (start === null || end === null) return null;
-  const seconds = Math.round((Date.parse(end) - Date.parse(start)) / MILLIS_PER_SECOND);
+  const seconds = Math.round((Date.parse(end) - Date.parse(start)) / 1_000);
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 }
 /** The window the successor's own record states: both presentations of one referral state the instants its window was written with, so the endpoint and the elapsed figure it is counted in come from the record whether the successor still stands inside its window or has itself since expired. */
-function recordedSuccessorWindow(read: ReferralDetailReadResult | undefined): SuccessorWindow | null {
+function recordedSuccessorWindow(read: ReferralDetailReadResult | undefined): { readonly endsAt: string; readonly elapsedSeconds: number } | null {
   if (read === undefined || read.kind !== "envelope") return null;
   const { windowStart, windowEnd } = read.envelope.data.referral;
   const elapsedSeconds = elapsedBetween(windowStart, windowEnd);
@@ -79,7 +75,6 @@ function classifiedReason(referral: ContinueReferralCycle, policy: ContinuePolic
   return policy.setting === "off" ? "worker-setting-off" : null;
 }
 const OUTCOME_DETAIL: Readonly<Partial<Record<MutationOutcome["outcome"], string>>> = { conflict: OUTCOME_COPY.conflict.detail, unchanged: OUTCOME_COPY.unchanged.detail, unknown: OUTCOME_COPY.unknown.detail };
-const outcomeCommentary = (outcome: MutationOutcome | null): string | null => (outcome === null ? null : (OUTCOME_DETAIL[outcome.outcome] ?? null));
 const UnavailableReason = ({ reason }: { readonly reason: ContinueUnavailableReason }): ReactElement => <p className={SENTENCE_CLASS}>{CONTINUE_COPY.unavailableReasons[reason]}</p>;
 function CycleFacts({ referral }: { readonly referral: ContinueReferralCycle }): ReactElement {
   const standing = STATUS_COPY[referral.status.status];
@@ -110,9 +105,7 @@ function NotOffered({ headingId, headingLevel, sentence, reason, referral }: { r
   const Heading = HEADING_TAG[headingLevel];
   return (
     <section aria-labelledby={headingId} data-slot="continue-referral-unavailable" className={PANEL_CLASS}>
-      <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
-        {CONTINUE_COPY.unavailableHeading}
-      </Heading>
+      <Heading {...{ id: headingId, className: HEADING_SCALE[headingLevel] }}>{CONTINUE_COPY.unavailableHeading}</Heading>
       {sentence === null ? null : <p className={SENTENCE_CLASS}>{sentence}</p>}
       {sentence === null && reason !== null ? <UnavailableReason reason={reason} /> : null}
       <CycleFacts referral={referral} />
@@ -123,9 +116,7 @@ function ContinuedWindow({ labelId, successorId, endsAt, elapsedSeconds }: { rea
   const statedEnd = endsAt === null || elapsedSeconds === null ? null : CONTINUATION_WINDOW_COPY.elapsedSeconds(elapsedSeconds, endsAt);
   return (
     <section aria-labelledby={labelId} data-slot="continue-referral-successor" className={PANEL_CLASS}>
-      <p id={labelId} className="text-sm font-medium">
-        {CONTINUATION_WINDOW_COPY.heading}
-      </p>
+      <p {...{ id: labelId, className: "text-sm font-medium" }}>{CONTINUATION_WINDOW_COPY.heading}</p>
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
         <span className={FACT_TERM_CLASS}>{EXPIRED_HISTORY_COPY.consumedLabels.continued}</span>
         <Link href={`/partners/referrals/${encodeURIComponent(successorId)}`} className="inline-flex min-h-target max-w-full items-center text-sm font-medium text-primary inline-link focus-visible:underline">
@@ -171,7 +162,7 @@ export function ContinueReferralAction({ scope, referral, expectedRevision, cont
   const recorded = recordedSuccessorWindow(successor.data);
   const endsAt = reported?.endsAt ?? recorded?.endsAt ?? null;
   const elapsedSeconds = reported?.elapsedSeconds ?? recorded?.elapsedSeconds ?? null;
-  const commentary = outcomeCommentary(settled);
+  const commentary = ((outcome: MutationOutcome | null): string | null => (outcome === null ? null : (OUTCOME_DETAIL[outcome.outcome] ?? null)))(settled);
   const showReview = offered || settled !== null;
   return (
     <div dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>

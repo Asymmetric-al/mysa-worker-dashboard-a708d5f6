@@ -1,9 +1,9 @@
-/** Success criterion 17, at the one place locale fallback is decided: */
+/** Success criterion 17, at the one place locale fallback is decided: the language a reader is served, the fallback that stays inside one document, one Site and one audience, the releases it may read, a preference that is neither consent nor access, and direction carried by the content rather than by styling. */
 import { Temporal } from "temporal-polyfill";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { withLanguagePreference, type MembershipRecord } from "@/modules/audience/membership";
-import { admittedLocales, resolveLocale, type DocumentEdition, type LocaleResolution } from "@/modules/content/locale";
+import { admittedLocales, directionOfTag, resolveLocale, type DocumentEdition, type LocaleResolution } from "@/modules/content/locale";
 import type { ContentDocument, VariantAudience } from "@/modules/content/variant";
 import { mutations, reads, type MutationInput } from "@/modules/data-service";
 import { canReadProtected, resolveSession, type AccessDecision, type ResolvedSession, type SessionSource } from "@/modules/data-service/authorize";
@@ -97,68 +97,64 @@ function unavailableResolution(resolution: LocaleResolution, what: string): Extr
   if (resolution.status !== "language-unavailable") throw new Error(`${what} was expected to have no permitted edition and an edition was served: ${JSON.stringify(resolution)}`);
   return resolution;
 }
-describe("the locale a reader is actually served", () => {
-  it("serves the requested language when an admitted edition of it exists, and says no fallback happened", async () => {
-    const update = await editionsOf(UPDATE_DOCUMENT);
-    const resolution = resolved(resolveEdition(update, "fr", "public"), "a French request over a published French edition");
-    // The French edition is published, so nothing was substituted: the flag is what a surface reads to decide whether it must disclose a fallback at all.
-    expect([resolution.fallbackOccurred, resolution.servedLocale.tag, resolution.requestedLocale, resolution.release.releaseId, resolution.release.variantId]).toEqual([false, "fr", "fr", FR_RELEASE, FR_VARIANT]);
-  });
-  it("falls back to the Site's declared default and reports the actual language beside the requested one", async () => {
-    const update = await editionsOf(UPDATE_DOCUMENT);
-    // A reader who prefers German has no German edition; the Site declares English, so English is what they are given — and the surface is told both tags, so it can say which language it is showing.
-    const resolution = resolved(resolveEdition(update, "de", "public", "en"), "a German request over a Site whose default is English");
-    expect([resolution.fallbackOccurred, resolution.requestedLocale, resolution.servedLocale.tag]).toEqual([true, "de", "en"]);
-    expect(resolution.servedLocale.tag).not.toBe(resolution.requestedLocale);
-    expect(resolution.release.releaseId).toBe(EN_PUBLIC_RELEASE);
-  });
-  it("keeps the requested locale, a fallback locale and Language unavailable as three distinct answers", async () => {
-    const update = await editionsOf(UPDATE_DOCUMENT);
-    const served = resolveEdition(update, "fr", "public");
-    const substituted = resolveEdition(update, "de", "public", "en");
-    const refused = resolveEdition(update, "fr", "approved-supporter");
-    const states = [stateOf(served), stateOf(substituted), stateOf(refused)];
-    expect([states, new Set(states).size]).toEqual([["requested", "fallback", "language-unavailable"], 3]);
-    for (const needle of ["requested", "fallback", "language-unavailable"]) expect(states).toContain(needle);
-    expect(unavailableResolution(refused, "French for an approved-supporter audience with no declared default").requestedLocale).toBe("fr");
-  });
+it("the locale a reader is actually served: serves the requested language when an admitted edition of it exists, and says no fallback happened", async () => {
+  const update = await editionsOf(UPDATE_DOCUMENT);
+  const resolution = resolved(resolveEdition(update, "fr", "public"), "a French request over a published French edition");
+  // The French edition is published, so nothing was substituted: the flag is what a surface reads to decide whether it must disclose a fallback at all.
+  expect([resolution.fallbackOccurred, resolution.servedLocale.tag, resolution.requestedLocale, resolution.release.releaseId, resolution.release.variantId]).toEqual([false, "fr", "fr", FR_RELEASE, FR_VARIANT]);
 });
-describe("fallback stays inside one document, one Site and one audience", () => {
-  it("never serves another document's edition", async () => {
-    const update = await editionsOf(UPDATE_DOCUMENT);
-    const page = await editionsOf(PAGE_DOCUMENT);
-    const acrossDocuments: EditionSet = { document: page.document, editions: [...update.editions, ...page.editions] }; // One list holding every edition of both documents, which is what a resolver that walked the Site instead of the document would be handed.
-    unavailableResolution(resolveEdition(acrossDocuments, "fr", "public"), "French on a Page that publishes no French edition");
-    const sameDocument = resolved(resolveEdition(acrossDocuments, "fr", "public", "en"), "a French request on the Page with English declared");
-    expect([sameDocument.release.releaseId, servedEditionOf(acrossDocuments, sameDocument).documentId]).toEqual(["release-page-en-1", PAGE_DOCUMENT]);
-    expect(servedEditionOf(acrossDocuments, sameDocument).documentId).not.toBe(UPDATE_DOCUMENT);
-    // The same list answers the Update for the same request, which is what makes the bound a bound rather than an absence of editions.
-    const onItsOwnDocument = resolved(resolveEdition({ document: update.document, editions: [...update.editions, ...page.editions] }, "fr", "public"), "French on the Update that publishes it");
-    expect([onItsOwnDocument.release.releaseId, servedEditionOf(acrossDocuments, onItsOwnDocument).documentId]).toEqual([FR_RELEASE, UPDATE_DOCUMENT]);
-    const pageRead = await envelopeOf(reads.pages.readPageLocales({ pageId: PAGE_DOCUMENT, requestedLocale: "fr", session: SOURCE }), `readPageLocales(${PAGE_DOCUMENT}, fr)`); // The service states the same refusal over the same document, so the bound is the application's and not this file's arrangement of the list.
-    expect([pageRead.data.resolution.status, pageRead.data.requestedLocale]).toEqual(["language-unavailable", "fr"]);
-  });
-  it("never serves an edition published on another Site", async () => {
-    const update = await editionsOf(UPDATE_DOCUMENT);
-    const french = editionOf(update, FR_VARIANT);
-    const onThisSite: EditionSet = { document: update.document, editions: update.editions.map((edition) => (edition.variantId === FR_VARIANT ? { ...french, siteId: HARBOUR_SITE } : edition)) }; // The one variable is the Site the edition states: the request, the document and the editions are otherwise identical.
-    const onAnotherSite: EditionSet = { document: update.document, editions: update.editions.map((edition) => (edition.variantId === FR_VARIANT ? { ...french, siteId: "site-otago" } : edition)) };
-    const servedHere = resolved(resolveEdition(onThisSite, "fr", "public"), "French published on the document's own Site");
-    expect([servedHere.release.releaseId, servedEditionOf(onThisSite, servedHere).siteId]).toEqual([FR_RELEASE, HARBOUR_SITE]);
-    unavailableResolution(resolveEdition(onAnotherSite, "fr", "public"), "the same French edition stamped with another Site");
-  });
-  it("never crosses the audience through fallback, in either direction", async () => {
-    const update = await editionsOf(UPDATE_DOCUMENT);
-    // An approved-supporter reader asking for French: the only French edition is public, and the only edition they may be shown is the approved-supporter English one. Serving the public French edition would hand protected readers public copy and public readers protected copy.
-    const supporter = resolved(resolveEdition(update, "fr", "approved-supporter", "en"), "French for an approved-supporter audience over an approved-supporter English edition");
-    expect([supporter.fallbackOccurred, supporter.release.releaseId, supporter.release.audience]).toEqual([true, EN_SUPPORTER_RELEASE, "approved-supporter"]);
-    expect(supporter.release.releaseId).not.toBe(EN_PUBLIC_RELEASE);
-    const publicReader = resolved(resolveEdition(update, "de", "public", "en"), "German for a public audience over a public English edition");
-    expect([publicReader.fallbackOccurred, publicReader.release.releaseId, publicReader.release.audience]).toEqual([true, EN_PUBLIC_RELEASE, "public"]);
-    expect(publicReader.release.releaseId).not.toBe(EN_SUPPORTER_RELEASE);
-    expect(supporter.servedLocale.tag).toBe(publicReader.servedLocale.tag);
-    expect(supporter.release.variantId).not.toBe(publicReader.release.variantId);
-  });
+it("the locale a reader is actually served: falls back to the Site's declared default and reports the actual language beside the requested one", async () => {
+  const update = await editionsOf(UPDATE_DOCUMENT);
+  // A reader who prefers German has no German edition; the Site declares English, so English is what they are given — and the surface is told both tags, so it can say which language it is showing.
+  const resolution = resolved(resolveEdition(update, "de", "public", "en"), "a German request over a Site whose default is English");
+  expect([resolution.fallbackOccurred, resolution.requestedLocale, resolution.servedLocale.tag]).toEqual([true, "de", "en"]);
+  expect(resolution.servedLocale.tag).not.toBe(resolution.requestedLocale);
+  expect(resolution.release.releaseId).toBe(EN_PUBLIC_RELEASE);
+});
+it("the locale a reader is actually served: keeps the requested locale, a fallback locale and Language unavailable as three distinct answers", async () => {
+  const update = await editionsOf(UPDATE_DOCUMENT);
+  const served = resolveEdition(update, "fr", "public");
+  const substituted = resolveEdition(update, "de", "public", "en");
+  const refused = resolveEdition(update, "fr", "approved-supporter");
+  const states = [stateOf(served), stateOf(substituted), stateOf(refused)];
+  expect([states, new Set(states).size]).toEqual([["requested", "fallback", "language-unavailable"], 3]);
+  for (const needle of ["requested", "fallback", "language-unavailable"]) expect(states).toContain(needle);
+  expect(unavailableResolution(refused, "French for an approved-supporter audience with no declared default").requestedLocale).toBe("fr");
+});
+it("fallback stays inside one document, one Site and one audience: never serves another document's edition", async () => {
+  const update = await editionsOf(UPDATE_DOCUMENT);
+  const page = await editionsOf(PAGE_DOCUMENT);
+  const acrossDocuments: EditionSet = { document: page.document, editions: [...update.editions, ...page.editions] }; // One list holding every edition of both documents, which is what a resolver that walked the Site instead of the document would be handed.
+  unavailableResolution(resolveEdition(acrossDocuments, "fr", "public"), "French on a Page that publishes no French edition");
+  const sameDocument = resolved(resolveEdition(acrossDocuments, "fr", "public", "en"), "a French request on the Page with English declared");
+  expect([sameDocument.release.releaseId, servedEditionOf(acrossDocuments, sameDocument).documentId]).toEqual(["release-page-en-1", PAGE_DOCUMENT]);
+  expect(servedEditionOf(acrossDocuments, sameDocument).documentId).not.toBe(UPDATE_DOCUMENT);
+  // The same list answers the Update for the same request, which is what makes the bound a bound rather than an absence of editions.
+  const onItsOwnDocument = resolved(resolveEdition({ document: update.document, editions: [...update.editions, ...page.editions] }, "fr", "public"), "French on the Update that publishes it");
+  expect([onItsOwnDocument.release.releaseId, servedEditionOf(acrossDocuments, onItsOwnDocument).documentId]).toEqual([FR_RELEASE, UPDATE_DOCUMENT]);
+  const pageRead = await envelopeOf(reads.pages.readPageLocales({ pageId: PAGE_DOCUMENT, requestedLocale: "fr", session: SOURCE }), `readPageLocales(${PAGE_DOCUMENT}, fr)`); // The service states the same refusal over the same document, so the bound is the application's and not this file's arrangement of the list.
+  expect([pageRead.data.resolution.status, pageRead.data.requestedLocale]).toEqual(["language-unavailable", "fr"]);
+});
+it("fallback stays inside one document, one Site and one audience: never serves an edition published on another Site", async () => {
+  const update = await editionsOf(UPDATE_DOCUMENT);
+  const french = editionOf(update, FR_VARIANT);
+  const onThisSite: EditionSet = { document: update.document, editions: update.editions.map((edition) => (edition.variantId === FR_VARIANT ? { ...french, siteId: HARBOUR_SITE } : edition)) }; // The one variable is the Site the edition states: the request, the document and the editions are otherwise identical.
+  const onAnotherSite: EditionSet = { document: update.document, editions: update.editions.map((edition) => (edition.variantId === FR_VARIANT ? { ...french, siteId: "site-otago" } : edition)) };
+  const servedHere = resolved(resolveEdition(onThisSite, "fr", "public"), "French published on the document's own Site");
+  expect([servedHere.release.releaseId, servedEditionOf(onThisSite, servedHere).siteId]).toEqual([FR_RELEASE, HARBOUR_SITE]);
+  unavailableResolution(resolveEdition(onAnotherSite, "fr", "public"), "the same French edition stamped with another Site");
+});
+it("fallback stays inside one document, one Site and one audience: never crosses the audience through fallback, in either direction", async () => {
+  const update = await editionsOf(UPDATE_DOCUMENT);
+  // An approved-supporter reader asking for French: the only French edition is public, and the only edition they may be shown is the approved-supporter English one. Serving the public French edition would hand protected readers public copy and public readers protected copy.
+  const supporter = resolved(resolveEdition(update, "fr", "approved-supporter", "en"), "French for an approved-supporter audience over an approved-supporter English edition");
+  expect([supporter.fallbackOccurred, supporter.release.releaseId, supporter.release.audience]).toEqual([true, EN_SUPPORTER_RELEASE, "approved-supporter"]);
+  expect(supporter.release.releaseId).not.toBe(EN_PUBLIC_RELEASE);
+  const publicReader = resolved(resolveEdition(update, "de", "public", "en"), "German for a public audience over a public English edition");
+  expect([publicReader.fallbackOccurred, publicReader.release.releaseId, publicReader.release.audience]).toEqual([true, EN_PUBLIC_RELEASE, "public"]);
+  expect(publicReader.release.releaseId).not.toBe(EN_SUPPORTER_RELEASE);
+  expect(supporter.servedLocale.tag).toBe(publicReader.servedLocale.tag);
+  expect(supporter.release.variantId).not.toBe(publicReader.release.variantId);
 });
 describe("only currently admitted releases are served", () => {
   const PROTECTED_VARIANT = "variant-update-autumn-en-approved-supporter";
@@ -248,60 +244,58 @@ function membershipFrom(state: SessionStateDocument, membershipId: string): Memb
 }
 /** One permission answer as two comparable facts, so a decision before and after a change can be compared whole. */
 const grantOf = (decision: AccessDecision): { readonly allowed: boolean; readonly reasonCode: DenialReason | null } => (decision.allowed ? { allowed: true, reasonCode: null } : { allowed: false, reasonCode: decision.denial.reasonCode });
-describe("a language preference is neither consent nor access", () => {
-  it("keeps the state, the Off/Immediate choice, the confirmation deadline and the language as four separate facts", async () => {
-    const state = await establishedState();
-    const awaitingProof = membershipFrom(state, "membership-awaiting-proof");
-    expect([awaitingProof.languagePreference, awaitingProof.state, awaitingProof.choice]).toEqual(["cy", "awaiting-proof", "immediate"]);
-    expect(awaitingProof.confirmationDeadline).toBeInstanceOf(Temporal.Instant);
-    const active = membershipFrom(state, "membership-ada-active");
-    expect([active.state, active.choice]).toEqual(["active", "immediate"]);
-    const off = membershipFrom(state, "membership-unsubscribed");
-    expect([off.state, off.choice]).toEqual(["off", "off"]);
-    const restricted = membershipFrom(state, "membership-restricted");
-    expect([restricted.state, restricted.choice]).toEqual(["restricted", "off"]);
-  });
-  it("changes nothing but the language when the reader changes it", async () => {
-    const state = await establishedState();
-    const reader = sessionOf(await resolveSession(READER_SOURCE), "the reader persona's session");
-    expect(reader.admittedMemberships).toEqual([]);
-    const cases = [
-      { membershipId: "membership-ada-active", granted: true },
-      { membershipId: "membership-awaiting-proof", granted: false }, // Awaiting proof is not membership: the address has not been confirmed, so nothing is readable yet.
-      { membershipId: "membership-unsubscribed", granted: true },
-      { membershipId: "membership-restricted", granted: false },
-    ] as const;
-    expect(cases.length).toBe(4);
-    for (const { membershipId, granted } of cases) {
-      const record = membershipFrom(state, membershipId);
-      const before = grantOf(canReadProtected(reader, { audience: "approved-supporter", reader: { recipientId: record.recipientId, publisherId: record.publisherId, purpose: record.purpose, memberships: [record] } }));
-      expect(before.allowed).toBe(granted);
-      const relanguaged = withLanguagePreference(record, "ar");
-      expect([[relanguaged.languagePreference, relanguaged.state, relanguaged.choice], relanguaged.confirmationDeadline, relanguaged.acceptedAt]).toEqual([["ar", record.state, record.choice], record.confirmationDeadline, record.acceptedAt]);
-      expect(relanguaged.revision).toBe(record.revision + 1);
-      const after = grantOf(canReadProtected(reader, { audience: "approved-supporter", reader: { recipientId: relanguaged.recipientId, publisherId: relanguaged.publisherId, purpose: relanguaged.purpose, memberships: [relanguaged] } }));
-      expect(after).toEqual(before);
-    }
-  });
-  it("does not turn a language setting into access to a protected edition", async () => {
-    const reader = sessionOf(await resolveSession(READER_SOURCE), "the reader persona's session");
-    const reasonCodes = new Set<string>();
-    for (const requestedLocale of ["en", "ar", "fr", "cy"]) {
-      const page = await reads.pages.readPageLocales({ pageId: PAGE_DOCUMENT, requestedLocale, session: READER_SOURCE });
-      reasonCodes.add(denialOf(page, `readPageLocales(${PAGE_DOCUMENT}, ${requestedLocale}) as a reader persona`).reasonCode);
-      const release = await reads.updates.readRelease({ variantId: "variant-update-autumn-en-approved-supporter", session: READER_SOURCE });
-      reasonCodes.add(denialOf(release, `readRelease for ${requestedLocale} as a reader persona`).reasonCode);
-      expect(grantOf(canReadProtected(reader, { audience: "approved-supporter", reader: null }))).toEqual({ allowed: false, reasonCode: "no-protected-grant" }); // The permission question itself takes no language at all: a protected read is decided from the grant, so a preference can neither widen nor narrow it.
-    }
-    expect([...reasonCodes]).toEqual(["not-admitted"]);
-  });
-  it("never changes the audience as a side effect of resolving a language", async () => {
-    const update = await editionsOf(UPDATE_DOCUMENT);
-    const asPublic = resolved(resolveEdition(update, "de", "public", "en"), "German for the public audience");
-    const asSupporter = resolved(resolveEdition(update, "de", "approved-supporter", "en"), "German for the approved-supporter audience");
-    expect([asPublic.release.audience, asSupporter.release.audience, asPublic.release.releaseId, asSupporter.release.releaseId]).toEqual(["public", "approved-supporter", EN_PUBLIC_RELEASE, EN_SUPPORTER_RELEASE]);
-    expect(asPublic.release.releaseId).not.toBe(asSupporter.release.releaseId);
-  });
+it("a language preference is neither consent nor access: keeps the state, the Off/Immediate choice, the confirmation deadline and the language as four separate facts", async () => {
+  const state = await establishedState();
+  const awaitingProof = membershipFrom(state, "membership-awaiting-proof");
+  expect([awaitingProof.languagePreference, awaitingProof.state, awaitingProof.choice]).toEqual(["cy", "awaiting-proof", "immediate"]);
+  expect(awaitingProof.confirmationDeadline).toBeInstanceOf(Temporal.Instant);
+  const active = membershipFrom(state, "membership-ada-active");
+  expect([active.state, active.choice]).toEqual(["active", "immediate"]);
+  const off = membershipFrom(state, "membership-unsubscribed");
+  expect([off.state, off.choice]).toEqual(["off", "off"]);
+  const restricted = membershipFrom(state, "membership-restricted");
+  expect([restricted.state, restricted.choice]).toEqual(["restricted", "off"]);
+});
+it("a language preference is neither consent nor access: changes nothing but the language when the reader changes it", async () => {
+  const state = await establishedState();
+  const reader = sessionOf(await resolveSession(READER_SOURCE), "the reader persona's session");
+  expect(reader.admittedMemberships).toEqual([]);
+  const cases = [
+    { membershipId: "membership-ada-active", granted: true },
+    { membershipId: "membership-awaiting-proof", granted: false }, // Awaiting proof is not membership: the address has not been confirmed, so nothing is readable yet.
+    { membershipId: "membership-unsubscribed", granted: true },
+    { membershipId: "membership-restricted", granted: false },
+  ] as const;
+  expect(cases.length).toBe(4);
+  for (const { membershipId, granted } of cases) {
+    const record = membershipFrom(state, membershipId);
+    const before = grantOf(canReadProtected(reader, { audience: "approved-supporter", reader: { recipientId: record.recipientId, publisherId: record.publisherId, purpose: record.purpose, memberships: [record] } }));
+    expect(before.allowed).toBe(granted);
+    const relanguaged = withLanguagePreference(record, "ar");
+    expect([[relanguaged.languagePreference, relanguaged.state, relanguaged.choice], relanguaged.confirmationDeadline, relanguaged.acceptedAt]).toEqual([["ar", record.state, record.choice], record.confirmationDeadline, record.acceptedAt]);
+    expect(relanguaged.revision).toBe(record.revision + 1);
+    const after = grantOf(canReadProtected(reader, { audience: "approved-supporter", reader: { recipientId: relanguaged.recipientId, publisherId: relanguaged.publisherId, purpose: relanguaged.purpose, memberships: [relanguaged] } }));
+    expect(after).toEqual(before);
+  }
+});
+it("a language preference is neither consent nor access: does not turn a language setting into access to a protected edition", async () => {
+  const reader = sessionOf(await resolveSession(READER_SOURCE), "the reader persona's session");
+  const reasonCodes = new Set<string>();
+  for (const requestedLocale of ["en", "ar", "fr", "cy"]) {
+    const page = await reads.pages.readPageLocales({ pageId: PAGE_DOCUMENT, requestedLocale, session: READER_SOURCE });
+    reasonCodes.add(denialOf(page, `readPageLocales(${PAGE_DOCUMENT}, ${requestedLocale}) as a reader persona`).reasonCode);
+    const release = await reads.updates.readRelease({ variantId: "variant-update-autumn-en-approved-supporter", session: READER_SOURCE });
+    reasonCodes.add(denialOf(release, `readRelease for ${requestedLocale} as a reader persona`).reasonCode);
+    expect(grantOf(canReadProtected(reader, { audience: "approved-supporter", reader: null }))).toEqual({ allowed: false, reasonCode: "no-protected-grant" }); // The permission question itself takes no language at all: a protected read is decided from the grant, so a preference can neither widen nor narrow it.
+  }
+  expect([...reasonCodes]).toEqual(["not-admitted"]);
+});
+it("a language preference is neither consent nor access: never changes the audience as a side effect of resolving a language", async () => {
+  const update = await editionsOf(UPDATE_DOCUMENT);
+  const asPublic = resolved(resolveEdition(update, "de", "public", "en"), "German for the public audience");
+  const asSupporter = resolved(resolveEdition(update, "de", "approved-supporter", "en"), "German for the approved-supporter audience");
+  expect([asPublic.release.audience, asSupporter.release.audience, asPublic.release.releaseId, asSupporter.release.releaseId]).toEqual(["public", "approved-supporter", EN_PUBLIC_RELEASE, EN_SUPPORTER_RELEASE]);
+  expect(asPublic.release.releaseId).not.toBe(asSupporter.release.releaseId);
 });
 describe("direction is content, not styling", () => {
   it("carries the direction on the edition record, with a BCP-47 language tag", async () => {
@@ -353,5 +347,20 @@ describe("direction is content, not styling", () => {
     expect([substituted.fallbackOccurred, substituted.servedLocale.tag]).toEqual([true, "en"]);
     expect(substituted.servedLocale.tag).not.toBe(substituted.requestedLocale);
     expect(substituted.release.releaseId).toBe(EN_PUBLIC_RELEASE);
+  });
+  /** Every way the classification is asked. It is decided here and nowhere else: a notice rendition is stamped with this answer (content/notice.ts), so is a preview whose record states no direction (content/preview.ts), and so is a served release's own locale (data-service/reads/content.ts). A language or script missing from its tables therefore turns that content left-to-right, which no seeded record would reveal, because every seeded record states its own direction. */
+  const DIRECTION_OF_TAG_CASES = [
+    { shown: "Arabic, a language written right to left", tag: "ar", direction: "rtl" },
+    { shown: "Hebrew, a language written right to left", tag: "he", direction: "rtl" },
+    { shown: "Persian carrying a region subtag, which must not defeat the language", tag: "fa-IR", direction: "rtl" },
+    { shown: "English, a language written left to right", tag: "en", direction: "ltr" },
+    { shown: "Azerbaijani in Arabic script, a left-to-right language written right to left", tag: "az-Arab", direction: "rtl" },
+    { shown: "Arabic in Latin script, where the script stated wins over the language", tag: "ar-Latn", direction: "ltr" },
+    { shown: "A language display name no tag parser can read, which is never guessed at", tag: "English (US)", direction: "ltr" },
+    { shown: "An empty tag, which is left-to-right rather than guessed", tag: "", direction: "ltr" },
+    { shown: "Arabic in upper case, since the classification reads case-insensitively", tag: "AR", direction: "rtl" },
+  ] as const;
+  it.each(DIRECTION_OF_TAG_CASES)("classifies $shown as $direction, the direction a notice rendition and a record stating no direction are served in", ({ tag, direction }) => {
+    expect(directionOfTag(tag)).toBe(direction);
   });
 });

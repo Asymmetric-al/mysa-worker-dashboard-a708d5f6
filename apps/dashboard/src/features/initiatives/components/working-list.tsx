@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
+import { countFormatOf } from "@/lib/count-format";
 import { assertNever } from "@/lib/result";
 import type { MutationInput, MutationOutcome, PerItemResult, ReadAction, ReadEnvelope, Scope, ValueState, reads } from "@/modules/data-service";
 import { CLOSURE_COPY, INITIATIVE_COPY, MEMBERSHIP_RULES_COPY, MEMBERSHIP_STATES, MEMBERSHIP_STATE_COPY, REQUESTED_TERMS_COPY, STAGE_SELECTOR_COPY, STAGE_STATE_COPY, STATE_NOTICE_COPY, type MembershipState, type StageState } from "../copy";
@@ -20,16 +21,14 @@ import { useInitiative, type InitiativeReadWindow } from "../hooks/use-initiativ
 import { invalidateInitiativeReads, useRemoveMember, useReturnMember, type NamedChange } from "../hooks/use-initiative-mutations";
 import { MEMBER_ACTION_STATE, type RemoveMemberPayload } from "../schemas/member";
 import CloseInitiativeDialog from "./close-initiative-dialog";
-import { CountFigure, countFormat, StatedInstant, TermFact } from "./figures";
+import { CountFigure, StatedInstant, TermFact } from "./figures";
 import MemberPicker, { type MemberCandidate, type MemberCandidates } from "./member-picker";
 import ReopenInitiativeDialog from "./reopen-initiative-dialog";
 import StageSelector from "./stage-selector";
 type DetailEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"];
 type InitiativeDetail = DetailEnvelope["data"];
 type MemberRow = InitiativeDetail["workingList"]["items"][number];
-type MemberHistoryEntry = MemberRow["history"][number];
 type ValueStates = Readonly<Record<string, ValueState>>;
-type DetailRefusal = Exclude<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>;
 type MemberTask = "remove" | "return";
 const SECTION_HEADING_TAG = { 2: "h2", 3: "h3" } as const;
 const GROUP_HEADING_TAG = { 2: "h3", 3: "h4" } as const;
@@ -43,7 +42,7 @@ const WORKING_LIST_COPY = {
   partnerSingular: "partner",
   partnerPlural: "partners",
   countsNote: "Each state is counted on its own: nothing here is summed, and no state stands in for another.",
-  partialPage: (shown: number, count: number): string => `This page of the read carries ${countFormat.format(shown)} of the ${countFormat.format(count)} partners in this state.`,
+  partialPage: (shown: number, count: number): string => `This page of the read carries ${countFormatOf().format(shown)} of the ${countFormatOf().format(count)} partners in this state.`,
   addedTerm: "Added",
   returnedTerm: "Returned",
   notReturned: "Not returned",
@@ -79,13 +78,11 @@ const RETURN_COPY = { trigger: "Return to the working list", shortTrigger: "Retu
 const REMOVE_FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", memberId: "Working-list member", reason: REMOVE_COPY.reasonLabel };
 const RETURN_FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", memberId: "Working-list member" };
 const REMOVE_REASON_MAX_LENGTH = 500;
-const ROW_REVIEW_HEADING = 4;
 const STANDING_OUTCOMES: ReadonlySet<MutationOutcome["outcome"]> = new Set<MutationOutcome["outcome"]>(["accepted", "alreadyAccepted", "unchanged"]);
 const MEMBERSHIP_TONE: Readonly<Record<MembershipState, StatusTone>> = { included: "positive", removed: "neutral", excluded: "caution" };
 const STAGE_STATE_OF_READ: Readonly<Record<MemberRow["stageState"], StageState | null>> = { admitted: "recorded", retired: "retired", unrecorded: null };
 const STAGE_STATE_TONE: Readonly<Record<StageState, StatusTone>> = { recorded: "neutral", retired: "caution", denied: "caution", unavailable: "danger" };
 const countStateOf = (valueStates: ValueStates, state: MembershipState, count: number): ValueState => valueStates[`initiative.memberStates.${state}`] ?? (count === 0 ? "zero" : "value");
-const stageStateOf = (valueStates: ValueStates, member: MemberRow): ValueState => valueStates[`${member.memberId}.stage`] ?? "unknown";
 const returnedStateOf = (valueStates: ValueStates, member: MemberRow): ValueState => valueStates[`${member.memberId}.returnedAt`] ?? (member.returnedAt === null ? "unknown" : "value");
 const memberRevisionOf = (member: MemberRow, expectedRevision: string): string => (member.revision.trim() === "" ? expectedRevision : member.revision);
 const RefusalNote = ({ title, text }: { readonly title?: string; readonly text: string }): ReactElement => (
@@ -126,14 +123,12 @@ function StageValue({ member, stageState, valueState }: { readonly member: Membe
     </span>
   );
 }
-function MemberHistory({ entries }: { readonly entries: readonly MemberHistoryEntry[] }): ReactElement {
+function MemberHistory({ entries }: { readonly entries: readonly MemberRow["history"][number][] }): ReactElement {
   const headingId = useId();
   if (entries.length === 0) return <p className="text-xs text-pretty text-muted-foreground">{WORKING_LIST_COPY.noHistory}</p>;
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <p id={headingId} className="text-xs font-medium text-muted-foreground">
-        {WORKING_LIST_COPY.historyHeading}
-      </p>
+      <p {...{ id: headingId, className: "text-xs font-medium text-muted-foreground" }}>{WORKING_LIST_COPY.historyHeading}</p>
       <ul aria-labelledby={headingId} className="flex min-w-0 flex-col gap-1.5 text-xs">
         {entries.map((entry, index) => (
           <li key={`${entry.at}-${entry.state}-${String(index)}`} className="flex min-w-0 flex-col gap-0.5">
@@ -184,7 +179,7 @@ interface MemberSurfaceContext {
 }
 type StageCellProps = MemberSurfaceContext & { readonly member: MemberRow };
 function StageCell({ initiativeId, member, scope, valueStates, admittedStages, stageAction, expectedRevision, onOutcome, onCheckResult }: StageCellProps): ReactElement {
-  if (member.state !== "included") return <StageValue member={member} stageState={STAGE_STATE_OF_READ[member.stageState]} valueState={stageStateOf(valueStates, member)} />;
+  if (member.state !== "included") return <StageValue member={member} stageState={STAGE_STATE_OF_READ[member.stageState]} valueState={valueStates[`${member.memberId}.stage`] ?? "unknown"} />;
   return <StageSelector initiativeId={initiativeId} member={member} admittedStages={admittedStages} scope={scope} expectedRevision={memberRevisionOf(member, expectedRevision)} stageAction={stageAction} onOutcome={onOutcome} onCheckResult={onCheckResult} className="min-w-0" />;
 }
 function ReturnedFigure({ member, valueState }: { readonly member: MemberRow; readonly valueState: ValueState }): ReactElement {
@@ -225,9 +220,7 @@ const memberColumns = (surface: MemberSurfaceContext): ReadonlyArray<RecordListC
   { id: "added", header: COLUMN_COPY.added, enableSorting: false, cell: ({ row }) => addedFigureOf(row.original) },
   { id: "returned", header: COLUMN_COPY.returned, enableSorting: false, cell: ({ row }) => returnedFigureOf(row.original, surface.valueStates) },
 ];
-const memberRowId = (row: MemberRow): string => row.memberId;
-type MemberCardListProps = { readonly surface: MemberSurfaceProps; readonly rows: readonly MemberRow[]; readonly label: string; readonly className?: string };
-const MemberCardList = ({ surface, rows, label, className }: MemberCardListProps): ReactElement => (
+const MemberCardList = ({ surface, rows, label, className }: { readonly surface: MemberSurfaceProps; readonly rows: readonly MemberRow[]; readonly label: string; readonly className?: string }): ReactElement => (
   <div data-slot="working-list-members" className={cn("min-w-0", className)}>
     <ul aria-label={label} className="flex min-w-0 flex-col gap-3">
       {rows.map((member) => (
@@ -336,7 +329,7 @@ function MemberReviewBody({ review, initiativeId, scope, onChanged, onCheckResul
   );
   const taskCopy = removing ? REMOVE_COPY : RETURN_COPY;
   const memberName = <bdi className="min-w-0 wrap-anywhere">{review.partnerDisplayName}</bdi>;
-  const reviewProps = { headingLevel: ROW_REVIEW_HEADING, onCancel: onClose, onSettled: settle, checkResult: onCheckResult } as const;
+  const reviewProps = { headingLevel: 4, onCancel: onClose, onSettled: settle, checkResult: onCheckResult } as const;
   const descriptionOf = (lead: string, statements: readonly string[]): ReactElement => (
     <div className="flex min-w-0 flex-col gap-1">
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
@@ -375,9 +368,7 @@ function MemberReviewBody({ review, initiativeId, scope, onChanged, onCheckResul
       )}
       {settled === null ? null : (
         <DialogFooter>
-          <Button type="button" variant="outline" size="sm" onClick={onClose}>
-            {WORKING_LIST_COPY.doneLabel}
-          </Button>
+          <Button {...{ type: "button", variant: "outline", size: "sm", onClick: onClose }}>{WORKING_LIST_COPY.doneLabel}</Button>
         </DialogFooter>
       )}
     </div>
@@ -423,25 +414,15 @@ function ClosureControl({ initiativeId, envelope, closeAction, reopenAction, lev
   const offersReopen = reopenAction?.available === true;
   return (
     <section aria-labelledby={headingId} data-slot="working-list-closure" className="flex min-w-0 flex-col gap-3">
-      <Heading id={headingId} className={cn(GROUP_HEADING_SCALE[level], "text-pretty")}>
-        {WORKING_LIST_COPY.closureHeading}
-      </Heading>
+      <Heading {...{ id: headingId, className: cn(GROUP_HEADING_SCALE[level], "text-pretty") }}>{WORKING_LIST_COPY.closureHeading}</Heading>
       <div className="flex min-w-0 flex-col gap-1 text-sm text-pretty text-muted-foreground">
         <p>{CLOSURE_COPY.closeHelp}</p>
         <p>{CLOSURE_COPY.historyPreservedNote}</p>
         <p>{CLOSURE_COPY.lateResponseNote}</p>
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {offersClose ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => setDialog("close")}>
-            {CLOSURE_COPY.closeHeading}
-          </Button>
-        ) : null}
-        {offersReopen ? (
-          <Button type="button" variant="outline" size="sm" onClick={() => setDialog("reopen")}>
-            {CLOSURE_COPY.reopenHeading}
-          </Button>
-        ) : null}
+        {offersClose ? <Button {...{ type: "button", variant: "outline", size: "sm", onClick: () => setDialog("close") }}>{CLOSURE_COPY.closeHeading}</Button> : null}
+        {offersReopen ? <Button {...{ type: "button", variant: "outline", size: "sm", onClick: () => setDialog("reopen") }}>{CLOSURE_COPY.reopenHeading}</Button> : null}
       </div>
       {offersClose ? null : <RefusalNote title={CLOSURE_COPY.closeHeading} text={closeAction?.reason ?? WORKING_LIST_COPY.unstatedRefusal} />}
       {offersReopen ? null : <RefusalNote title={CLOSURE_COPY.reopenHeading} text={reopenAction?.reason ?? WORKING_LIST_COPY.unstatedRefusal} />}
@@ -480,6 +461,7 @@ function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onWind
     [initiativeId, scope, valueStates, admittedStages, stageAction, revision, onChanged, onCheckResult, removeAction, returnAction],
   );
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<MemberRow>>>(() => memberColumns(surface), [surface]);
+  const rowActionsOf = (row: MemberRow): ReactElement => <RowActions member={row} expectedRevision={revision} removeAction={removeAction} returnAction={returnAction} onReview={setReview} />;
   const listLabel = `${INITIATIVE_COPY.membersHeading} for ${data.initiative.name}, ${WORKING_LIST_COPY.listSuffix}`;
   function handleQueryStateChange(next: RecordListQueryState): void {
     if (next.columnVisibility !== columnVisibility) setColumnVisibility(next.columnVisibility);
@@ -495,18 +477,7 @@ function WorkingListBody({ initiativeId, envelope, candidates, onChanged, onWind
       ) : (
         <>
           <div className="hidden min-w-0 md:block">
-            <RecordList
-              label={listLabel}
-              columns={columns}
-              rows={rows}
-              rowCount={total}
-              queryState={listQueryState}
-              onQueryStateChange={handleQueryStateChange}
-              getRowId={memberRowId}
-              rowActions={(row) => <RowActions member={row} expectedRevision={revision} removeAction={removeAction} returnAction={returnAction} onReview={setReview} />}
-              itemNoun={WORKING_LIST_COPY.memberNoun}
-              pageSizeOptions={[data.workingList.pageSize]}
-            />
+            <RecordList label={listLabel} columns={columns} rows={rows} rowCount={total} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={(row) => row.memberId} rowActions={rowActionsOf} itemNoun={WORKING_LIST_COPY.memberNoun} pageSizeOptions={[data.workingList.pageSize]} />
           </div>
           <MemberCardList surface={surface} rows={rows} label={listLabel} className="md:hidden" />
           {rows.length < total ? <p className="text-xs text-pretty text-muted-foreground">{WORKING_LIST_COPY.partialPage(rows.length, total)}</p> : null}
@@ -546,13 +517,11 @@ export default function WorkingList({ initiativeId, envelope, candidates, onChan
   const checkResult = useCallback((): void => void invalidateInitiativeReads(queryClient, envelope.scope), [queryClient, envelope.scope]);
   const result = query.status === "ready" ? query.result : undefined;
   const current = result !== undefined && result.kind === "envelope" ? result.envelope : envelope;
-  const refusal: DetailRefusal | undefined = result !== undefined && result.kind !== "envelope" ? result : undefined;
+  const refusal: Exclude<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }> | undefined = result !== undefined && result.kind !== "envelope" ? result : undefined;
   const Heading = SECTION_HEADING_TAG[headingLevel];
   return (
     <section aria-labelledby={headingId} data-slot="working-list" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
-      <Heading id={headingId} className={cn(SECTION_HEADING_SCALE[headingLevel], "text-pretty")}>
-        {INITIATIVE_COPY.membersHeading}
-      </Heading>
+      <Heading {...{ id: headingId, className: cn(SECTION_HEADING_SCALE[headingLevel], "text-pretty") }}>{INITIATIVE_COPY.membersHeading}</Heading>
       {refusal === undefined ? (
         <WorkingListBody initiativeId={initiativeId} envelope={current} candidates={candidates} onChanged={onChanged} onWindowChange={onWindowChange} onCheckResult={checkResult} level={headingLevel} />
       ) : refusal.kind === "denied" ? (

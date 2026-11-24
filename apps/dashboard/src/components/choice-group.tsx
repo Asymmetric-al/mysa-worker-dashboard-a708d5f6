@@ -1,8 +1,7 @@
 "use client";
 import type { ReactElement } from "react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-/** One admitted choice: the label the option states, and the hint that says what choosing it means. */
-export type ChoiceWording = { readonly label: string; readonly hint: string };
+/** One admitted choice: the label the option states, and the hint that says what choosing it means. */ export type ChoiceWording = { readonly label: string; readonly hint: string };
 /** The frame a {@link FormFieldGroup} hands the group it frames, so the legend, the description and the refusal are the field's own. */
 export type ChoiceGroupFrame = { readonly legendId: string; readonly describedBy: string | undefined; readonly invalid: boolean; readonly required?: boolean };
 export type ChoiceGroupProps<T extends string> = {

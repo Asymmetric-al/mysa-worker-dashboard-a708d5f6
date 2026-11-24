@@ -1,4 +1,4 @@
-/** The browser journey runner: one Chromium project driving the real application through the same */
+/** The browser journey runner: one Chromium project driving the real application through the same seeded store and reset the specs assert against. */
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -28,7 +28,7 @@ export interface SeededPersona {
   readonly kind: SeededPersonaKind;
   readonly description: string; // What this identity is admitted to and may do, in the seed's own words.
 }
-/** The seeded persona roster, mirrored from `modules/dev-runtime/seed.ts`: one row per persona of that */
+/** The seeded persona roster, mirrored from `modules/dev-runtime/seed.ts`: one row per persona of that roster. */
 export const SEEDED_PERSONAS: Readonly<Record<PersonaName, SeededPersona>> = {
   "new-worker": { sessionId: "new-worker", resetSessionId: "new-worker", label: "New worker", kind: "worker", description: "A worker with no gifts, goal, subscription or integration, starting from a private contact, a task and an Update whose first draft is unwritten." },
   "established-worker": { sessionId: "established-worker", resetSessionId: "established-worker", label: "Established worker", kind: "worker", description: "A worker with years of support, recurring gifts, partners, drafts and pages, across two ministries." },
@@ -42,16 +42,8 @@ export const SEEDED_PERSONAS: Readonly<Record<PersonaName, SeededPersona>> = {
   subscriber: { sessionId: "subscriber", resetSessionId: "established-worker", label: "Subscriber", kind: "reader", description: "A reader with a purpose-specific membership, choosing Off or Immediate for that purpose alone." },
 };
 export const DEFAULT_PERSONA: PersonaName = "established-worker"; // The persona a spec acts as when it names none: the established worker, which the seed makes its default session.
-export interface ResetScope extends Record<string, string> {
-  readonly organizationId: string; // The four identifiers a mutation claims, in the shape the read envelope states them.
-  readonly ministryId: string;
-  readonly supportSubjectId: string;
-  readonly principalId: string;
-}
-export interface DevStateEnvelope {
-  readonly scope: ResetScope; // The two members of a `GET /api/dev` envelope a reset presents: the authority it ran under and the revision it saw.
-  readonly revision: string;
-}
+export type ResetScope = Record<string, string> & { readonly organizationId: string; readonly ministryId: string; readonly supportSubjectId: string; readonly principalId: string }; // The four identifiers a mutation claims, in the shape the read envelope states them.
+export type DevStateEnvelope = { readonly scope: ResetScope; readonly revision: string }; // The two members of a `GET /api/dev` envelope a reset presents: the authority it ran under and the revision it saw.
 type DevStateRead = { readonly kind: "state"; readonly state: DevStateEnvelope } | { readonly kind: "refused"; readonly status: number; readonly outcome: string; readonly detail: string };
 export async function resetSeed(request: APIRequestContext, persona: PersonaName = DEFAULT_PERSONA): Promise<void> {
   const resetSessionId = seededPersona(persona).resetSessionId; // Restores the deterministic seed, as the persona the spec names, before a spec reads anything.
@@ -71,9 +63,7 @@ export async function resetSeed(request: APIRequestContext, persona: PersonaName
     );
   }
 }
-function cookieHeaderFor(sessionId: string): string {
-  return `${SESSION_COOKIE}=${sessionId}`; // The `Cookie` header a control's requests carry: the one identity this application authorises a control as.
-}
+const cookieHeaderFor = (sessionId: string): string => `${SESSION_COOKIE}=${sessionId}`; // The `Cookie` header a control's requests carry: the one identity this application authorises a control as.
 function seededPersona(persona: PersonaName): SeededPersona {
   if (!Object.hasOwn(SEEDED_PERSONAS, persona)) throw new Error(`No seeded persona is named ${JSON.stringify(persona)}. This runner seeds ${Object.keys(SEEDED_PERSONAS).join(", ")}, so a spec states one of those and the reset acts for the session that persona's cookie names.`); // The roster row a persona names, refusing a name the roster does not hold so a mistyped persona cannot reset a session no spec asked for.
   return SEEDED_PERSONAS[persona];
@@ -133,9 +123,7 @@ export function parseJson(text: string): unknown {
     return undefined;
   }
 }
-function isResetScope(value: unknown): value is ResetScope {
-  return isRecord(value) && SCOPE_MEMBERS.every((member) => typeof value[member] === "string" && value[member].length > 0);
-}
+const isResetScope = (value: unknown): value is ResetScope => isRecord(value) && SCOPE_MEMBERS.every((member) => typeof value[member] === "string" && value[member].length > 0);
 function devStateEnvelopeOf(body: unknown): DevStateEnvelope | undefined {
   if (!isRecord(body) || !isResetScope(body.scope) || typeof body.revision !== "string" || body.revision.length === 0) return undefined;
   return { scope: body.scope, revision: body.revision };
@@ -146,9 +134,7 @@ export function detailOf(text: string): string {
 }
 /** One parsed JSON object, as an untyped record whose members are read through the helpers below. */ // Reading the JSON answers every spec captures its evidence from
 export type JsonRecord = Record<string, unknown>;
-export function isRecord(value: unknown): value is JsonRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value); // Whether a parsed answer is a JSON object, which is the shape every envelope this suite reads states.
-}
+export const isRecord = (value: unknown): value is JsonRecord => typeof value === "object" && value !== null && !Array.isArray(value); // Whether a parsed answer is a JSON object, which is the shape every envelope this suite reads states.
 export async function jsonOf(answer: { text(): Promise<string> }, what: string): Promise<unknown> {
   const text = await answer.text(); // A response body as JSON, refusing a body that is not one: an HTML error page is not an answer.
   try {
@@ -188,9 +174,7 @@ export function recordAt(value: unknown, path: readonly string[], what: string):
   if (!isRecord(found)) throw new Error(envelopeAt(value, path, what));
   return found;
 }
-export function recordsAt(value: unknown, path: readonly string[], what: string): readonly JsonRecord[] {
-  return arrayAt(value, path, what).map((entry, index) => recordAt(entry, [], `${what} at index ${String(index)}`)); // One list of objects: the shape every collection this suite counts arrives in.
-}
+export const recordsAt = (value: unknown, path: readonly string[], what: string): readonly JsonRecord[] => arrayAt(value, path, what).map((entry, index) => recordAt(entry, [], `${what} at index ${String(index)}`)); // One list of objects: the shape every collection this suite counts arrives in.
 export function objectOf(value: unknown, subject: string): JsonRecord {
   if (!isRecord(value)) throw new Error(`${subject} is not the object this suite expects, so nothing is compared against it.`); // An object a capture is handed directly, refusing anything else with what it was meant to be.
   return value;
@@ -221,9 +205,7 @@ export function arrayAt(value: unknown, path: readonly string[], what: string): 
   if (!Array.isArray(found)) throw new Error(envelopeAt(value, path, what));
   return found;
 }
-export function outcomeOf(body: unknown): string {
-  return stringAt(body, ["outcome"], "A mutation's outcome"); // The one outcome a mutation answered with, which is the only member that describes what happened.
-}
+export const outcomeOf = (body: unknown): string => stringAt(body, ["outcome"], "A mutation's outcome"); // The one outcome a mutation answered with, which is the only member that describes what happened.
 export function outcomeOrUndefined(body: unknown): string | undefined {
   const found = fieldAt(body, "outcome"); // The outcome a body carries, or `undefined` for a body that carries none: the reading of an answer a spec tolerates either way.
   return typeof found === "string" ? found : undefined;
@@ -236,20 +218,14 @@ export function messagesAt(body: unknown, field: string): readonly string[] {
   const stated = fieldAt(body, "fields", field); // The per-field messages an `invalid` outcome keyed at one field path, as the flat list a receipt prints.
   return Array.isArray(stated) ? stated.filter((message): message is string => typeof message === "string") : [];
 }
-export function newAttemptId(): string {
-  return crypto.randomUUID(); // The identifier a caller mints for one attempt: the identity every replay of that attempt is recognised by.
-}
-function sessionHeaders(sessionId: string | undefined): Readonly<Record<string, string>> | undefined {
-  return sessionId === undefined ? undefined : { cookie: cookieHeaderFor(sessionId) }; // The headers a request made for one stated session carries, or none where the context's own cookies are the identity.
-}
+export const newAttemptId = (): string => crypto.randomUUID(); // The identifier a caller mints for one attempt: the identity every replay of that attempt is recognised by.
+const sessionHeaders = (sessionId: string | undefined): Readonly<Record<string, string>> | undefined => (sessionId === undefined ? undefined : { cookie: cookieHeaderFor(sessionId) }); // The headers a request made for one stated session carries, or none where the context's own cookies are the identity.
 export function scopeAt(body: unknown, what: string): ResetScope {
   const scope = fieldAt(body, "scope"); // The authority a read or a mutation states it ran under, refusing an answer that names none.
   if (!isResetScope(scope)) throw new Error(`${what} answered without the scope it ran under, so no control or comparison may present it: ${detailOf(JSON.stringify(body))}`);
   return scope;
 }
-export function authorityOf(body: unknown, what: string): DevStateEnvelope {
-  return { scope: scopeAt(body, what), revision: stringAt(body, ["revision"], `${what}'s revision`) }; // The scope and revision a content read presents, which every later compare-and-set on that content repeats.
-}
+export const authorityOf = (body: unknown, what: string): DevStateEnvelope => ({ scope: scopeAt(body, what), revision: stringAt(body, ["revision"], `${what}'s revision`) }); // The scope and revision a content read presents, which every later compare-and-set on that content repeats.
 export async function devStateOf(context: APIRequestContext, sessionId?: string): Promise<DevStateEnvelope> {
   const response = await context.get(RESET_URL, { headers: sessionHeaders(sessionId) }); // Reads one session's development state: the scope a control runs under and the revision it saw.
   const body = await jsonOf(response, "GET /api/dev");
@@ -292,16 +268,12 @@ export async function actAs(page: Page, sessionId: string): Promise<void> {
   await page.context().clearCookies(); // The jar is cleared first, so a cookie left by another identity is never sent beside this one: one request, one identity, and every later read is authorised again from this value.
   await page.context().addCookies([{ name: SESSION_COOKIE, value: sessionId, url: BASE_URL }]);
 }
-export function sessionCookie(sessionId: string): string {
-  return cookieHeaderFor(sessionId); // The `Cookie` header one seeded session's request carries, for a read made without a page.
-}
+export const sessionCookie = (sessionId: string): string => cookieHeaderFor(sessionId); // The `Cookie` header one seeded session's request carries, for a read made without a page.
 export async function openSurface(page: Page, linkName: string, heading: string): Promise<void> {
   await page.getByRole("link", { name: linkName, exact: true }).click(); // Opens one surface by operating the shell's own navigation, and states that the surface it opened is the one expected.
   await expect(page.getByRole("heading", { level: 1, name: heading }), `The shell's ${linkName} link opens the ${heading} surface.`).toBeVisible();
 }
-export function receiptIn(scope: Page | Locator): Locator {
-  return scope.locator('[data-slot="operation-result"]'); // The durable receipt of one settled mutation, as the component inside a stated scope states it.
-}
+export const receiptIn = (scope: Page | Locator): Locator => scope.locator('[data-slot="operation-result"]'); // The durable receipt of one settled mutation, as the component inside a stated scope states it.
 export async function expectAcceptedReceipt(scope: Page | Locator, where: string): Promise<void> {
   const receipt = receiptIn(scope); // Asserts one settled mutation left the durable `accepted` receipt rather than a toast.
   await expect(receipt, `The ${where} reports its own outcome, and it is the durable receipt rather than a toast.`).toHaveAttribute("data-outcome", "accepted");
@@ -310,18 +282,12 @@ export async function expectAcceptedReceipt(scope: Page | Locator, where: string
 const WCAG_22_AA_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] as const; // The tag set the audit runs: WCAG 2.2 level AA, with the level A and 2.1 rules it builds on.
 export type AccessibilityAudit = Awaited<ReturnType<AxeBuilder["analyze"]>>; // What one accessibility audit answers, in the shape `@axe-core/playwright` produces it.
 export type AccessibilityViolation = AccessibilityAudit["violations"][number]; // One rule an audit found a page violating, with the nodes that broke it.
-export function blockingAccessibilityViolations(audit: AccessibilityAudit): readonly AccessibilityViolation[] {
-  return audit.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious"); // The serious and critical violations of an audit: the ones a pass may not carry, minor and moderate findings excluded.
-}
+export const blockingAccessibilityViolations = (audit: AccessibilityAudit): readonly AccessibilityViolation[] => audit.violations.filter((violation) => violation.impact === "critical" || violation.impact === "serious"); // The serious and critical violations of an audit: the ones a pass may not carry, minor and moderate findings excluded.
 /** The persistent label this application states on every surface, asserted wherever a surface is read. */ // The keyboard, reflow, target-size, motion, zoom and audit harness criterion 20 measures with
 export async function expectDevelopmentData(page: Page, surface: string): Promise<void> {
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first(), `${surface} states the persistent Development data label, so no screen of this application can be mistaken for production.`).toBeVisible();
 }
-export interface FocusReading {
-  readonly ok: boolean; // What one look at the focused element answers: whether a keyboard user can see it and reach it, and what it is called.
-  readonly name: string;
-  readonly reason: string;
-}
+export type FocusReading = { readonly ok: boolean; readonly name: string; readonly reason: string }; // What one look at the focused element answers: whether a keyboard user can see it and reach it, and what it is called.
 /** Reads the element that currently holds focus. */
 export async function readFocus(page: Page): Promise<FocusReading> {
   return page.evaluate(() => {
@@ -362,10 +328,13 @@ export async function readFocus(page: Page): Promise<FocusReading> {
     return { ok: true, name: shortened, reason: "" };
   });
 }
+/** Asserts the focused control is visible and unobscured, reading it only once the browser has finished scrolling and styling it, and naming the step that left focus where it is. */
 export async function expectFocusVisibleAndUnobscured(page: Page, step: string): Promise<FocusReading> {
-  let reading = await readFocus(page); // Asserts the focused control is visible and not covered, naming the step that left focus where it is.
-  for (let attempt = 2; attempt <= FOCUS_READ_ATTEMPTS && !reading.ok; attempt += 1) {
-    await settleLayout(page); // A focus change and its style apply asynchronously, so the reading is retaken once the layout settles, a bounded number of times; a control that stays covered fails on the last.
+  // A focus change and the scroll-into-view and focus style it triggers land a frame or more apart, and further apart again on a loaded host, so the reading is retaken until the browser has stopped moving: bounded in real time, and always reported from the last reading, which is the one a control that never arrives fails on.
+  const deadline = Date.now() + FOCUS_READ_DEADLINE_MS;
+  let reading = await readFocus(page);
+  while (!reading.ok && Date.now() < deadline) {
+    await settleLayout(page);
     reading = await readFocus(page);
   }
   expect(reading.ok, `${step}: the focused control must be visible and unobscured (WCAG 2.4.11), and ${reading.name === "" ? "no control" : JSON.stringify(reading.name)} was ${reading.reason}.`).toBe(true);
@@ -380,35 +349,59 @@ export async function expectScrollPaddingSet(page: Page, surface: string): Promi
   expect(paddings.length, `${surface} states the scroll ports whose padding is read.`).toBeGreaterThan(0);
   for (const padding of paddings) expect(Number.parseFloat(padding), `${surface}: every scroll port states a scroll-padding-block-start (${JSON.stringify(padding)}), so a focused control is scrolled clear of the sticky shell rather than under it.`).toBeGreaterThan(0);
 }
-/** Waits for the layout to settle after a state change, so a reading describes the page a person actually sees. */
+/** The bounds one settle waits under: what has to stand still, for how long, and for how long at most. */
+interface SettleLimits {
+  readonly quietMs: number; // How long the reading must be unchanged before the layout counts as settled.
+  readonly stableFrames: number; // How many consecutive animation frames must agree on it.
+  readonly deadlineMs: number; // How long a settle waits at most, so a control that never stops moving is reported rather than waited on forever.
+}
+/** Waits for the browser to finish moving what a focus change moves, so a reading describes the page a person actually sees. */
 export async function settleLayout(page: Page): Promise<void> {
-  // The frame limit travels as an argument, not as a closure over a module constant: this function is serialised into the page, where the module's bindings do not exist.
+  // The limits travel as an argument, not as a closure over module constants: this function is serialised into the page, where the module's bindings do not exist.
   await page.evaluate(
-    (limit: number) =>
+    (limits: SettleLimits) =>
       new Promise<void>((resolve) => {
+        const startedAt = performance.now();
         let previous = "";
         let stableFrames = 0;
-        const step = (attempt: number): void => {
+        let stableSince = startedAt;
+        // The scroll ports are part of the reading: a keyboard focus scrolls the ports that hold the control a frame or more after the focus lands, so a still box over a port that is still moving is a layout that has not settled. Every scrollable ancestor is included rather than only the nearest one, because both the table's region and the page itself scroll a row into view.
+        const offsetsOf = (element: Element): string => `${element.scrollLeft.toFixed(1)},${element.scrollTop.toFixed(1)}`;
+        const signatureOf = (): string => {
           const active = document.activeElement;
-          const box = active instanceof Element ? active.getBoundingClientRect() : null;
-          const signature = box === null ? "" : `${box.x.toFixed(1)},${box.y.toFixed(1)},${box.width.toFixed(1)},${box.height.toFixed(1)}`;
-          stableFrames = signature !== "" && signature === previous ? stableFrames + 1 : 0;
-          previous = signature;
-          if (stableFrames >= 2 || attempt >= limit) {
+          if (!(active instanceof Element)) return "";
+          const box = active.getBoundingClientRect();
+          const ports = [`${window.scrollX.toFixed(1)},${window.scrollY.toFixed(1)}`];
+          for (let current: Element | null = active; current !== null; current = current.parentElement) {
+            if (current.scrollHeight > current.clientHeight || current.scrollWidth > current.clientWidth) ports.push(offsetsOf(current));
+          }
+          return `${box.x.toFixed(1)},${box.y.toFixed(1)},${box.width.toFixed(1)},${box.height.toFixed(1)}|${ports.join(";")}`;
+        };
+        const step = (): void => {
+          const now = performance.now();
+          const signature = signatureOf();
+          if (signature !== "" && signature === previous) {
+            stableFrames += 1;
+          } else {
+            previous = signature;
+            stableFrames = 0;
+            stableSince = now;
+          }
+          if (stableFrames >= limits.stableFrames && now - stableSince >= limits.quietMs) {
             resolve();
             return;
           }
-          requestAnimationFrame(() => {
-            step(attempt + 1);
-          });
+          if (now - startedAt >= limits.deadlineMs) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(step);
         };
         requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            step(0);
-          });
+          requestAnimationFrame(step);
         });
       }),
-    SETTLE_ATTEMPT_LIMIT,
+    { quietMs: SETTLE_QUIET_MS, stableFrames: SETTLE_STABLE_FRAMES, deadlineMs: SETTLE_DEADLINE_MS },
   );
 }
 /** Focuses a control without a pointer, proves the focus landed, and then operates it from the keyboard alone. */
@@ -462,14 +455,8 @@ export async function expectFocusInsideDialog(picker: Locator, step: string): Pr
   expect(inside, step).toBe(true);
 }
 // Reflow: the page never scrolls sideways, and a table's own region is the only port that may
-export interface ReflowReading {
-  readonly scrollWidth: number; // What the document's own scroller states: the content it holds, the width it shows, and the viewport it is in.
-  readonly clientWidth: number;
-  readonly viewportWidth: number;
-}
-export async function readReflow(page: Page): Promise<ReflowReading> {
-  return page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth, viewportWidth: window.innerWidth }));
-}
+export type ReflowReading = { readonly scrollWidth: number; readonly clientWidth: number; readonly viewportWidth: number }; // What the document's own scroller states: the content it holds, the width it shows, and the viewport it is in.
+export const readReflow = async (page: Page): Promise<ReflowReading> => page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth, viewportWidth: window.innerWidth }));
 export async function expectNoHorizontalPageScroll(page: Page, surface: string): Promise<void> {
   const reading = await readReflow(page); // Asserts the page itself does not scroll horizontally, which is the reflow obligation at 320 CSS px and at 200 % zoom.
   expect(
@@ -477,12 +464,7 @@ export async function expectNoHorizontalPageScroll(page: Page, surface: string):
     `${surface} must not scroll horizontally (WCAG 1.4.10 Reflow): the document holds ${String(reading.scrollWidth)} CSS px of content in a ${String(reading.clientWidth)} px viewport (${String(reading.viewportWidth)} px of window), so ${String(reading.scrollWidth - reading.clientWidth)} px would have to be reached by scrolling sideways.`,
   ).toBeLessThanOrEqual(reading.clientWidth + 1);
 }
-export interface AncestorOverflow {
-  readonly element: string; // One element between the page and a scroll region: what it is, and how much of it overflows sideways.
-  readonly overflowX: string;
-  readonly scrollWidth: number;
-  readonly clientWidth: number;
-}
+export type AncestorOverflow = { readonly element: string; readonly overflowX: string; readonly scrollWidth: number; readonly clientWidth: number }; // One element between the page and a scroll region: what it is, and how much of it overflows sideways.
 export async function expectSoleHorizontalScroller(page: Page, region: Locator, surface: string): Promise<void> {
   await expect(region, `${surface} renders its table inside the one scroll region.`).toHaveAttribute("tabindex", "0"); // Asserts one named table region is the only horizontal scroll port on the surface.
   await expect(region, `${surface} names the scroll region it renders, so it is a labelled landmark.`).toHaveAttribute("aria-label", /, scrollable$/u);
@@ -503,12 +485,7 @@ export async function expectSoleHorizontalScroller(page: Page, region: Locator, 
   }
 }
 /** One control that rendered below the 24×24 CSS px floor, with whether its spacing saves it. */ // Target size (2.5.8) and motion (2.3.3 / reduced motion): the two floors a control can miss
-export interface UndersizedTarget {
-  readonly label: string;
-  readonly width: number;
-  readonly height: number;
-  readonly spaced: boolean;
-}
+export type UndersizedTarget = { readonly label: string; readonly width: number; readonly height: number; readonly spaced: boolean };
 /** Measures every control inside one named scope against the 24×24 CSS px floor. */
 export async function measureUndersizedTargets(scope: Locator, floor: number): Promise<readonly UndersizedTarget[]> {
   return scope.evaluate(
@@ -552,10 +529,7 @@ export async function expectTargetSizeFloor(page: Page, scope: Locator, surface:
     `${surface}: every control is at least ${String(TARGET_FLOOR_PX)}×${String(TARGET_FLOOR_PX)} CSS px or satisfies the spacing exception (WCAG 2.5.8)${saved.length === 0 ? "" : `, and ${String(saved.length)} control(s) below the floor relied on the spacing exception`}.`,
   ).toEqual([]);
 }
-export interface MotionReading {
-  readonly slowestSeconds: number; // The slowest motion one scope's controls declare, in seconds, with the control that declares it.
-  readonly control: string;
-}
+export type MotionReading = { readonly slowestSeconds: number; readonly control: string }; // The slowest motion one scope's controls declare, in seconds, with the control that declares it.
 /** Reads the longest transition and animation a scope's controls declare. */
 export async function readLongestMotion(scope: Locator): Promise<MotionReading> {
   return scope.evaluate((root: Element) => {
@@ -633,8 +607,10 @@ export async function expectTextNotClipped(scope: Locator, surface: string): Pro
 const TARGET_FLOOR_PX = 24; // The 24×24 CSS px floor of WCAG 2.2 Target Size Minimum (2.5.8), and the diameter its spacing exception is measured in.
 const TARGET_SPACING_PX = 24;
 const PROXY_CONTROL_BOX_PX = 4; // The smallest box that counts as a control a person can target: the design system's one-pixel proxy is not it.
-const FOCUS_READ_ATTEMPTS = 3; // How many settled readings a focus check takes before it reports the control as obscured.
-const SETTLE_ATTEMPT_LIMIT = 12; // How many frames a settle waits at most, so a control that never stops moving is reported rather than waited on forever.
+const FOCUS_READ_DEADLINE_MS = 2_000; // How long a focus check keeps re-reading a control it cannot see: a keyboard focus scrolls its own port into view a frame or more after the focus lands, and further apart again on a loaded host, so the reading waits for the browser rather than sampling once and reporting the sample.
+const SETTLE_QUIET_MS = 100; // How long the focused control's box and the offsets of every scroll port it sits in must stay unchanged before the layout counts as settled.
+const SETTLE_STABLE_FRAMES = 2; // How many consecutive animation frames must agree on that reading, so one slow frame cannot pass as a settled one.
+const SETTLE_DEADLINE_MS = 2_000; // How long a settle waits at most, so a control that never stops moving is reported rather than waited on forever.
 const ATTACHED_NODE_LIMIT = 5; // How many offending nodes one attached finding names, so the report is readable rather than exhaustive.
 /** The fixtures a spec reaches the application through. */
 type RunnerFixtures = {
@@ -727,9 +703,7 @@ export function isInert(cell: string): boolean {
   if (first === undefined) return true;
   return first === NEUTRALISER || !DANGEROUS_LEADING_CHARS.includes(first);
 }
-export function withoutNeutraliser(cell: string): string {
-  return cell.startsWith(NEUTRALISER) ? cell.slice(NEUTRALISER.length) : cell; // A CSV cell with the writer's neutralising tab removed, so a number it holds is read as the writer stated it.
-}
+export const withoutNeutraliser = (cell: string): string => (cell.startsWith(NEUTRALISER) ? cell.slice(NEUTRALISER.length) : cell); // A CSV cell with the writer's neutralising tab removed, so a number it holds is read as the writer stated it.
 export async function csvTextOf(download: Download): Promise<string> {
   const stream = await download.createReadStream(); // The text of one downloaded file, decoded as the UTF-8 the writer states in its own content type.
   const chunks: Uint8Array[] = [];
@@ -819,15 +793,8 @@ export const CSV_FIELD = {
 } as const;
 export const DANGEROUS_LEADING_CHARS: readonly string[] = ["=", "+", "-", "@", "\t", "\r", "\n", "\uFF1D", "\uFF0B", "\uFF0D", "\uFF20"]; // The characters a spreadsheet may treat as the start of a formula, plus the neutraliser the writer
 export const NEUTRALISER = "\t";
-export interface StatedAmount {
-  readonly currency: string; // One exact amount as a surface states it: the currency the source named, and its integer minor units.
-  readonly minorUnits: number;
-}
-export interface CsvFile {
-  readonly metadata: ReadonlyMap<string, string>; // One parsed CSV file: its metadata records, its one column header record and its authorised rows.
-  readonly header: readonly string[];
-  readonly rows: readonly Readonly<Record<string, string>>[];
-}
+export type StatedAmount = { readonly currency: string; readonly minorUnits: number }; // One exact amount as a surface states it: the currency the source named, and its integer minor units.
+export type CsvFile = { readonly metadata: ReadonlyMap<string, string>; readonly header: readonly string[]; readonly rows: readonly Readonly<Record<string, string>>[] }; // One parsed CSV file: its metadata records, its one column header record and its authorised rows.
 export const AMOUNT_IN_TEXT = /(-?\d[\d,]*)(?:[.,](\d+))?\s+([A-Z]{2,})\b/u; // An amount as a surface displays it: an optional sign, thousands groups, an optional fraction whose
 export const AMOUNT_STATE_WORDS: readonly string[] = ["Unknown amount", "Withheld", "Source unavailable", "No recorded value"]; // The words a surface uses where a value is not a number. They are states, and never read as a zero.
 const TRANSPORT_SEGMENT = "api"; // The one router segment that answers requests rather than documents.
@@ -839,12 +806,8 @@ export function pageRoutesUnder(directory: string, segments: readonly string[]):
   const nested = entries.filter((entry) => entry.isDirectory() && !UNROUTED_SEGMENT.test(entry.name) && entry.name !== TRANSPORT_SEGMENT).flatMap((entry) => pageRoutesUnder(join(directory, entry.name), [...segments, entry.name]));
   return [...here, ...nested];
 }
-export function segmentsOf(path: string): readonly string[] {
-  return path.split("/").filter((segment) => segment !== ""); // The segments of an address, with the separators and any trailing slash dropped.
-}
-export function isDynamicSegment(segment: string): boolean {
-  return segment.startsWith("[") && segment.endsWith("]"); // Whether a template segment accepts any value: the router's own `[name]` form, and nothing else.
-}
+export const segmentsOf = (path: string): readonly string[] => path.split("/").filter((segment) => segment !== ""); // The segments of an address, with the separators and any trailing slash dropped.
+export const isDynamicSegment = (segment: string): boolean => segment.startsWith("[") && segment.endsWith("]"); // Whether a template segment accepts any value: the router's own `[name]` form, and nothing else.
 export function matchesTemplate(template: string, path: string): boolean {
   const expected = segmentsOf(template); // Whether one concrete address is an instance of one template: same depth, and a literal match wherever the template is literal.
   const actual = segmentsOf(path);
@@ -874,20 +837,13 @@ export function describeInventoryDifference(expected: readonly string[], served:
   if (unexpected.length > 0) lines.push(`  Served by src/app and named by no inventory row: ${unexpected.join(", ")}`);
   return lines.join("\n");
 }
-export interface RenditionAnswer {
-  readonly status: number; // One rendition response's status and headers, which is all a serving assertion needs from it.
-  readonly headers: Readonly<Record<string, string>>;
-  readonly body: string;
-  readonly contentType: string;
-}
+export type RenditionAnswer = { readonly status: number; readonly headers: Readonly<Record<string, string>>; readonly body: string; readonly contentType: string }; // One rendition response's status and headers, which is all a serving assertion needs from it.
 export async function requestRendition(page: Page, address: string, range?: string): Promise<RenditionAnswer> {
   const answer = await page.request.get(address, range === undefined ? {} : { headers: { range } }); // Requests one rendition of one asset, optionally as a byte range, and reports exactly what the response carried. The request travels as the persona the context currently holds.
   const headers = answer.headers();
   return { status: answer.status(), headers, body: await answer.text(), contentType: headers["content-type"] ?? "" };
 }
-export function renditionAddressOf(assetId: string, rendition: string): string {
-  return `/api/media/${encodeURIComponent(assetId)}/${encodeURIComponent(rendition)}`; // The address of one rendition of one asset, as the application emits it.
-}
+export const renditionAddressOf = (assetId: string, rendition: string): string => `/api/media/${encodeURIComponent(assetId)}/${encodeURIComponent(rendition)}`; // The address of one rendition of one asset, as the application emits it.
 export async function chooseFile(picker: Locator, file: string): Promise<void> {
   await picker.getByLabel(/^File\b/u).setInputFiles(fixturePathOf(file)); // Chooses one file in an open picker and waits for the picker's own description step, which is where the browser has. The field is addressed by its label rather than as the only file input, because a video's picker also offers a poster and a caption track beside the media file itself.
   await expect(picker).toHaveAttribute("data-phase", "described");

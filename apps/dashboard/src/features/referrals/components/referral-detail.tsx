@@ -12,28 +12,23 @@ import { useReferral } from "../hooks/use-referral";
 import ContinueReferralAction from "./continue-referral-action";
 import ExpiredReferralHistory from "./expired-referral-history";
 import ReferralWindowPanel from "./referral-window-panel";
-type ReferralReadResult = Awaited<ReturnType<typeof reads.referrals.readReferral>>;
-type ReferralEnvelope = Extract<ReferralReadResult, { readonly kind: "envelope" }>["envelope"];
+type ReferralEnvelope = Extract<Awaited<ReturnType<typeof reads.referrals.readReferral>>, { readonly kind: "envelope" }>["envelope"];
 type ReferralView = Extract<ReferralEnvelope["data"], { readonly view: "detail" }>;
 type ReferralRow = ReferralView["referral"];
 export type ReferralDetailProps = { readonly scope: Scope; readonly referralId: string; readonly layout: RecordDetailLayout; readonly dir?: "ltr" | "rtl"; readonly breadcrumb?: readonly RecordDetailBreadcrumbEntry[]; readonly className?: string };
 const DEFAULT_BREADCRUMB: readonly RecordDetailBreadcrumbEntry[] = [{ label: LIST_COPY.heading, href: "/partners/referrals" }];
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
 /** The one advisory action this presentation reflects: the read publishing it is what makes Continue appear, and the service re-checks the permission on submit, so a stale envelope can produce a `denied` outcome and never an unauthorised write. */
-const CONTINUE_ACTION = "continueReferral";
 const STATUS_TONE: Readonly<Record<ReferralStatusWord, StatusTone>> = { active: "positive", expired: "neutral", "no-deadline": "caution", refused: "caution", withdrawn: "danger", revoked: "danger", erased: "danger", departed: "danger" };
 const BODY_HEADING: Readonly<Record<RecordDetailLayout, "h3" | "h4">> = { page: "h3", panel: "h4", sheet: "h4" };
 const REVIEW_HEADING: Readonly<Record<RecordDetailLayout, 3 | 4>> = { page: 3, panel: 4, sheet: 4 };
 const EXPIRED_HEADING: Readonly<Record<RecordDetailLayout, 2 | 3 | 4>> = { page: 2, panel: 3, sheet: 3 };
 const NOTICE_HEADING: Readonly<Record<RecordDetailLayout, NoticeHeadingLevel>> = { page: 1, panel: 2, sheet: 2 };
-const HELP_CLASS = "text-xs text-muted-foreground text-pretty wrap-anywhere";
 const VALUE_CLASS = "min-w-0 wrap-anywhere";
 const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
 const EnvelopeDate = ({ value }: { readonly value: string }): ReactElement => (
   <bdi>
-    <time className="tabular-figures" dateTime={value}>
-      {value}
-    </time>
+    <time {...{ className: "tabular-figures", dateTime: value }}>{value}</time>
   </bdi>
 );
 const NotRecorded = (): ReactElement => <StatusBadge label={NOT_RECORDED.label} tone={NOT_RECORDED.tone} />;
@@ -43,7 +38,7 @@ const Fact = ({ term, value, help, valueClass, trailing }: { readonly term: stri
     <dd className="flex min-w-0 flex-col gap-1 break-words">
       {valueClass === undefined ? value : <span className={valueClass}>{value}</span>}
       {trailing}
-      {help === undefined ? null : <p className={HELP_CLASS}>{help}</p>}
+      {help === undefined ? null : <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{help}</p>}
     </dd>
   </div>
 );
@@ -52,9 +47,7 @@ function BodySection({ headingId, level, slot, title, children }: { readonly hea
   const Heading = level === "h3" ? "h3" : "h4";
   return (
     <section aria-labelledby={headingId} data-slot={slot} className="flex min-w-0 flex-col gap-2">
-      <Heading id={headingId} className={cn(BODY_HEADING_SCALE[level], "text-pretty wrap-anywhere")}>
-        {title}
-      </Heading>
+      <Heading {...{ id: headingId, className: cn(BODY_HEADING_SCALE[level], "text-pretty wrap-anywhere") }}>{title}</Heading>
       {children}
     </section>
   );
@@ -105,7 +98,7 @@ function CycleReferenceFacts({ referral }: { readonly referral: ReferralRow }): 
   );
 }
 /** Whether the read admits the one continuation an expired cycle can hold. Both conditions are the envelope's own facts: the action it published for this cycle, which the service re-checks on submit, and the worker-continuation setting the same read resolved, which withholds that action entirely when it is off. */
-const continueOffered = (actions: readonly ReadAction[], policy: ReferralView["continuationPolicy"]): boolean => policy.setting === "on" && actions.some((action) => action.name === CONTINUE_ACTION && action.available);
+const continueOffered = (actions: readonly ReadAction[], policy: ReferralView["continuationPolicy"]): boolean => policy.setting === "on" && actions.some((action) => action.name === "continueReferral" && action.available);
 type ReferralBodyProps = {
   readonly scope: Scope;
   readonly referral: ReferralRow;

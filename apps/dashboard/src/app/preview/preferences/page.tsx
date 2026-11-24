@@ -65,8 +65,7 @@ function MembershipPreferences({ envelope }: { readonly envelope: PreferencesEnv
   );
 }
 const PreferencesBody = ({ result }: { readonly result: PreferencesResult }): ReactElement => (result.kind === "envelope" ? <MembershipPreferences envelope={result.envelope} /> : <ReadNotices failure={result} copy={REFUSAL_COPY} />);
-/** The reader's own preferences and consent surface, read directly from the service for this request. */
-export default async function ReaderPreferencesPage(): Promise<ReactElement> {
+/** The reader's own preferences and consent surface, read directly from the service for this request. */ export default async function ReaderPreferencesPage(): Promise<ReactElement> {
   const result = await reads.audience.readPreferences();
   return (
     <PageSurface headingId="reader-preferences-heading" title={PAGE_TITLE}>

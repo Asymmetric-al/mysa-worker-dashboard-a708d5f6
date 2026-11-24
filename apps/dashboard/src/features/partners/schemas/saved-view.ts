@@ -5,7 +5,6 @@ export const savedViewFacetValuesSchema = z.array(z.string().min(1, "A selected 
 type SortDirectionOf<Desc extends boolean> = Desc extends true ? "desc" : "asc";
 type RosterSortAsStored = { readonly field: RecordListQueryState["sort"][number]["id"]; readonly direction: SortDirectionOf<RecordListQueryState["sort"][number]["desc"]> };
 export const savedViewSortSchema = z.strictObject({ field: z.string().min(1, "A stored sort needs the column it orders by."), direction: z.enum(["asc", "desc"], "A stored sort runs ascending or descending.") }) satisfies z.ZodType<RosterSortAsStored>;
-type StoredQueryAsRosterState = { readonly search: string; readonly applied: Readonly<Record<string, readonly string[]>>; readonly columnVisibility?: RecordListQueryState["columnVisibility"]; readonly sort?: RosterSortAsStored; readonly pageSize?: number };
 export const savedViewQuerySchema = z
   .strictObject({
     search: z.string({ error: "A saved view states the search text it was saved with, empty when it had none." }),
@@ -25,7 +24,7 @@ export const savedViewQuerySchema = z
         context.addIssue({ code: "custom", message: "Remove the repeated value from this filter.", path: ["applied", facetId, index] });
       });
     }
-  }) satisfies z.ZodType<StoredQueryAsRosterState>;
+  }) satisfies z.ZodType<{ readonly search: string; readonly applied: Readonly<Record<string, readonly string[]>>; readonly columnVisibility?: RecordListQueryState["columnVisibility"]; readonly sort?: RosterSortAsStored; readonly pageSize?: number }>;
 const savedViewIdSchema = z.string({ error: "A saved view is named by text, so choose the view again from the list." }).min(1, "An empty identifier names no saved view.");
 const savedViewNameSchema = z.string({ error: "A view's name is text, so type the name this view should be saved under." }).refine((name) => name.trim() !== "", { error: "Give this view a name." });
 export const saveViewPayloadSchema = z.strictObject({ name: savedViewNameSchema, queryState: savedViewQuerySchema, viewId: savedViewIdSchema.optional() });
@@ -36,9 +35,8 @@ export type RenameViewPayload = z.infer<typeof renameViewPayloadSchema>;
 export type DeleteViewPayload = z.infer<typeof deleteViewPayloadSchema>;
 export type SavedViewQuery = z.infer<typeof savedViewQuerySchema>;
 type AdmittedFacet = { readonly id: string; readonly state?: "available" | "unavailable"; readonly options: ReadonlyArray<{ readonly id: string }> };
-type AdmittedChoices = { readonly facets: ReadonlyArray<AdmittedFacet>; readonly columns: ReadonlyArray<string> };
 export type SavedViewDrift = { readonly state: "clean" } | { readonly state: "drifted"; readonly deadFacets: readonly string[]; readonly deadValues: readonly { readonly facet: string; readonly value: string }[]; readonly deadColumns: readonly string[] };
-export function checkSavedViewDrift(query: { readonly applied: Readonly<Record<string, readonly string[]>>; readonly columnVisibility?: Readonly<Record<string, boolean>> }, admitted: AdmittedChoices): SavedViewDrift {
+export function checkSavedViewDrift(query: { readonly applied: Readonly<Record<string, readonly string[]>>; readonly columnVisibility?: Readonly<Record<string, boolean>> }, admitted: { readonly facets: ReadonlyArray<AdmittedFacet>; readonly columns: ReadonlyArray<string> }): SavedViewDrift {
   const deadFacets: string[] = [];
   const deadValues: { facet: string; value: string }[] = [];
   const reported = new Set<string>();

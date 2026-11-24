@@ -56,8 +56,7 @@ const answerListField = z.array(answerTextField, { error: MESSAGES.notText("An a
 const checkInIdField = z.string({ error: MESSAGES.checkInRequired }).trim().min(1, MESSAGES.checkInRequired);
 const sharedRevisionIdField = z.string({ error: MESSAGES.sharedRevisionRequired }).trim().min(1, MESSAGES.sharedRevisionRequired);
 const CHECK_IN_MUTATIONS = ["saveCheckIn", "shareCheckIn", "updateSharedCheckIn", "withdrawCheckIn"] as const;
-type CheckInMutation = (typeof CHECK_IN_MUTATIONS)[number];
-function checkInMutationPayload<Mutation extends CheckInMutation, Shape extends z.ZodRawShape>(mutation: Mutation, shape: Shape) {
+function checkInMutationPayload<Mutation extends (typeof CHECK_IN_MUTATIONS)[number], Shape extends z.ZodRawShape>(mutation: Mutation, shape: Shape) {
   const fields = { operation: z.literal(mutation), ...shape };
   return z.looseObject(fields).superRefine((payload, context) => {
     for (const field of Object.keys(payload)) {
@@ -71,10 +70,9 @@ const shareCheckInPayload = checkInMutationPayload("shareCheckIn", { checkInId: 
 const updateSharedCheckInPayload = checkInMutationPayload("updateSharedCheckIn", { checkInId: checkInIdField, sharedRevisionId: sharedRevisionIdField.optional(), questions: questionListField.optional(), answers: answerListField });
 const withdrawCheckInPayload = checkInMutationPayload("withdrawCheckIn", { checkInId: checkInIdField, sharedRevisionId: sharedRevisionIdField.optional() });
 const checkInPayloadSchema = z.discriminatedUnion("operation", [saveCheckInPayload, shareCheckInPayload, updateSharedCheckInPayload, withdrawCheckInPayload]);
-type CheckInPayload = z.infer<typeof checkInPayloadSchema>;
 const checkInRequestSchema = mutationInputSchema(checkInPayloadSchema);
 const checkInListQuerySchema = pagingQuerySchema({ page: MESSAGES.pageInvalid, pageSize: MESSAGES.pageSizeInvalid });
-async function runCheckInMutation(input: MutationInput<CheckInPayload>): Promise<MutationOutcome> {
+async function runCheckInMutation(input: MutationInput<z.infer<typeof checkInPayloadSchema>>): Promise<MutationOutcome> {
   switch (input.payload.operation) {
     case "saveCheckIn": {
       const { checkInId, questions, answers } = input.payload;
@@ -97,7 +95,6 @@ async function runCheckInMutation(input: MutationInput<CheckInPayload>): Promise
 const answer = (result: Parameters<typeof toResponse>[0]): Response => toResponse(result, { headers: { "cache-control": "no-store" } });
 /** One page of the worker's check-ins, each keeping its captured question set, its private autosave and its shared revision apart, with the page window and limits the service reports. */
 const readCheckIns = readRoute(readGrammar(checkInListQuerySchema, pagingParamsOf), (query) => reads.coaching.readCheckIns(query), READ_ATTEMPT, NO_STORE_RESPONSE);
-/** One named check-in change, selected by `payload.operation`; answers with exactly one of `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 async function changeCheckIn(request: Request): Promise<Response> {
   const body = await readRequestBody(request, MAX_REQUEST_BYTES);
   if (body.kind === "oversized") return answer(outcomeFromError(UNIDENTIFIED_ATTEMPT, new ZodError([{ code: "custom", path: [], message: MESSAGES.requestTooLarge(body.bytes), input: undefined }])));

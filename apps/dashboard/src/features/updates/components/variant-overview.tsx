@@ -21,22 +21,12 @@ import type { SubmissionNotifyMode } from "../schemas";
 import { DEFAULT_SUBMISSION_RELEASE_MODE, SubmissionReleaseMode } from "./submission-release-mode";
 import type { RestoreRevisionAsDraftPayload } from "../schemas";
 import type { WithdrawLocalePayload, WithdrawUpdatePayload } from "../schemas";
-/** One edition of the Update as its variant matrix states it: three independent pointers, the head release and the translation record. */
-type EditionView = VariantOverviewData["editions"][number];
-type OverviewEnvelope = ReadEnvelope<VariantOverviewData>;
-type OverviewReadResult = VariantOverviewReadResult;
-type CandidateReadResult = ReturnType<typeof useCandidate>["result"];
+/** One edition of the Update as its variant matrix states it: three independent pointers, the head release and the translation record. */ type EditionView = VariantOverviewData["editions"][number];
 type ReviewInput<P> = Omit<MutationInput<P>, "operationId">;
 type SubmitReviewPayload = Parameters<ReturnType<typeof useSubmitForReview>["submit"]>[0]["payload"];
-const HEADING = "Editions, candidates and releases";
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
-/** The one type scale's utility for each level, so every heading this surface renders takes the measure of the level it lands at rather than one fixed size. */
-const HEADING_SCALE: Readonly<Record<2 | 3 | 4, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
-const INTRO = `${DRAFT_VS_RELEASED.draftIsNotWhatReadersSee} ${DRAFT_VS_RELEASED.releaseIsWhatRecipientsReceive}`;
-const SIBLING_NOTE =
-  "Each edition below states its own published revision, and a release attempt that fails for one edition leaves " + "every other edition's published revision standing. Nothing here is a rollback, no sibling's release is removed, " + "and the editions are never added up into one status for the whole Update.";
-const SWITCHER_LABEL = "Edition";
-const LOCALE_LABEL = "Language";
+/** The one type scale's utility for each level, so every heading this surface renders takes the measure of the level it lands at rather than one fixed size. */ const HEADING_SCALE: Readonly<Record<2 | 3 | 4, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
+const SIBLING_NOTE = "Each edition below states its own published revision, and a release attempt that fails for one edition leaves every other edition's published revision standing. Nothing here is a rollback, no sibling's release is removed, and the editions are never added up into one status for the whole Update.";
 const FACT_LABEL = { draft: "Saved draft", candidate: "Submitted for review", release: "Published revision", translation: "Translation" } as const;
 const ABSENT = { draft: "No draft is saved for this edition yet, so there is nothing to submit for review.", candidate: "No revision of this edition is frozen for review.", release: "This edition publishes nothing yet, so no reader is served a revision of it." } as const;
 const RELEASE_COPY = {
@@ -66,7 +56,7 @@ const CANDIDATE_COPY = {
   invalidDescription: "The stored revision it names could not be read as content, so what a reviewer would approve cannot be stated.",
   decision: { approved: "A reviewer approved this candidate.", "changes-requested": "A reviewer asked for changes, so a further round is a new submission.", rejected: "A reviewer ended this candidate." },
 } as const;
-const TRANSLATION_COPY = { unresolved: "This edition was written from another edition, and the source revision it names is no longer in the store, so " + "whether it is current cannot be stated. Nothing was withdrawn for it.", direction: { ltr: "written left to right", rtl: "written right to left" } } as const;
+const TRANSLATION_COPY = { unresolved: "This edition was written from another edition, and the source revision it names is no longer in the store, so whether it is current cannot be stated. Nothing was withdrawn for it.", direction: { ltr: "written left to right", rtl: "written right to left" } } as const;
 const ACTION_COPY = {
   editor: "Open the editor",
   preview: "Open the preview",
@@ -83,16 +73,13 @@ const ACTION_COPY = {
   },
 } as const;
 const REVIEW_COPY = {
-  submit: { title: "Submit this edition for its review", confirm: "Submit for review", what: "This freezes the exact saved revision as the candidate its one review step answers. It publishes nothing and " + "notifies nobody: a release is a separate step, and a notice is a separate outcome again." },
-  restore: { title: "Restore the published revision as a new draft", confirm: "Restore as a new draft", what: "The revision restored is the one this edition publishes today. It becomes a new draft to edit, with its own " + "identity, and the published revision keeps standing until a later release replaces it." },
+  submit: { title: "Submit this edition for its review", confirm: "Submit for review", what: "This freezes the exact saved revision as the candidate its one review step answers. It publishes nothing and notifies nobody: a release is a separate step, and a notice is a separate outcome again." },
+  restore: { title: "Restore the published revision as a new draft", confirm: "Restore as a new draft", what: "The revision restored is the one this edition publishes today. It becomes a new draft to edit, with its own identity, and the published revision keeps standing until a later release replaces it." },
   withdrawLocale: { title: "Withdraw this language edition", confirm: "Withdraw this edition", consequence: "It stops being served as soon as you confirm it. Every other edition of this Update is left exactly as it is." },
   withdrawUpdate: { title: "Withdraw the whole Update", confirm: "Withdraw every edition", consequence: "Every edition of this Update stops being served as soon as you confirm it, in every language and for every audience." },
 } as const;
 const PUBLISHED_ACTION_LABELS: Readonly<Record<string, string>> = { "create-variant": "Add an edition", "open-draft": "Open a saved draft", "review-candidate": "Review a submitted edition", "publish-variants": "Publish a frozen candidate" };
-const PERMITS_HEADING = "What this Update permits here";
-const PERMITS_INTRO =
-  "These are the actions the read states for this Update, with the read's own reason wherever one is withheld. An " + "action this screen offers below is re-checked by the service when it is submitted, so a screen that has gone " + "stale answers that the change is not permitted rather than making it.";
-const PERMITS_AVAILABLE = "offered in this context";
+const PERMITS_INTRO = "These are the actions the read states for this Update, with the read's own reason wherever one is withheld. An action this screen offers below is re-checked by the service when it is submitted, so a screen that has gone stale answers that the change is not permitted rather than making it.";
 const PERMITS_WITHHELD = "withheld";
 const REVIEW_OFFER = {
   heading: "Editions waiting for a release",
@@ -112,48 +99,35 @@ const READ_STATE = {
 } as const;
 const NOTE_CLASS = "type-supporting text-pretty";
 const SENTENCE_CLASS = "type-body text-pretty";
-const FACT_LIST_CLASS = "flex min-w-0 flex-col gap-3 type-body";
-const FACT_ROW_CLASS = "flex min-w-0 flex-col gap-1";
 const FACT_TERM_CLASS = "text-muted-foreground";
 const FACT_VALUE_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 type-body";
 const IDENTIFIER_CLASS = "mono-identifier min-w-0 wrap-anywhere";
 const LINK_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS);
 const ACTION_LIST_CLASS = "flex min-w-0 flex-wrap items-center gap-2";
-const ROOT_CLASS = "flex min-w-0 flex-col gap-6";
 function instantTextOf(value: unknown): string {
   if (typeof value === "string") return value.trim();
   if (value === null || typeof value !== "object") return "";
   return String(value).trim();
 }
-const availabilityOf = (actions: readonly ReadAction[], name: string): ReadAction | null => actions.find((action) => action.name === name) ?? null;
 const nestedLevel = (level: 2 | 3 | 4): 2 | 3 | 4 => (level === 4 ? 4 : ((level + 1) as 3 | 4));
 const Fact = ({ term, children }: { readonly term: string; readonly children: ReactNode }): ReactElement => (
-  <div className={FACT_ROW_CLASS}>
+  <div className="flex min-w-0 flex-col gap-1">
     <dt className={FACT_TERM_CLASS}>{term}</dt>
     <dd className="min-w-0">{children}</dd>
   </div>
 );
 const Identifier = ({ value }: { readonly value: string }): ReactElement | null => (value.trim() === "" ? null : <bdi className={IDENTIFIER_CLASS}>{value.trim()}</bdi>);
-type FrozenCandidateProps = { readonly scope: Scope; readonly variantId: string; readonly headingLevel: NoticeHeadingLevel };
-/** What the reviewer will approve: the exact frozen revision and its checksum, read from the candidate's own named */
-function FrozenCandidate({ scope, variantId, headingLevel }: FrozenCandidateProps): ReactElement {
+/** What the reviewer will approve: the exact frozen revision and its checksum, read from the candidate's own named revision. */
+function FrozenCandidate({ scope, variantId, headingLevel }: { readonly scope: Scope; readonly variantId: string; readonly headingLevel: NoticeHeadingLevel }): ReactElement {
   const candidate = useCandidate({ scope, variantId });
-  const result: CandidateReadResult = candidate.result;
+  const result: ReturnType<typeof useCandidate>["result"] = candidate.result;
   if (result === undefined) return <p className={NOTE_CLASS}>{candidate.isPending ? CANDIDATE_COPY.reading : CANDIDATE_COPY.unavailableDescription}</p>;
   switch (result.kind) {
     case "denied":
       return <StateNotice kind="denied" title={CANDIDATE_COPY.deniedTitle} description={CANDIDATE_COPY.deniedDescription} headingLevel={headingLevel} />;
     case "unavailable":
-      return (
-        <StateNotice
-          kind="unavailable"
-          title={CANDIDATE_COPY.unavailableTitle}
-          description={result.unavailable.guidance.trim() === "" ? CANDIDATE_COPY.unavailableDescription : result.unavailable.guidance}
-          source={result.unavailable.source}
-          retry={{ label: "Read it again", onClick: () => candidate.refetch() }}
-          headingLevel={headingLevel}
-        />
-      );
+      const candidateUnavailable = result.unavailable.guidance.trim() === "" ? CANDIDATE_COPY.unavailableDescription : result.unavailable.guidance;
+      return <StateNotice kind="unavailable" title={CANDIDATE_COPY.unavailableTitle} description={candidateUnavailable} source={result.unavailable.source} retry={{ label: "Read it again", onClick: () => candidate.refetch() }} headingLevel={headingLevel} />;
     case "refused":
       return <StateNotice kind="refused" title={CANDIDATE_COPY.refusedTitle} description={CANDIDATE_COPY.refusedDescription} headingLevel={headingLevel} />;
     case "envelope":
@@ -373,7 +347,7 @@ function ReleaseFacts({ edition }: { readonly edition: EditionView }): ReactElem
   );
 }
 type EditionCellProps = { readonly documentId: string; readonly documentRevision: string; readonly edition: EditionView; readonly scope: Scope; readonly headingLevel: 2 | 3 | 4; readonly onChoose: (intent: ReviewIntent) => void };
-/** One edition: its audience and language, the lifecycle word the shared vocabulary gives its pointers, the three */
+/** One edition: its audience and language, the lifecycle word the shared vocabulary gives its pointers, the three pointers' own words. */
 function EditionCell({ documentId, documentRevision, edition, scope, headingLevel, onChoose }: EditionCellProps): ReactElement {
   const titleId = useId();
   const head: Release | null = edition.headRelease;
@@ -415,7 +389,7 @@ function EditionCell({ documentId, documentRevision, edition, scope, headingLeve
           {translation.status === "stale" ? <p className={NOTE_CLASS}>{staleWords.explanation}</p> : null}
           {translation.status === "unresolved" ? <p className={NOTE_CLASS}>{TRANSLATION_COPY.unresolved}</p> : null}
           <Separator />
-          <dl className={FACT_LIST_CLASS}>
+          <dl className="flex min-w-0 flex-col gap-3 type-body">
             <Fact term={FACT_LABEL.draft}>{edition.draftRevisionId === null ? <p className={NOTE_CLASS}>{ABSENT.draft}</p> : <Identifier value={edition.draftRevisionId} />}</Fact>
             <Fact term={FACT_LABEL.candidate}>
               {edition.candidateId === null ? (
@@ -477,7 +451,7 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
   const withdrawUpdate = useWithdrawUpdate();
   const [chosenVariantId, setChosenVariantId] = useState("");
   const [intent, setIntent] = useState<ReviewIntent | null>(null);
-  const result: OverviewReadResult | undefined = overview.result;
+  const result: VariantOverviewReadResult | undefined = overview.result;
   if (result === undefined || overview.isStale(result)) {
     const state = result === undefined ? READ_STATE.reading : READ_STATE.stale;
     return <StateNotice kind="loading" title={state.title} description={state.description} headingLevel={headingLevel} className={className} />;
@@ -486,23 +460,14 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
     case "denied":
       return <StateNotice kind="denied" title={READ_STATE.denied.title} description={READ_STATE.denied.description} reasonCode={result.denied.reasonCode} operationId={result.denied.operationId} headingLevel={headingLevel} className={className} />;
     case "unavailable":
-      return (
-        <StateNotice
-          kind="unavailable"
-          title={READ_STATE.unavailable.title}
-          description={result.unavailable.guidance.trim() === "" ? READ_STATE.unavailable.description : result.unavailable.guidance}
-          source={result.unavailable.source}
-          retry={{ label: "Read this Update again", onClick: () => overview.refetch() }}
-          headingLevel={headingLevel}
-          className={className}
-        />
-      );
+      const overviewUnavailable = result.unavailable.guidance.trim() === "" ? READ_STATE.unavailable.description : result.unavailable.guidance;
+      return <StateNotice kind="unavailable" title={READ_STATE.unavailable.title} description={overviewUnavailable} source={result.unavailable.source} retry={{ label: "Read this Update again", onClick: () => overview.refetch() }} headingLevel={headingLevel} className={className} />;
     case "refused":
       return <StateNotice kind="refused" title={READ_STATE.refused.title} description={READ_STATE.refused.description} headingLevel={headingLevel} className={className} />;
     case "envelope":
       break;
   }
-  const envelope: OverviewEnvelope = result.envelope;
+  const envelope: ReadEnvelope<VariantOverviewData> = result.envelope;
   const data: VariantOverviewData = envelope.data;
   const editions: readonly EditionView[] = data.editions;
   if (editions.length === 0) return <StateNotice kind="empty" title={READ_STATE.empty.title} description={READ_STATE.empty.description} headingLevel={headingLevel} className={className} />;
@@ -518,21 +483,21 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
     if (target !== undefined) setChosenVariantId(target.variantId);
   };
   const awaitingEditions = editions.filter((edition) => edition.candidateId !== null && data.awaitingRelease.includes(edition.variantId));
-  const reviewCandidateAction = availabilityOf(envelope.actions, "review-candidate");
+  const reviewCandidateAction = ((actions: readonly ReadAction[], name: string): ReadAction | null => actions.find((action) => action.name === name) ?? null)(envelope.actions, "review-candidate");
   const Heading = HEADING_TAG[headingLevel];
   const SectionHeading = HEADING_TAG[nestedLevel(headingLevel)];
   const checkResult = (): void => overview.refetch();
   return (
-    <div data-slot="variant-overview" data-document-id={data.document.documentId} data-edition-count={String(editions.length)} className={cn(ROOT_CLASS, className)}>
+    <div data-slot="variant-overview" data-document-id={data.document.documentId} data-edition-count={String(editions.length)} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <header className="flex min-w-0 flex-col gap-2">
-        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-start text-pretty") }}>{HEADING}</Heading>
-        <p className={NOTE_CLASS}>{INTRO}</p>
+        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-start text-pretty") }}>{"Editions, candidates and releases"}</Heading>
+        <p className={NOTE_CLASS}>{`${DRAFT_VS_RELEASED.draftIsNotWhatReadersSee} ${DRAFT_VS_RELEASED.releaseIsWhatRecipientsReceive}`}</p>
         <p className={NOTE_CLASS}>{SIBLING_NOTE}</p>
       </header>
       <section className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <VariantSwitcher family="update" variants={tabs} activeVariantId={activeEdition?.variantId ?? ""} onSelect={setChosenVariantId} label={SWITCHER_LABEL} className="min-w-0 md:max-w-xl" />
-          <LocaleSwitcher locales={localeEditions} requested={activeEdition?.locale.tag ?? ""} onRequest={requestLocale} label={LOCALE_LABEL} className="min-w-0 md:max-w-xs" />
+          <VariantSwitcher family="update" variants={tabs} activeVariantId={activeEdition?.variantId ?? ""} onSelect={setChosenVariantId} label="Edition" className="min-w-0 md:max-w-xl" />
+          <LocaleSwitcher locales={localeEditions} requested={activeEdition?.locale.tag ?? ""} onRequest={requestLocale} label="Language" className="min-w-0 md:max-w-xs" />
         </div>
         <p className={NOTE_CLASS}>{VARIANT_AXIS_NOTE}</p>
       </section>
@@ -577,13 +542,13 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
         )}
       </section>
       <section aria-labelledby={`${headingId}-permits`} className="flex min-w-0 flex-col gap-3">
-        <SectionHeading {...{ id: `${headingId}-permits`, className: cn(HEADING_SCALE[nestedLevel(headingLevel)], "text-start text-pretty") }}>{PERMITS_HEADING}</SectionHeading>
+        <SectionHeading {...{ id: `${headingId}-permits`, className: cn(HEADING_SCALE[nestedLevel(headingLevel)], "text-start text-pretty") }}>{"What this Update permits here"}</SectionHeading>
         <p className={NOTE_CLASS}>{PERMITS_INTRO}</p>
         <ul className="flex min-w-0 list-none flex-col gap-2 p-0">
           {envelope.actions.map((action) => (
             <li key={action.name} className="flex min-w-0 flex-col gap-1">
               <span className="text-sm font-medium wrap-anywhere">{PUBLISHED_ACTION_LABELS[action.name] ?? action.name}</span>
-              <span className={NOTE_CLASS}>{action.available ? PERMITS_AVAILABLE : `${PERMITS_WITHHELD}: ${action.reason ?? "no reason was stated for withholding it"}`}</span>
+              <span className={NOTE_CLASS}>{action.available ? "offered in this context" : `${PERMITS_WITHHELD}: ${action.reason ?? "no reason was stated for withholding it"}`}</span>
             </li>
           ))}
         </ul>

@@ -35,8 +35,7 @@ const isFacetKey = (identifier: string): identifier is FacetKey => Object.protot
 const facetLabelOf = (facetId: string, admittedFacets: readonly PartnerFacetDescriptor[]): string => admittedFacets.find((facet) => facet.id === facetId)?.label ?? (isFacetKey(facetId) ? FACET_LABELS[facetId] : facetId);
 const valueLabelOf = (facetId: string, valueId: string, admittedFacets: readonly PartnerFacetDescriptor[]): string => admittedFacets.find((facet) => facet.id === facetId)?.values.find((value) => value.id === valueId)?.label ?? (isFacetKey(facetId) ? FACET_VALUE_LABELS[facetId][valueId] : undefined) ?? valueId;
 const pageSizeDriftOf = (pageSize: number | undefined): number | null => (pageSize === undefined || PARTNER_LIST_PAGE_SIZE_OPTIONS.some((option) => option === pageSize) ? null : pageSize);
-type DeadParts = { readonly deadFacets: readonly DeadFacet[]; readonly deadValues: readonly DeadValue[]; readonly deadColumns: readonly DeadColumn[]; readonly dropPageSize: boolean };
-function repairedQueryOf(query: SavedViewQueryState, dead: DeadParts): SaveViewPayload["queryState"] {
+function repairedQueryOf(query: SavedViewQueryState, dead: { readonly deadFacets: readonly DeadFacet[]; readonly deadValues: readonly DeadValue[]; readonly deadColumns: readonly DeadColumn[]; readonly dropPageSize: boolean }): SaveViewPayload["queryState"] {
   const deadFacetIds = new Set(dead.deadFacets.map((facet) => facet.facetId));
   const deadValueKeys = new Set(dead.deadValues.map((value) => `${value.facetId}\u0000${value.valueId}`));
   const applied: Record<string, string[]> = {};
@@ -206,9 +205,7 @@ function NameViewDialog({ panel, name, error, pending, onNameChange, onSubmit, o
             {(field) => <Input ref={inputRef} id={field.id} value={name} maxLength={80} autoComplete="off" disabled={pending} aria-describedby={field.describedBy} aria-invalid={field.invalid ? true : undefined} onChange={(event) => onNameChange(event.target.value)} />}
           </FormField>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onCancel} disabled={pending}>
-              {SAVED_VIEW_BAR_COPY.cancel}
-            </Button>
+            <Button {...{ type: "button" as const, variant: "outline" as const, onClick: onCancel, disabled: pending }}>{SAVED_VIEW_BAR_COPY.cancel}</Button>
             <Button type="submit" disabled={pending || name.trim() === ""}>
               {pending ? <Spinner /> : null}
               {renaming ? "Save name" : "Save view"}
@@ -338,11 +335,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
             <DropdownMenuTrigger render={<Button ref={triggerRef} type="button" variant="outline" size="sm" className="max-w-full" aria-label={SAVED_VIEW_BAR_COPY.triggerName(driftedEntries.length)} />}>
               <BookmarkIcon aria-hidden="true" className="size-3.5" />
               <span className="truncate">{SAVED_VIEW_BAR_COPY.trigger}</span>
-              {driftedEntries.length === 0 ? null : (
-                <Badge variant="outline" aria-hidden="true" className="h-5 min-w-5 justify-center px-1 tabular-figures">
-                  {String(driftedEntries.length)}
-                </Badge>
-              )}
+              {driftedEntries.length === 0 ? null : <Badge {...{ variant: "outline" as const, "aria-hidden": "true" as const, className: "h-5 min-w-5 justify-center px-1 tabular-figures" as const }}>{String(driftedEntries.length)}</Badge>}
               <ChevronDownIcon aria-hidden="true" className="size-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-80 max-w-[calc(100vw-2rem)]">
@@ -412,12 +405,8 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
                 ))}
               </ul>
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant="secondary" className={BUTTON_WRAP_CLASS} disabled={busy || view.revision === undefined} onClick={() => void saveExisting(view, "repair", drift.repaired)}>
-                  {SAVED_VIEW_COPY.repair.title}
-                </Button>
-                <Button type="button" size="sm" variant="outline" className={BUTTON_WRAP_CLASS} disabled={busy || view.revision === undefined} onClick={() => startDelete(view)}>
-                  {SAVED_VIEW_COPY.delete.title}
-                </Button>
+                <Button {...{ type: "button" as const, size: "sm" as const, variant: "secondary" as const, className: BUTTON_WRAP_CLASS, disabled: busy || view.revision === undefined, onClick: () => void saveExisting(view, "repair", drift.repaired) }}>{SAVED_VIEW_COPY.repair.title}</Button>
+                <Button {...{ type: "button" as const, size: "sm" as const, variant: "outline" as const, className: BUTTON_WRAP_CLASS, disabled: busy || view.revision === undefined, onClick: () => startDelete(view) }}>{SAVED_VIEW_COPY.delete.title}</Button>
               </div>
             </AlertDescription>
           </Alert>

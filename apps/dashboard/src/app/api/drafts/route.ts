@@ -5,7 +5,7 @@ import { isRecord } from "@/lib/guards";
 import { PRESENTATION_CHOICES } from "@/modules/content/document";
 import { RENDITION_PURPOSES } from "@/modules/media/asset";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse } from "@/modules/data-service";
-import { UNIDENTIFIED_ATTEMPT, claimedBodyRoute, dispatch, type ClaimedWrite } from "../handler";
+import { UNIDENTIFIED_ATTEMPT, claimedBodyRoute, declaresJsonBody, dispatch, type ClaimedWrite } from "../handler";
 import { readGrammar, readRoute } from "../read";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,7 +74,6 @@ const restoreRevisionAsDraftPayloadSchema = z.strictObject({ operation: z.litera
 const saveDraftRequestSchema = mutationInputSchema(saveDraftPayloadSchema);
 const restoreRevisionAsDraftRequestSchema = mutationInputSchema(restoreRevisionAsDraftPayloadSchema);
 const DRAFT_MUTATIONS = ["saveDraft", "restoreRevisionAsDraft"] as const;
-type DraftMutation = (typeof DRAFT_MUTATIONS)[number];
 const claimedMutationSchema = z.object({ payload: z.object({ operation: z.enum(DRAFT_MUTATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.payloadMissing }) }, { error: MESSAGES.bodyNotJson });
 const DRAFT_VIEWS = ["draft", "candidate"] as const;
 const readQuerySchema = z.strictObject({ view: z.enum(DRAFT_VIEWS, { error: MESSAGES.viewRequired }), variantId: editionReferenceSchema }, { error: MESSAGES.queryInvalid });
@@ -88,7 +87,6 @@ function bodyOfText(text: string): unknown {
     return undefined;
   }
 }
-/** Reads one edition's working draft or its frozen candidate as the full read envelope, or answers `invalid` for a query this transport does not read and `denied` or `unavailable` as the service refused it. */
 const readDraftEdition = readRoute(
   readGrammar(readQuerySchema, (search) => ({ view: search.get("view") ?? undefined, variantId: search.get("variantId") ?? undefined })),
   (query) => (query.view === "draft" ? reads.updates.readDraft({ variantId: query.variantId }) : reads.updates.readCandidate({ variantId: query.variantId })),
@@ -96,9 +94,9 @@ const readDraftEdition = readRoute(
 const DRAFT_WRITES = {
   saveDraft: (raw, { operationId, sessionId }) => dispatch(saveDraftRequestSchema, raw, operationId, "operation", (input) => mutations.updates.saveDraft(sessionId, input)),
   restoreRevisionAsDraft: (raw, { operationId, sessionId }) => dispatch(restoreRevisionAsDraftRequestSchema, raw, operationId, "operation", (input) => mutations.updates.restoreRevisionAsDraft(sessionId, input)),
-} satisfies Readonly<Record<DraftMutation, ClaimedWrite>>;
-/** Saves one edition's draft, or restores an earlier revision as a new draft, and answers with exactly one of the closed outcomes. */
+} satisfies Readonly<Record<(typeof DRAFT_MUTATIONS)[number], ClaimedWrite>>;
 async function changeDraft(request: NextRequest): Promise<Response> {
+  if (!declaresJsonBody(request)) return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, new z.ZodError([{ code: "custom", path: [], message: MESSAGES.bodyNotJson }])));
   const text = await request.text().catch(() => "");
   const sized = requestTextSchema.safeParse(text);
   if (!sized.success) return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, sized.error));

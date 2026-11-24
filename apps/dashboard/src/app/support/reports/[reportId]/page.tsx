@@ -8,16 +8,11 @@ import { PageColumn, ReadNotices, firstValueOf, searchSuffixOf, wireFormOf } fro
 import type { ReportQuery } from "@/modules/support/report";
 import { unadmittedSearchParameterMessage } from "../../../api/search";
 import { AMOUNT_RANGE_CURRENCY_MESSAGE } from "../../../api/support/query";
-type ReportReadResult = Awaited<ReturnType<typeof reads.support.readReport>>;
 type ReportFilters = NonNullable<Parameters<typeof reads.support.readReport>[1]>;
-type ReportRefusal = Extract<ReportReadResult, { readonly kind: "refused" }>["refused"];
+type ReportRefusal = Extract<Awaited<ReturnType<typeof reads.support.readReport>>, { readonly kind: "refused" }>["refused"];
 type SearchParams = Readonly<Record<string, string | string[] | undefined>>;
 export const dynamic = "force-dynamic";
-/**
- * The title of the report this address names, taken from the static catalogue rather than from any record, so a
- * report that cannot be read still titles the tab with its family word and an address naming no report says
- * "Report" instead of enumerating one.
- */
+/** The title of the report this address names, taken from the static catalogue rather than from any record, so a report that cannot be read still titles the tab with its family word and an address naming no report says "Report" instead of enumerating one. */
 export async function generateMetadata({ params }: { readonly params: Promise<{ readonly reportId: string }> }): Promise<Metadata> {
   const { reportId } = await params;
   return { title: isReportId(reportId) ? reportTitle(reportId) : "Report" };
@@ -43,9 +38,6 @@ const PARAM = {
   page: "page",
   pageSize: "pageSize",
 } as const;
-const RECIPIENT_PARTNER = "partner";
-const RECIPIENT_ANONYMOUS = "anonymous";
-const RECIPIENT_UNRESOLVED = "unresolved";
 const WHOLE_YEAR = /^[0-9]{1,4}$/u;
 const PAGE_COPY = {
   deniedTitle: "This report is not available in this context",
@@ -64,7 +56,6 @@ const PAGE_COPY = {
   pageIndex: "State the page as a whole number of pages from 0, the first page.",
   pageSize: "State the page size as a whole number of rows.",
 } as const;
-/** One problem an address states that stops this route reading a report it could state honestly: the field the reader corrects, and what to correct. */
 interface AddressProblem {
   readonly field: string;
   readonly message: string;
@@ -86,11 +77,11 @@ function periodOf(search: SearchParams): ReportFilters["period"] {
 }
 function partnerOf(search: SearchParams): ReportFilters["partner"] {
   switch (statedText(search, PARAM.recipient)) {
-    case RECIPIENT_PARTNER:
+    case "partner":
       return { kind: "partner", partnerId: statedText(search, PARAM.partnerId) ?? "" };
-    case RECIPIENT_ANONYMOUS:
+    case "anonymous":
       return { kind: "anonymous" };
-    case RECIPIENT_UNRESOLVED:
+    case "unresolved":
       return { kind: "unresolved" };
     default:
       return undefined;
@@ -102,12 +93,9 @@ function sortOf(search: SearchParams): ReportFilters["sort"] {
   if (field === undefined && direction === undefined) return undefined;
   return { field, direction };
 }
-/** A page index or a page size as an address states it: a whole count of pages or rows, never a sign and never a fraction. */
-const WHOLE_COUNT = /^[0-9]{1,9}$/u;
-/** An amount bound as an address states it: a whole count of minor units, which may be a correction and so may be negative. */
-const AMOUNT_BOUND = /^-?[0-9]{1,16}$/u;
-/** A whole count of minor units as the address states one, or nothing when it states a value that is not one: no bound is repaired into a number it never was. */
-function statedAmount(stated: string): number | undefined {
+/** A page index or a page size as an address states it: a whole count of pages or rows, never a sign and never a fraction. */ const WHOLE_COUNT = /^[0-9]{1,9}$/u;
+/** An amount bound as an address states it: a whole count of minor units, which may be a correction and so may be negative. */ const AMOUNT_BOUND = /^-?[0-9]{1,16}$/u;
+/** A whole count of minor units as the address states one, or nothing when it states a value that is not one: no bound is repaired into a number it never was. */ function statedAmount(stated: string): number | undefined {
   if (!AMOUNT_BOUND.test(stated)) return undefined;
   const value = Number(stated);
   return Number.isSafeInteger(value) ? value : undefined;

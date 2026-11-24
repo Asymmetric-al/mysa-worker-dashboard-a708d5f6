@@ -9,8 +9,7 @@ import type { ImportDuplicateLooking, ImportRowVerdict } from "@/modules/import/
 export type ImportStepId = "choose-file" | "map" | "review" | "accept" | "results";
 export type ImportStep = { readonly id: ImportStepId; readonly title: string; readonly description: string; readonly reopenLabel: string };
 const STEP_ORDER = ["choose-file", "map", "review", "accept", "results"] as const satisfies readonly ImportStepId[];
-type StepCopy = Omit<ImportStep, "id">;
-const STEP_COPY: Record<ImportStepId, StepCopy> = {
+const STEP_COPY: Record<ImportStepId, Omit<ImportStep, "id">> = {
   "choose-file": { title: "Choose file", description: "Choose one UTF-8 CSV file of contacts, and read the limits it will be measured against before it is read. Nothing is imported until you have reviewed every row.", reopenLabel: "Back to Choose file — your chosen file is kept until you replace it" },
   map: { title: "Map", description: "Name the field each column supplies. Two columns with the same heading stay two separate columns, so each can supply a different field.", reopenLabel: "Back to Map — your column choices are kept" },
   review: { title: "Validate and review", description: "Read what each row would become, correct a cell where you can, and decide about each row on its own.", reopenLabel: "Back to Validate and review — your corrections and decisions are kept" },
@@ -175,8 +174,12 @@ export const ACCEPTANCE_REVIEW_COPY = {
     invalidLead: "The service returned these messages and changed nothing. Correct the row and record the decision again.",
     deniedTitle: "The decision was not recorded",
     deniedLead: "This request is not permitted in the current scope and session, so nothing was recorded. The reason is shown as this application reported it.",
-    conflictTitle: "The row changed before this decision arrived",
     conflictLead: "The review you decided about is no longer the review this context holds, so nothing was recorded. Read the rows as they stand now, then decide again.",
+    conflictRowTitle: (rowNumber: number): string => `Decision about row ${rowNumber}: the review changed before it arrived`,
+    conflictCurrentRevision: "Current revision",
+    conflictPreserved: "The decision you recorded",
+    conflictHeld: "The decision the review now holds",
+    conflictRecovery: "Your decision is kept in the row exactly as you recorded it, and nothing was recorded by this attempt. The rows below are the ones the import holds now, so record the decision again on the row to apply it against the revision shown.",
     unavailableTitle: "The decision could not be recorded",
     unavailableLead: "The local store could not be reached, so this decision was not recorded and the row is unchanged. Record it again once the store answers.",
     unknownTitle: "The decision may or may not have been recorded",
@@ -206,8 +209,7 @@ export const reviewSkipReasonLabel = (rowNumber: number): string => `Why row ${r
 /** The sentence beside a per-row table, stating which window of the operation's rows it holds. */ const windowSentence = (window: ImportRowWindow, whenEmpty: string, noun: string): string => {
   if (window.total === 0) return whenEmpty;
   const first = (window.page - 1) * window.pageSize + 1;
-  const last = Math.min(window.page * window.pageSize, window.total);
-  return `Showing rows ${first}\u2013${last} of ${window.total} in this ${noun}.`;
+  return `Showing rows ${first}\u2013${Math.min(window.page * window.pageSize, window.total)} of ${window.total} in this ${noun}.`;
 };
 export const reviewWindowSentence = (window: ImportRowWindow): string => windowSentence(window, "This file holds no data row to review.", "file");
 export const resultWindowSentence = (window: ImportRowWindow): string => windowSentence(window, "This import reports no data row.", "import");

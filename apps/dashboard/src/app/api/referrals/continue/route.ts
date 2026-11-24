@@ -17,7 +17,6 @@ const refusalIdentityOf = refusalIdentityGiven(UNIDENTIFIED_ATTEMPT, MAX_OPERATI
 const unreadableBodyRefusal = (operationId: string): MutationOutcome => outcomeFromError(operationId, new z.ZodError([{ code: "custom", path: ["body"], message: MESSAGES.bodyUnreadable }]));
 /** The one answer a refusal or a settled attempt earns: the outcome it is, or the outcome its failure maps to. The diagnostic line for a referral mutation is the service runner's own, so this transport writes none. */
 const answer = (operationId: string, answered: unknown): Response => toResponse(isOutcome(answered) ? answered : outcomeFromError(operationId, answered));
-/** Continues one ordinarily expired referral cycle and answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 async function continueReferral(request: Request): Promise<Response> {
   const raw = await jsonBodyOf(request);
   const operationId = refusalIdentityOf(raw);

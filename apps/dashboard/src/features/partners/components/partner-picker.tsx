@@ -42,7 +42,6 @@ interface PartnerPickerCommonProps {
 export type PartnerPickerProps = PartnerPickerCommonProps & { readonly mode: "multiple"; readonly value: readonly PartnerSelection[]; readonly onValueChange: (value: readonly PartnerSelection[]) => void };
 type PartnerPage = { readonly options: readonly PartnerSelection[]; readonly total: number };
 const isPartnerKind = (value: string): value is PartnerKind => PARTNER_KINDS.some((kind) => kind === value);
-const kindLabelOf = (kind: PartnerKind): string => FACET_VALUE_LABELS["contact-type"][kind] ?? kind;
 /** The members this control needs off one roster row: the record's identity, its kind, the name the source gives it, and the record class it states — which decides whether the record may be offered at all. */
 function rowOf(row: unknown): { readonly partnerId: string; readonly kind: PartnerKind; readonly displayName: string; readonly audience: string | null } | null {
   if (typeof row !== "object" || row === null) return null;
@@ -55,9 +54,7 @@ function rowOf(row: unknown): { readonly partnerId: string; readonly kind: Partn
   return { partnerId, kind, displayName, audience: typeof audience === "string" ? audience : null }; // The class is read as the row stated it: a row that states none is left unshared, so it is never offered.
 }
 /** Whether the read reported the record-class filter among the ones it could not apply: a closed facet offers a value only while the scope holds a record of that class, so this is how the read says the scope holds no shared record at all — not that the search matched none. */
-function classFilterUnapplied(value: unknown): boolean {
-  return Array.isArray(value) && value.some((entry) => typeof entry === "object" && entry !== null && (entry as { readonly facet?: unknown }).facet === SHARED_RECORD_FACET.id);
-}
+const classFilterUnapplied = (value: unknown): boolean => Array.isArray(value) && value.some((entry) => typeof entry === "object" && entry !== null && (entry as { readonly facet?: unknown }).facet === SHARED_RECORD_FACET.id);
 function pageOf(data: unknown, url: string, source: SourceReference): PartnerPage {
   const payload = typeof data === "object" && data !== null ? (data as { rows?: unknown; total?: unknown; unappliedFacets?: unknown }) : {};
   const { rows, total, unappliedFacets } = payload;
@@ -118,7 +115,6 @@ function usePartnerPickerPage(scope: Scope, term: string, enabled: boolean) {
     enabled: enabled && resolved,
   });
 }
-const displayNameOf = (selection: PartnerSelection): string => selection.displayName;
 interface PartnerComboboxProps {
   readonly options: readonly PartnerSelection[];
   readonly excluded: ReadonlySet<string>;
@@ -148,7 +144,7 @@ function PartnerComboboxPopup({ options, excluded, pending, term }: Pick<Partner
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <bdi className="min-w-0 text-pretty break-words">{option.displayName}</bdi>
                 <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                  <span>{kindLabelOf(option.kind)}</span>
+                  <span>{FACET_VALUE_LABELS["contact-type"][option.kind] ?? option.kind}</span>
                   <bdi className="mono-identifier break-words">{reference}</bdi>
                   {isExcluded ? <span>already chosen</span> : null}
                 </span>
@@ -161,7 +157,7 @@ function PartnerComboboxPopup({ options, excluded, pending, term }: Pick<Partner
   );
 }
 function PartnerCombobox({ field, options, excluded, pending, disabled, term, onTermChange, selected, onCommit }: PartnerComboboxProps & { readonly field: FormFieldControl }): ReactElement {
-  const shared = { items: options, filter: null, autoHighlight: true, itemToStringLabel: displayNameOf, isItemEqualToValue: samePartnerSelection, disabled, onInputValueChange: onTermChange };
+  const shared = { items: options, filter: null, autoHighlight: true, itemToStringLabel: (selection: PartnerSelection) => selection.displayName, isItemEqualToValue: samePartnerSelection, disabled, onInputValueChange: onTermChange };
   return (
     <Combobox<PartnerSelection, true, PartnerSelection> {...shared} multiple value={selected} onValueChange={onCommit}>
       <ComboboxChips>

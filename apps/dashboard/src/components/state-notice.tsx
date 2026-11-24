@@ -17,14 +17,10 @@ export { NOTICE_HEADING_TAG, nestedNoticeHeadingLevel };
 export type { NoticeHeadingLevel };
 /** Every state this component renders, listed once so the closed set has a runtime form as well as a type. */
 export const NOTICE_KINDS = ["empty", "loading", "unavailable", "unknown", "denied", "refused", "partial-coverage", "language-unavailable"] as const;
-/** One state a surface can be in instead of showing a result. */
-export type NoticeKind = (typeof NOTICE_KINDS)[number];
-/** An in-page command a notice may run. */
-export type NoticeHandler = () => void | Promise<void>;
-/** The one call to action a notice offers. */
-export type NoticeAction = { readonly label: string; readonly href?: string; readonly onClick?: NoticeHandler };
-/** A re-request of the work that produced the notice. */
-export type NoticeRetry = { readonly label: string; readonly onClick: NoticeHandler };
+/** One state a surface can be in instead of showing a result. */ export type NoticeKind = (typeof NOTICE_KINDS)[number];
+/** An in-page command a notice may run. */ export type NoticeHandler = () => void | Promise<void>;
+/** The one call to action a notice offers. */ export type NoticeAction = { readonly label: string; readonly href?: string; readonly onClick?: NoticeHandler };
+/** A re-request of the work that produced the notice. */ export type NoticeRetry = { readonly label: string; readonly onClick: NoticeHandler };
 export type StateNoticeProps = {
   readonly kind: NoticeKind;
   readonly title: string;
@@ -43,7 +39,6 @@ const LOADING_LINE_WIDTHS = ["w-full", "w-2/3", "w-4/5", "w-1/2"] as const;
 const MAX_LOADING_LINES = 12;
 const DEFAULT_LOADING_LINES = 3;
 type AlertNoticeKind = Exclude<NoticeKind, "empty" | "loading">;
-type AlertContent = { readonly icon: ReactElement; readonly body: ReactNode };
 type AlertContentInput = { readonly kind: AlertNoticeKind; readonly description: string | undefined; readonly source: SourceReference | undefined; readonly retry: NoticeRetry | undefined; readonly operationId: string | undefined; readonly coverage: Coverage | undefined; readonly reasonCode: DenialReason | undefined };
 /** The scale each notice heading takes, so a notice states the document outline it lands in: a notice that is the page's own heading reads at the page-title scale, and one beneath a page title or inside a section reads at its level's scale. */
 const NOTICE_HEADING_CLASS: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
@@ -115,7 +110,7 @@ function CoverageSummary({ coverage }: { readonly coverage: Coverage | undefined
     </>
   );
 }
-function renderAlertContent(input: AlertContentInput): AlertContent {
+function renderAlertContent(input: AlertContentInput): { readonly icon: ReactElement; readonly body: ReactNode } {
   const { kind, description, source, retry, operationId, coverage, reasonCode } = input;
   switch (kind) {
     case "unavailable":

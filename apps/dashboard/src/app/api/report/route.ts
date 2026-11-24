@@ -9,7 +9,6 @@ function requestBodyOf(body: unknown): unknown {
   if (typeof body === "object" && body !== null && !Array.isArray(body) && Object.hasOwn(body, "query")) return body;
   return { query: body };
 }
-/** Computes one of the four fixed reports for the query the body states. */
 async function runReport(request: Request): Promise<Response> {
   const parsed = reportRequestSchema.safeParse(requestBodyOf(await jsonBodyOf(request)));
   if (!parsed.success) return toResponse(refusedRead(READ_ATTEMPT, parsed.error));

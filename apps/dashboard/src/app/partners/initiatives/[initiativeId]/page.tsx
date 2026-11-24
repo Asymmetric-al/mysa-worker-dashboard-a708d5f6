@@ -14,13 +14,10 @@ const BACK_TO_LIST: NoticeAction = { label: INITIATIVE_COPY.listHeading, href: I
 type InitiativeEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"];
 type MemberRow = InitiativeEnvelope["data"]["workingList"]["items"][number];
 type CandidateRead = NonNullable<InitiativeDetailProps["candidates"]>;
-type AvailableCandidates = Extract<CandidateRead, { readonly state: "available" }>;
-type CandidatePartner = AvailableCandidates["partners"][number];
-type CandidateMembership = NonNullable<CandidatePartner["membership"]>;
 const CANDIDATE_PAGE_INDEX = 0;
 const CANDIDATE_PAGE_SIZE = 200;
 const CANDIDATES_UNCOMPOSED: CandidateRead = { state: "unavailable", source: { system: "page-composition", reference: "eligible-partner-candidates" } };
-const membershipByPartner = (members: readonly MemberRow[]): ReadonlyMap<string, CandidateMembership> => new Map(members.map((member) => [member.partnerId, { memberId: member.memberId, state: member.state }] as const));
+const membershipByPartner = (members: readonly MemberRow[]): ReadonlyMap<string, NonNullable<Extract<CandidateRead, { readonly state: "available" }>["partners"][number]["membership"]>> => new Map(members.map((member) => [member.partnerId, { memberId: member.memberId, state: member.state }] as const));
 async function eligibleCandidatesOf(initiative: InitiativeEnvelope): Promise<CandidateRead> {
   const roster = await reads.partners.findPartners({ page: { index: CANDIDATE_PAGE_INDEX, size: CANDIDATE_PAGE_SIZE } });
   if (roster.kind === "unavailable") return { state: "unavailable", source: roster.unavailable.source };

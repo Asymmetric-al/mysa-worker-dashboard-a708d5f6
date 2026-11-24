@@ -9,14 +9,12 @@ const PREFERENCES_PATH = "/preview/preferences"; // The preferences surface's pr
 const PROOF_FLOW = '[data-slot="proof-flow"]';
 const NOTIFY_EDITION = { variantId: "variant-update-autumn-fr-public", audience: "Public", locale: "Français" } as const; // The edition a fresh notice is driven through, with the words its own release control carries: the composed release mints the identity, so this file never assumes it.
 const editorPathOf = (variantId: string): string => `/communication/${encodeURIComponent(UPDATE_DOCUMENT)}/${encodeURIComponent(variantId)}`;
-const reviewPathOf = (variantId: string): string => `/communication/review/${encodeURIComponent(variantId)}`;
 const RELEASE_PATH = `/communication/${UPDATE_DOCUMENT}`;
 const RELEASE_RESULT = '[data-slot="publish-review-result"]';
 const SIMULATED_MAIL = "simulated — no mail leaves this application";
 const RESEND_CONTROL = /resend|send again|send it again|send a new one|new send/iu;
 const deliveryPathOf = (intentId: string): string => `/communication/delivery?intentId=${encodeURIComponent(intentId)}`;
 const readSendResult = (page: Page, intentId: string): Promise<unknown> => readJson(page.request, `/api/notify?intentId=${encodeURIComponent(intentId)}`);
-const readInbox = (page: Page): Promise<unknown> => readJson(page.request, "/api/inbox");
 const readPreferences = (page: Page): Promise<unknown> => readJson(page.request, "/api/preferences");
 type NoticeSubmission = { readonly operationId: string; readonly body: unknown };
 async function readUpdateAuthority(page: Page): Promise<DevStateEnvelope> {
@@ -44,7 +42,6 @@ async function submitNotice(page: Page, input: { readonly authority: DevStateEnv
   const answer = await page.request.post("/api/notify", { data: { operationId, scope: input.authority.scope, expectedRevision: input.authority.revision, payload: { documentId: UPDATE_DOCUMENT, releaseId: input.releaseId, ...(input.intendedAt === undefined ? {} : { intendedAt: input.intendedAt }) } } });
   return { operationId, body: await jsonOf(answer, "POST /api/notify") };
 }
-const releaseReceipt = (page: Page) => page.locator(RELEASE_RESULT);
 function onlyIntentIn(inbox: unknown): string {
   const messages = arrayAt(inbox, ["data", "messages"], "The inbox's messages"); // The one intent the acting person's own inbox holds, which is the notice a fresh send recorded for them.
   expect(messages, "One notice produced one message for this recipient").toHaveLength(1);
@@ -68,7 +65,7 @@ async function releaseAndNotify(page: Page): Promise<void> {
   await submitStep.getByRole("button", { name: "Submit for review", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Submit for review", exact: true }).click();
   await expect(submitStep.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
-  await page.goto(reviewPathOf(NOTIFY_EDITION.variantId));
+  await page.goto(`/communication/review/${encodeURIComponent(NOTIFY_EDITION.variantId)}`);
   await expect(page.getByRole("heading", { name: "Review this Update", level: 1 })).toBeVisible();
   await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
   await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
@@ -105,11 +102,11 @@ test("a lost acknowledgement is recovered by identity, and one intent yields one
   await expect(page.getByText(SIMULATED_MAIL)).toBeVisible();
   await armLostAcknowledgement(page.request, "requestNotification");
   await releaseAndNotify(page);
-  const receipt = releaseReceipt(page);
+  const receipt = page.locator(RELEASE_RESULT);
   await expect(receipt, "The release itself was applied and says so").toHaveAttribute("data-outcome", "accepted");
   await expect(receipt, "The notice's own outcome is stated as uncertain, neither accepted nor failed").toContainText("Outcome unknown");
   await expect(page.getByText(SIMULATED_MAIL, { exact: true }).first()).toBeVisible();
-  const intentId = onlyIntentIn(await readInbox(page)); // The outcome is recovered by reading it back, not by sending anything again: the recipient's own inbox holds the one message that notice produced, and its intent is the identity every surface below is read under.
+  const intentId = onlyIntentIn(await readJson(page.request, "/api/inbox")); // The outcome is recovered by reading it back, not by sending anything again: the recipient's own inbox holds the one message that notice produced, and its intent is the identity every surface below is read under.
   await openDelivery(page, intentId); // The durable surface: the delivery results of that intent, read by the browser, with this person's own row on it. "Check the result" is the surface's only control — reading the same notice again, which can reveal an outcome and can never repeat a submission.
   const recovery = page.locator('[data-slot="delivery-recovery"]'); // The recovery card is the surface's own statement of what a recovery is; its title is a plain card heading rather than an outline entry, so it is read as the card's text.
   await expect(recovery.getByText("Checking the result", { exact: true })).toBeVisible();

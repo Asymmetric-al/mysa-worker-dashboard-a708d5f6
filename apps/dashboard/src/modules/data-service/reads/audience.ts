@@ -10,13 +10,13 @@ import { directionOfTag, resolveLocale, type ContentLocale } from "@/modules/con
 import { buildNotice, type Notice, type PinnedRendition as NoticePinnedRendition } from "@/modules/content/notice";
 import { isListedPublicly, reachMetadata, withdrawEdition, type ReachMetadata, type Tombstone } from "@/modules/content/reach";
 import { renderToHtml, type RenderMediaPlacement, type RenderRendition, type RenderRenditions } from "@/modules/content/render";
-import type { ContentDocument, Release } from "@/modules/content/variant";
+import type { Release } from "@/modules/content/variant";
 import { scenarioMediaServing } from "@/modules/dev-runtime/scenario";
 import { readSession } from "@/modules/store/repository";
 import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { confirmationDeadline, notificationDeadline } from "@/modules/time/window";
-import { assertScope, canReadProtected, readResultOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
+import { assertScope, canReadProtected, readResultOfRefusal, recordRefusalOutage, resolveSession, sessionStateRefusal, type ResolvedSession, type SessionSource } from "../authorize";
 import {
   buildEnvelope,
   contentDocumentRecordSchema,
@@ -47,7 +47,7 @@ import {
 import type { ReadResult } from "../outcome";
 import { storedContentRevisionRecordSchema } from "../envelope";
 import { answerOf, countState, deniedRead, hashedRevision, instantOf, readAction, sourceUnavailableRead, storeUnavailableRead } from "./frame";
-import { membershipOf } from "../projection";
+import { contentDocumentOf, membershipOf } from "../projection";
 const PREVIEW_PUBLISHER_SESSION_ID = "established-worker";
 const STORE_READ_GUIDANCE = "The local synthetic store could not be read for this request. Retry the same request; if it keeps failing, reset the development data from Settings and reopen the session.";
 const FIRST_PAGE = 1;
@@ -82,8 +82,7 @@ export type OfferedLanguage = ContentLocale & { readonly label: string };
 // The reader's own preference record for one publisher and one purpose: `publisherId` is the membership's own publisher when the session holds one and otherwise the one publisher the Update-email records this read was answered from name, and it stays null when those records name none or several.
 export type PreferencesView = { readonly state: "none" | DomainMembershipState; readonly membershipId: string | null; readonly publisherId: string | null } & { readonly purpose: AudiencePurpose; readonly choice: MemberChoice | null; readonly choiceOptions: readonly MemberChoice[] } & {
   readonly languagePreference: string | null;
-  /** The languages this publisher currently offers this reader, and never one whose every edition this reader may not open. */
-  readonly languageOptions: readonly OfferedLanguage[];
+  /** The languages this publisher currently offers this reader, and never one whose every edition this reader may not open. */ readonly languageOptions: readonly OfferedLanguage[];
   readonly email: string | null;
   readonly acceptedOn: string | null;
 } & { readonly confirmation: ConfirmationWindowView; readonly pending: { readonly claimsMailSent: false; readonly nextStep: string } | null } & { readonly readingGrant: { readonly granted: boolean; readonly audience: ContentAudience } } & {
@@ -165,8 +164,7 @@ export async function resolveWorlds(job: string, source?: SessionSource): Promis
   const publisher = await loadWorld(PREVIEW_PUBLISHER_SESSION_ID);
   return !publisher.ok ? { ok: false, result: storeUnavailableRead(job, publisher.reference, STORE_READ_GUIDANCE) } : { ok: true, session, own: own.world, published: publisher.world };
 }
-/** The scope a read states in one world: the context the caller selected, the context the world holds, or nothing when neither names one. */
-export function scopeOf(session: ResolvedSession, world: World): Scope | undefined {
+/** The scope a read states in one world: the context the caller selected, the context the world holds, or nothing when neither names one. */ export function scopeOf(session: ResolvedSession, world: World): Scope | undefined {
   if (session.selected !== null) return session.selected;
   const { context } = world.state;
   if (context.selectedOrganizationId === null || context.selectedMinistryId === null || context.selectedSupportSubjectId === null) return undefined;
@@ -184,9 +182,6 @@ function domainReleaseOf(record: ReleaseRecord, variant: ContentVariantRecord | 
   const { releaseId, variantId, revisionId, audience, reach } = record;
   return { releaseId, variantId, revisionId, audience, locale: localeOfRelease(record, variant), publishedAt, reach, contentChecksum: revision.contentChecksum, ...(withdrawnAt === undefined ? {} : { withdrawnAt }), ...(record.supersededBy === null ? {} : { supersededBy: record.supersededBy }) };
 }
-function domainDocumentOf(record: ContentDocumentRecord): ContentDocument {
-  return { documentId: record.documentId, family: record.family, kind: record.kind, sourceSubject: record.sourceSubject, siteId: record.siteId, ...(record.givingBinding === null ? {} : { givingBinding: record.givingBinding.designation }), managedFields: {} };
-}
 type PageQuery = { readonly page?: number; readonly pageSize?: number };
 function pageNumberOf(requested: number | undefined): number {
   if (requested === undefined || !Number.isFinite(requested)) return FIRST_PAGE;
@@ -203,16 +198,17 @@ const sliceOf = <T>(items: readonly T[], offset: number, limit: number): readonl
 const textState = (value: string | null | undefined): RecordedValueState => (value === null || value === undefined || value.length === 0 ? "unknown" : "value");
 const collectionRevision = (parts: readonly string[]): string => hashedRevision("col", [...parts].sort());
 type OpenedRead = { readonly ok: true; readonly session: ResolvedSession; readonly own: World; readonly published: World; readonly scope: Scope; readonly at: Temporal.Instant } | { readonly ok: false; readonly result: ReadResult<never> };
-/** Opens the worlds one read answers from and resolves the scope and instant it states, or answers the read's own refusal. */
+/** Opens the worlds one read answers from and resolves the scope and instant it states, or answers the read's own refusal. The session's own state is decided first, before any scope is consulted: a session that is denied, without access, expired or unavailable is refused here by every read that opens through this one, so no read states a scope, a count or an edition to a session its own state has ended. */
 async function openRead(job: string, source: SessionSource | undefined, requireAdmitted = false): Promise<OpenedRead> {
   const worlds = await resolveWorlds(job, source);
   if (!worlds.ok) return worlds;
+  const stateRefusal = sessionStateRefusal(worlds.session);
+  if (stateRefusal !== undefined) return { ok: false, result: { kind: "denied", denied: stateRefusal } };
   const scope = scopeOf(worlds.session, worlds.published);
   return scope === undefined || (requireAdmitted && !admittedToWorld(worlds.session, worlds.published)) ? { ok: false, result: deniedRead("no-membership") } : { ok: true, session: worlds.session, own: worlds.own, published: worlds.published, scope, at: scenarioInstant(worlds.session) };
 }
 type EnvelopeFields<T> = { readonly source: Parameters<typeof buildEnvelope>[0]["source"]; readonly revision: string; readonly data: T; readonly valueStates: Readonly<Record<string, RecordedValueState>>; readonly actions: readonly ReadAction[]; readonly to?: string | null };
-/** The result a read answers with, assembled through this file's own envelope builder. */
-function respond<T>(scope: Scope, at: Temporal.Instant, fields: EnvelopeFields<T>): ReadResult<ReadEnvelope<T>> {
+/** The result a read answers with, assembled through this file's own envelope builder. */ function respond<T>(scope: Scope, at: Temporal.Instant, fields: EnvelopeFields<T>): ReadResult<ReadEnvelope<T>> {
   return answerOf(scope, at.toString(), { data: fields.data, source: fields.source, revision: fields.revision, coverage: { from: null, to: fields.to === undefined ? at.toString() : fields.to, state: "complete" }, valueStates: fields.valueStates, actions: fields.actions });
 }
 /** The state a rendition count is stated in: a source that is down states `unavailable`, because an unreadable rendition set is never a number. */
@@ -278,8 +274,7 @@ function renderingOf(revision: StoredRevision, assets: readonly MediaAssetRecord
   return rendered.status === "invalid" ? { ok: false, reason: "The edition's content does not satisfy the content profile this build renders." } : { ok: true, html: rendered.html, media };
 }
 type ResolvedRelease = { readonly record: ReleaseRecord; readonly variant: ContentVariantRecord | undefined; readonly revision: StoredRevision | undefined; readonly document: ContentDocumentRecord | undefined; readonly domain: Release | undefined };
-/** Resolves one stored release against the state it lives in: its variant, revision, document and domain release. */
-export function resolveRelease(record: ReleaseRecord, state: StoredState): ResolvedRelease {
+/** Resolves one stored release against the state it lives in: its variant, revision, document and domain release. */ export function resolveRelease(record: ReleaseRecord, state: StoredState): ResolvedRelease {
   const variant = state.contentVariants.find((candidate) => candidate.variantId === record.variantId);
   const revision = state.contentRevisions.find((candidate) => candidate.revisionId === record.revisionId);
   const document = variant === undefined ? undefined : state.contentDocuments.find((candidate) => candidate.documentId === variant.documentId);
@@ -300,7 +295,8 @@ function singlePublisherOf(rows: readonly StoredMembership[]): string | undefine
   return publishers.length === 1 ? publishers[0] : undefined;
 }
 function readerOwnedMemberships(session: ResolvedSession, own: World, published: World): readonly StoredMembership[] {
-  const fromOwn = session.admittedMemberships.length === 0 ? own.state.memberships : own.state.memberships.filter((row) => row.membershipId === session.principalId);
+  // The rows are the reader's own whatever the session holds: a seat carrying no admitted membership still reads only the memberships recorded for its own principal, never a row its world holds for somebody else.
+  const fromOwn = own.state.memberships.filter((row) => row.membershipId === session.principalId);
   const byId = new Map<string, StoredMembership>();
   for (const row of [...fromOwn, ...published.state.memberships.filter((row) => row.membershipId === session.principalId)]) if (row.purpose === UPDATE_EMAIL_PURPOSE && !byId.has(row.membershipId)) byId.set(row.membershipId, row);
   return [...byId.values()].sort((left, right) => compareCodeUnits(left.membershipId, right.membershipId));
@@ -533,8 +529,7 @@ export function grantHeldFor(session: ResolvedSession, scope: Scope, own: World,
     session.principalId,
   );
 }
-/** A language's name in that language, or the tag itself where the runtime cannot name it. */
-function languageNameOf(tag: string): string {
+/** A language's name in that language, or the tag itself where the runtime cannot name it. */ function languageNameOf(tag: string): string {
   try {
     const named = new Intl.DisplayNames([tag], { type: "language" }).of(tag)?.trim() ?? "";
     return named.length === 0 ? tag : named;
@@ -579,7 +574,7 @@ function resolveEditionFor(input: { readonly document: ContentDocumentRecord; re
   const attempt = (audience: ContentAudience): { readonly edition: AdmittedEdition; readonly locale: ContentLocale; readonly fallbackOccurred: boolean } | undefined => {
     const candidates = input.editions.filter((edition) => edition.record.audience === audience);
     if (candidates.length === 0) return undefined;
-    const resolution = resolveLocale({ document: domainDocumentOf(input.document), siteDefaultLocale: "", audience, releases: candidates.map((edition) => ({ ...edition.domain, documentId: input.document.documentId, siteId: input.document.siteId })), requestedLocale: input.requestedLocale });
+    const resolution = resolveLocale({ document: contentDocumentOf(input.document), siteDefaultLocale: "", audience, releases: candidates.map((edition) => ({ ...edition.domain, documentId: input.document.documentId, siteId: input.document.siteId })), requestedLocale: input.requestedLocale });
     if (resolution.status !== "resolved") return undefined;
     const chosen = candidates.find((edition) => edition.record.releaseId === resolution.release.releaseId);
     return chosen === undefined ? undefined : { edition: chosen, locale: resolution.servedLocale, fallbackOccurred: resolution.fallbackOccurred };

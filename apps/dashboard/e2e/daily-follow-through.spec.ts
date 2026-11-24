@@ -10,8 +10,6 @@ const PARTNER_ROUTE_PREFIX = "/partners"; // The prefix every partner record is 
 const PARTNER_API_PREFIX = "/api/partners";
 const SEEDED_TODAY = "2026-11-20";
 const PAGER = { taskNoun: "tasks", titleColumn: "Task", rowsPerPage: "Rows per page", pageSize: "50" } as const;
-const AGENDA_PAGE_SIZE = "200";
-const REVISION_LABEL = "Revision";
 const AUDIENCE = { href: "/communication/audience", heading: "Update email audience", countsSlot: '[data-slot="membership-counts"]', memberNoun: "members" } as const; // The publisher's audience, which a selection must never become, in the words its own surface states it with.
 type TaskListKey = "today" | "upcoming" | "overdue" | "all" | "undated";
 const TASK_LISTS: readonly { readonly key: TaskListKey; readonly label: string }[] = [
@@ -63,7 +61,7 @@ async function readTaskRow(region: Locator, title: string): Promise<TaskReading>
   return { taskId, status, dueOn: (await day.first().innerText()).trim() };
 }
 async function readReceiptRevision(receipt: Locator): Promise<string> {
-  const fact = receipt.locator("dl > div").filter({ has: receipt.page().getByText(REVISION_LABEL, { exact: true }) }); // The revision a durable receipt states, which is the only place a record's revision is stated: the row, the list and the composer state the record's facts but not the revision they present.
+  const fact = receipt.locator("dl > div").filter({ has: receipt.page().getByText("Revision", { exact: true }) }); // The revision a durable receipt states, which is the only place a record's revision is stated: the row, the list and the composer state the record's facts but not the revision they present.
   const stated = fact.locator("bdi");
   await expect(stated, "The receipt states the revision the record it changed now stands at.").toBeVisible();
   return (await stated.innerText()).trim();
@@ -93,9 +91,7 @@ async function openList(page: Page, list: { readonly key: TaskListKey; readonly 
   await expect(region, `The ${list.label} list renders the one table pattern under its own name.`).toBeVisible();
   return region;
 }
-function rowOf(region: Locator, title: string): Locator {
-  return region.getByRole("row", { name: title }); // A row is named by the title it holds, matched as the text it is rather than as a pattern: a title is a worker's own words, so a bracket or an apostrophe in one must never become selector syntax.
-}
+const rowOf = (region: Locator, title: string): Locator => region.getByRole("row", { name: title }); // A row is named by the title it holds, matched as the text it is rather than as a pattern: a title is a worker's own words, so a bracket or an apostrophe in one must never become selector syntax.
 async function statedRows(region: Locator): Promise<number> {
   const rows = region.getByRole("checkbox", { name: /^Select (?!all )/u }); // How many rows one list's table shows, which is the window its pager states for the page on screen.
   await expect(rows.first(), "The list states at least one row, so the window its pager states is a window of rows.").toBeVisible();
@@ -168,7 +164,7 @@ test("every list states the whole result it holds and its page size, and the age
   const dated = DATED_LIST_KEYS.reduce((sum, key) => sum + (totals.get(key) ?? 0), 0); // The dated open work the agenda groups is the same work Today, Upcoming and Overdue count: one partition of the work, read on a second surface.
   expect(agendaStated.itemNoun, "The agenda counts its rows in the same task noun the lists use.").toBe(PAGER.taskNoun);
   expect(agendaStated.total, `The agenda states the same dated open work the Today, Upcoming and Overdue lists count (${String(dated)}).`).toBe(dated);
-  await expect(page.getByLabel(PAGER.rowsPerPage), "The agenda states the window it pages at, which is the documented cap.").toHaveValue(AGENDA_PAGE_SIZE);
+  await expect(page.getByLabel(PAGER.rowsPerPage), "The agenda states the window it pages at, which is the documented cap.").toHaveValue("200");
   await expectDevelopmentData(page);
   const overdueRow = rowOf(agenda, SEEDED_TASK.overdue); // A row stands under the day it is due: the date it states is that civil day and nothing else, once per group, so no row is grouped by a midnight, an instant or a zone offset.
   await expect(overdueRow, "Work past its date is still open work, so the agenda groups it.").toBeVisible();

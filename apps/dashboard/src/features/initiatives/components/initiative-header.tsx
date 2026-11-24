@@ -27,8 +27,7 @@ function viewOf(envelope: ReadEnvelope<InitiativeHeaderPayload> | null | undefin
   return { initiative: initiative as InitiativeHeaderPayload["initiative"], openWork: typeof total === "number" ? total : null };
 }
 const actionOf = (actions: readonly ReadAction[], name: InitiativeLifecycleAction): ReadAction | undefined => actions.find((action) => action.name === name);
-type AbsentAction = { readonly labels: readonly string[]; readonly reason: string };
-function absentActions(candidates: readonly { readonly label: string; readonly action: ReadAction | undefined }[]): readonly AbsentAction[] {
+function absentActions(candidates: readonly { readonly label: string; readonly action: ReadAction | undefined }[]): readonly { readonly labels: readonly string[]; readonly reason: string }[] {
   const grouped: { labels: string[]; reason: string }[] = [];
   for (const candidate of candidates) {
     const { action, label } = candidate;
@@ -36,9 +35,7 @@ function absentActions(candidates: readonly { readonly label: string; readonly a
     const existing = grouped.find((entry) => entry.reason === action.reason);
     if (existing === undefined) {
       grouped.push({ labels: [label], reason: action.reason });
-    } else {
-      existing.labels.push(label);
-    }
+    } else existing.labels.push(label);
   }
   return grouped;
 }
@@ -83,8 +80,6 @@ export default function InitiativeHeader({ envelope, onRequestClose, onRequestRe
   const closed = initiative.state === "closed";
   const reopened = initiative.lifecycle === "reopened";
   const ownsUnfinishedWork = openWork !== null && openWork > 0;
-  const showsClosureNotes = (closed && ownsUnfinishedWork) || reopened;
-  const disposition = initiative.closureDisposition === null ? REQUESTED_TERMS_COPY.notStated : dispositionFallback(initiative.closureDisposition);
   const closeAction = actionOf(envelope.actions, "closeInitiative");
   const reopenAction = actionOf(envelope.actions, "reopenInitiative");
   const offersClose = closeAction?.available === true && onRequestClose !== undefined;
@@ -111,9 +106,9 @@ export default function InitiativeHeader({ envelope, onRequestClose, onRequestRe
         <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
           <TermFact term={INITIATIVE_COPY.responsibleLabel} value={<bdi className="mono-identifier break-all">{initiative.responsiblePrincipalId}</bdi>} />
           <TermFact term={INITIATIVE_COPY.periodLabel} value={<PeriodValue period={initiative.period} />} />
-          {closed || initiative.closureDisposition !== null ? <TermFact term={CLOSURE_COPY.dispositionLabel} value={<bdi>{disposition}</bdi>} /> : null}
+          {closed || initiative.closureDisposition !== null ? <TermFact term={CLOSURE_COPY.dispositionLabel} value={<bdi>{initiative.closureDisposition === null ? REQUESTED_TERMS_COPY.notStated : dispositionFallback(initiative.closureDisposition)}</bdi>} /> : null}
         </dl>
-        {showsClosureNotes ? (
+        {(closed && ownsUnfinishedWork) || reopened ? (
           <div className="flex flex-col gap-1.5 text-sm text-pretty text-muted-foreground">
             {closed && ownsUnfinishedWork ? <p className="type-supporting">{CLOSURE_COPY.handoffNote}</p> : null} {reopened ? <p className="type-supporting">{CLOSURE_COPY.historyPreservedNote}</p> : null}
           </div>
@@ -155,16 +150,8 @@ export default function InitiativeHeader({ envelope, onRequestClose, onRequestRe
           </div>
           {offersClose || offersReopen ? (
             <div className="flex flex-wrap items-center gap-2">
-              {offersClose ? (
-                <Button variant="outline" onClick={() => onRequestClose?.()}>
-                  {CLOSURE_COPY.closeHeading}
-                </Button>
-              ) : null}
-              {offersReopen ? (
-                <Button variant="outline" onClick={() => onRequestReopen?.()}>
-                  {CLOSURE_COPY.reopenHeading}
-                </Button>
-              ) : null}
+              {offersClose ? <Button {...{ variant: "outline", onClick: () => onRequestClose?.() }}>{CLOSURE_COPY.closeHeading}</Button> : null}
+              {offersReopen ? <Button {...{ variant: "outline", onClick: () => onRequestReopen?.() }}>{CLOSURE_COPY.reopenHeading}</Button> : null}
             </div>
           ) : null}
         </CardFooter>

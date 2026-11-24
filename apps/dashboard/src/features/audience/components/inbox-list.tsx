@@ -15,7 +15,6 @@ import type { ReadResult } from "@/modules/data-service/outcome";
 import { useInbox, type InboxEnvelope } from "../hooks/use-audience-reads";
 import MessageReader from "./message-reader";
 type InboxMessage = InboxEnvelope["data"]["messages"][number];
-type PinnedAudience = NonNullable<InboxMessage["audience"]>;
 type InboxPaging = { readonly page: number; readonly pageSize: number };
 export type InboxListProps = {
   /** The exact authority this inbox is read under; the service re-derives scope from it on every read. */ readonly scope: Scope;
@@ -24,14 +23,11 @@ export type InboxListProps = {
   readonly className?: string;
 };
 const EMPTY_MESSAGES: readonly InboxMessage[] = [];
-const SURFACE_INTRO = "Every message this membership's notification purpose has produced, at the copy the recipient was pinned to: " + "the sender, the subject, the body as HTML and as plain text, and the outcome this application recorded for it.";
 const COLUMNS = { sender: "Sender", subject: "Subject", audience: "Audience", language: "Language", noticeBody: "Notice body", intendedAt: "Intended at", recordedAt: "Recorded at", sendState: "Send outcome" } as const;
 const CLOSE_LABEL = "Close";
 const HONESTY_NOTE =
   "An outcome recorded as accepted states that this application took the submission. It is not a delivered message and not a read one. An outcome recorded as unknown says the acknowledgement never arrived rather than that the submission failed: it is checked against the same operation, which returns the result already recorded, and no control on this page repeats a submission under a new one.";
 const ORDER_NOTE = "Messages are ordered by the instant the notice was intended, newest first, and then by message identity. " + "This read takes no ordering parameter, so no column is sortable and the order above the list is the order " + "the read applied.";
-const AS_OF_NOTE = "Read at";
-const AS_OF_EXPLANATION = "the scenario instant this inbox was evaluated at, so a message recorded after it does not appear here.";
 const STATE_HEADINGS = { loading: "Reading this inbox", unavailable: "The inbox could not be read", denied: "This inbox is not permitted here", refused: "The inbox request was not admitted", partialCoverage: "The source covers only part of the period this inbox records" } as const;
 const BEYOND_LAST_PAGE = { title: "This page of the inbox holds no message", action: "Go to the last page" } as const;
 const DUPLICATE_DEFECT = {
@@ -40,7 +36,7 @@ const DUPLICATE_DEFECT = {
 } as const;
 const UNRESOLVED_NOTE = { title: "Some intents produced no readable message", lead: "They are recorded for this recipient and could not be resolved into a message, so this inbox is incomplete rather than empty, and nothing is reconstructed in their place." } as const;
 const READING_UNAVAILABLE = { title: "The edition this message points at cannot be rendered now", lead: "The message itself is shown as it was recorded. The edition it links to is not readable at this instant, so nothing of it is reproduced here and no cached copy stands in its place." } as const;
-const AUDIENCE_DISPLAY: Readonly<Record<PinnedAudience, { readonly label: string; readonly tone: StatusTone }>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
+const AUDIENCE_DISPLAY: Readonly<Record<NonNullable<InboxMessage["audience"]>, { readonly label: string; readonly tone: StatusTone }>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
 const NOTICE_BODY_DISPLAY: Readonly<Record<"protected" | "public", { readonly label: string; readonly tone: StatusTone }>> = { protected: { label: "Protected notice", tone: "caution" }, public: { label: "Public notice", tone: "neutral" } };
 const SEND_STATE_ORDER: readonly SendStatus[] = ["accepted", "failed", "unknown"];
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
@@ -116,13 +112,13 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
     },
     [selectedMessageId, readerRegionId],
   );
+  const audienceLabel = selectedMessage === undefined || selectedMessage.audience === null ? NOT_RECORDED.label : AUDIENCE_DISPLAY[selectedMessage.audience].label;
+  const audienceTone = selectedMessage === undefined || selectedMessage.audience === null ? NOT_RECORDED.tone : AUDIENCE_DISPLAY[selectedMessage.audience].tone;
   const reader =
     selectedMessage === undefined ? null : (
       <section id={readerRegionId} ref={readerRef} tabIndex={-1} aria-labelledby={readerHeadingId} data-slot="inbox-reader" className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <h3 id={readerHeadingId} className="type-subsection-title text-pretty wrap-anywhere">
-            {"The message as it was produced for this recipient"}
-          </h3>
+          <h3 {...{ id: readerHeadingId, className: "type-subsection-title text-pretty wrap-anywhere" }}>{"The message as it was produced for this recipient"}</h3>
           <Button type="button" variant="outline" size="sm" onClick={closeReader} className="max-w-full whitespace-normal">
             {CLOSE_LABEL}
             <span className="sr-only"> the message</span>
@@ -141,8 +137,8 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
           sender={selectedMessage.sender}
           subject={selectedMessage.subject}
           asOfLabel={selectedMessage.recordedAt}
-          audienceLabel={selectedMessage.audience === null ? NOT_RECORDED.label : AUDIENCE_DISPLAY[selectedMessage.audience].label}
-          audienceTone={selectedMessage.audience === null ? NOT_RECORDED.tone : AUDIENCE_DISPLAY[selectedMessage.audience].tone}
+          audienceLabel={audienceLabel}
+          audienceTone={audienceTone}
           languageTag={selectedMessage.locale?.tag ?? ""}
           direction={selectedMessage.locale?.direction === "rtl" ? "rtl" : "ltr"}
           protected={selectedMessage.protectedNotice}
@@ -153,46 +149,30 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
         />
       </section>
     );
-  const retry = { label: "Try again", onClick: (): void => void inbox.refetch() };
   let content: ReactElement;
   if (read === undefined) {
     content = <StateNotice kind="loading" title={STATE_HEADINGS.loading} headingLevel={3} loadingLines={6} />;
   } else if (read.kind === "denied") {
     content = <StateNotice kind="denied" title={STATE_HEADINGS.denied} reasonCode={read.denied.reasonCode} headingLevel={3} />;
   } else if (read.kind === "unavailable") {
-    content = <StateNotice kind="unavailable" title={STATE_HEADINGS.unavailable} description={read.unavailable.guidance} source={read.unavailable.source} retry={retry} headingLevel={3} />;
+    content = <StateNotice kind="unavailable" title={STATE_HEADINGS.unavailable} description={read.unavailable.guidance} source={read.unavailable.source} retry={{ label: "Try again", onClick: (): void => void inbox.refetch() }} headingLevel={3} />;
   } else if (read.kind === "refused") {
     content = <StateNotice kind="refused" title={STATE_HEADINGS.refused} headingLevel={3} />;
   } else {
     const envelope = read.envelope;
     const data = envelope.data;
     const formatCount = countFormatOf(locale); // Every count below is the read's own, grouped in the interface locale the route states.
-    const unresolvedNoun = data.unresolvedIntents === 1 ? "intent" : "intents";
+    const listState = { sort: [], page: data.page.page, pageSize: data.page.pageSize, columnVisibility };
+    const beyondLastPageBody = `The result now holds ${formatCount.format(data.page.pageCount)} ${data.page.pageCount === 1 ? "page" : "pages"} of messages, so page ${formatCount.format(data.page.page)} holds none; no message was dropped, and the pager states where they are.`;
+    const beyondLastPageAction = { label: BEYOND_LAST_PAGE.action, onClick: () => setWindow({ page: Math.max(FIRST_PAGE, data.page.pageCount), pageSize: paging.pageSize }) };
     const body =
       data.page.total === 0 ? (
         <StateNotice kind="empty" title={INBOX_EMPTY_COPY.title} description={INBOX_EMPTY_COPY.description} headingLevel={3} />
       ) : data.messages.length === 0 ? (
-        <StateNotice
-          kind="empty"
-          title={BEYOND_LAST_PAGE.title}
-          description={`The result now holds ${formatCount.format(data.page.pageCount)} ${data.page.pageCount === 1 ? "page" : "pages"} of messages, so page ${formatCount.format(data.page.page)} holds none; no message was dropped, and the pager states where they are.`}
-          action={{ label: BEYOND_LAST_PAGE.action, onClick: () => setWindow({ page: Math.max(FIRST_PAGE, data.page.pageCount), pageSize: paging.pageSize }) }}
-          headingLevel={3}
-        />
+        <StateNotice kind="empty" title={BEYOND_LAST_PAGE.title} description={beyondLastPageBody} action={beyondLastPageAction} headingLevel={3} />
       ) : (
         <>
-          <RecordList
-            label={INBOX_HEADING}
-            columns={columns}
-            rows={data.messages}
-            rowCount={data.page.total}
-            queryState={{ sort: [], page: data.page.page, pageSize: data.page.pageSize, columnVisibility }}
-            onQueryStateChange={handleQueryStateChange}
-            getRowId={getRowId}
-            rowActions={rowActions}
-            itemNoun="message"
-            pageSizeOptions={PAGE_SIZE_OPTIONS}
-          />
+          <RecordList label={INBOX_HEADING} columns={columns} rows={data.messages} rowCount={data.page.total} queryState={listState} onQueryStateChange={handleQueryStateChange} getRowId={getRowId} rowActions={rowActions} itemNoun="message" locale={locale} pageSizeOptions={PAGE_SIZE_OPTIONS} />
           <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{ORDER_NOTE}</p>
           {reader}
         </>
@@ -211,9 +191,9 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
           </ul>
           <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{HONESTY_NOTE}</p>
           <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">
-            {`${AS_OF_NOTE} `}
+            {`${"Read at"} `}
             <bdi className="tabular-figures">{envelope.asOf}</bdi>
-            {` — ${AS_OF_EXPLANATION}`}
+            {` — ${"the scenario instant this inbox was evaluated at, so a message recorded after it does not appear here."}`}
           </p>
         </div>
         {envelope.coverage.state === "complete" ? null : <StateNotice kind="partial-coverage" title={STATE_HEADINGS.partialCoverage} coverage={envelope.coverage} headingLevel={3} />}
@@ -221,7 +201,7 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
           <Alert role={undefined} data-slot="inbox-unresolved-intents">
             <AlertTitle>{UNRESOLVED_NOTE.title}</AlertTitle>
             <AlertDescription>
-              <p>{`${formatCount.format(data.unresolvedIntents)} ${unresolvedNoun} recorded for this recipient produced no message.`}</p>
+              <p>{`${formatCount.format(data.unresolvedIntents)} ${data.unresolvedIntents === 1 ? "intent" : "intents"} recorded for this recipient produced no message.`}</p>
               <p>{UNRESOLVED_NOTE.lead}</p>
             </AlertDescription>
           </Alert>
@@ -249,10 +229,8 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
   return (
     <section data-slot="inbox-list" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <h2 id={headingId} className="type-section-title text-pretty wrap-anywhere">
-          {INBOX_HEADING}
-        </h2>
-        <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{SURFACE_INTRO}</p>
+        <h2 {...{ id: headingId, className: "type-section-title text-pretty wrap-anywhere" }}>{INBOX_HEADING}</h2>
+        <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{"Every message this membership's notification purpose has produced, at the copy the recipient was pinned to: " + "the sender, the subject, the body as HTML and as plain text, and the outcome this application recorded for it."}</p>
       </div>
       <SimulationLabel effect={INBOX_SIMULATION_EFFECT} />
       <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{ONE_COPY_STATEMENT}</p>

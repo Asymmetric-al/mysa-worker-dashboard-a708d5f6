@@ -1,16 +1,12 @@
 /** Criterion 8 — giving follow-up: a gift leads to one ordinary task, and to nothing else. */
 import type { Locator, Page } from "@playwright/test";
-import { expect, listTotalOf, test, type PersonaName } from "../playwright.config";
-const PERSONA: PersonaName = "established-worker";
+import { expect, listTotalOf, test } from "../playwright.config";
 const GIFTS_HREF = "/support/gifts";
 const WORK_HREF = "/work";
 const PARTNER_HREF = "/partners/partner-jo-mbeki";
-const GIFT_ROW_ID = "gift-row-harbour-0001";
-const GIFT_ID = "gift-harbour-0001";
 const PARTNER_REFERENCE = "partner-jo-mbeki"; // The partner the gift is attributed to, as an opaque reference: never a name, never an email.
 const FOLLOW_UP_TITLE = "Thank Jo Mbeki for the November gift";
 const TASK_NOUN = "tasks";
-const OPEN_GIFT_LINK = `Open gift ${GIFT_ID}`;
 const RECORD_HEADING = "Gift record";
 const REVIEW_TITLE = "Review the follow-up task";
 const PROVENANCE_SECTION = "Provenance";
@@ -24,14 +20,11 @@ const OPEN_TASK_LISTS: readonly { readonly key: string; readonly label: string; 
   { key: "undated", label: "Undated", emptyTitle: "No task is undated" },
 ];
 const ROW_SELECTION = /^Select (?!all )/u;
-const ROW_SELECTION_PREFIX = "Select ";
-const PARTNER_LABEL = "Jo Mbeki";
 const INBOX = { heading: "Synthetic inbox", outcomes: "Send outcomes recorded in this inbox", count: /^(?:([\d,]+)|One) messages? (?:have|has) been produced for this membership\.$/u } as const;
 const AUDIENCE = { heading: "Update email audience", countsSlot: '[data-slot="membership-counts"]', memberNoun: "members" } as const;
 type CurrencyFigure = { readonly currency: string; readonly minorUnits: number; readonly giftCount: number };
 type WholeResult = { readonly figures: readonly CurrencyFigure[]; readonly text: string };
 const AMOUNT_IN_FIGURE = /(-?\d[\d.,]*)\s+([A-Z]{3})\b/u;
-const COUNT_IN_FIGURE = /and\s+([\d,]+)\s+gifts?\b/u;
 function minorUnitsFrom(displayed: string): number {
   const stripped = displayed.replace(/\(incomplete\)/gu, "").trim();
   const negative = stripped.startsWith("-");
@@ -51,20 +44,16 @@ async function readWholeResult(page: Page): Promise<WholeResult> {
     const text = (await rows.nth(index).innerText()).replace(/\s+/gu, " ").trim();
     lines.push(text);
     const amount = AMOUNT_IN_FIGURE.exec(text);
-    const count = COUNT_IN_FIGURE.exec(text);
+    const count = /and\s+([\d,]+)\s+gifts?\b/u.exec(text);
     if (amount === null || count === null) throw new Error(`The whole-result line ${JSON.stringify(text)} does not state an amount with its currency and a gift count, so this file cannot compare it. Every received-support figure is stated as "<amount> <currency> ... and N gifts".`);
     figures.push({ currency: amount[2] ?? "", minorUnits: minorUnitsFrom(amount[1] ?? ""), giftCount: Number((count[1] ?? "").replace(/,/gu, "")) });
   }
   return { figures, text: lines.join(" | ") };
 }
-interface GiftRecordFigure {
-  readonly currency: string;
-  readonly minorUnits: number;
-  readonly provenance: readonly string[];
-}
+type GiftRecordFigure = { readonly currency: string; readonly minorUnits: number; readonly provenance: readonly string[] };
 async function readGiftRecord(page: Page): Promise<GiftRecordFigure> {
   await expect(page.getByRole("heading", { name: RECORD_HEADING, level: 1 })).toBeVisible(); // The gift record's own figures: its amount and the references its provenance section prints.
-  const row = page.locator(`[data-gift-row-id="${GIFT_ROW_ID}"]`);
+  const row = page.locator(`[data-gift-row-id="gift-row-harbour-0001"]`);
   await expect(row).toBeVisible();
   const displayed = (await row.innerText()).replace(/\s+/gu, " ").trim();
   const amount = AMOUNT_IN_FIGURE.exec(displayed);
@@ -99,7 +88,7 @@ async function statedTitles(region: Locator): Promise<readonly string[]> {
   const rows = region.getByRole("checkbox", { name: ROW_SELECTION }); // Every title a list shows, as each row's own selection control names the task it selects.
   await expect(rows.first(), "The list states at least one row, so the work it counts is work it shows.").toBeVisible();
   const labels = await rows.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label") ?? ""));
-  return labels.filter((label) => label.startsWith(ROW_SELECTION_PREFIX)).map((label) => label.slice(ROW_SELECTION_PREFIX.length));
+  return labels.filter((label) => label.startsWith("Select ")).map((label) => label.slice("Select ".length));
 }
 async function readMessages(page: Page): Promise<Messages> {
   await page.goto("/communication/inbox"); // The inbox's own statements: the messages it has produced for this membership, and the outcome counts beside them.
@@ -135,11 +124,11 @@ async function readBaselines(page: Page): Promise<Baselines> {
   const partnerActivity = await activity.getByRole("listitem").count();
   return { wholeResult, ledgerTotal, commitmentTotal, openWork: await readOpenWork(page), messages: await readMessages(page), audience: await readAudience(page), partnerActivity };
 }
-test.use({ persona: PERSONA }); // This file acts as the established worker throughout, which is the persona the runner admits the context as.
+test.use({ persona: "established-worker" }); // This file acts as the established worker throughout, which is the persona the runner admits the context as.
 async function openGiftFromLedger(page: Page): Promise<void> {
   await page.goto(GIFTS_HREF); // Opens the ledger and follows the row's own link to the gift record, which is the only route to it.
   await expect(page.getByRole("heading", { name: "Received gifts", level: 1 })).toBeVisible();
-  const giftLink = page.getByRole("link", { name: OPEN_GIFT_LINK });
+  const giftLink = page.getByRole("link", { name: "Open gift gift-harbour-0001" });
   await expect(giftLink).toBeVisible();
   await giftLink.click();
   await expect(page.getByRole("heading", { name: RECORD_HEADING, level: 1 })).toBeVisible();
@@ -200,5 +189,5 @@ test("the task is the only thing the follow-up creates", async ({ page }) => {
   await page.goto(`${WORK_HREF}?list=today&pageSize=${TASK_PAGE_SIZE}`); // The task carries the partner reference the gift was attributed to, so "it came from this gift" is a fact about the record rather than a phrase in a title: the row's own link names the partner's own record.
   const created = page.getByRole("region", { name: `Today ${TASK_NOUN}, scrollable` }).getByRole("row", { name: FOLLOW_UP_TITLE });
   await expect(created, "The task the follow-up created is open work due today.").toBeVisible();
-  await expect(created.getByRole("link", { name: PARTNER_LABEL }), "The task the follow-up created names the partner the gift was attributed to.").toHaveAttribute("href", PARTNER_HREF);
+  await expect(created.getByRole("link", { name: "Jo Mbeki" }), "The task the follow-up created names the partner the gift was attributed to.").toHaveAttribute("href", PARTNER_HREF);
 });

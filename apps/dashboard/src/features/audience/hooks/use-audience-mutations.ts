@@ -10,9 +10,8 @@ import { unsubscribePayloadSchema, type UnsubscribePayload } from "../schemas/un
 import { AUDIENCE_JOB_SEGMENTS } from "./use-audience-reads";
 const OFFLINE_GUIDANCE = "This device reported no connection, so the request did not leave from here. Reconnect and submit this same step again: it keeps this attempt's identity, so a request that had already arrived is answered with its original result rather than applied twice.";
 const REFRESHING_OUTCOMES = ["accepted", "alreadyAccepted", "unchanged"] as const;
-const REFRESHED_JOBS = AUDIENCE_JOB_SEGMENTS;
 /** One change of this family: the handler that admits it, and the schema its own payload has to satisfy before the transport posts it. */
-const changeAt = <Payload>(url: string, payloadSchema: ZodType<Payload>): OutcomeMutationOptions<Payload> => ({ url, payloadSchema, jobs: REFRESHED_JOBS, offlineGuidance: OFFLINE_GUIDANCE, refreshing: REFRESHING_OUTCOMES });
+const changeAt = <Payload>(url: string, payloadSchema: ZodType<Payload>): OutcomeMutationOptions<Payload> => ({ url, payloadSchema, jobs: AUDIENCE_JOB_SEGMENTS, offlineGuidance: OFFLINE_GUIDANCE, refreshing: REFRESHING_OUTCOMES });
 const SIGNUP = changeAt("/api/audience", signupPayloadSchema);
 const CONFIRM = changeAt("/api/confirm", confirmPayloadSchema);
 const PREFERENCE = changeAt("/api/preferences", setPreferencePayloadSchema);

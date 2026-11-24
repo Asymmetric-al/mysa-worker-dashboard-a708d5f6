@@ -1,6 +1,6 @@
 /** Success criterion 7, at the service boundary: the one support goal, the single financial write this application permits (`saveGoal`), and the percentage rules every goal surface presents. */
 import { Temporal } from "temporal-polyfill";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type Scope } from "@/modules/data-service";
 import { canEdit, canExport, canReadProtected, type AccessDecision, type SessionSource } from "@/modules/data-service/authorize";
@@ -47,131 +47,123 @@ function withoutGoalProgress(report: GoalReportData): Readonly<Record<string, un
   return facts;
 }
 beforeAll(resetSeed, 120_000);
-describe("a goal with no editing capability", () => {
-  it("offers no edit and states why, and the service refuses the same save independently", async () => {
-    const session = await sessionOf(REVIEWER);
-    const envelope = await goalEnvelopeOf(REVIEWER);
-    const goal = figureOf(envelope);
-    expect(goal.amount.minorUnits).toBeGreaterThan(0);
-    expect([envelope.data.canEditGoal, envelope.data.canEditGoal, canEditGoal([GOAL_CAPABILITY]), canEditGoal([])]).toEqual([false, canEditGoal(session.capabilities), true, false]);
-    const edit = envelope.actions.find((action) => action.name === GOAL_CAPABILITY);
-    expect(edit).toBeDefined();
-    expect(edit?.available).toBe(false);
-    expect((edit?.reason ?? "").trim().length).toBeGreaterThan(0);
-    expect(envelope.actions.filter((action) => action.available && action.name === GOAL_CAPABILITY)).toEqual([]);
-    const scope = await scopeOf(REVIEWER);
-    const outcome = await saveGoalFor(REVIEWER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits + 1000));
-    const refused = outcomeNamed(outcome, "denied");
-    expect(refused.reasonCode).toBe("capability-absent");
-    expect(DENIAL_REASONS).toContain(refused.reasonCode);
-    expect(Object.keys(refused).sort()).toEqual(["operationId", "outcome", "reasonCode"]);
-    expect(JSON.stringify(refused)).not.toContain(String(goal.amount.minorUnits));
-    expect(await currentGoalOf(REVIEWER)).toEqual(goal);
-  });
-  it("refuses a save a principal makes in another principal's scope", async () => {
-    const establishedScope = await scopeOf(FUNDRAISER);
-    const goal = await currentGoalOf(FUNDRAISER);
-    const outcome = await saveGoalFor(REVIEWER, establishedScope, goal.revision, goalPayload(goal, goal.amount.minorUnits + 1000));
-    const refused = outcomeNamed(outcome, "denied");
-    expect(refused.reasonCode).toBe("not-admitted");
-    expect(await currentGoalOf(FUNDRAISER)).toEqual(goal);
-  });
+it("a goal with no editing capability: offers no edit and states why, and the service refuses the same save independently", async () => {
+  const session = await sessionOf(REVIEWER);
+  const envelope = await goalEnvelopeOf(REVIEWER);
+  const goal = figureOf(envelope);
+  expect(goal.amount.minorUnits).toBeGreaterThan(0);
+  expect([envelope.data.canEditGoal, envelope.data.canEditGoal, canEditGoal([GOAL_CAPABILITY]), canEditGoal([])]).toEqual([false, canEditGoal(session.capabilities), true, false]);
+  const edit = envelope.actions.find((action) => action.name === GOAL_CAPABILITY);
+  expect(edit).toBeDefined();
+  expect(edit?.available).toBe(false);
+  expect((edit?.reason ?? "").trim().length).toBeGreaterThan(0);
+  expect(envelope.actions.filter((action) => action.available && action.name === GOAL_CAPABILITY)).toEqual([]);
+  const scope = await scopeOf(REVIEWER);
+  const outcome = await saveGoalFor(REVIEWER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits + 1000));
+  const refused = outcomeNamed(outcome, "denied");
+  expect(refused.reasonCode).toBe("capability-absent");
+  expect(DENIAL_REASONS).toContain(refused.reasonCode);
+  expect(Object.keys(refused).sort()).toEqual(["operationId", "outcome", "reasonCode"]);
+  expect(JSON.stringify(refused)).not.toContain(String(goal.amount.minorUnits));
+  expect(await currentGoalOf(REVIEWER)).toEqual(goal);
 });
-describe("the one permitted financial write", () => {
-  it("accepts the smallest amount the currency can state, and returns the new revision and what it created", async () => {
-    const scope = await scopeOf(STUDENTS);
-    const before = await goalEnvelopeOf(STUDENTS);
-    expect(before.data.goal).toBeNull();
-    expect(before.data.canEditGoal).toBe(true);
-    const smallest = 1;
-    const currency = "EUR";
-    expect(validateGoalAmount({ currency, minorUnits: minorUnitsOf(smallest) })).toEqual([]);
-    const payload: GoalSavePayload = { amount: { currency, minorUnits: smallest }, measure: GOAL_MEASURE, effectiveFrom: before.data.period.from };
-    const accepted = outcomeNamed(await saveGoalFor(STUDENTS, scope, before.revision, payload), "accepted");
-    expect([accepted.revision, accepted.created]).toEqual(["1", [scope.supportSubjectId]]);
-    expect(accepted.changed).toBeUndefined();
-    const saved = await currentGoalOf(STUDENTS);
-    expect([saved.amount, Number.isSafeInteger(saved.amount.minorUnits)]).toEqual([{ currency, minorUnits: smallest }, true]);
-    expect(saved.amount.minorUnits).toBeGreaterThan(0);
-    expect([saved.effectiveFrom, saved.revision, (await goalEnvelopeOf(STUDENTS)).data.measure]).toEqual([before.data.period.from, "1", GOAL_MEASURE]);
-  });
-  it.each([
-    { stated: "zero", minorUnits: 0 },
-    { stated: "negative", minorUnits: -1 },
-    { stated: "fractional", minorUnits: 10.5 },
-  ])("refuses a $stated goal amount as invalid against the amount field", async ({ minorUnits }) => {
-    const { scope, goal } = await fundraiserArrangement();
-    const refused = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, minorUnits)), "invalid");
-    const messages = refused.fields["amount.minorUnits"];
-    expect(messages).toBeDefined();
-    expect(messages?.length ?? 0).toBeGreaterThan(0);
-    expect([(messages ?? []).every((message) => message.trim().length > 0), await currentGoalOf(FUNDRAISER)]).toEqual([true, goal]);
-  });
-  it.each([
-    { stated: "a currency with no known minor-unit precision", field: "amount.currency", payload: (goal: GoalFigure): GoalSavePayload => ({ ...goalPayload(goal, goal.amount.minorUnits), amount: { currency: "ZZZ", minorUnits: goal.amount.minorUnits } }) },
-    { stated: "a measure this release does not set a goal against", field: "measure", payload: (goal: GoalFigure): GoalSavePayload => ({ ...goalPayload(goal, goal.amount.minorUnits), measure: "commitments" as typeof GOAL_MEASURE }) },
-    { stated: "a form currency that disagrees with the amount's", field: "currency", payload: (goal: GoalFigure): GoalSavePayload => ({ ...goalPayload(goal, goal.amount.minorUnits), currency: goal.amount.currency === "USD" ? "EUR" : "USD" }) },
-    { stated: "a day the calendar does not have", field: "effectiveFrom", payload: (goal: GoalFigure): GoalSavePayload => ({ ...goalPayload(goal, goal.amount.minorUnits), effectiveFrom: "2026-02-31" }) },
-  ])("refuses $stated as invalid against $field", async ({ field, payload }) => {
-    const { scope, goal } = await fundraiserArrangement();
-    const refused = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, payload(goal)), "invalid");
-    const messages = refused.fields[field];
-    expect(messages).toBeDefined();
-    expect([(messages ?? []).every((message) => message.trim().length > 0), await currentGoalOf(FUNDRAISER)]).toEqual([true, goal]);
-  });
-  it("answers a save that states the amount already set with unchanged, and advances no revision", async () => {
-    const { scope, goal } = await fundraiserArrangement();
-    const outcome = await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits));
-    expect(outcomeNamed(outcome, "unchanged").revision).toBe(goal.revision);
-    expect(await currentGoalOf(FUNDRAISER)).toEqual(goal);
-  });
-  it("advances the revision by exactly one and names the one record it changed", async () => {
-    const { scope, goal } = await fundraiserArrangement();
-    const next = goal.amount.minorUnits + 1000;
-    const accepted = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, next)), "accepted");
-    expect(accepted.revision).toBe(String(Number(goal.revision) + 1));
-    expect(accepted.changed).toEqual([scope.supportSubjectId]);
-    expect(accepted.created).toBeUndefined();
-    const saved = await currentGoalOf(FUNDRAISER);
-    expect(saved.revision).toBe(accepted.revision);
-    expect([saved.amount, [saved.effectiveFrom, saved.measure]]).toEqual([{ currency: goal.amount.currency, minorUnits: next }, [goal.effectiveFrom, goal.measure]]);
-  });
+it("a goal with no editing capability: refuses a save a principal makes in another principal's scope", async () => {
+  const establishedScope = await scopeOf(FUNDRAISER);
+  const goal = await currentGoalOf(FUNDRAISER);
+  const outcome = await saveGoalFor(REVIEWER, establishedScope, goal.revision, goalPayload(goal, goal.amount.minorUnits + 1000));
+  const refused = outcomeNamed(outcome, "denied");
+  expect(refused.reasonCode).toBe("not-admitted");
+  expect(await currentGoalOf(FUNDRAISER)).toEqual(goal);
 });
-describe("a stale revision is a conflict, never an overwrite", () => {
-  it("returns the current value beside the caller's preserved payload and writes nothing", async () => {
-    const { scope, goal: before } = await fundraiserArrangement();
-    const advancing = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, goalPayload(before, before.amount.minorUnits + 2000)), "accepted");
-    const current = await currentGoalOf(FUNDRAISER);
-    expect(advancing.revision).toBe(current.revision);
-    const submitted = goalPayload(before, before.amount.minorUnits + 7000);
-    const conflict = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, submitted), "conflict");
-    expect([conflict.reason, conflict.currentRevision]).toEqual(["stale-revision", current.revision]);
-    expect([conflict.current, conflict.preservedInput]).toEqual([{ amount: { currency: current.amount.currency, minorUnits: current.amount.minorUnits }, measure: current.measure, effectiveFrom: current.effectiveFrom, revision: current.revision }, submitted]);
-    expect(conflict.preservedInput).not.toEqual(conflict.current);
-    expect(await currentGoalOf(FUNDRAISER)).toEqual(current);
-  });
+it("the one permitted financial write: accepts the smallest amount the currency can state, and returns the new revision and what it created", async () => {
+  const scope = await scopeOf(STUDENTS);
+  const before = await goalEnvelopeOf(STUDENTS);
+  expect(before.data.goal).toBeNull();
+  expect(before.data.canEditGoal).toBe(true);
+  const smallest = 1;
+  const currency = "EUR";
+  expect(validateGoalAmount({ currency, minorUnits: minorUnitsOf(smallest) })).toEqual([]);
+  const payload: GoalSavePayload = { amount: { currency, minorUnits: smallest }, measure: GOAL_MEASURE, effectiveFrom: before.data.period.from };
+  const accepted = outcomeNamed(await saveGoalFor(STUDENTS, scope, before.revision, payload), "accepted");
+  expect([accepted.revision, accepted.created]).toEqual(["1", [scope.supportSubjectId]]);
+  expect(accepted.changed).toBeUndefined();
+  const saved = await currentGoalOf(STUDENTS);
+  expect([saved.amount, Number.isSafeInteger(saved.amount.minorUnits)]).toEqual([{ currency, minorUnits: smallest }, true]);
+  expect(saved.amount.minorUnits).toBeGreaterThan(0);
+  expect([saved.effectiveFrom, saved.revision, (await goalEnvelopeOf(STUDENTS)).data.measure]).toEqual([before.data.period.from, "1", GOAL_MEASURE]);
 });
-describe("a replay is the stored result, not a second effect", () => {
-  it("answers the same operation id with alreadyAccepted, the stored result and no advanced revision", async () => {
-    const { scope, goal: before } = await fundraiserArrangement();
-    const operationId = newOperationId();
-    const submitted = goalPayload(before, before.amount.minorUnits + 5000);
-    const accepted = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, submitted, operationId), "accepted");
-    const stored = await currentGoalOf(FUNDRAISER);
-    expect(stored.revision).toBe(accepted.revision);
-    const replayed = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, submitted, operationId), "alreadyAccepted");
-    expect(replayed.revision).toBe(accepted.revision);
-    expect([replayed.result, await currentGoalOf(FUNDRAISER)]).toEqual([{ amount: { currency: stored.amount.currency, minorUnits: stored.amount.minorUnits }, measure: stored.measure, effectiveFrom: stored.effectiveFrom, revision: stored.revision }, stored]);
-  });
-  it("refuses the same operation id with a changed payload as a conflict, and applies nothing", async () => {
-    const { scope, goal: before } = await fundraiserArrangement();
-    const operationId = newOperationId();
-    outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, goalPayload(before, before.amount.minorUnits + 3000), operationId), "accepted");
-    const stored = await currentGoalOf(FUNDRAISER);
-    const changed = goalPayload(before, before.amount.minorUnits + 4000);
-    const conflict = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, stored.revision, changed, operationId), "conflict");
-    expect([[conflict.reason, conflict.currentRevision], conflict.preservedInput, await currentGoalOf(FUNDRAISER)]).toEqual([["changed-intent", stored.revision], changed, stored]);
-  });
+it.each([
+  { stated: "zero", minorUnits: 0 },
+  { stated: "negative", minorUnits: -1 },
+  { stated: "fractional", minorUnits: 10.5 },
+])("refuses a $stated goal amount as invalid against the amount field", async ({ minorUnits }) => {
+  const { scope, goal } = await fundraiserArrangement();
+  const refused = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, minorUnits)), "invalid");
+  const messages = refused.fields["amount.minorUnits"];
+  expect(messages).toBeDefined();
+  expect(messages?.length ?? 0).toBeGreaterThan(0);
+  expect([(messages ?? []).every((message) => message.trim().length > 0), await currentGoalOf(FUNDRAISER)]).toEqual([true, goal]);
+});
+it.each([
+  { stated: "a currency with no known minor-unit precision", field: "amount.currency", payload: (goal: GoalFigure): GoalSavePayload => ({ ...goalPayload(goal, goal.amount.minorUnits), amount: { currency: "ZZZ", minorUnits: goal.amount.minorUnits } }) },
+  { stated: "a measure this release does not set a goal against", field: "measure", payload: (goal: GoalFigure): GoalSavePayload => ({ ...goalPayload(goal, goal.amount.minorUnits), measure: "commitments" as typeof GOAL_MEASURE }) },
+  { stated: "a form currency that disagrees with the amount's", field: "currency", payload: (goal: GoalFigure): GoalSavePayload => ({ ...goalPayload(goal, goal.amount.minorUnits), currency: goal.amount.currency === "USD" ? "EUR" : "USD" }) },
+  { stated: "a day the calendar does not have", field: "effectiveFrom", payload: (goal: GoalFigure): GoalSavePayload => ({ ...goalPayload(goal, goal.amount.minorUnits), effectiveFrom: "2026-02-31" }) },
+])("refuses $stated as invalid against $field", async ({ field, payload }) => {
+  const { scope, goal } = await fundraiserArrangement();
+  const refused = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, payload(goal)), "invalid");
+  const messages = refused.fields[field];
+  expect(messages).toBeDefined();
+  expect([(messages ?? []).every((message) => message.trim().length > 0), await currentGoalOf(FUNDRAISER)]).toEqual([true, goal]);
+});
+it("the one permitted financial write: answers a save that states the amount already set with unchanged, and advances no revision", async () => {
+  const { scope, goal } = await fundraiserArrangement();
+  const outcome = await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits));
+  expect(outcomeNamed(outcome, "unchanged").revision).toBe(goal.revision);
+  expect(await currentGoalOf(FUNDRAISER)).toEqual(goal);
+});
+it("the one permitted financial write: advances the revision by exactly one and names the one record it changed", async () => {
+  const { scope, goal } = await fundraiserArrangement();
+  const next = goal.amount.minorUnits + 1000;
+  const accepted = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, next)), "accepted");
+  expect(accepted.revision).toBe(String(Number(goal.revision) + 1));
+  expect(accepted.changed).toEqual([scope.supportSubjectId]);
+  expect(accepted.created).toBeUndefined();
+  const saved = await currentGoalOf(FUNDRAISER);
+  expect(saved.revision).toBe(accepted.revision);
+  expect([saved.amount, [saved.effectiveFrom, saved.measure]]).toEqual([{ currency: goal.amount.currency, minorUnits: next }, [goal.effectiveFrom, goal.measure]]);
+});
+it("a stale revision is a conflict, never an overwrite: returns the current value beside the caller's preserved payload and writes nothing", async () => {
+  const { scope, goal: before } = await fundraiserArrangement();
+  const advancing = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, goalPayload(before, before.amount.minorUnits + 2000)), "accepted");
+  const current = await currentGoalOf(FUNDRAISER);
+  expect(advancing.revision).toBe(current.revision);
+  const submitted = goalPayload(before, before.amount.minorUnits + 7000);
+  const conflict = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, submitted), "conflict");
+  expect([conflict.reason, conflict.currentRevision]).toEqual(["stale-revision", current.revision]);
+  expect([conflict.current, conflict.preservedInput]).toEqual([{ amount: { currency: current.amount.currency, minorUnits: current.amount.minorUnits }, measure: current.measure, effectiveFrom: current.effectiveFrom, revision: current.revision }, submitted]);
+  expect(conflict.preservedInput).not.toEqual(conflict.current);
+  expect(await currentGoalOf(FUNDRAISER)).toEqual(current);
+});
+it("a replay is the stored result, not a second effect: answers the same operation id with alreadyAccepted, the stored result and no advanced revision", async () => {
+  const { scope, goal: before } = await fundraiserArrangement();
+  const operationId = newOperationId();
+  const submitted = goalPayload(before, before.amount.minorUnits + 5000);
+  const accepted = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, submitted, operationId), "accepted");
+  const stored = await currentGoalOf(FUNDRAISER);
+  expect(stored.revision).toBe(accepted.revision);
+  const replayed = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, submitted, operationId), "alreadyAccepted");
+  expect(replayed.revision).toBe(accepted.revision);
+  expect([replayed.result, await currentGoalOf(FUNDRAISER)]).toEqual([{ amount: { currency: stored.amount.currency, minorUnits: stored.amount.minorUnits }, measure: stored.measure, effectiveFrom: stored.effectiveFrom, revision: stored.revision }, stored]);
+});
+it("a replay is the stored result, not a second effect: refuses the same operation id with a changed payload as a conflict, and applies nothing", async () => {
+  const { scope, goal: before } = await fundraiserArrangement();
+  const operationId = newOperationId();
+  outcomeNamed(await saveGoalFor(FUNDRAISER, scope, before.revision, goalPayload(before, before.amount.minorUnits + 3000), operationId), "accepted");
+  const stored = await currentGoalOf(FUNDRAISER);
+  const changed = goalPayload(before, before.amount.minorUnits + 4000);
+  const conflict = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, stored.revision, changed, operationId), "conflict");
+  expect([[conflict.reason, conflict.currentRevision], conflict.preservedInput, await currentGoalOf(FUNDRAISER)]).toEqual([["changed-intent", stored.revision], changed, stored]);
 });
 async function goalRecordOf(source: SessionSource): Promise<GoalRecord> {
   const goal = await currentGoalOf(source);
@@ -189,96 +181,90 @@ const NO_PERCENTAGE_CAUSES: readonly { readonly stated: string; readonly expecte
   },
   { stated: "a measure the goal is not measured in", expected: "incompatible", progress: (goal) => goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100), measureCompatible: false }) },
 ];
-describe("the percentage rules", () => {
-  it("keeps a valid 120 % as 120 %, neither clamped nor expressed as a fraction", async () => {
-    const goal = await goalRecordOf(FUNDRAISER);
-    const progress = goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100) });
-    expect([progress.state, progress.percentageBasisPoints, formatPercentageBasisPoints(12_000)]).toEqual(["value", 12_000, "120%"]);
-    for (const expected of ["100%", "1.2%"]) expect(formatPercentageBasisPoints(12_000)).not.toBe(expected);
-  });
-  it.each(NO_PERCENTAGE_CAUSES)("produces no percentage at all for $stated", async ({ expected, progress }) => {
-    const figure = progress(await goalRecordOf(FUNDRAISER));
-    expect(figure.state).toBe(expected);
-    expect(figure.percentageBasisPoints).toBeNull();
-  });
-  it("returns six distinct figures for the six situations a surface must not confuse", async () => {
-    const goal = await goalRecordOf(FUNDRAISER);
-    const figures: Readonly<Record<string, GoalProgress>> = {
-      noGoal: goalProgress({}),
-      noPercentage: goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(0) }),
-      zero: goalProgress({ goal, numeratorMinor: minorUnitsOf(0), denominatorMinor: minorUnitsOf(100) }),
-      oneHundredTwenty: goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100) }),
-      paused: goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100), paused: true }),
-      ended: goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100), ended: true }),
-    };
-    const stated = Object.values(figures);
-    expect(Object.keys(figures)).toHaveLength(6);
-    expect([new Set(stated.map((figure) => figure.state)).size, new Set(stated.map((figure) => `${figure.state}|${String(figure.percentageBasisPoints)}`)).size, figures.zero?.percentageBasisPoints, formatPercentageBasisPoints(0)]).toEqual([6, 6, 0, "0%"]);
-    expect(figures.noPercentage?.percentageBasisPoints).toBeNull();
-    expect(figures.oneHundredTwenty?.percentageBasisPoints).toBe(12_000);
-  });
-  it("states a subject with no goal as no goal, and records its percentage as unknown rather than zero", async () => {
-    const envelope = await goalEnvelopeOf(SECOND_WORKER);
-    expect(envelope.data.goal).toBeNull();
-    expect(envelope.data.progress.state).toBe("no-goal");
-    expect(envelope.data.progress.percentageBasisPoints).toBeNull();
-    expect(envelope.data.percentage).toBeNull();
-    expect([envelope.revision, envelope.valueStates["goal.amount"], envelope.valueStates["goal.percentage"]]).toEqual(["absent", "unknown", "unknown"]);
-  });
-  it("takes the percentage a surface shows from the one computation, and states a partial subtotal as partial", async () => {
-    const envelope = await goalEnvelopeOf(FUNDRAISER);
-    const progress = envelope.data.progress;
-    expect([envelope.data.percentage, envelope.coverage.state, envelope.valueStates["goal.amount"]]).toEqual([progress.percentageBasisPoints === null ? null : formatPercentageBasisPoints(progress.percentageBasisPoints), "partial", "incomplete-subtotal"]);
-    expect(envelope.valueStates["goal.percentage"]).toBe("incomplete-subtotal");
-  });
+it("the percentage rules: keeps a valid 120 % as 120 %, neither clamped nor expressed as a fraction", async () => {
+  const goal = await goalRecordOf(FUNDRAISER);
+  const progress = goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100) });
+  expect([progress.state, progress.percentageBasisPoints, formatPercentageBasisPoints(12_000)]).toEqual(["value", 12_000, "120%"]);
+  for (const expected of ["100%", "1.2%"]) expect(formatPercentageBasisPoints(12_000)).not.toBe(expected);
 });
-describe("the write reaches nothing but the goal", () => {
-  it("leaves the earlier report and the commitment rows untouched", async () => {
-    const scope = await scopeOf(FUNDRAISER);
-    const reportBefore = await reportEnvelopeOf(FUNDRAISER);
-    const commitmentsBefore = await commitmentsEnvelopeOf(FUNDRAISER);
-    const goal = await currentGoalOf(FUNDRAISER);
-    outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits * 2)), "accepted");
-    const reportAfter = await reportEnvelopeOf(FUNDRAISER);
-    const commitmentsAfter = await commitmentsEnvelopeOf(FUNDRAISER);
-    expect(withoutGoalProgress(reportAfter.data)).toEqual(withoutGoalProgress(reportBefore.data));
-    expect(reportAfter.revision).toBe(reportBefore.revision);
-    expect(reportAfter.coverage).toEqual(reportBefore.coverage);
-    expect(reportAfter.asOf).toBe(reportBefore.asOf);
-    expect(reportAfter.data.goal).not.toEqual(reportBefore.data.goal);
-    expect(commitmentsAfter.data).toEqual(commitmentsBefore.data);
-    expect(commitmentsAfter.revision).toBe(commitmentsBefore.revision);
-  });
-  it("grants no other authority, before or after it succeeds", async () => {
-    const session = await sessionOf(FUNDRAISER);
-    const scope = await scopeOf(FUNDRAISER);
-    const reviewerScope = await scopeOf(REVIEWER);
-    const reviewer = await sessionOf(REVIEWER);
-    const secondWorker = await sessionOf(SECOND_WORKER);
-    const goal = await currentGoalOf(FUNDRAISER);
-    const protectedReadBefore = denialOf(canReadProtected(session, { audience: "approved-supporter", reader: null }));
-    const exportBefore = denialOf(canExport(secondWorker, scope));
-    const reviewerEditBefore = denialOf(canEdit(reviewer, { kind: "support-subject", scope: reviewerScope, capabilities: reviewer.capabilities }));
-    expect(canEdit(session, { kind: "support-subject", scope, capabilities: session.capabilities }).allowed).toBe(true);
-    const accepted = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits * 2)), "accepted");
-    expect(accepted.changed).toEqual([scope.supportSubjectId]);
-    const protectedReadAfter = denialOf(canReadProtected(session, { audience: "approved-supporter", reader: null }));
-    const exportAfter = denialOf(canExport(secondWorker, scope));
-    const reviewerEditAfter = denialOf(canEdit(reviewer, { kind: "support-subject", scope: reviewerScope, capabilities: reviewer.capabilities }));
-    expect([protectedReadAfter.reasonCode, exportAfter.reasonCode, reviewerEditAfter.reasonCode, protectedReadAfter.reasonCode, exportAfter.reasonCode]).toEqual([protectedReadBefore.reasonCode, exportBefore.reasonCode, reviewerEditBefore.reasonCode, "no-protected-grant", "not-admitted"]);
-    expect([reviewerEditAfter.reasonCode, canEdit(session, { kind: "support-subject", scope, capabilities: session.capabilities }).allowed]).toEqual(["capability-absent", true]);
-  });
+it.each(NO_PERCENTAGE_CAUSES)("produces no percentage at all for $stated", async ({ expected, progress }) => {
+  const figure = progress(await goalRecordOf(FUNDRAISER));
+  expect(figure.state).toBe(expected);
+  expect(figure.percentageBasisPoints).toBeNull();
 });
-describe("the goal is a measure of its own", () => {
-  it("is never one of the received amounts and never a commitment's occurrence", async () => {
-    const envelope = await goalEnvelopeOf(FUNDRAISER);
-    const commitments = await commitmentsEnvelopeOf(FUNDRAISER);
-    const goal = figureOf(envelope);
-    expect(envelope.data.measure).toBe(GOAL_MEASURE);
-    const received = envelope.data.report.summary.map((entry) => `${entry.currency}:${String(entry.received.minorUnits)}`);
-    expect(received).not.toContain(`${goal.amount.currency}:${goal.amount.minorUnits}`);
-    const occurrences = commitments.data.commitments.map((commitment) => `${commitment.perOccurrence.currency}:${commitment.perOccurrence.minorUnits}`);
-    expect(occurrences).not.toContain(`${goal.amount.currency}:${goal.amount.minorUnits}`);
-    expect(Object.keys(commitments.data)).not.toContain("goal");
-  });
+it("the percentage rules: returns six distinct figures for the six situations a surface must not confuse", async () => {
+  const goal = await goalRecordOf(FUNDRAISER);
+  const figures: Readonly<Record<string, GoalProgress>> = {
+    noGoal: goalProgress({}),
+    noPercentage: goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(0) }),
+    zero: goalProgress({ goal, numeratorMinor: minorUnitsOf(0), denominatorMinor: minorUnitsOf(100) }),
+    oneHundredTwenty: goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100) }),
+    paused: goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100), paused: true }),
+    ended: goalProgress({ goal, numeratorMinor: minorUnitsOf(120), denominatorMinor: minorUnitsOf(100), ended: true }),
+  };
+  const stated = Object.values(figures);
+  expect(Object.keys(figures)).toHaveLength(6);
+  expect([new Set(stated.map((figure) => figure.state)).size, new Set(stated.map((figure) => `${figure.state}|${String(figure.percentageBasisPoints)}`)).size, figures.zero?.percentageBasisPoints, formatPercentageBasisPoints(0)]).toEqual([6, 6, 0, "0%"]);
+  expect(figures.noPercentage?.percentageBasisPoints).toBeNull();
+  expect(figures.oneHundredTwenty?.percentageBasisPoints).toBe(12_000);
+});
+it("the percentage rules: states a subject with no goal as no goal, and records its percentage as unknown rather than zero", async () => {
+  const envelope = await goalEnvelopeOf(SECOND_WORKER);
+  expect(envelope.data.goal).toBeNull();
+  expect(envelope.data.progress.state).toBe("no-goal");
+  expect(envelope.data.progress.percentageBasisPoints).toBeNull();
+  expect(envelope.data.percentage).toBeNull();
+  expect([envelope.revision, envelope.valueStates["goal.amount"], envelope.valueStates["goal.percentage"]]).toEqual(["absent", "unknown", "unknown"]);
+});
+it("the percentage rules: takes the percentage a surface shows from the one computation, and states a partial subtotal as partial", async () => {
+  const envelope = await goalEnvelopeOf(FUNDRAISER);
+  const progress = envelope.data.progress;
+  expect([envelope.data.percentage, envelope.coverage.state, envelope.valueStates["goal.amount"]]).toEqual([progress.percentageBasisPoints === null ? null : formatPercentageBasisPoints(progress.percentageBasisPoints), "partial", "incomplete-subtotal"]);
+  expect(envelope.valueStates["goal.percentage"]).toBe("incomplete-subtotal");
+});
+it("the write reaches nothing but the goal: leaves the earlier report and the commitment rows untouched", async () => {
+  const scope = await scopeOf(FUNDRAISER);
+  const reportBefore = await reportEnvelopeOf(FUNDRAISER);
+  const commitmentsBefore = await commitmentsEnvelopeOf(FUNDRAISER);
+  const goal = await currentGoalOf(FUNDRAISER);
+  outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits * 2)), "accepted");
+  const reportAfter = await reportEnvelopeOf(FUNDRAISER);
+  const commitmentsAfter = await commitmentsEnvelopeOf(FUNDRAISER);
+  expect(withoutGoalProgress(reportAfter.data)).toEqual(withoutGoalProgress(reportBefore.data));
+  expect(reportAfter.revision).toBe(reportBefore.revision);
+  expect(reportAfter.coverage).toEqual(reportBefore.coverage);
+  expect(reportAfter.asOf).toBe(reportBefore.asOf);
+  expect(reportAfter.data.goal).not.toEqual(reportBefore.data.goal);
+  expect(commitmentsAfter.data).toEqual(commitmentsBefore.data);
+  expect(commitmentsAfter.revision).toBe(commitmentsBefore.revision);
+});
+it("the write reaches nothing but the goal: grants no other authority, before or after it succeeds", async () => {
+  const session = await sessionOf(FUNDRAISER);
+  const scope = await scopeOf(FUNDRAISER);
+  const reviewerScope = await scopeOf(REVIEWER);
+  const reviewer = await sessionOf(REVIEWER);
+  const secondWorker = await sessionOf(SECOND_WORKER);
+  const goal = await currentGoalOf(FUNDRAISER);
+  const protectedReadBefore = denialOf(canReadProtected(session, { audience: "approved-supporter", reader: null }));
+  const exportBefore = denialOf(canExport(secondWorker, scope));
+  const reviewerEditBefore = denialOf(canEdit(reviewer, { kind: "support-subject", scope: reviewerScope, capabilities: reviewer.capabilities }));
+  expect(canEdit(session, { kind: "support-subject", scope, capabilities: session.capabilities }).allowed).toBe(true);
+  const accepted = outcomeNamed(await saveGoalFor(FUNDRAISER, scope, goal.revision, goalPayload(goal, goal.amount.minorUnits * 2)), "accepted");
+  expect(accepted.changed).toEqual([scope.supportSubjectId]);
+  const protectedReadAfter = denialOf(canReadProtected(session, { audience: "approved-supporter", reader: null }));
+  const exportAfter = denialOf(canExport(secondWorker, scope));
+  const reviewerEditAfter = denialOf(canEdit(reviewer, { kind: "support-subject", scope: reviewerScope, capabilities: reviewer.capabilities }));
+  expect([protectedReadAfter.reasonCode, exportAfter.reasonCode, reviewerEditAfter.reasonCode, protectedReadAfter.reasonCode, exportAfter.reasonCode]).toEqual([protectedReadBefore.reasonCode, exportBefore.reasonCode, reviewerEditBefore.reasonCode, "no-protected-grant", "not-admitted"]);
+  expect([reviewerEditAfter.reasonCode, canEdit(session, { kind: "support-subject", scope, capabilities: session.capabilities }).allowed]).toEqual(["capability-absent", true]);
+});
+it("the goal is a measure of its own: is never one of the received amounts and never a commitment's occurrence", async () => {
+  const envelope = await goalEnvelopeOf(FUNDRAISER);
+  const commitments = await commitmentsEnvelopeOf(FUNDRAISER);
+  const goal = figureOf(envelope);
+  expect(envelope.data.measure).toBe(GOAL_MEASURE);
+  const received = envelope.data.report.summary.map((entry) => `${entry.currency}:${String(entry.received.minorUnits)}`);
+  expect(received).not.toContain(`${goal.amount.currency}:${goal.amount.minorUnits}`);
+  const occurrences = commitments.data.commitments.map((commitment) => `${commitment.perOccurrence.currency}:${commitment.perOccurrence.minorUnits}`);
+  expect(occurrences).not.toContain(`${goal.amount.currency}:${goal.amount.minorUnits}`);
+  expect(Object.keys(commitments.data)).not.toContain("goal");
 });

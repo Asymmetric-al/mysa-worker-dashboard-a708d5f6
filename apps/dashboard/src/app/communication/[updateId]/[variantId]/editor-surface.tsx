@@ -4,10 +4,8 @@ import type { ReactElement } from "react";
 import { useViewerPreferences } from "@/features/shell/components/viewer-preferences-provider";
 import { EditorShell, type EditorShellProps } from "@/features/updates/components/editor-shell";
 import { PageSurface } from "../../../page-frame";
-/** The level of the editor's own heading. `EditorShell` states its heading beneath this page's `h1` and can only compose levels 2 to 4, so the page supplies the level that nests under the heading it owns. */
-const EDITOR_HEADING_LEVEL = 2;
-/** The route's own title, stated once so the page's `h1` and the refusal arms its route states above the same heading cannot drift apart. */
-export const PAGE_TITLE = "Update edition";
+/** The level of the editor's own heading. `EditorShell` states its heading beneath this page's `h1` and can only compose levels 2 to 4, so the page supplies the level that nests under the heading it owns. */ const EDITOR_HEADING_LEVEL = 2;
+/** The route's own title, stated once so the page's `h1` and the refusal arms its route states above the same heading cannot drift apart. */ export const PAGE_TITLE = "Update edition";
 /** The envelope arm of the draft read, taken from the editor's own props so a change to that contract is a compile error here rather than a copy that drifts from it. */
 type DraftEnvelope = Extract<NonNullable<EditorShellProps["initialDraft"]>, { readonly kind: "envelope" }>["envelope"];
 export interface EditorSurfaceProps {

@@ -1,10 +1,10 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { DEFAULT_INTERFACE_LOCALE } from "@/lib/count-format";
 export type ViewerAppearance = "system" | "light" | "dark";
 /** The closed set of appearance choices, exported so a settings surface renders the same three options this module validates against rather than a second hand-written list. */ export const VIEWER_APPEARANCES = ["system", "light", "dark"] as const satisfies readonly ViewerAppearance[];
 /** The closed set of release modes a new submission asks for, exported so the settings control renders the same two options this module validates against rather than a second hand-written list. */ export const PUBLISHING_PREFERENCES = ["publish-only", "publish-and-notify"] as const;
 export type PublishingPreference = (typeof PUBLISHING_PREFERENCES)[number];
-export const DEFAULT_INTERFACE_LOCALE = "en-GB";
 export type ViewerPreferences = { readonly appearance: ViewerAppearance; readonly interfaceLocale: string; readonly displayTimeZone: string; readonly publishing: PublishingPreference };
 export type ViewerPreferencesContextValue = ViewerPreferences & { setAppearance: (appearance: ViewerAppearance) => void; setInterfaceLocale: (interfaceLocale: string) => void; setDisplayTimeZone: (displayTimeZone: string) => void; setPublishingPreference: (next: PublishingPreference) => void };
 export type ViewerPreferencesProviderProps = { children: ReactNode };
@@ -29,7 +29,7 @@ function announceViewerPreferences(next: ViewerPreferences): boolean {
 }
 const isViewerAppearance = (value: string): value is ViewerAppearance => (VIEWER_APPEARANCES as readonly string[]).includes(value);
 const isPublishingPreference = (value: string): value is PublishingPreference => (PUBLISHING_PREFERENCES as readonly string[]).includes(value);
-/** Whether this platform can resolve an IANA zone at all: the one answer to that question, which the display-zone setter, the stored read and the settings panel all ask, so a platform without. */ export const canResolveTimeZone = (): boolean => typeof Intl !== "undefined" && typeof Intl.DateTimeFormat === "function";
+/** Whether this platform can resolve an IANA zone at all: the one answer the display-zone setter, the stored read and the settings panel all ask, so a platform without one offers no zone list. */ export const canResolveTimeZone = (): boolean => typeof Intl !== "undefined" && typeof Intl.DateTimeFormat === "function";
 function canonicalLocale(value: string): string | null {
   try {
     const [locale] = Intl.getCanonicalLocales(value);
@@ -110,9 +110,7 @@ function commitViewerPreferences(patch: ViewerPreferencesPatch): void {
 const ViewerPreferencesContext = createContext<ViewerPreferencesContextValue | null>(null);
 /** Provides the viewer's four preferences to the shell: appearance, interface locale, display time zone and publishing, the last deciding only the release mode a new submission asks for. */ export function ViewerPreferencesProvider({ children }: ViewerPreferencesProviderProps) {
   const preferences = useSyncExternalStore(subscribeToViewerPreferences, readViewerPreferences, readServerViewerPreferences);
-  useEffect(() => {
-    hydrateViewerPreferences();
-  }, []);
+  useEffect(() => hydrateViewerPreferences(), []);
   const { appearance, interfaceLocale } = preferences;
   useEffect(() => {
     const root = document.documentElement;
@@ -142,9 +140,7 @@ const ViewerPreferencesContext = createContext<ViewerPreferencesContextValue | n
     return () => {
       if (previousLocale === null) {
         html.removeAttribute("lang");
-      } else {
-        html.setAttribute("lang", previousLocale);
-      }
+      } else html.setAttribute("lang", previousLocale);
     };
   }, [interfaceLocale]);
   const setAppearance = useCallback((nextAppearance: ViewerAppearance) => commitViewerPreferences({ appearance: nextAppearance }), []);

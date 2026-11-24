@@ -3,7 +3,6 @@ import type { Locator, Page } from "@playwright/test";
 import { arrayAt, expect, fieldAt, isRecord, jsonOf, newAttemptId, numberAt, operateDevControl, outcomeOf, setClock, stringAt, test, type JsonRecord } from "../playwright.config"; // The runner's own entry points: `test` carries the seeded-persona fixture and `expect` the web-first matchers, and `resetSeed` restores the deterministic world through the application's own control.
 const REFERRALS_PATH = "/partners/referrals";
 const REFERRALS_READ_PATH = "/api/referrals";
-const PARTNER_PATH = "/partners";
 const referralDetailPath = (referralId: string): string => `${REFERRALS_PATH}/${encodeURIComponent(referralId)}`;
 function referralListReadPath(list: "active" | "incomplete-date" | "expired", search = ""): string {
   const params = new URLSearchParams({ list, pageSize: "200" });
@@ -29,7 +28,6 @@ const DST_INTRODUCTION = { partnerId: "partner-kenji-nakamura", date: "2026-08-2
 const DST_ENDPOINT = "2026-09-06T04:00:00Z";
 const DST_LAST_INCLUDED_ON = "2026-09-05";
 const DST_NOMINAL_WORDING = "Active through 5 September 2026";
-const DST_INSIDE_WINDOW = "2026-09-01T00:00:00Z";
 const OTHER_DISPLAY_ZONE = "Asia/Tokyo"; // The display time zone this file switches to, proving a reader's own zone cannot move a resolved endpoint.
 const COPY = {
   introductionHeading: "Original introduction",
@@ -77,7 +75,6 @@ const COPY = {
   elapsedNotCalendar: "This window is measured in elapsed seconds rather than calendar days, so a change of clocks neither lengthens nor shortens it.",
   oneSuccessor: "A cycle carries at most one continuation, so continuing it once is the whole of what it offers.",
 } as const;
-const ABSENT_FACTS = ["Contact details", "What the referrer said", "Precise location", "Notes", "Financial information"] as const;
 function envelopeOf(body: unknown, what: string): JsonRecord {
   const refusal = fieldAt(body, "outcome");
   if (typeof refusal === "string") throw new Error(`${what} was refused with the ${refusal} outcome rather than answered from the caller's own scope: ${JSON.stringify(body).slice(0, 400)}`);
@@ -117,9 +114,7 @@ function continueAttemptFrom(envelope: JsonRecord, referralId: string, operation
   return { operationId, scope, expectedRevision: stringAt(envelope, ["revision"], "The cycle's revision"), payload: { referralId } };
 }
 const partnerRecordReadPath = (partnerId: string): string => `/api/partners/${encodeURIComponent(partnerId)}?job=record`;
-async function readPartnerRecord(page: Page, partnerId: string): Promise<JsonRecord> {
-  return envelopeOf(await jsonOf(await page.request.get(partnerRecordReadPath(partnerId)), `GET ${partnerRecordReadPath(partnerId)}`), "The partner's own record");
-}
+const readPartnerRecord = async (page: Page, partnerId: string): Promise<JsonRecord> => envelopeOf(await jsonOf(await page.request.get(partnerRecordReadPath(partnerId)), `GET ${partnerRecordReadPath(partnerId)}`), "The partner's own record");
 function rowForIntroduction(list: JsonRecord, displayName: string, introducedOn: string): JsonRecord {
   const rows = arrayAt(list, ["data", "items"], "The list's rows").filter((row): row is JsonRecord => isRecord(row) && fieldAt(row, "partnerDisplayName") === displayName && fieldAt(row, "originalIntroductionOn") === introducedOn); // The one row of one referral list that states one partner's introduction on one date, refusing anything but exactly one.
   const [only, ...others] = rows;
@@ -131,7 +126,7 @@ async function recordIntroductionThroughTheRecord(page: Page, introduction: { re
   const zone = stringAt(record, ["data", "referralSourceZone"], "The accepted source zone an introduction to this record is read in");
   const source = fieldAt(record, "source");
   if (!isRecord(source)) throw new Error(`The record read of ${introduction.partnerId} carried no source, so the reference the form states could not be checked: ${JSON.stringify(record).slice(0, 400)}`);
-  await page.goto(`${PARTNER_PATH}/${encodeURIComponent(introduction.partnerId)}`);
+  await page.goto(`/partners/${encodeURIComponent(introduction.partnerId)}`);
   await expect(page.getByRole("heading", { name: introduction.displayName, level: 1 })).toBeVisible();
   const form = page.locator('[data-slot="referral-introduction-form"]');
   await expect(form.getByRole("heading", { name: COPY.introductionHeading })).toBeVisible();
@@ -261,7 +256,7 @@ test("a New window across a daylight-saving transition ends at the first valid i
   const composedRow = activeList.locator(`a[href*="${composedId}"]`); // The seeded cycle for this partner is on the same list, so the row is found by the cycle the recording created rather than by the partner's name alone.
   await expect(composedRow).toHaveCount(1);
   await expect(composedRow).toHaveText(COMPOSED_INTRODUCTION.displayName);
-  await setClock(page.request, DST_INSIDE_WINDOW); // The gap case: a date read in a zone whose local midnight does not exist that day, which the composed form cannot state because it fixes the one accepted source zone the referral rules own.
+  await setClock(page.request, "2026-09-01T00:00:00Z"); // The gap case: a date read in a zone whose local midnight does not exist that day, which the composed form cannot state because it fixes the one accepted source zone the referral rules own.
   const referralId = await recordIntroductionInZone(page, { partnerId: DST_INTRODUCTION.partnerId, originalIntroductionOn: DST_INTRODUCTION.date, datePrecision: "date", sourceZone: DST_INTRODUCTION.zone, sourceReference: DST_INTRODUCTION.sourceReference });
   const detail = await readReferral(page, referralId);
   const deadline = ["data", "referral", "deadline"] as const;
@@ -309,7 +304,7 @@ test("the permitted Expired history carries identity, source reference, status a
   for (const text of [COPY.expiredPermission, COPY.expiredReadOnly, COPY.expiredAbsentHeading]) await expect(list.getByText(text).first()).toBeVisible();
   await expect(list.getByRole("heading", { name: EXPIRED_CYCLE.displayName })).toBeVisible();
   for (const text of [EXPIRED_CYCLE.reference, COPY.statusExpired]) await expect(list.getByText(text, { exact: true }).first()).toBeVisible();
-  for (const absent of ABSENT_FACTS) await expect(list.getByText(absent, { exact: true }).first()).toBeVisible();
+  for (const absent of ["Contact details", "What the referrer said", "Precise location", "Notes", "Financial information"] as const) await expect(list.getByText(absent, { exact: true }).first()).toBeVisible();
   await expect(list).not.toContainText(HIDDEN_EMAIL);
   await expect(list).not.toContainText("Prefers a call after 6pm");
   for (const currency of ["USD", "EUR", "KWD", "JPY"]) await expect(list).not.toContainText(currency);

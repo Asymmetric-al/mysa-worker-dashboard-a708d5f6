@@ -39,7 +39,6 @@ const TASK_DUE_LABEL = "Due on";
 const TASK_DUE_DESCRIPTION = "A calendar date with no time of day and no zone behind it. Leave it empty for undated work.";
 const TASK_LINK_LEGEND = "Linked record";
 const UNCONFIRMED_NOTE = "The last attempt's result is not confirmed. Check it with the operation identity in the receipt rather than submitting the same work again, because a second attempt could record the contact twice.";
-const TASKS_ENDPOINT = "/api/tasks";
 const TASK_READ_JOBS = ["tasks", "agenda", "series"] as const;
 const FOLLOW_UP_OFFLINE_GUIDANCE =
   "This device reported no connection, so the follow-up task's request did not leave from here. Reconnect and save this same follow-up again: it keeps this attempt's identity, so a request that had already arrived is answered with its original result rather than creating the task twice.";
@@ -142,7 +141,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
     }
     notify(onSettled, outcome);
   });
-  const followUpTask = useOutcomeMutation<NextTaskPayload>({ url: TASKS_ENDPOINT, jobs: TASK_READ_JOBS, offlineGuidance: FOLLOW_UP_OFFLINE_GUIDANCE }); // The application's one browser change transport, so the task is reported `unavailable` rather than `unknown` when the device never sent it and its acceptance refreshes the task reads every other task write refreshes.
+  const followUpTask = useOutcomeMutation<NextTaskPayload>({ url: "/api/tasks", jobs: TASK_READ_JOBS, offlineGuidance: FOLLOW_UP_OFFLINE_GUIDANCE }); // The application's one browser change transport, so the task is reported `unavailable` rather than `unknown` when the device never sent it and its acceptance refreshes the task reads every other task write refreshes.
   const task = useAttemptedMutation<NextTaskPayload>(
     (input) => followUpTask.mutateAsync(input),
     (outcome: MutationOutcome): void => {
@@ -199,6 +198,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
   };
   const replayInteraction = (): void => void interaction.retry();
   const reapplyInteraction = (): void => void interaction.reapplyOnConflict();
+  const checkResult = interaction.canReplay ? replayInteraction : undefined;
   const replayTask = (): void => void task.retry();
   const reapplyTask = (): void => void task.reapplyOnConflict();
   return (
@@ -223,7 +223,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
           outcome={interaction.outcome}
           headingLevel={PART_RECEIPT_HEADING}
           fieldLabels={INTERACTION_FIELD_LABELS}
-          onCheckResult={interaction.canReplay ? replayInteraction : undefined}
+          onCheckResult={checkResult}
           onRetrySameWork={interaction.canReplay ? replayInteraction : undefined}
           onReapply={interaction.conflictRevision === null ? undefined : reapplyInteraction}
           className="min-w-0"
@@ -408,9 +408,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
                     {interaction.outcome !== null && finishesEntry(interaction.outcome) ? (
                       <div className="flex min-w-0 flex-col gap-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button type="button" variant="outline" className="min-h-target max-w-full whitespace-normal" disabled={pending} onClick={saveTaskAlone}>
-                            {task.pending ? "Saving the follow-up task" : "Save the follow-up task"}
-                          </Button>
+                          <Button {...{ type: "button" as const, variant: "outline" as const, className: "min-h-target max-w-full whitespace-normal" as const, disabled: pending, onClick: saveTaskAlone }}>{task.pending ? "Saving the follow-up task" : "Save the follow-up task"}</Button>
                         </div>
                         <p className="type-supporting text-pretty">The interaction above is already recorded, so this saves the task by itself and sends nothing about the interaction again.</p>
                       </div>
@@ -425,9 +423,7 @@ export default function InteractionForm({ scope, partnerId, expectedRevision, su
               <div className="flex min-w-0 flex-col gap-2">
                 {unconfirmed ? null : (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button type="submit" className="min-h-target max-w-full whitespace-normal" disabled={pending}>
-                      {interaction.pending ? "Logging the interaction" : "Log the interaction"}
-                    </Button>
+                    <Button {...{ type: "submit" as const, className: "min-h-target max-w-full whitespace-normal" as const, disabled: pending }}>{interaction.pending ? "Logging the interaction" : "Log the interaction"}</Button>
                   </div>
                 )}
                 <p className="type-supporting text-pretty">{unconfirmed ? UNCONFIRMED_NOTE : "The interaction is saved first. A follow-up task is then saved as a separate change with its own identity, so a task that fails never re-sends the interaction."}</p>

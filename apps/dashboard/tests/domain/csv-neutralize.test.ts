@@ -49,25 +49,22 @@ describe("the full-width forms a CJK input method produces", () => {
     expect([neutralizeCell(unicodeMinus), fieldText(neutralizeCell(unicodeMinus))]).toEqual([`"${unicodeMinus}"`, unicodeMinus]);
   });
 });
-describe("a cell that only becomes first after a separator or a quote", () => {
-  it("keeps a formula that follows a quote in the value out of the cell's first position", () => {
-    const emitted = neutralizeCell(`"=cmd`);
-    expect([emitted, emitted.startsWith(`""`), emitted.startsWith(`"=`), QUOTED_FIELD_OPENING_WITH_TRIGGER.test(emitted)]).toEqual([`"""=cmd"`, true, false, false]);
-  });
-  it("quotes a value whose separator is followed by a formula, so no field opens there", () => {
-    const emitted = neutralizeCell(`a,=cmd`);
-    expect([emitted, fieldText(emitted), fieldText(emitted).startsWith("=")]).toEqual([`"a,=cmd"`, `a,=cmd`, false]);
-    const record = [neutralizeCell("note"), emitted].join(",");
-    expect([record, QUOTED_FIELD_OPENING_WITH_TRIGGER.test(record)]).toEqual([`"note","a,=cmd"`, false]);
-  });
-  it("quotes a value whose quoted section is followed by a formula", () => {
-    const emitted = neutralizeCell(`a""=cmd`);
-    expect([emitted, emitted.startsWith(`"=`), QUOTED_FIELD_OPENING_WITH_TRIGGER.test(emitted)]).toEqual([`"a""""=cmd"`, false, false]);
-  });
-  it("neutralises a formula at the start of a line inside the value", () => {
-    const emitted = neutralizeCell("line one\r\n=SUM(A1)");
-    expect([emitted, fieldText(emitted)]).toEqual([`"line one\r\n\t=SUM(A1)"`, "line one\r\n\t=SUM(A1)"]);
-  });
+it.each([
+  { shown: "a formula that follows a quote in the value", value: `"=cmd`, expected: `"""=cmd"`, doubled: true },
+  { shown: "a quoted section followed by a formula", value: `a""=cmd`, expected: `"a""""=cmd"`, doubled: false },
+])("keeps $shown out of the cell's first position", ({ value, expected, doubled }) => {
+  const emitted = neutralizeCell(value);
+  expect([emitted, emitted.startsWith(`""`), emitted.startsWith(`"=`), QUOTED_FIELD_OPENING_WITH_TRIGGER.test(emitted)]).toEqual([expected, doubled, false, false]);
+});
+it("a cell that only becomes first after a separator or a quote: quotes a value whose separator is followed by a formula, so no field opens there", () => {
+  const emitted = neutralizeCell(`a,=cmd`);
+  expect([emitted, fieldText(emitted), fieldText(emitted).startsWith("=")]).toEqual([`"a,=cmd"`, `a,=cmd`, false]);
+  const record = [neutralizeCell("note"), emitted].join(",");
+  expect([record, QUOTED_FIELD_OPENING_WITH_TRIGGER.test(record)]).toEqual([`"note","a,=cmd"`, false]);
+});
+it("a cell that only becomes first after a separator or a quote: neutralises a formula at the start of a line inside the value", () => {
+  const emitted = neutralizeCell("line one\r\n=SUM(A1)");
+  expect([emitted, fieldText(emitted)]).toEqual([`"line one\r\n\t=SUM(A1)"`, "line one\r\n\t=SUM(A1)"]);
 });
 describe("ordinary content survives untouched", () => {
   const ORDINARY_CELLS: { readonly label: string; readonly value: string }[] = [
@@ -75,16 +72,13 @@ describe("ordinary content survives untouched", () => {
     { label: "an astral emoji beside a name", value: "😀 Grace Okafor" },
     { label: "a mixed-direction string", value: "مرحبا · Li Wei (李伟) · 12:30" },
     { label: "a cell of spaces only", value: "   " },
+    { label: "a leading-zero identifier", value: "000123" },
   ];
   it.each(ORDINARY_CELLS)("leaves $label byte-for-byte unchanged", ({ value }) => {
     const emitted = neutralizeCell(value);
     expect([emitted, fieldText(emitted), Buffer.from(fieldText(emitted), "utf8").equals(Buffer.from(value, "utf8"))]).toEqual([`"${value}"`, value, true]);
     expect(emitted).not.toContain("\t");
     expect(neutralizer.requiresNeutralisation(value)).toBe(false);
-  });
-  it("preserves a leading-zero identifier exactly", () => {
-    const emitted = neutralizeCell("000123");
-    expect([emitted, fieldText(emitted), neutralizer.requiresNeutralisation("000123")]).toEqual([`"000123"`, "000123", false]);
   });
   it("keeps an empty cell empty rather than giving it a prefix", () => expect([neutralizeCell(""), fieldText(neutralizeCell(""))]).toEqual(['""', ""]));
   it("neutralises a leading tab while leaving a tab later in the value as data", () => expect([neutralizeCell("\tDowning St"), neutralizeCell("10\tDowning St"), fieldText(neutralizeCell("10\tDowning St"))]).toEqual(['"\t\tDowning St"', '"10\tDowning St"', "10\tDowning St"]));
@@ -124,34 +118,32 @@ const QUERY: ReportQuery = {
   currency: { kind: "all" },
 };
 const receivedSupportReport = (): ReportResult => runReport(QUERY, PROJECTION);
-describe("the writer neutralises every cell of a real result", () => {
-  it("neutralises the trigger-leading cells and leaves ordinary rows intact", async () => {
-    const result = receivedSupportReport();
-    const document = await toCsv(result);
-    expect(result.rows).toHaveLength(2);
-    expect(document).toContain('"\t=SUM(A1)-cmd"');
-    expect(document).not.toContain('"=SUM(A1)-cmd"');
-    expect(document).toContain('"\t@provenance-0001"');
-    expect(document).not.toContain('"@provenance-0001"');
-    expect(document).toContain('"000123"');
-    expect(document).not.toContain('"\t000123"');
-    for (const needle of ['"General Fund"', '"gift-row-0002"']) expect(document).toContain(needle);
-  });
-  it("leaves no field in the document opening with a formula trigger", async () => {
-    const document = await toCsv(receivedSupportReport());
-    for (const expected of [QUOTED_FIELD_OPENING_WITH_TRIGGER, /(?:^|,|\r\n)[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]/]) expect(document).not.toMatch(expected);
-  });
-  it("writes no byte-order mark", async () => {
-    const document = await toCsv(receivedSupportReport());
-    const bytes = Buffer.from(document, "utf8");
-    expect([bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), document.codePointAt(0)]).toEqual([false, 0x22]);
-  });
-  it("keeps the neutralising tab in the data, the residual A8 discloses", async () => {
-    const document = await toCsv(receivedSupportReport());
-    const [neutralised] = /"\t=SUM\(A1\)-cmd"/.exec(document) ?? [];
-    expect(neutralised).toBeDefined();
-    expect(fieldText(neutralised ?? "")).toBe("\t=SUM(A1)-cmd");
-  });
+it("the writer neutralises every cell of a real result: neutralises the trigger-leading cells and leaves ordinary rows intact", async () => {
+  const result = receivedSupportReport();
+  const document = await toCsv(result);
+  expect(result.rows).toHaveLength(2);
+  expect(document).toContain('"\t=SUM(A1)-cmd"');
+  expect(document).not.toContain('"=SUM(A1)-cmd"');
+  expect(document).toContain('"\t@provenance-0001"');
+  expect(document).not.toContain('"@provenance-0001"');
+  expect(document).toContain('"000123"');
+  expect(document).not.toContain('"\t000123"');
+  for (const needle of ['"General Fund"', '"gift-row-0002"']) expect(document).toContain(needle);
+});
+it("the writer neutralises every cell of a real result: leaves no field in the document opening with a formula trigger", async () => {
+  const document = await toCsv(receivedSupportReport());
+  for (const expected of [QUOTED_FIELD_OPENING_WITH_TRIGGER, /(?:^|,|\r\n)[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]/]) expect(document).not.toMatch(expected);
+});
+it("the writer neutralises every cell of a real result: writes no byte-order mark", async () => {
+  const document = await toCsv(receivedSupportReport());
+  const bytes = Buffer.from(document, "utf8");
+  expect([bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), document.codePointAt(0)]).toEqual([false, 0x22]);
+});
+it("the writer neutralises every cell of a real result: keeps the neutralising tab in the data, the residual A8 discloses", async () => {
+  const document = await toCsv(receivedSupportReport());
+  const [neutralised] = /"\t=SUM\(A1\)-cmd"/.exec(document) ?? [];
+  expect(neutralised).toBeDefined();
+  expect(fieldText(neutralised ?? "")).toBe("\t=SUM(A1)-cmd");
 });
 const EXPORT_MODULE_DIR = fileURLToPath(new URL("../../src/modules/export/", import.meta.url));
 describe("one neutraliser, one writer", () => {

@@ -26,11 +26,9 @@ type SupportOverviewReport = SupportOverviewEnvelope["data"]["report"];
 type CurrencySummaryView = SupportOverviewReport["summary"][number];
 type StatedAmount = CurrencySummaryView["received"];
 type RecurringPointView = SupportOverviewReport["series"][number];
-type MonthlyEquivalentView = SupportOverviewEnvelope["data"]["monthlyEquivalent"][number];
-type GoalStateView = NonNullable<SupportOverviewReport["goal"]>["state"];
 type PeriodText = { readonly from: string; readonly to: string };
 const GOAL_STATED_ELSEWHERE = "A progress figure exists for this period and is stated in the Support goal section below, exactly as the goal's own read computed it.";
-const GOAL_STATE_SENTENCE: Readonly<Record<GoalStateView, string>> = {
+const GOAL_STATE_SENTENCE: Readonly<Record<NonNullable<SupportOverviewReport["goal"]>["state"], string>> = {
   value: GOAL_STATED_ELSEWHERE,
   zero: GOAL_STATED_ELSEWHERE,
   "no-goal": NO_PERCENTAGE["no-goal"],
@@ -43,10 +41,8 @@ const GOAL_STATE_SENTENCE: Readonly<Record<GoalStateView, string>> = {
 const SERIES_LABEL: string = MEASURE_LABELS["received-gifts"];
 const RECEIVED_CASH_UNIT = "received cash, one row per authorised allocation";
 const MONTHLY_EQUIVALENT_DESCRIPTION = "Each monthly equivalent is the qualified source's own calculation for one commitment, in the currency the source states it in. They are stated one by one and are never averaged or summed into one figure.";
-const TABLE_CAPTION = `${SERIES_LABEL} by month, one row per month and one column per currency: a month the source recorded nothing in states that rather than a zero.`;
 const MONTH_COLUMN_KEY = "month";
 const CURRENCY_COLUMN_PREFIX = "currency:";
-const MONTH_TEXT_LENGTH = 7;
 const GAP_CELL_WORD = "No recorded value";
 function civilDateText(value: unknown): string {
   if (typeof value === "string") return value;
@@ -58,14 +54,13 @@ function civilDateText(value: unknown): string {
 }
 const monthText = (bucketStart: unknown): string => {
   const text = civilDateText(bucketStart);
-  return text.length >= MONTH_TEXT_LENGTH ? text.slice(0, MONTH_TEXT_LENGTH) : text;
+  return text.length >= 7 ? text.slice(0, 7) : text;
 };
 const periodOf = (report: SupportOverviewReport): PeriodText => ({ from: civilDateText(report.snapshot.period.from), to: civilDateText(report.snapshot.period.to) });
 const isCurrentPeriodOf = (report: SupportOverviewReport): boolean => report.snapshot.period.state === "in-progress";
 const moneyOf = (currency: string, stated: StatedAmount): Money => ({ currency, minorUnits: stated.minorUnits ?? minorUnitsOf(0) });
 const stateOf = (envelope: SupportOverviewEnvelope, path: string, fallback: ValueState): ValueState => envelope.valueStates[path] ?? fallback;
-const goalComparisonSentence = (goal: SupportOverviewReport["goal"]): string => (goal === undefined ? "This read states no goal, so there is no committed-versus-goal comparison to state and none is invented." : GOAL_STATE_SENTENCE[goal.state]);
-const monthlyMoneyOf = (entry: MonthlyEquivalentView): Money => ({ currency: entry.amount.currency, minorUnits: entry.amount.minorUnits === null ? minorUnitsOf(0) : minorUnitsOf(entry.amount.minorUnits) });
+const monthlyMoneyOf = (entry: SupportOverviewEnvelope["data"]["monthlyEquivalent"][number]): Money => ({ currency: entry.amount.currency, minorUnits: entry.amount.minorUnits === null ? minorUnitsOf(0) : minorUnitsOf(entry.amount.minorUnits) });
 function chartPartitions(series: readonly RecurringPointView[]): readonly { readonly currency: string; readonly points: readonly RecurringPointView[]; readonly byMonth: ReadonlyMap<string, RecurringPointView> }[] {
   const byCurrency = new Map<string, RecurringPointView[]>();
   for (const point of series) byCurrency.set(point.currency, [...(byCurrency.get(point.currency) ?? []), point]);
@@ -74,9 +69,7 @@ function chartPartitions(series: readonly RecurringPointView[]): readonly { read
 type ChartPartition = ReturnType<typeof chartPartitions>[number];
 const chartPointsOf = (partition: ChartPartition): readonly ChartPoint[] => partition.points.map((point) => ({ bucket: monthText(point.bucketStart), value: point.value.minorUnits, state: point.value.valueState, gap: point.gap }));
 const chartSeriesOf = (partition: ChartPartition): ChartSeries => ({ key: `${partition.currency}-received`, label: SERIES_LABEL, currency: partition.currency, points: chartPointsOf(partition) });
-function amountCell(value: StatedAmount, currency: string, gap: boolean, locale: string): string {
-  return gap && value.minorUnits === null ? GAP_CELL_WORD : formatMinor(moneyOf(currency, value), value.valueState, locale).text;
-}
+const amountCell = (value: StatedAmount, currency: string, gap: boolean, locale: string): string => (gap && value.minorUnits === null ? GAP_CELL_WORD : formatMinor(moneyOf(currency, value), value.valueState, locale).text);
 function chartTable(partitions: readonly ChartPartition[], locale: string): ChartTable {
   const columns = [{ key: MONTH_COLUMN_KEY, label: "Month" }, ...partitions.map((partition) => ({ key: `${CURRENCY_COLUMN_PREFIX}${partition.currency}`, label: partition.currency }))];
   const months = [...new Set(partitions.flatMap((partition) => [...partition.byMonth.keys()]))];
@@ -88,7 +81,7 @@ function chartTable(partitions: readonly ChartPartition[], locale: string): Char
     }
     return row;
   });
-  return { caption: TABLE_CAPTION, columns, rows };
+  return { caption: `${SERIES_LABEL} by month, one row per month and one column per currency: a month the source recorded nothing in states that rather than a zero.`, columns, rows };
 }
 function overviewReadOf(candidate: ReadEnvelope<unknown> | undefined): SupportOverviewRead | undefined {
   if (candidate === undefined) return undefined;
@@ -101,30 +94,26 @@ function isOverviewEnvelope(value: unknown): value is SupportOverviewEnvelope {
   const { data } = value;
   return data !== null && typeof data === "object" && "report" in data && "monthlyEquivalent" in data && "buckets" in data && "commitmentKinds" in data;
 }
-function CountRow({ label, count, state }: { readonly label: string; readonly count: number; readonly state: ValueState }): ReactElement {
-  return (
-    <div className="flex flex-wrap items-baseline gap-x-2">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="flex flex-wrap items-baseline gap-x-1 font-medium">
-        <bdi className="tabular-figures">{count}</bdi>
-        {COUNT_STATE_NOTE[state] === null ? null : <span className="text-xs font-normal text-muted-foreground">{COUNT_STATE_NOTE[state]}</span>}
-      </dd>
-    </div>
-  );
-}
+const CountRow = ({ label, count, state }: { readonly label: string; readonly count: number; readonly state: ValueState }): ReactElement => (
+  <div className="flex flex-wrap items-baseline gap-x-2">
+    <dt className="text-muted-foreground">{label}</dt>
+    <dd className="flex flex-wrap items-baseline gap-x-1 font-medium">
+      <bdi className="tabular-figures">{count}</bdi>
+      {COUNT_STATE_NOTE[state] === null ? null : <span className="text-xs font-normal text-muted-foreground">{COUNT_STATE_NOTE[state]}</span>}
+    </dd>
+  </div>
+);
 const PeriodNote = ({ period, coverage }: { readonly period: PeriodText; readonly coverage: CoverageState }): ReactElement => (
   <p className="text-xs text-muted-foreground">
     Counted for <bdi>{period.from}</bdi> to <bdi>{period.to}</bdi>, over <bdi>{coverage}</bdi> coverage.
   </p>
 );
-function MeasureSection({ title, description, period, coverage, children }: { readonly title: string; readonly description: string; readonly period: PeriodText; readonly coverage: CoverageState; readonly children: ReactNode }): ReactElement {
-  return (
-    <SectionCard title={title} description={description} headingLevel={3} cardVariant="muted" contentClassName="flex flex-col gap-3">
-      <PeriodNote period={period} coverage={coverage} />
-      {children}
-    </SectionCard>
-  );
-}
+const MeasureSection = ({ title, description, period, coverage, children }: { readonly title: string; readonly description: string; readonly period: PeriodText; readonly coverage: CoverageState; readonly children: ReactNode }): ReactElement => (
+  <SectionCard title={title} description={description} headingLevel={3} cardVariant="muted" contentClassName="flex flex-col gap-3">
+    <PeriodNote period={period} coverage={coverage} />
+    {children}
+  </SectionCard>
+);
 function CashCounts({ envelope, entry }: { readonly envelope: SupportOverviewEnvelope; readonly entry: CurrencySummaryView }): ReactElement {
   const path = `summary.${entry.currency}`;
   return (
@@ -154,55 +143,45 @@ function CashSummary({ envelope, locale }: { readonly envelope: SupportOverviewE
     </div>
   );
 }
-function RecurringOutcomes({ envelope }: { readonly envelope: SupportOverviewEnvelope }): ReactElement {
-  return (
-    <SectionCard
-      title={MEASURE_LABELS["recurring-collection-outcomes"]}
-      headingLevel={3}
-      description="These are not received cash. Each occurrence the source reports sits in one of the five outcomes and is counted at its own state, so a collection in flight is not cash, an absent receipt is not donor debt, and no outcome here is added to an amount."
-      contentClassName="flex flex-col gap-3"
-    >
-      <PeriodNote period={periodOf(envelope.data.report)} coverage={envelope.coverage.state} />
-      <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        {envelope.data.buckets.map((bucket) => (
-          <CountRow key={bucket.bucket} label={bucket.label} count={bucket.count} state={stateOf(envelope, `buckets.${bucket.bucket}.count`, bucket.valueState)} />
-        ))}
-      </dl>
-      <p className="text-xs text-muted-foreground">{BUCKET_MEANING["outside-partition"]}</p>
-    </SectionCard>
-  );
-}
-function CommitmentKinds({ envelope, period }: { readonly envelope: SupportOverviewEnvelope; readonly period: PeriodText }): ReactElement {
-  return (
-    <MeasureSection title={MEASURE_LABELS.commitments} description="Commitments are facts the source reports and this application never writes. Each is counted in its own kind and in its own outcome bucket, and no commitment is counted as cash." period={period} coverage={envelope.coverage.state}>
-      <dl className="grid gap-2 sm:grid-cols-3">
-        {envelope.data.commitmentKinds.map((kind) => (
-          <CountRow key={kind.kind} label={COMMITMENT_KIND_LABELS[kind.kind]} count={kind.count} state={stateOf(envelope, `commitmentKinds.${kind.kind}.count`, kind.valueState)} />
-        ))}
-      </dl>
-    </MeasureSection>
-  );
-}
-function MonthlyEquivalents({ envelope, period, locale }: { readonly envelope: SupportOverviewEnvelope; readonly period: PeriodText; readonly locale: string }): ReactElement {
-  return (
-    <MeasureSection title={MEASURE_LABELS["monthly-equivalent-support"]} description={MONTHLY_EQUIVALENT_DESCRIPTION} period={period} coverage={envelope.coverage.state}>
-      <dl className="flex flex-col gap-2">
-        {envelope.data.monthlyEquivalent.map((entry) => (
-          <div key={entry.commitmentRowId} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <dt className="min-w-0 break-words text-muted-foreground">
-              <bdi className="mono-identifier">{entry.commitmentRowId}</bdi>
-              <span className="ms-2 text-xs">{entry.cadence}</span>
-            </dt>
-            <dd>
-              <AmountValue money={monthlyMoneyOf(entry)} valueState={stateOf(envelope, `monthlyEquivalent.${entry.commitmentRowId}.amount`, entry.amount.valueState)} locale={locale} />{" "}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      <p className="text-xs text-muted-foreground">{"No combined monthly figure is stated: these equivalents belong to individual commitments, in the currencies the source states them in, and summing them would state a number no source computed."}</p>
-    </MeasureSection>
-  );
-}
+const RECURRING_OUTCOMES_DESCRIPTION = "These are not received cash. Each occurrence the source reports sits in one of the five outcomes and is counted at its own state, so a collection in flight is not cash, an absent receipt is not donor debt, and no outcome here is added to an amount.";
+const RecurringOutcomes = ({ envelope }: { readonly envelope: SupportOverviewEnvelope }): ReactElement => (
+  <SectionCard title={MEASURE_LABELS["recurring-collection-outcomes"]} headingLevel={3} description={RECURRING_OUTCOMES_DESCRIPTION} contentClassName="flex flex-col gap-3">
+    <PeriodNote period={periodOf(envelope.data.report)} coverage={envelope.coverage.state} />
+    <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {envelope.data.buckets.map((bucket) => (
+        <CountRow key={bucket.bucket} label={bucket.label} count={bucket.count} state={stateOf(envelope, `buckets.${bucket.bucket}.count`, bucket.valueState)} />
+      ))}
+    </dl>
+    <p className="text-xs text-muted-foreground">{BUCKET_MEANING["outside-partition"]}</p>
+  </SectionCard>
+);
+const CommitmentKinds = ({ envelope, period }: { readonly envelope: SupportOverviewEnvelope; readonly period: PeriodText }): ReactElement => (
+  <MeasureSection title={MEASURE_LABELS.commitments} description="Commitments are facts the source reports and this application never writes. Each is counted in its own kind and in its own outcome bucket, and no commitment is counted as cash." period={period} coverage={envelope.coverage.state}>
+    <dl className="grid gap-2 sm:grid-cols-3">
+      {envelope.data.commitmentKinds.map((kind) => (
+        <CountRow key={kind.kind} label={COMMITMENT_KIND_LABELS[kind.kind]} count={kind.count} state={stateOf(envelope, `commitmentKinds.${kind.kind}.count`, kind.valueState)} />
+      ))}
+    </dl>
+  </MeasureSection>
+);
+const MonthlyEquivalents = ({ envelope, period, locale }: { readonly envelope: SupportOverviewEnvelope; readonly period: PeriodText; readonly locale: string }): ReactElement => (
+  <MeasureSection title={MEASURE_LABELS["monthly-equivalent-support"]} description={MONTHLY_EQUIVALENT_DESCRIPTION} period={period} coverage={envelope.coverage.state}>
+    <dl className="flex flex-col gap-2">
+      {envelope.data.monthlyEquivalent.map((entry) => (
+        <div key={entry.commitmentRowId} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <dt className="min-w-0 break-words text-muted-foreground">
+            <bdi className="mono-identifier">{entry.commitmentRowId}</bdi>
+            <span className="ms-2 text-xs">{entry.cadence}</span>
+          </dt>
+          <dd>
+            <AmountValue money={monthlyMoneyOf(entry)} valueState={stateOf(envelope, `monthlyEquivalent.${entry.commitmentRowId}.amount`, entry.amount.valueState)} locale={locale} />{" "}
+          </dd>
+        </div>
+      ))}
+    </dl>
+    <p className="text-xs text-muted-foreground">{"No combined monthly figure is stated: these equivalents belong to individual commitments, in the currencies the source states them in, and summing them would state a number no source computed."}</p>
+  </MeasureSection>
+);
 function CommittedSupport({ envelope, locale }: { readonly envelope: SupportOverviewEnvelope; readonly locale: string }): ReactElement {
   const report = envelope.data.report;
   const period = periodOf(report);
@@ -221,7 +200,7 @@ function CommittedSupport({ envelope, locale }: { readonly envelope: SupportOver
       <TabsContent value="committed" aria-label="Committed versus goal" className="flex flex-col gap-3">
         {hasCommitments ? <CommitmentKinds envelope={envelope} period={period} /> : commitmentsEmpty}
         <p className="max-w-prose type-supporting">{"The goal is compared with received support on the goal's own read, and its progress figure is stated once, in the Support goal section below. It is never recomputed, re-rounded or capped here."}</p>
-        <p className="max-w-prose type-body">{goalComparisonSentence(report.goal)}</p>
+        <p className="max-w-prose type-body">{report.goal === undefined ? "This read states no goal, so there is no committed-versus-goal comparison to state and none is invented." : GOAL_STATE_SENTENCE[report.goal.state]}</p>
       </TabsContent>
       <TabsContent value="monthly" aria-label="Monthly equivalents" className="flex flex-col gap-3">
         {hasMonthlyEquivalents ? <MonthlyEquivalents envelope={envelope} period={period} locale={locale} /> : monthlyEquivalentsEmpty}
@@ -247,9 +226,7 @@ function Destinations(): ReactElement {
       <ul className="flex flex-wrap gap-2">
         {links.map((link) => (
           <li key={link.href}>
-            <Link href={link.href} data-slot="button" className={linkClass}>
-              {link.label}
-            </Link>
+            <Link {...{ href: link.href, "data-slot": "button", className: linkClass }}>{link.label}</Link>
           </li>
         ))}
       </ul>
@@ -257,8 +234,7 @@ function Destinations(): ReactElement {
     </section>
   );
 }
-type OverviewFiguresProps = { readonly envelope: SupportOverviewEnvelope; readonly scope: Scope; readonly locale: string; readonly dir: "ltr" | "rtl" | undefined };
-function OverviewFigures({ envelope, scope, locale, dir }: OverviewFiguresProps): ReactElement {
+function OverviewFigures({ envelope, scope, locale, dir }: { readonly envelope: SupportOverviewEnvelope; readonly scope: Scope; readonly locale: string; readonly dir: "ltr" | "rtl" | undefined }): ReactElement {
   const report = envelope.data.report;
   return (
     <div className="flex min-w-0 flex-col gap-8">
@@ -280,8 +256,7 @@ function OverviewFigures({ envelope, scope, locale, dir }: OverviewFiguresProps)
     </div>
   );
 }
-type OverviewAnswerProps = { readonly result: SupportOverviewRead | undefined; readonly error: Error | null; readonly retry: () => void; readonly scope: Scope; readonly locale: string; readonly dir: "ltr" | "rtl" | undefined };
-function OverviewAnswer({ result, error, retry, scope, locale, dir }: OverviewAnswerProps): ReactElement {
+function OverviewAnswer({ result, error, retry, scope, locale, dir }: { readonly result: SupportOverviewRead | undefined; readonly error: Error | null; readonly retry: () => void; readonly scope: Scope; readonly locale: string; readonly dir: "ltr" | "rtl" | undefined }): ReactElement {
   const retryAction = { label: "Read this period again", onClick: retry };
   if (result === undefined) {
     return error === null ? (
@@ -290,9 +265,8 @@ function OverviewAnswer({ result, error, retry, scope, locale, dir }: OverviewAn
       <StateNotice kind="unavailable" title="The support read could not be completed" description={error.message} retry={retryAction} />
     );
   }
-  if (result.kind === "denied") {
+  if (result.kind === "denied")
     return <StateNotice kind="denied" title="Support is not available in this scope" description="This read is refused for the context this session is acting in. The refusal is the same whether or not records exist, so nothing here states a count, a title or a size." reasonCode={result.denied.reasonCode} />;
-  }
   if (result.kind === "unavailable") return <StateNotice kind="unavailable" title="The financial source could not be read" description={result.unavailable.guidance} source={result.unavailable.source} retry={retryAction} />;
   return result.kind === "refused" ? <StateNotice kind="refused" title="This period's request was refused" description={refusalSummary(result.refused)} /> : <OverviewFigures envelope={result.envelope} scope={scope} locale={locale} dir={dir} />;
 }

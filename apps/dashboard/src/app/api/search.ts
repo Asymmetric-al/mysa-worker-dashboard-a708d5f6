@@ -9,8 +9,7 @@ export function statedSearchValues(search: URLSearchParams): Record<string, stri
 }
 /** The grammar's refusal with every undeclared name spelled out: a Zod `unrecognized_keys` issue names its keys only in its own detail, so each one becomes its own per-field message at the path the caller sent. */
 export function refusedSearchParameters(error: z.ZodError): z.ZodError {
-  type Issue = NonNullable<ConstructorParameters<typeof z.ZodError>[0]>[number];
-  const issues: Issue[] = [];
+  const issues: NonNullable<ConstructorParameters<typeof z.ZodError>[0]>[number][] = [];
   for (const issue of error.issues) {
     if (issue.code === "unrecognized_keys") {
       for (const name of issue.keys) issues.push({ code: "custom", path: [...issue.path, name], message: unadmittedSearchParameterMessage(name) });

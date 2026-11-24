@@ -62,13 +62,10 @@ export const UPDATES_MUTATION_INVALIDATIONS = {
   registerMediaAsset: ["draft"],
   removePlacement: ["draft"],
 } as const satisfies Readonly<Record<UpdatesMutationName, readonly UpdatesReadJob[]>>;
-const HANDLER_SOURCE_SYSTEM = "data-service";
 const TRANSPORT_GUIDANCE = "The request did not complete, so this change is reported as neither applied nor refused. Retry the same work: it keeps the attempt's own identity, and replaying it answers with the result already recorded rather than repeating the effect.";
-const PREPARATION_GUIDANCE = "This request could not be prepared here, so nothing was sent and nothing was recorded from it. If it carries a chosen file, choose the file again: it never left this browser, so no attempt can have applied it.";
 const MISSING_HANDLER_STATUSES: ReadonlySet<number> = new Set<number>([404, 405]);
-const NOTIFY_NOW_MODE = "publish-and-notify-now" satisfies PublishMode;
 const BASE64_CHUNK_BYTES = 49_152;
-const sourceOf = (endpoint: string, name: UpdatesMutationName): { readonly system: string; readonly reference: string } => ({ system: HANDLER_SOURCE_SYSTEM, reference: `${endpoint}#${name}` });
+const sourceOf = (endpoint: string, name: UpdatesMutationName): { readonly system: string; readonly reference: string } => ({ system: "data-service", reference: `${endpoint}#${name}` });
 async function readJsonBody(answer: Response): Promise<unknown> {
   try {
     return await answer.json();
@@ -118,7 +115,7 @@ async function runUpdatesMutation<P>(queryClient: QueryClient, config: UpdatesMu
   try {
     body = await request(checked.data);
   } catch {
-    return unavailable({ operationId: input.operationId, source: sourceOf(endpoint, name), guidance: PREPARATION_GUIDANCE });
+    return unavailable({ operationId: input.operationId, source: sourceOf(endpoint, name), guidance: "This request could not be prepared here, so nothing was sent and nothing was recorded from it. If it carries a chosen file, choose the file again: it never left this browser, so no attempt can have applied it." });
   }
   let answer: Response;
   try {
@@ -132,9 +129,7 @@ async function runUpdatesMutation<P>(queryClient: QueryClient, config: UpdatesMu
     outcome = answered;
   } else if (MISSING_HANDLER_STATUSES.has(answer.status)) {
     outcome = unavailable({ operationId: input.operationId, source: sourceOf(endpoint, name), guidance: TRANSPORT_GUIDANCE });
-  } else {
-    outcome = unknown({ operationId: input.operationId });
-  }
+  } else outcome = unknown({ operationId: input.operationId });
   await revalidateUpdates(queryClient, input.scope, jobsToRevalidate(outcome, invalidates, checked.data));
   return outcome;
 }
@@ -144,11 +139,6 @@ function useUpdatesMutation<P>(name: UpdatesMutationName, schema: ZodType<P>, re
   return useReviewedMutation<P>(submit);
 }
 const asGiven = <P>(payload: P): P => payload;
-const saveDraftBody = (payload: SaveDraftPayload): unknown => ({ operation: "saveDraft", ...payload });
-const restoreRevisionAsDraftBody = (payload: RestoreRevisionAsDraftPayload): unknown => ({ operation: "restoreRevisionAsDraft", ...payload });
-const submitForReviewBody = (payload: SubmitForReviewPayload): unknown => ({ operation: "submitForReview", ...payload });
-const withdrawUpdateBody = (payload: WithdrawUpdatePayload): unknown => ({ operation: "withdrawUpdate", documentId: payload.documentId });
-const withdrawLocaleBody = (payload: WithdrawLocalePayload): unknown => ({ operation: "withdrawLocale", variantId: payload.variantId });
 async function registerMediaAssetBody(payload: RegisterMediaAssetPayload): Promise<unknown> {
   const { altText, caption, credit, language, transcript } = payload.placement;
   // The poster and the caption track are the two members the service prepares as their own renditions, so the body carries
@@ -166,16 +156,15 @@ async function registerMediaAssetBody(payload: RegisterMediaAssetPayload): Promi
     ...(captions === undefined ? {} : { captions }),
   };
 }
-const removePlacementBody = (payload: RemovePlacementPayload): unknown => ({ operation: "removePlacement", variantId: payload.variantId, placementId: payload.placementId });
-const publishInvalidations = (payload: PublishVariantsPayload): readonly UpdatesReadJob[] => (payload.variants.some((selection) => selection.mode === NOTIFY_NOW_MODE) ? [...UPDATES_MUTATION_INVALIDATIONS.publishVariants, "send-result"] : UPDATES_MUTATION_INVALIDATIONS.publishVariants);
+const publishInvalidations = (payload: PublishVariantsPayload): readonly UpdatesReadJob[] => (payload.variants.some((selection) => selection.mode === ("publish-and-notify-now" satisfies PublishMode)) ? [...UPDATES_MUTATION_INVALIDATIONS.publishVariants, "send-result"] : UPDATES_MUTATION_INVALIDATIONS.publishVariants);
 export const useCreateVariant = (): UseReviewedMutationResult<CreateVariantPayload> => useUpdatesMutation("createVariant", createVariantSchema, asGiven);
 /** `saveDraft` — saves one edition's working document against the revision its editor holds, moving the draft pointer and nothing else; answers `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
-export const useSaveDraft = (): UseReviewedMutationResult<SaveDraftPayload> => useUpdatesMutation("saveDraft", saveDraftSchema, saveDraftBody);
-export const useSubmitForReview = (): UseReviewedMutationResult<SubmitForReviewPayload> => useUpdatesMutation("submitForReview", submitForReviewSchema, submitForReviewBody);
+export const useSaveDraft = (): UseReviewedMutationResult<SaveDraftPayload> => useUpdatesMutation("saveDraft", saveDraftSchema, (payload: SaveDraftPayload): unknown => ({ operation: "saveDraft", ...payload }));
+export const useSubmitForReview = (): UseReviewedMutationResult<SubmitForReviewPayload> => useUpdatesMutation("submitForReview", submitForReviewSchema, (payload: SubmitForReviewPayload): unknown => ({ operation: "submitForReview", ...payload }));
 export const usePublishVariants = (): UseReviewedMutationResult<PublishVariantsPayload> => useUpdatesMutation("publishVariants", publishVariantsSchema, asGiven, publishInvalidations);
 export const useRequestNotification = (): UseReviewedMutationResult<RequestNotificationPayload> => useUpdatesMutation("requestNotification", requestNotificationSchema, asGiven);
-export const useWithdrawUpdate = (): UseReviewedMutationResult<WithdrawUpdatePayload> => useUpdatesMutation("withdrawUpdate", withdrawUpdateSchema, withdrawUpdateBody);
-export const useWithdrawLocale = (): UseReviewedMutationResult<WithdrawLocalePayload> => useUpdatesMutation("withdrawLocale", withdrawLocaleSchema, withdrawLocaleBody);
-export const useRestoreRevisionAsDraft = (): UseReviewedMutationResult<RestoreRevisionAsDraftPayload> => useUpdatesMutation("restoreRevisionAsDraft", restoreRevisionAsDraftSchema, restoreRevisionAsDraftBody);
+export const useWithdrawUpdate = (): UseReviewedMutationResult<WithdrawUpdatePayload> => useUpdatesMutation("withdrawUpdate", withdrawUpdateSchema, (payload: WithdrawUpdatePayload): unknown => ({ operation: "withdrawUpdate", documentId: payload.documentId }));
+export const useWithdrawLocale = (): UseReviewedMutationResult<WithdrawLocalePayload> => useUpdatesMutation("withdrawLocale", withdrawLocaleSchema, (payload: WithdrawLocalePayload): unknown => ({ operation: "withdrawLocale", variantId: payload.variantId }));
+export const useRestoreRevisionAsDraft = (): UseReviewedMutationResult<RestoreRevisionAsDraftPayload> => useUpdatesMutation("restoreRevisionAsDraft", restoreRevisionAsDraftSchema, (payload: RestoreRevisionAsDraftPayload): unknown => ({ operation: "restoreRevisionAsDraft", ...payload }));
 export const useRegisterMediaAsset = (): UseReviewedMutationResult<RegisterMediaAssetPayload> => useUpdatesMutation("registerMediaAsset", registerMediaAssetSchema, registerMediaAssetBody);
-export const useRemovePlacement = (): UseReviewedMutationResult<RemovePlacementPayload> => useUpdatesMutation("removePlacement", removePlacementSchema, removePlacementBody);
+export const useRemovePlacement = (): UseReviewedMutationResult<RemovePlacementPayload> => useUpdatesMutation("removePlacement", removePlacementSchema, (payload: RemovePlacementPayload): unknown => ({ operation: "removePlacement", variantId: payload.variantId, placementId: payload.placementId }));

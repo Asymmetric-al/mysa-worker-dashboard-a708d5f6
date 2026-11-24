@@ -173,8 +173,7 @@ const pendingDuration = (duration: ShareDuration): Result<GrantDuration, Coachin
   duration.kind === "through-date" && shareCutoff({ shareThroughDate: duration.shareThroughDate, frozenZone: duration.frozenZone }).status === "refused"
     ? err(refusal("invalid-duration", "The chosen Share-through date and zone do not resolve to a cutoff, so this duration is refused."))
     : ok(pendingGrantDuration(duration.kind, duration.kind === "through-date" ? duration.shareThroughDate : null, duration.frozenZone));
-/** Reads the open episode of one grant at `now`, or the reason it is not open. */
-export function activeGrant(grant: CoachingGrant, context: CoachingAccessContext, now: Temporal.Instant): Result<ActiveCoachingEpisode, CoachingRefusal> {
+/** Reads the open episode of one grant at `now`, or the reason it is not open. */ export function activeGrant(grant: CoachingGrant, context: CoachingAccessContext, now: Temporal.Instant): Result<ActiveCoachingEpisode, CoachingRefusal> {
   const admission = admitToGrant(grant, context);
   if (!admission.admitted) return err(admission.refusal);
   const closed = closedRefusal(grant.state);
@@ -230,8 +229,7 @@ function rangeRefusal(financialRange: CoachingFinancialRange): CoachingRefusal |
   const repeated = currencies.find((currency, index) => currencies.indexOf(currency) !== index);
   return repeated === undefined ? null : refusal("invalid-selection", `The range states two figures in ${repeated}; one figure per currency keeps them apart.`);
 }
-/** Creates the invitation an episode begins with: nothing shared, no acceptance recorded. */
-export function inviteGrant(input: GrantInvitation): Result<CoachingGrant, CoachingRefusal> {
+/** Creates the invitation an episode begins with: nothing shared, no acceptance recorded. */ export function inviteGrant(input: GrantInvitation): Result<CoachingGrant, CoachingRefusal> {
   if (![input.grantId, input.workerPrincipalId, input.coachPrincipalId, ...input.ministryIds].every(isNonEmpty) || input.ministryIds.length === 0) return err(refusal("invalid-selection", "An invitation names a grant, the worker, one coach and at least one ministry, all by identifier."));
   if (input.workerPrincipalId === input.coachPrincipalId) return err(refusal("invalid-selection", "A worker cannot invite their own principal as coach."));
   if (new Set(input.ministryIds).size !== input.ministryIds.length) return err(refusal("invalid-selection", "An invitation names each ministry once."));
@@ -271,8 +269,7 @@ export function acceptGrant(grant: CoachingGrant, input: GrantAcceptance, now: T
   if (grant.duration === null) return err(refusal("missing-duration", "This grant states no duration, so accepting it shares nothing."));
   const revisionProblem = revisionRefusal(grant, input.expectedRevision);
   if (revisionProblem !== null) return err(revisionProblem);
-  const chosen = chosenDuration(grant.duration);
-  const frozen = freezeShareDuration(chosen, now);
+  const frozen = freezeShareDuration(chosenDuration(grant.duration), now);
   return !frozen.ok ? err(frozen.error) : ok({ ...grant, duration: frozen.value, state: "active", identityVerification: "verified", acceptedAt: now, revision: grant.revision + 1 });
 }
 export type ModuleSelectionChange = { readonly changedBy: string; readonly selection: ModuleSelection; readonly expectedRevision: number };
@@ -298,8 +295,7 @@ export type GrantDeparture = { readonly leftBy: string; readonly expectedRevisio
 export const leaveGrant = (grant: CoachingGrant, input: GrantDeparture): Result<CoachingGrant, CoachingRefusal> =>
   grantTransition(closureBlockedBy(grant, input.leftBy, "coach", "This invitation was never accepted, so the coach has nothing to leave.") ?? revisionRefusal(grant, input.expectedRevision), () => ({ ...grant, state: "left", revision: grant.revision + 1 }));
 export type GrantSupersession = { readonly changedBy: string; readonly supersededBy: string; readonly expectedRevision: number };
-/** Supersedes an unaccepted invitation by naming the newer one that replaces it. */
-export const supersedeGrant = (grant: CoachingGrant, input: GrantSupersession): Result<CoachingGrant, CoachingRefusal> =>
+/** Supersedes an unaccepted invitation by naming the newer one that replaces it. */ export const supersedeGrant = (grant: CoachingGrant, input: GrantSupersession): Result<CoachingGrant, CoachingRefusal> =>
   grantTransition(
     holderRefusal(grant, input.changedBy, "worker") ??
       (isNonEmpty(input.supersededBy) ? null : refusal("invalid-selection", "A supersession names the newer invitation that replaces this one.")) ??

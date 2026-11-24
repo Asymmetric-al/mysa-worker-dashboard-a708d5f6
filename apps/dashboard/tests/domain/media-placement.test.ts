@@ -1,5 +1,5 @@
-/** A media placement change on an Update's own draft (attachment and removal of media in a Ministry Update), proven at the service boundary: an Update carries prose and its own media placements, so removing or replacing one edits the draft exactly as it does on a Page, while a section change on that same draft stays refused … */
-import { beforeEach, describe, expect, it } from "vitest";
+/** A media placement change on an Update's own draft (attachment and removal of media in a Ministry Update), proven at the service boundary: an Update carries prose and its own media placements, so removing or replacing one edits the draft exactly as it does on a Page, while a section change on that same draft stays refused there. */
+import { beforeEach, expect, it } from "vitest";
 import { newOperationId } from "@/lib/ids";
 import { mutations, reads, type MutationInput, type Scope } from "@/modules/data-service";
 import type { ResolvedSession, SessionSource } from "@/modules/data-service/authorize";
@@ -29,10 +29,8 @@ beforeEach(async () => {
   session = await sessionOf(HERO);
   scope = required(session.selected, `the selected context of ${HERO.sessionId}`);
 });
+const readDraftData = async () => expectEnvelope(await reads.updates.readDraft({ variantId: SUPPORTER_EDITION, session: HERO }), `readDraft(${SUPPORTER_EDITION})`).data;
 type DraftData = Awaited<ReturnType<typeof readDraftData>>;
-async function readDraftData() {
-  return expectEnvelope(await reads.updates.readDraft({ variantId: SUPPORTER_EDITION, session: HERO }), `readDraft(${SUPPORTER_EDITION})`).data;
-}
 /** Narrows a draft read to the saved draft it is meant to have answered with, rather than reading an absent draft as an empty one. */
 function savedDraftOf(data: DraftData): Extract<DraftData, { readonly status: "draft" }> {
   if (data.status !== "draft") throw new Error(`This Update edition was expected to hold a saved draft, and its draft read reported "${data.status}".`);
@@ -47,25 +45,23 @@ async function placeOneImage(): Promise<{ readonly placementId: string; readonly
   expect(draft.placements).toHaveLength(1); // The placement exists before either change below, so a change that left it in place would not pass as the change.
   return { placementId: first(draft.placements, "placement of the Update draft").placementId, recordRevision: draft.recordRevision };
 }
-describe("a media placement change on an Update draft", () => {
-  it("removes one placement from the Update edition's own draft", async () => {
-    const placed = await placeOneImage();
-    expectOutcome(await mutations.media.removePlacement(session.sessionId, attempt(scope, placed.recordRevision, { variantId: SUPPORTER_EDITION, placementId: placed.placementId })), "accepted");
-    const after = savedDraftOf(await readDraftData());
-    expect(after.placements).toEqual([]); // The placement is gone from the draft itself, not merely refused on the way out.
-    expect(after.recordRevision).not.toBe(placed.recordRevision); // The removal advanced the edition, which a refused attempt cannot do.
-  });
-  it("replaces one placement of the Update edition's own draft", async () => {
-    const placed = await placeOneImage();
-    expectOutcome(await mutations.media.replacePlacement(session.sessionId, attempt(scope, placed.recordRevision, { variantId: SUPPORTER_EDITION, placementId: placed.placementId, placement: { altText: REPLACEMENT_ALT_TEXT } })), "accepted");
-    const after = savedDraftOf(await readDraftData());
-    expect([after.placements.length, after.placements.at(0)?.altText, after.placements.at(0)?.placementId]).toEqual([1, REPLACEMENT_ALT_TEXT, placed.placementId]); // One placement, described afresh and still the placement the caller named.
-  });
-  it("still refuses a section change on that same Update draft, leaving the placement it holds untouched", async () => {
-    const placed = await placeOneImage();
-    const refused = expectOutcome(await mutations.pages.addSection(session.sessionId, attempt(scope, placed.recordRevision, { variantId: SUPPORTER_EDITION, sectionType: "story" })), "invalid");
-    expect(refused.fields["variantId"]).toEqual([SECTION_REFUSAL]); // The refusal names the field the caller named, with the sentence the section path states.
-    const after = savedDraftOf(await readDraftData());
-    expect([after.recordRevision, after.placements.map((placement) => placement.placementId)]).toEqual([placed.recordRevision, [placed.placementId]]); // A refused section change writes nothing: same edition revision, same placement.
-  });
+it("a media placement change on an Update draft: removes one placement from the Update edition's own draft", async () => {
+  const placed = await placeOneImage();
+  expectOutcome(await mutations.media.removePlacement(session.sessionId, attempt(scope, placed.recordRevision, { variantId: SUPPORTER_EDITION, placementId: placed.placementId })), "accepted");
+  const after = savedDraftOf(await readDraftData());
+  expect(after.placements).toEqual([]); // The placement is gone from the draft itself, not merely refused on the way out.
+  expect(after.recordRevision).not.toBe(placed.recordRevision); // The removal advanced the edition, which a refused attempt cannot do.
+});
+it("a media placement change on an Update draft: replaces one placement of the Update edition's own draft", async () => {
+  const placed = await placeOneImage();
+  expectOutcome(await mutations.media.replacePlacement(session.sessionId, attempt(scope, placed.recordRevision, { variantId: SUPPORTER_EDITION, placementId: placed.placementId, placement: { altText: REPLACEMENT_ALT_TEXT } })), "accepted");
+  const after = savedDraftOf(await readDraftData());
+  expect([after.placements.length, after.placements.at(0)?.altText, after.placements.at(0)?.placementId]).toEqual([1, REPLACEMENT_ALT_TEXT, placed.placementId]); // One placement, described afresh and still the placement the caller named.
+});
+it("a media placement change on an Update draft: still refuses a section change on that same Update draft, leaving the placement it holds untouched", async () => {
+  const placed = await placeOneImage();
+  const refused = expectOutcome(await mutations.pages.addSection(session.sessionId, attempt(scope, placed.recordRevision, { variantId: SUPPORTER_EDITION, sectionType: "story" })), "invalid");
+  expect(refused.fields["variantId"]).toEqual([SECTION_REFUSAL]); // The refusal names the field the caller named, with the sentence the section path states.
+  const after = savedDraftOf(await readDraftData());
+  expect([after.recordRevision, after.placements.map((placement) => placement.placementId)]).toEqual([placed.recordRevision, [placed.placementId]]); // A refused section change writes nothing: same edition revision, same placement.
 });

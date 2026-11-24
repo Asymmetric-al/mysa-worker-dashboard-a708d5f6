@@ -26,12 +26,7 @@ export type VideoPlayerProps = {
   readonly onRetry?: () => void;
   readonly className?: string;
 };
-const DEFAULT_REJECTION = "It did not pass this application's local video profile check, so nothing was placed.";
-const SELECTED_COPY = "Chosen, and not yet prepared. This video is prepared on this device before it can be played.";
-const PREPARING_COPY = "Preparing this video on this device. Nothing is uploaded, and the video can be played once preparation finishes.";
 const UNAVAILABLE_COPY = "This placement's video could not be read from its source, so the player is not shown.";
-const NO_PLAYBACK_RENDITION = "No playback rendition was supplied for this placement, so there is nothing to play.";
-const PLAYBACK_FAILED = "The request for this video did not complete, so it is not offered as playable. A restriction applied since this page was opened has the same effect, because every request is re-checked.";
 const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line wrap-anywhere";
 /** The single video surface, in whichever of its six states the placement is in. */
 export function VideoPlayer({ title, src, poster, captions, transcript, credit, language, state, direction, reason, nextStep, onRetry, className }: VideoPlayerProps): ReactElement {
@@ -69,7 +64,7 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
         <TriangleAlertIcon aria-hidden="true" />
         <AlertTitle>This file was not accepted</AlertTitle>
         <AlertDescription>
-          <p>{reason ?? DEFAULT_REJECTION}</p>
+          <p>{reason ?? "It did not pass this application's local video profile check, so nothing was placed."}</p>
           {nextStep === undefined ? null : <p>{nextStep}</p>}
           {renderChooseAnotherFile()}
         </AlertDescription>
@@ -91,7 +86,7 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
     return (
       <div className="flex flex-col gap-3">
         {renderPosterFrame()}
-        <p className="text-sm text-muted-foreground">{SELECTED_COPY}</p>
+        <p className="text-sm text-muted-foreground">{"Chosen, and not yet prepared. This video is prepared on this device before it can be played."}</p>
       </div>
     );
   }
@@ -101,15 +96,16 @@ export function VideoPlayer({ title, src, poster, captions, transcript, credit, 
         {renderPosterFrame()}
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Spinner className="shrink-0" />
-          <span>{PREPARING_COPY}</span>
+          <span>{"Preparing this video on this device. Nothing is uploaded, and the video can be played once preparation finishes."}</span>
         </p>
       </div>
     );
   }
   function renderPlayable(): ReactElement {
-    if (playableSrc === undefined) return renderUnavailable(NO_PLAYBACK_RENDITION);
-    if (playbackFailed) return renderUnavailable(PLAYBACK_FAILED);
+    if (playableSrc === undefined) return renderUnavailable("No playback rendition was supplied for this placement, so there is nothing to play.");
+    if (playbackFailed) return renderUnavailable("The request for this video did not complete, so it is not offered as playable. A restriction applied since this page was opened has the same effect, because every request is re-checked.");
     return (
+      // `jsx-a11y/media-has-caption` is suppressed for this player and only this player: its tracks are the `<track kind="captions">` elements `trackList.map` renders, which the rule cannot see statically, and the media profile admits a video without one, which then plays with its transcript as the alternative.
       // oxlint-disable-next-line jsx-a11y/media-has-caption
       <video aria-label={title} className="aspect-video w-full max-w-full rounded-lg bg-muted object-contain" controls onError={() => setFailedSrc(playableSrc)} playsInline poster={poster} preload="metadata" src={playableSrc}>
         {trackList.map((track, index) => (

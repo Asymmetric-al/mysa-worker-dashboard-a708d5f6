@@ -140,9 +140,7 @@ export default function PrivatePreparationForm({ scope, expectedRevision, initia
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="private-preparation-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 id={headingId} className="type-section-title">
-          {SECTION_HEADING}
-        </h2>
+        <h2 {...{ id: headingId, className: "type-section-title" as const }}>{SECTION_HEADING}</h2>
         <p className="type-supporting text-pretty">A name is the only thing this needs. Everything else is optional, and you can add or change it later.</p>
       </div>
       <Alert className="min-w-0">
@@ -158,9 +156,7 @@ export default function PrivatePreparationForm({ scope, expectedRevision, initia
         <form.Field name={NOTE_FIELD}>{(field) => <TextAreaField field={field} name={NOTE_FIELD} label={NOTE_LABEL} description={NOTE_DESCRIPTION} error={fieldErrors?.byField[NOTE_FIELD]} optionalHint rows={4} onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-1">
-            <h3 id={methodsHeadingId} className="type-subsection-title">
-              {METHODS_LEGEND}
-            </h3>
+            <h3 {...{ id: methodsHeadingId, className: "type-subsection-title" as const }}>{METHODS_LEGEND}</h3>
             <p className="type-supporting text-pretty">{METHODS_HELP}</p>
           </div>
           <form.Subscribe selector={(state) => state.values.contactMethods}>
@@ -185,14 +181,10 @@ export default function PrivatePreparationForm({ scope, expectedRevision, initia
         <div className="flex min-w-0 flex-col gap-2">
           {unconfirmed ? null : (
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" disabled={isPending} aria-describedby={actionNoteId} className="min-h-target max-w-full whitespace-normal">
-                {isPending ? "Adding the private contact" : SUBMIT_LABEL}
-              </Button>
+              <Button {...{ type: "submit" as const, disabled: isPending, "aria-describedby": actionNoteId, className: "min-h-target max-w-full whitespace-normal" as const }}>{isPending ? "Adding the private contact" : SUBMIT_LABEL}</Button>
             </div>
           )}
-          <p id={actionNoteId} className="type-supporting text-pretty">
-            {unconfirmed ? UNCONFIRMED_NOTE : createdReference === null ? ACTION_NOTE : RESUBMIT_NOTE}
-          </p>
+          <p {...{ id: actionNoteId, className: "type-supporting text-pretty" as const }}>{unconfirmed ? UNCONFIRMED_NOTE : createdReference === null ? ACTION_NOTE : RESUBMIT_NOTE}</p>
         </div>
       </form>
     </section>

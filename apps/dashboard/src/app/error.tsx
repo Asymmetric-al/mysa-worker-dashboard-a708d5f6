@@ -14,8 +14,7 @@ function describeFailure(digest: string | undefined): string {
   if (!DIGEST_PATTERN.test(reference)) return BOUNDARY_EXPLANATION;
   return `${BOUNDARY_EXPLANATION} Reference ${reference} identifies this failure in the server log.`;
 }
-/** The recoverable state a failed route segment renders. */
-export default function AppErrorBoundary({ error, reset }: { readonly error: Error & { digest?: string }; readonly reset: () => void }): ReactElement {
+/** The recoverable state a failed route segment renders. */ export default function AppErrorBoundary({ error, reset }: { readonly error: Error & { digest?: string }; readonly reset: () => void }): ReactElement {
   const router = useRouter();
   const retry = (): void => {
     startTransition(() => {

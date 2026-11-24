@@ -42,7 +42,6 @@ export type RosterEnvelope<TRow = unknown> = ReadEnvelope<RosterPageWindow<TRow>
 export type RosterFacetsEnvelope = ReadEnvelope<readonly RosterFacetSummary[]>;
 export type RosterSavedViewsEnvelope = ReadEnvelope<readonly RosterSavedViewSummary[]>;
 export type RosterQueryOptions = { readonly admittedColumnKeys?: readonly string[] };
-/** Everything the roster surface needs from this hook: its query state, the four ways to change it, and the three reads. */
 export type RosterQueryResult<TRow = unknown> = {
   readonly query: RosterQueryState;
   readonly setQuery: (patch: Partial<RosterQueryState>) => void;

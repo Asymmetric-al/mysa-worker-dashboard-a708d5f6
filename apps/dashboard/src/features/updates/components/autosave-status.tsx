@@ -9,8 +9,6 @@ import { assertNever } from "@/lib/result";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 import { DRAFT_VS_RELEASED } from "../copy/updates-copy";
 import type { AutosaveState, DraftRecovery, Revision } from "../hooks/use-draft-recovery";
-const RETRY_LABEL = "Retry the same work";
-const CHECK_RESULT_LABEL = "Check the result";
 type RecoveryOffer = { readonly retrySameWork: boolean; readonly checkResult: boolean };
 const NO_OFFER: RecoveryOffer = { retrySameWork: false, checkResult: false };
 const RETRY_ONLY: RecoveryOffer = { retrySameWork: true, checkResult: false };
@@ -18,14 +16,10 @@ const RETRY_OR_CHECK: RecoveryOffer = { retrySameWork: true, checkResult: true }
 const UNSAVED_DETAIL = "The editor sends a change after a short pause, and until an answer comes back the service still holds the earlier draft: nothing typed here has reached the record yet.";
 const SAVING_DETAIL = "No second attempt starts while one is in flight, so one pause cannot produce two saves. Whether the text was stored is stated only once the service answers.";
 const SAVED_DETAIL = "An acknowledgement records this text against that revision and states nothing more: it is not a review, not a release and not a notice.";
-const IDLE_DETAIL = "The saved draft still holds what the service last recorded. A change becomes an unsaved change as soon as the editor reports it.";
 const KEPT_WITH_COPY = "That copy lives in this tab's own storage and nowhere else: nobody else sees it, it is not the saved draft, and it ends with the tab.";
 const KEPT_WITHOUT_COPY = "The editor holds the text on screen, and this browser keeps no separate copy of it: leaving the page would lose it.";
 const LOCAL_ONLY = "This browser also keeps text from an earlier attempt that this editor is not showing. That copy exists only in this browser: the service has never acknowledged it, nobody else can see it, and it is not part of the draft record.";
 const NOT_ACKNOWLEDGED = "The service did not acknowledge this text, so nothing was saved.";
-const REFUSED_FIELD_LIMIT = 4;
-const REFUSED_FIELD_OVERFLOW = "There are more problems than these; fix these first.";
-type AutosaveWording = { readonly word: string; readonly badge: NonNullable<ComponentProps<typeof Badge>["variant"]>; readonly statement: ReactNode; readonly details: readonly ReactNode[]; readonly offers: RecoveryOffer };
 function savedStatement(revision: Revision | null, asOf: string | null): ReactNode {
   const statedRevision = revision?.trim() ?? "";
   const statedAsOf = asOf?.trim() ?? "";
@@ -43,8 +37,7 @@ function savedStatement(revision: Revision | null, asOf: string | null): ReactNo
     </>
   );
 }
-/** The fields an `invalid` answer refused, each stated as `path: message` in the service's own words, capped so the status stays readable. */
-function refusedFieldLines(outcome: MutationOutcome | null): readonly string[] {
+/** The fields an `invalid` answer refused, each stated as `path: message` in the service's own words, capped so the status stays readable. */ function refusedFieldLines(outcome: MutationOutcome | null): readonly string[] {
   if (outcome === null || outcome.outcome !== "invalid") return [];
   const { byField, form } = fieldErrorsFromInvalid(outcome);
   const lines: string[] = [];
@@ -52,7 +45,7 @@ function refusedFieldLines(outcome: MutationOutcome | null): readonly string[] {
     for (const message of messages) lines.push(`${path}: ${message}`);
   }
   lines.push(...form);
-  return lines.length > REFUSED_FIELD_LIMIT ? [...lines.slice(0, REFUSED_FIELD_LIMIT), REFUSED_FIELD_OVERFLOW] : lines;
+  return lines.length > 4 ? [...lines.slice(0, 4), "There are more problems than these; fix these first."] : lines;
 }
 function refusalDetail(outcome: MutationOutcome | null): ReactNode {
   if (outcome === null) return NOT_ACKNOWLEDGED;
@@ -108,11 +101,11 @@ function unknownDetails(outcome: MutationOutcome | null, keepsText: boolean): re
   return details;
 }
 type WordingInput = { readonly state: AutosaveState; readonly outcome: MutationOutcome | null; readonly acknowledgedRevision: Revision | null; readonly acknowledgedAsOf: string | null; readonly keepsText: boolean };
-function wordingOf({ state, outcome, acknowledgedRevision, acknowledgedAsOf, keepsText }: WordingInput): AutosaveWording {
+function wordingOf({ state, outcome, acknowledgedRevision, acknowledgedAsOf, keepsText }: WordingInput): { readonly word: string; readonly badge: NonNullable<ComponentProps<typeof Badge>["variant"]>; readonly statement: ReactNode; readonly details: readonly ReactNode[]; readonly offers: RecoveryOffer } {
   const kept = keepsText ? KEPT_WITH_COPY : KEPT_WITHOUT_COPY;
   switch (state) {
     case "idle":
-      return { word: "Not yet saved", badge: "outline", statement: "Not yet saved — nothing has changed yet, so no save has been asked for.", details: [IDLE_DETAIL], offers: NO_OFFER };
+      return { word: "Not yet saved", badge: "outline", statement: "Not yet saved — nothing has changed yet, so no save has been asked for.", details: ["The saved draft still holds what the service last recorded. A change becomes an unsaved change as soon as the editor reports it."], offers: NO_OFFER };
     case "unsaved":
       return { word: "Unsaved changes", badge: "secondary", statement: "Unsaved changes — this text has not reached the service yet.", details: [UNSAVED_DETAIL], offers: NO_OFFER };
     case "saving":
@@ -135,8 +128,7 @@ const DISCARD_STATEMENTS = {
   onScreen: "It removes nothing from the text on screen, and nothing from the draft record: the editor keeps showing exactly what was typed.",
   irreversible: "It cannot be undone from here. Once the copy is discarded, this browser has nothing to offer back after a reload.",
 } as const;
-type DiscardControlProps = { readonly onDiscard: () => void };
-function DiscardLocalRecoveryControl({ onDiscard }: DiscardControlProps): ReactElement {
+function DiscardLocalRecoveryControl({ onDiscard }: { readonly onDiscard: () => void }): ReactElement {
   const [open, setOpen] = useState(false);
   const confirm = (): void => {
     setOpen(false);
@@ -164,8 +156,7 @@ function DiscardLocalRecoveryControl({ onDiscard }: DiscardControlProps): ReactE
   );
 }
 export type AutosaveStatusProps = { readonly recovery: DraftRecovery; readonly acknowledgedAsOf?: string | null; readonly onCheckResult?: () => void; readonly className?: string };
-/** The durable status of one autosave. */
-export function AutosaveStatus({ recovery, acknowledgedAsOf = null, onCheckResult, className }: AutosaveStatusProps): ReactElement {
+/** The durable status of one autosave. */ export function AutosaveStatus({ recovery, acknowledgedAsOf = null, onCheckResult, className }: AutosaveStatusProps): ReactElement {
   const detailsId = useId();
   const regionRef = useRef<HTMLOutputElement | null>(null);
   const discardRequestedRef = useRef(false);
@@ -201,8 +192,8 @@ export function AutosaveStatus({ recovery, acknowledgedAsOf = null, onCheckResul
       </div>
       {offersActions ? (
         <div data-slot="autosave-status-actions" className="flex min-w-0 flex-wrap items-center gap-2">
-          {retry === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: retry }}>{RETRY_LABEL}</Button>}
-          {checkResult === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: checkResult }}>{CHECK_RESULT_LABEL}</Button>}
+          {retry === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: retry }}>{"Retry the same work"}</Button>}
+          {checkResult === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: checkResult }}>{"Check the result"}</Button>}
           {localRecovery.present ? <DiscardLocalRecoveryControl onDiscard={discard} /> : null}
         </div>
       ) : null}

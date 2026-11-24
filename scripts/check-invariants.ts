@@ -8,10 +8,7 @@ const COLOUR_EXTENSIONS = [".ts", ".tsx"];
 const MONEY_DIRECTORIES = [path.join("modules", "money"), path.join("modules", "support"), path.join("modules", "export")];
 const MONEY_EXTENSIONS = [".ts"];
 const MONEY_MODULE_DIRECTORY = path.join("modules", "money");
-interface InvariantRule {
-  readonly name: string;
-  readonly pattern: RegExp;
-}
+type InvariantRule = { readonly name: string; readonly pattern: RegExp };
 const COLOUR_RULES: readonly InvariantRule[] = [
   { name: "colour-arbitrary-value", pattern: /\[#[0-9a-fA-F]{3,8}\]/ },
   { name: "colour-function", pattern: /\b(?:oklch|oklab|rgba?|hsla?)\s*\(/ },
@@ -28,12 +25,7 @@ const MONEY_MODULE_RULES: readonly InvariantRule[] = [
 ];
 const NUMBER_LITERAL = /(?<![\w$.])(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][-+]?\d[\d_]*)?)(?![\w$])/gu; // A candidate numeric literal, so a hex, octal or binary integer can be told apart from a fractional one.
 const ADMITTED_QUOTES = new Set(['"', "'", "`"]);
-interface Violation {
-  readonly file: string;
-  readonly line: number;
-  readonly name: string;
-  readonly source: string;
-}
+type Violation = { readonly file: string; readonly line: number; readonly name: string; readonly source: string };
 interface ScannedLine {
   /** The line with its trailing comment removed, so a quoted colour value is still read. */
   readonly code: string;

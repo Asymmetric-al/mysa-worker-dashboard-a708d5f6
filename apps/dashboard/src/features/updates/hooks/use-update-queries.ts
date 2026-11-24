@@ -9,9 +9,6 @@ export const UPDATES_READ_JOBS = ["roster", "variant-overview", "draft", "candid
 export type UpdatesReadJob = (typeof UPDATES_READ_JOBS)[number];
 export const UPDATES_READ_ENDPOINTS = { roster: "/api/updates", "variant-overview": "/api/updates", draft: "/api/drafts", candidate: "/api/review", release: "/api/variants", "share-presentation": "/api/variants", "send-result": "/api/notify" } as const satisfies Readonly<Record<UpdatesReadJob, string>>;
 const READ_VIEW: Partial<Record<UpdatesReadJob, string>> = { draft: "draft", release: "release", "share-presentation": "share" };
-const UPDATES_STALE_TIME_MS = 30_000;
-const UPDATES_STALE_TIME_CEILING_MS = 10_000;
-const READ_ATTEMPT = "read";
 const QUERY_PARAM = { documentId: "documentId", variantId: "variantId", revisionId: "revisionId", candidateId: "candidateId", requestedLocale: "requestedLocale", intentId: "intentId", page: "page", pageSize: "pageSize" } as const;
 const TRANSPORT_GUIDANCE: Readonly<Record<UpdatesReadJob, string>> = {
   roster: "The ministry's Updates could not be read, so this list states no count, no title and no edition. Retry the same read: an outage is never presented as a ministry that has written nothing.",
@@ -23,10 +20,8 @@ const TRANSPORT_GUIDANCE: Readonly<Record<UpdatesReadJob, string>> = {
   "send-result": "The per-recipient results of this notice could not be read, so this screen states no acceptance, failure or unknown outcome for anyone. Retry the same read: an outage is not a send that failed and not one that succeeded.",
 };
 type PayloadOf<Answer> = Answer extends { readonly envelope: { readonly data: infer TPayload } } ? TPayload : never;
-/** One page of the ministry's Updates roster: every Update of the listed families with the editions that page carries, and the window it occupies in the whole authorised result. */
-export type UpdatesRosterData = PayloadOf<Awaited<ReturnType<typeof reads.updates.findContentDocuments>>>;
-/** The variant matrix of one Update, with a draft, a candidate and a release pointer per edition. */
-export type VariantOverviewData = PayloadOf<Awaited<ReturnType<typeof reads.updates.readVariantOverview>>>;
+/** One page of the ministry's Updates roster: every Update of the listed families with the editions that page carries, and the window it occupies in the whole authorised result. */ export type UpdatesRosterData = PayloadOf<Awaited<ReturnType<typeof reads.updates.findContentDocuments>>>;
+/** The variant matrix of one Update, with a draft, a candidate and a release pointer per edition. */ export type VariantOverviewData = PayloadOf<Awaited<ReturnType<typeof reads.updates.readVariantOverview>>>;
 export type UpdateDraftData = PayloadOf<Awaited<ReturnType<typeof reads.updates.readDraft>>>;
 export type UpdateCandidateData = PayloadOf<Awaited<ReturnType<typeof reads.updates.readCandidate>>>;
 export type UpdateReleaseData = PayloadOf<Awaited<ReturnType<typeof reads.updates.readRelease>>>;
@@ -49,7 +44,7 @@ export type UpdatesQueryState<T> = {
 export type UpdatesQueryOptions<T> = { readonly initialData?: ReadResult<ReadEnvelope<T>>; readonly initialDataUpdatedAt?: number };
 export const updateQueryKey = (scope: Scope, job: UpdatesReadJob, params: QueryParams = {}): ScopedQueryKey => queryKey(scope, job, params);
 const isObjectBody = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
-const outage = <TPayload>(job: UpdatesReadJob): ReadResult<ReadEnvelope<TPayload>> => ({ kind: "unavailable", unavailable: unavailable({ operationId: READ_ATTEMPT, source: handlerSource(UPDATES_READ_ENDPOINTS[job]), guidance: TRANSPORT_GUIDANCE[job] }) });
+const outage = <TPayload>(job: UpdatesReadJob): ReadResult<ReadEnvelope<TPayload>> => ({ kind: "unavailable", unavailable: unavailable({ operationId: "read", source: handlerSource(UPDATES_READ_ENDPOINTS[job]), guidance: TRANSPORT_GUIDANCE[job] }) });
 const readThrough = <TPayload>(job: UpdatesReadJob, url: string): Promise<ReadResult<ReadEnvelope<TPayload>>> => fetchReadOrOutage<TPayload>({ url, admits: isObjectBody, source: handlerSource(UPDATES_READ_ENDPOINTS[job]), guidance: TRANSPORT_GUIDANCE[job] });
 function urlWith(endpoint: string, params: Readonly<Record<string, JsonParam>>): string {
   const query = new URLSearchParams();
@@ -86,7 +81,7 @@ function queryStateOf<T>(query: UseQueryResult<ReadResult<ReadEnvelope<T>>, neve
     },
   };
 }
-function useUpdatesRead<T>(options: UpdatesQueryOptions<T>, scope: Scope, job: UpdatesReadJob, asked: Readonly<Record<string, JsonParam | undefined>>, staleTime: number = UPDATES_STALE_TIME_MS): UpdatesQueryState<T> {
+function useUpdatesRead<T>(options: UpdatesQueryOptions<T>, scope: Scope, job: UpdatesReadJob, asked: Readonly<Record<string, JsonParam | undefined>>, staleTime: number = 30_000): UpdatesQueryState<T> {
   const params = statedParams(asked);
   const enabled = Object.values(params).every((value) => value !== "");
   const url = urlOf(job, params);
@@ -107,8 +102,7 @@ export const useCandidate = (params: CandidateParams, options: UpdatesQueryOptio
 export type ReleaseParams = { readonly scope: Scope; readonly variantId?: string };
 export const useRelease = (params: ReleaseParams, options: UpdatesQueryOptions<UpdateReleaseData> = {}): UpdatesQueryState<UpdateReleaseData> => useUpdatesRead(options, params.scope, "release", { [QUERY_PARAM.variantId]: statedId(params.variantId) });
 export type SharePresentationParams = { readonly scope: Scope; readonly variantId?: string };
-export const useSharePresentation = (params: SharePresentationParams, options: UpdatesQueryOptions<SharePresentationData> = {}): UpdatesQueryState<SharePresentationData> =>
-  useUpdatesRead(options, params.scope, "share-presentation", { [QUERY_PARAM.variantId]: statedId(params.variantId) }, UPDATES_STALE_TIME_CEILING_MS);
+export const useSharePresentation = (params: SharePresentationParams, options: UpdatesQueryOptions<SharePresentationData> = {}): UpdatesQueryState<SharePresentationData> => useUpdatesRead(options, params.scope, "share-presentation", { [QUERY_PARAM.variantId]: statedId(params.variantId) }, 10_000);
 export type SendResultParams = { readonly scope: Scope; readonly intentId?: string; readonly page?: number; readonly pageSize?: number };
 export const useSendResult = (params: SendResultParams, options: UpdatesQueryOptions<SendResultData> = {}): UpdatesQueryState<SendResultData> =>
   useUpdatesRead(options, params.scope, "send-result", { [QUERY_PARAM.intentId]: statedId(params.intentId), [QUERY_PARAM.page]: params.page, [QUERY_PARAM.pageSize]: params.pageSize });

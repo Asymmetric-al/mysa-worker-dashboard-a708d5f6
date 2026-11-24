@@ -46,8 +46,7 @@ function editorFieldsAgree(profile: RepeatProfile): boolean {
 }
 const intervalSchema = z.number({ error: SERIES_FIELD_MESSAGES.intervalRequired }).int(SERIES_FIELD_MESSAGES.intervalRequired).min(1, SERIES_FIELD_MESSAGES.intervalRequired).optional();
 const dayOfMonthSchema = z.number({ error: SERIES_FIELD_MESSAGES.dayOfMonthRequired }).int(SERIES_FIELD_MESSAGES.dayOfMonthRequired).min(1, SERIES_FIELD_MESSAGES.dayOfMonthRequired).max(31, SERIES_FIELD_MESSAGES.dayOfMonthRequired).optional();
-type ProfileConditionalFields = { readonly profile: RepeatProfile; readonly interval?: number | undefined; readonly dayOfMonth?: number | undefined };
-export function refineSeriesRuleFields(value: ProfileConditionalFields, ctx: z.RefinementCtx): void {
+export function refineSeriesRuleFields(value: { readonly profile: RepeatProfile; readonly interval?: number | undefined; readonly dayOfMonth?: number | undefined }, ctx: z.RefinementCtx): void {
   if (!editorFieldsAgree(value.profile)) {
     ctx.addIssue({ code: "custom", message: SERIES_SCHEMA_MESSAGES.profileInvalid, path: ["profile"] });
     return;

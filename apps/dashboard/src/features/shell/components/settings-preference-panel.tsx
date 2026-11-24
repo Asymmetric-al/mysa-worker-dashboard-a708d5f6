@@ -56,7 +56,6 @@ function languageChoices(current: string): readonly string[] {
   return choices;
 }
 type TimeZoneMode = "enumerated" | "documented" | "text";
-type TimeZoneChoices = { readonly common: readonly string[]; readonly all: readonly string[] };
 function enumerableTimeZones(): readonly string[] {
   try {
     const supportedValuesOf = (Intl as unknown as { supportedValuesOf?: (key: string) => unknown }).supportedValuesOf;
@@ -68,7 +67,7 @@ function enumerableTimeZones(): readonly string[] {
   }
 }
 const timeZoneMode = (platformReady: boolean): TimeZoneMode => (!platformReady ? "documented" : !canResolveTimeZone() ? "text" : enumerableTimeZones().length > 0 ? "enumerated" : "documented");
-function timeZoneChoices(current: string, mode: TimeZoneMode): TimeZoneChoices {
+function timeZoneChoices(current: string, mode: TimeZoneMode): { readonly common: readonly string[]; readonly all: readonly string[] } {
   const common: string[] = [...TIME_ZONE_SHORTLIST];
   if (!common.includes(current)) common.unshift(current);
   if (mode !== "enumerated") return { common, all: [] };
@@ -82,6 +81,9 @@ const usePlatformReady = (): boolean =>
     () => true,
     () => false,
   );
+const APPEARANCE_CARD_DESCRIPTION = "Appearance, language and time zone are presentation preferences for this browser. They change only how dates, times and numbers are formatted on screen — not which records you can see, the ministry you are working in, or anything a partner receives.";
+const APPEARANCE_HINT = "Applies to this browser only and takes effect immediately. “Match your device” follows your operating system while this page is open.";
+const PUBLISHING_HINT = "This sets the release mode a new submission asks for. The submission records that mode, a reviewer cannot change it, and this control sends nothing itself: the release and the notice are separate deliberate steps.";
 const isAppearanceChoice = (value: string): value is ViewerAppearance => (VIEWER_APPEARANCES as readonly string[]).includes(value);
 const isPublishingChoice = (value: string): value is PublishingPreference => (PUBLISHING_PREFERENCES as readonly string[]).includes(value); /** One closed choice rendered as radios: appearance and publishing both state their options through it, so neither can offer a value its preference does not hold. */
 function ChoiceRadios<Key extends string>({
@@ -105,13 +107,9 @@ function ChoiceRadios<Key extends string>({
 }): ReactElement {
   return (
     <fieldset className="min-w-0">
-      <legend id={legendId} className="mb-3 text-sm font-medium">
-        {legend}
-      </legend>
+      <legend {...{ id: legendId, className: "mb-3 text-sm font-medium" }}>{legend}</legend>
       <div className="flex flex-col gap-3">
-        <p id={hintId} className="type-supporting">
-          {hint}
-        </p>
+        <p {...{ id: hintId, className: "type-supporting" }}>{hint}</p>
         <RadioGroup value={value} onValueChange={onChoose} aria-labelledby={legendId} aria-describedby={hintId}>
           {choices.map((choice) => {
             const entry = copy[choice];
@@ -122,9 +120,7 @@ function ChoiceRadios<Key extends string>({
                 <RadioGroupItem id={choiceId} value={choice} aria-label={entry.label} aria-describedby={descriptionId} className="mt-0.5" />
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-sm font-medium">{entry.label}</span>
-                  <span id={descriptionId} className="text-sm text-muted-foreground">
-                    {entry.description}
-                  </span>
+                  <span {...{ id: descriptionId, className: "text-sm text-muted-foreground" }}>{entry.description}</span>
                 </span>
               </label>
             );
@@ -167,26 +163,11 @@ export function SettingsPreferencePanel() {
   const choosePublishing = (next: string): void => {
     if (isPublishingChoice(next) && announce(next, publishing, `Publishing preference: ${PUBLISHING_COPY[next].label}`)) setPublishingPreference(next);
   };
-  const announceTypedTimeZone = useCallback(() => {
-    setAnnouncement(`Display time zone: ${displayTimeZone}. This browser cannot check time-zone names, so the name is used exactly as typed.`);
-  }, [displayTimeZone]);
+  const announceTypedTimeZone = useCallback(() => setAnnouncement(`Display time zone: ${displayTimeZone}. This browser cannot check time-zone names, so the name is used exactly as typed.`), [displayTimeZone]);
   return (
     <>
-      <SectionCard
-        title="Appearance, language and time zone"
-        description="Appearance, language and time zone are presentation preferences for this browser. They change only how dates, times and numbers are formatted on screen — not which records you can see, the ministry you are working in, or anything a partner receives."
-        contentClassName="flex min-w-0 flex-col gap-6"
-      >
-        <ChoiceRadios
-          legend="Appearance"
-          legendId={appearanceLegendId}
-          hint="Applies to this browser only and takes effect immediately. “Match your device” follows your operating system while this page is open."
-          hintId={appearanceHintId}
-          value={appearance}
-          choices={VIEWER_APPEARANCES}
-          copy={APPEARANCE_COPY}
-          onChoose={chooseAppearance}
-        />
+      <SectionCard title="Appearance, language and time zone" description={APPEARANCE_CARD_DESCRIPTION} contentClassName="flex min-w-0 flex-col gap-6">
+        <ChoiceRadios legend="Appearance" legendId={appearanceLegendId} hint={APPEARANCE_HINT} hintId={appearanceHintId} value={appearance} choices={VIEWER_APPEARANCES} copy={APPEARANCE_COPY} onChoose={chooseAppearance} />
         <Separator />
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex min-w-0 flex-col gap-2">
@@ -198,9 +179,7 @@ export function SettingsPreferencePanel() {
                 </NativeSelectOption>
               ))}
             </NativeSelect>
-            <p id={languageHintId} className="type-supporting">
-              Sets the language of the dates, times and numbers you see here. It does not translate the interface, and it is never the language of something sent to a partner.
-            </p>
+            <p {...{ id: languageHintId, className: "type-supporting" }}>Sets the language of the dates, times and numbers you see here. It does not translate the interface, and it is never the language of something sent to a partner.</p>
           </div>
           <div className="flex min-w-0 flex-col gap-2">
             <Label htmlFor={timeZoneId}>Display time zone</Label>
@@ -227,16 +206,7 @@ export function SettingsPreferencePanel() {
         </div>
       </SectionCard>
       <SectionCard title="Publishing" description="The release mode a new submission of an edition asks for. Nothing on this screen publishes, notifies or sends anything." contentClassName="flex min-w-0 flex-col gap-6">
-        <ChoiceRadios
-          legend="Publishing preferences"
-          legendId={publishingLegendId}
-          hint="This sets the release mode a new submission asks for. The submission records that mode, a reviewer cannot change it, and this control sends nothing itself: the release and the notice are separate deliberate steps."
-          hintId={publishingHintId}
-          value={publishing}
-          choices={PUBLISHING_PREFERENCES}
-          copy={PUBLISHING_COPY}
-          onChoose={choosePublishing}
-        />
+        <ChoiceRadios legend="Publishing preferences" legendId={publishingLegendId} hint={PUBLISHING_HINT} hintId={publishingHintId} value={publishing} choices={PUBLISHING_PREFERENCES} copy={PUBLISHING_COPY} onChoose={choosePublishing} />
       </SectionCard>
       {/* One polite region for all four controls, placed after both cards: every change is announced once, in words. */}
       <output className="sr-only">{announcement}</output>

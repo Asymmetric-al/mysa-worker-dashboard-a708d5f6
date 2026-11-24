@@ -17,8 +17,7 @@ import { cn } from "@/lib/cn";
 import { REVIEW_DECISIONS, variantKeyAllowed, type ReviewDecision, type VariantAudience, type VariantFamily, type VariantLocale } from "@/modules/content/variant";
 import type { MediaAssetRenditionPurpose, MutationInput, Scope } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
-/** What a stored rendition is for, taken from the envelope's closed set rather than restated. */
-export type RenditionPurpose = MediaAssetRenditionPurpose;
+/** What a stored rendition is for, taken from the envelope's closed set rather than restated. */ export type RenditionPurpose = MediaAssetRenditionPurpose;
 export type CandidateMediaRendition = { readonly purpose: RenditionPurpose; readonly url: string };
 export type RecordedCandidateDecision = {
   readonly decision: ReviewDecision;
@@ -64,15 +63,13 @@ export type ReviewPanelProps = {
   readonly headingLevel?: 1 | 2 | 3;
   readonly className?: string;
 };
-/** The longest note a reviewer may leave. */
-export const REVIEW_NOTE_MAX_CHARS = 2000;
+/** The longest note a reviewer may leave. */ export const REVIEW_NOTE_MAX_CHARS = 2000;
 const SHORT_CHECKSUM_LENGTH = 12;
 const PANEL_HEADING_TAG = { 1: "h1", 2: "h2", 3: "h3" } as const;
 const SUB_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 type SubHeadingLevel = keyof typeof SUB_HEADING_TAG;
 const subHeadingLevelOf = (panelLevel: keyof typeof PANEL_HEADING_TAG): SubHeadingLevel => (panelLevel === 1 ? 2 : panelLevel === 2 ? 3 : 4);
-type FamilyCopy = { readonly title: string; readonly introduction: string };
-const FAMILY_COPY: Readonly<Record<ReviewFamily, FamilyCopy>> = {
+const FAMILY_COPY: Readonly<Record<ReviewFamily, { readonly title: string; readonly introduction: string }>> = {
   update: { title: "Review this Update", introduction: "A review answers the exact revision the author submitted, for one audience and one language. " + "Approving it publishes nothing and notifies nobody: the release is a separate step, and a " + "simulated notice is separate again." },
   page: { title: "Review this Page", introduction: "A review answers the exact revision the author submitted for one language edition of this " + "Page. Approving it publishes nothing and makes the Page public to nobody: release, reach and " + "withdrawal stay separate steps on the Page's own surface." },
 };
@@ -95,8 +92,7 @@ const DECISION_COPY: Readonly<Record<ReviewDecision, DecisionCopy>> = {
     consequence: "The candidate is closed and this edition keeps whatever it published before. Nothing is " + "deleted, no release is withdrawn and no message is sent to anyone.",
   },
 };
-type RecordedDecisionCopy = { readonly title: string; readonly sentence: string };
-const RECORDED_DECISION_COPY: Readonly<Record<ReviewDecision, RecordedDecisionCopy>> = {
+const RECORDED_DECISION_COPY: Readonly<Record<ReviewDecision, { readonly title: string; readonly sentence: string }>> = {
   approved: { title: "This candidate is approved", sentence: "The reviewer's answer is recorded as an approval for this audience and language. Approval " + "publishes nothing and notifies nobody: releasing the edition is a separate step on its own " + "surface, and a simulated notice is separate again." },
   "changes-requested": { title: "A change to this candidate was requested", sentence: "The reviewer's answer is recorded as a request for changes, so the author's next attempt is a " + "new submission with a new revision. This candidate is answered, not re-reviewed, and its earlier " + "submission stays on record." },
   rejected: { title: "This candidate was rejected", sentence: "The reviewer's answer is recorded as a rejection, so this candidate ends and the author's next " + "attempt is a new submission. Nothing is deleted, no release is withdrawn and no message is sent " + "to anyone." },

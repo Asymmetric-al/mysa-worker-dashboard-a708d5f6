@@ -1,7 +1,6 @@
 import { isRecord } from "@/lib/guards";
 import { isReadResult, toResponse } from "@/modules/data-service";
 import type { ReadResponder } from "../read";
-const CSV_MEMBER = "csv";
 const SLICE_LENGTH = 65536;
 const OPENING = `{"data":{"csv":"`;
 const DATA_OPENING_LENGTH = `{"data":{`.length;
@@ -41,7 +40,7 @@ function streamedBody(pieces: Generator<string>): ReadableStream<Uint8Array> {
 // Everything the envelope's own serialisation states after its CSV value: the members of `data` without the file, then the envelope's own members, in the order the envelope was built.
 function tailAfterCsv(envelope: Readonly<Record<string, unknown>>, data: Readonly<Record<string, unknown>>): string {
   const restOfData: Record<string, unknown> = {};
-  for (const [member, value] of Object.entries(data)) if (member !== CSV_MEMBER) restOfData[member] = value;
+  for (const [member, value] of Object.entries(data)) if (member !== "csv") restOfData[member] = value;
   const serialised = JSON.stringify({ ...envelope, data: restOfData });
   const membersAfterTheFile = Object.keys(restOfData).length === 0 ? "" : ","; // With nothing behind the file the `data` object closes straight after the value, so a comma there would be a trailing one.
   return `${membersAfterTheFile}${serialised.slice(DATA_OPENING_LENGTH)}`;

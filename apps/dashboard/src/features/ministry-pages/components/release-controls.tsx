@@ -18,12 +18,10 @@ type PageScope = WithdrawPageVariables["scope"];
 type SubmitPayload = Parameters<ReturnType<typeof useSubmitPageForReview>["mutateAsync"]>[0]["payload"];
 type ChangesPayload = Parameters<ReturnType<typeof useRequestPageChanges>["mutateAsync"]>[0]["payload"];
 type PublishPayload = Parameters<ReturnType<typeof usePublishPageVariants>["mutateAsync"]>[0]["payload"];
-type WithdrawLocalePayload = Parameters<ReturnType<typeof useWithdrawPageLocale>["mutateAsync"]>[0]["payload"];
 type WithdrawPagePayload = WithdrawPageVariables["payload"];
 type SettledOutcome = Parameters<NonNullable<ActionReviewProps["onSettled"]>>[0];
 type ReviewInput<P> = ActionReviewProps<P>["input"];
 type PerVariantItem = NonNullable<Extract<SettledOutcome, { readonly outcome: "accepted" }>["items"]>[number];
-/** One language edition as the Page read carries it: its own draft, candidate, release head and lifecycle. */
 export type ReleaseVariantView = { readonly variantId: string; readonly locale: string; readonly lifecycle: ContentLifecycleState; readonly candidateId?: string; readonly revisionId?: string; readonly releaseHeadId?: string };
 type ReleaseCandidate = { readonly variantId: string; readonly locale: string; readonly candidateId: string };
 /** The scope every write states, so the service checks that authority instead of inferring it. */
@@ -280,9 +278,7 @@ function ReleaseResults({ items, variants }: { readonly items: readonly PerVaria
   if (items.length === 0) return null;
   return (
     <section aria-labelledby={headingId} data-slot="release-variant-results" className="flex min-w-0 flex-col gap-2">
-      <h3 id={headingId} className="type-subsection-title">
-        {copy.release.perVariantResultHeading}
-      </h3>
+      <h3 {...{ id: headingId, className: "type-subsection-title" as const }}>{copy.release.perVariantResultHeading}</h3>
       <p className="type-supporting text-pretty">{copy.release.perVariantResultNote}</p>
       <ul className="flex min-w-0 flex-col gap-2">
         {items.map((item, index) => {
@@ -365,7 +361,7 @@ export function ReleaseControls({ scope, documentId, expectedRevision, documentR
             <EditionStepCard<SubmitPayload> scope={scope} expectedRevision={expectedRevision} edition={openEdition} words={SUBMIT_STEP} input={{ payload: { variantId: openEdition.variantId, revisionId: openRevisionId } }} submit={(input) => submitForReview.mutateAsync(input)} onClose={closePanel} />
           ) : null}
           {openPanel.kind === "withdraw" ? (
-            <EditionStepCard<WithdrawLocalePayload>
+            <EditionStepCard<Parameters<ReturnType<typeof useWithdrawPageLocale>["mutateAsync"]>[0]["payload"]>
               scope={scope}
               expectedRevision={documentRevision}
               edition={openEdition}

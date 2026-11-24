@@ -86,10 +86,7 @@ function digitsOf(amount: number, exponent: number): { readonly sign: string; re
   const fraction = exponent === 0 ? "" : padded.slice(padded.length - exponent);
   return { sign: amount < 0 ? "-" : "", integer, fraction };
 }
-const STATE_CLAUSES: Readonly<Record<AmountValueState, string>> = {
-  value: "A recorded amount.",
-  zero: "Zero: no amount was recorded, so this is a genuine zero rather than an unknown value.",
-  "incomplete-subtotal": "Incomplete subtotal: coverage of this period is partial, so this figure is not a complete total and must not be read as one.",
-};
+const INCOMPLETE_SUBTOTAL_CLAUSE = "Incomplete subtotal: coverage of this period is partial, so this figure is not a complete total and must not be read as one.";
+const STATE_CLAUSES: Readonly<Record<AmountValueState, string>> = { value: "A recorded amount.", zero: "Zero: no amount was recorded, so this is a genuine zero rather than an unknown value.", "incomplete-subtotal": INCOMPLETE_SUBTOTAL_CLAUSE };
 const stateClause = (valueState: AmountValueState): string => STATE_CLAUSES[valueState];
 const unknownCurrencyClause = (currency: string): string => `The currency ${currency} is unknown, so its minor-unit exponent is unknown as well: this amount cannot be totalled, compared with another amount, or defaulted to a two-decimal currency.`;

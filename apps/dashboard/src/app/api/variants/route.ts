@@ -27,14 +27,12 @@ const localeTagSchema = z.string({ error: MUTATION_MESSAGES.localeRequired }).tr
 const createVariantPayloadSchema = z.strictObject({ documentId: documentIdSchema, audience: z.enum(VARIANT_AUDIENCES, { error: MUTATION_MESSAGES.audienceInvalid }), locale: localeTagSchema });
 const createVariantBodySchema = mutationInputSchema(createVariantPayloadSchema);
 const variantQuerySchema = z.object({ view: z.enum(VARIANT_VIEWS, { error: MESSAGES.view }), variantId: z.string({ error: MESSAGES.variantId }).min(1, MESSAGES.variantId) });
-type VariantQuery = z.output<typeof variantQuerySchema>;
 function searchValueOf(search: URLSearchParams, name: string): string | readonly string[] | undefined {
   const values = search.getAll(name);
   if (values.length === 0) return undefined;
   return values.length === 1 ? values[0] : values;
 }
-const queryOf = (search: URLSearchParams): Record<keyof VariantQuery, string | readonly string[] | undefined> => ({ view: searchValueOf(search, "view"), variantId: searchValueOf(search, "variantId") });
-/** The release standing at one edition's head, or the share presentation one edition shows, as the one read envelope. */
+const queryOf = (search: URLSearchParams): Record<keyof z.output<typeof variantQuerySchema>, string | readonly string[] | undefined> => ({ view: searchValueOf(search, "view"), variantId: searchValueOf(search, "variantId") });
 function readVariants(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   const selecting = EDITION_SELECTING_PARAMETERS.find((name) => search.has(name));

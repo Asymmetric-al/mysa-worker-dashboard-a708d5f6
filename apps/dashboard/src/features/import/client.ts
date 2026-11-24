@@ -3,7 +3,6 @@ import { isNonEmptyString, isRecord } from "@/lib/guards";
 import type { MutationInput, MutationOutcome, ReadEnvelope, ReadResult } from "@/modules/data-service";
 import { isOutcome, isReadResult } from "@/modules/data-service/outcome";
 /** The four paths this family posts a change to, exactly as AAP 0.6.3 names them. */ export const IMPORT_ENDPOINTS = { propose: "/api/import", decisions: "/api/import/decisions", accept: "/api/import/accept", cancel: "/api/import/cancel" } as const;
-const UNREADABLE_BODY_REFERENCE = "unreadable-body";
 const UNEXPECTED_BODY_REFERENCE = "unexpected-body";
 const READ_GUIDANCE = "The import record could not be read from the local data service, so nothing is shown as empty and no count is shown as zero. A read has no effect to repeat, so the same read can be tried again.";
 /** Which phase of one import operation the recovery read answered in. */ export type ImportReadPhase = "in-flight" | "completed";
@@ -60,7 +59,7 @@ async function getJson(path: string): Promise<ReadResult<ReadEnvelope<unknown>>>
     return readOutage("no-response");
   }
   const answer = readResultOf(body);
-  return answer ?? readOutage(body === undefined ? UNREADABLE_BODY_REFERENCE : UNEXPECTED_BODY_REFERENCE);
+  return answer ?? readOutage(body === undefined ? "unreadable-body" : UNEXPECTED_BODY_REFERENCE);
 }
 async function readImportRecord(operationId: string, window: ImportReadWindow): Promise<ReadResult<ReadEnvelope<ImportReadEnvelope>>> {
   const answer = await getJson(receiptPath(operationId, window));
@@ -68,7 +67,7 @@ async function readImportRecord(operationId: string, window: ImportReadWindow): 
   const phase = phaseOfData(answer.envelope.data);
   return phase === undefined ? readOutage(UNEXPECTED_BODY_REFERENCE) : { kind: "envelope", envelope: withPhase(answer.envelope, phase) };
 }
-/** `proposeImport`: turns the file the worker chose into a reviewable proposal — the limits measured before anything was processed, the columns, the suggested mapping, the per-row validation and the … */
+/** `proposeImport`: turns the file the worker chose into a reviewable proposal — the limits measured before anything was processed, the columns, the suggested mapping, the per-row validation and the proposal identity. */
 export const proposeImportRequest = <P>(input: MutationInput<P>): Promise<MutationOutcome> => postJson(IMPORT_ENDPOINTS.propose, input);
 /** `setRowDecision`: records the decision taken about one row of the reviewed proposal. */ export const setRowDecisionRequest = <P>(input: MutationInput<P>): Promise<MutationOutcome> => postJson(IMPORT_ENDPOINTS.decisions, input);
 /** `acceptImportRows`: writes the contacts of the reviewed snapshot. */ export const acceptImportRowsRequest = <P>(input: MutationInput<P>): Promise<MutationOutcome> => postJson(IMPORT_ENDPOINTS.accept, input);

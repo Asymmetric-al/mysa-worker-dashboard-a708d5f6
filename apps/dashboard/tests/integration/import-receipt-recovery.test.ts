@@ -4,14 +4,14 @@ import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isRecord } from "@/lib/guards";
 import { newOperationId } from "@/lib/ids";
-import { isOutcome, mutations, reads, type MutationOutcome, type ReadEnvelope, type ReadResult, type Scope } from "@/modules/data-service";
+import { isOutcome, mutations, reads, type MutationOutcome, type Scope } from "@/modules/data-service";
 import { sessionOf } from "../helpers/fixtures";
 import { LOCAL_STORE_SYSTEM } from "@/modules/data-service/outcome";
 import { EMPTY_OPERATION_LEDGER, seed, seedWorkspace } from "@/modules/dev-runtime/seed";
 import { IMPORT_ROW_RESULT_STATES, readStoredReceipt, type ImportReceipt } from "@/modules/import/receipt";
 import type { SessionDocuments } from "@/modules/store/paths";
 import { readSession, resetSession } from "@/modules/store/repository";
-import { firstSaying, requiredSaying, throwing } from "../helpers/answers";
+import { expectEnvelope, expectOutcome, firstSaying, requiredSaying } from "../helpers/answers";
 /** A single path segment, so the store accepts it, and unique to this file, so a sibling suite never shares it. */
 const SESSION_ID = "it-import-receipt";
 const SESSION = { sessionId: SESSION_ID };
@@ -59,11 +59,6 @@ const CONFIRMED_MAPPING: NonNullable<ProposePayload["confirmedMapping"]> = {
     { index: 12, header: "Notes", occurrence: 1, reason: "excluded-topic", message: "A note is a private preparation record rather than a contact field, so its values are not read." },
   ],
 };
-const envelopeOf = <T>(result: ReadResult<ReadEnvelope<T>>, what: string): ReadEnvelope<T> => (result.kind !== "envelope" ? throwing(`expected ${what}, but the read answered "${result.kind}": ${JSON.stringify(result)}`) : result.envelope);
-function expectOutcome(outcome: MutationOutcome, name: MutationOutcome["outcome"]): void {
-  expect(isOutcome(outcome)).toBe(true);
-  if (outcome.outcome !== name) throw new Error(`expected the "${name}" outcome, but the service answered "${outcome.outcome}": ${JSON.stringify(outcome)}`);
-}
 let documents: SessionDocuments | undefined;
 const seededDocuments = (): SessionDocuments => requiredSaying(documents, "the seeded documents are built in beforeAll, before any test establishes the session");
 /** The selected context of the seeded session, resolved by the service's own resolver rather than assembled here. */
@@ -81,7 +76,7 @@ interface LostAcceptance {
   readonly receipt: ImportReceipt;
 }
 async function partnerTotal(): Promise<number> {
-  const page = envelopeOf(await reads.partners.findPartners({ page: { index: 0, size: 200 } }, SESSION), "the partner roster").data;
+  const page = expectEnvelope(await reads.partners.findPartners({ page: { index: 0, size: 200 } }, SESSION), "the partner roster").data;
   return page.total;
 }
 async function membershipRecords(): Promise<readonly unknown[]> {
@@ -93,7 +88,7 @@ async function membershipRecords(): Promise<readonly unknown[]> {
 }
 /** The existing contact the reused row shares an email address with, resolved through the roster rather than assumed. */
 async function reusedIdentity(): Promise<{ system: string; reference: string }> {
-  const page = envelopeOf(await reads.partners.findPartners({ search: "Ruth Okafor", page: { index: 0, size: 50 } }, SESSION), "the partner roster").data;
+  const page = expectEnvelope(await reads.partners.findPartners({ search: "Ruth Okafor", page: { index: 0, size: 50 } }, SESSION), "the partner roster").data;
   const [row] = page.rows;
   if (row === undefined || page.total !== 1) throw new Error(`expected exactly one contact named ${JSON.stringify(REUSED_CONTACT_NAME)}, and the roster reported ${String(page.total)}`);
   return { system: LOCAL_STORE_SYSTEM, reference: row.partner.partnerId };
@@ -113,15 +108,15 @@ async function reviewTheFixtureFile(): Promise<ReviewedImport> {
   expectOutcome(chosen, "accepted");
   const mapped = await mutations.import.proposeImport({ operationId: newOperationId(), scope, expectedRevision: NO_REVISION_TO_COMPARE, payload: { fileName: FIXTURE_NAME, contentBase64: FIXTURE_BASE64, confirmedMapping: CONFIRMED_MAPPING } }, SESSION);
   expectOutcome(mapped, "accepted");
-  const proposal = envelopeOf(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal in flight").data; // Step three: the worker records a decision about one row before the review is accepted, so the skip the acceptance reports comes from a decision the review actually holds.
+  const proposal = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal in flight").data; // Step three: the worker records a decision about one row before the review is accepted, so the skip the acceptance reports comes from a decision the review actually holds.
   const skipped = await mutations.import.setRowDecision({ operationId: newOperationId(), scope, expectedRevision: proposal.revision, payload: { kind: "skip", rowNumber: SKIPPED_ROW, reason: SKIP_REASON } }, SESSION);
   expectOutcome(skipped, "accepted");
-  const decided = envelopeOf(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal after one decision").data;
+  const decided = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal after one decision").data;
   expect([decided.summary.skip, decided.summary.decisionsRecorded]).toEqual([1, 1]);
   return { scope, importOperationId: decided.importOperationId, revision: decided.revision, fileFingerprint: decided.fileFingerprint, recordedDecisions: decided.recordedDecisions };
 }
 async function armLostAcknowledgement(): Promise<void> {
-  const state = envelopeOf(await reads.dev.readDevState(SESSION), "this session's development state");
+  const state = expectEnvelope(await reads.dev.readDevState(SESSION), "this session's development state");
   const armed = await mutations.dev.setFailurePlan({ operationId: newOperationId(), scope: state.scope, expectedRevision: state.revision, payload: { mode: "unknown", target: { kind: "mutation", name: "acceptImportRows" } } }, SESSION);
   expectOutcome(armed, "accepted");
 }
@@ -187,9 +182,9 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
     const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     expect(acceptance.replay.operationId).toBe(acceptance.input.operationId);
     expect(acceptance.replay.result).toEqual(acceptance.receipt);
-    const readBack = envelopeOf(await reads.import.readImportReceipt(acceptance.replay.operationId, { session: SESSION, pageSize: 200 }), "the acceptance's receipt").data;
+    const readBack = expectEnvelope(await reads.import.readImportReceipt(acceptance.replay.operationId, { session: SESSION, pageSize: 200 }), "the acceptance's receipt").data;
     expect(readBack.importOperationId).toBe(importOperationId); // The receipt states the import it belongs to, which is the identity the surface holds and its address names.
-    const byImport = envelopeOf(await reads.import.readImportReceipt(importOperationId, { session: SESSION, pageSize: 200 }), "the import's own receipt").data; // The identity the journey holds answers the receipt, not the proposal it has already processed.
+    const byImport = expectEnvelope(await reads.import.readImportReceipt(importOperationId, { session: SESSION, pageSize: 200 }), "the import's own receipt").data; // The identity the journey holds answers the receipt, not the proposal it has already processed.
     expect([byImport.importOperationId, byImport.cancelled, byImport.cancellation, byImport.counts]).toEqual([importOperationId, false, null, acceptance.receipt.counts]);
     expect(readBack.counts).toEqual(acceptance.receipt.counts);
     expect(readBack.revision).toContain(acceptance.receipt.fingerprint.checksum);
@@ -217,17 +212,38 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
     for (const result of accepted) {
       if (result.route === null || result.route.kind !== "partner") throw new Error(`row ${String(result.rowNumber)} is ${result.state} without the contact it points at`);
       contacts.add(result.route.partnerRef.reference);
-      const detail = envelopeOf(await reads.partners.readPartner(result.route.partnerRef.reference, {}, SESSION), `the record row ${String(result.rowNumber)} points at`).data;
+      const detail = expectEnvelope(await reads.partners.readPartner(result.route.partnerRef.reference, {}, SESSION), `the record row ${String(result.rowNumber)} points at`).data;
       expect([detail.partner.kind, detail.partner.audience]).toEqual(["private-preparation", "private"]);
     }
     expect(contacts.size).toBe(3);
     const reusedResult = acceptance.receipt.results.find((result) => result.rowNumber === REUSED_ROW); // The reused row's private entry points at the contact it reuses rather than becoming a second copy of it.
     if (reusedResult?.route === null || reusedResult?.route === undefined || reusedResult.route.kind !== "partner") throw new Error(`row ${String(REUSED_ROW)} is ${String(reusedResult?.state)} without the contact it points at`);
-    const reusedEntry = envelopeOf(await reads.partners.readPartner(reusedResult.route.partnerRef.reference, {}, SESSION), "the private entry the reused row created").data;
+    const reusedEntry = expectEnvelope(await reads.partners.readPartner(reusedResult.route.partnerRef.reference, {}, SESSION), "the private entry the reused row created").data;
     expect(reusedEntry.partner.source).toEqual(reused);
     expect(reusedEntry.partner.partnerId).not.toBe(reused.reference);
     expectOutcome(await mutations.import.acceptImportRows(acceptance.input, SESSION), "alreadyAccepted");
     expect(await partnerTotal()).toBe(after);
+  });
+  it("reports a row an earlier attempt already applied as applied by that attempt, and creates nothing a second time", async () => {
+    // What this case pins: a row an earlier attempt applied is reported as applied by that earlier attempt, never as a second application of it.
+    const { scope, revision, fileFingerprint, importOperationId } = await reviewTheFixtureFile();
+    const firstAcceptance = await mutations.import.acceptImportRows({ operationId: newOperationId(), scope, expectedRevision: revision, payload: { acknowledged: true, fileFingerprint, decisions: await reviewedDecisions() } }, SESSION);
+    expectOutcome(firstAcceptance, "accepted");
+    const acceptedTotal = await partnerTotal();
+    const published = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, importOperationId, pageSize: 200 }), "the accepted import's proposal").data; // The accepted import's own record publishes the revision, the file and the decisions a further acceptance posts back, so the second attempt presents what the import now states rather than the revision the first acceptance moved past.
+    const secondOperationId = newOperationId();
+    const secondAcceptance = await mutations.import.acceptImportRows({ operationId: secondOperationId, scope, expectedRevision: published.revision, payload: { acknowledged: true, fileFingerprint: published.fileFingerprint, decisions: published.recordedDecisions } }, SESSION);
+    expectOutcome(secondAcceptance, "accepted"); // An identity of its own makes this a new attempt rather than a replay, so every row is re-examined against the rows the import already applied.
+    const receipt = expectEnvelope(await reads.import.readImportReceipt(secondOperationId, { session: SESSION, pageSize: 200 }), "the second attempt's receipt").data;
+    expect(receipt.counts).toEqual({ accepted: 0, alreadyAccepted: 3, skipped: 1, needsReview: FIXTURE_DATA_ROWS - 4, failed: 0, total: FIXTURE_DATA_ROWS });
+    const reApplied = [CREATED_ROW, REUSED_ROW, CORRECTED_ROW].map((rowNumber) => receipt.rows.find((row) => row.rowNumber === rowNumber));
+    expect(reApplied.map((row) => [row?.rowNumber, row?.state, row?.reasonCode])).toEqual([
+      [CREATED_ROW, "already-accepted", "applied-by-earlier-attempt"],
+      [REUSED_ROW, "already-accepted", "applied-by-earlier-attempt"],
+      [CORRECTED_ROW, "already-accepted", "applied-by-earlier-attempt"],
+    ]);
+    expect(await partnerTotal()).toBe(acceptedTotal); // A row reported as applied by the earlier attempt is not applied again, so the roster stands exactly where the first acceptance left it.
+    expect(receipt.rows.find((row) => row.rowNumber === SKIPPED_ROW)?.reasonCode).toBe("worker-skipped");
   });
   it("records no membership and no consent for the rows it accepts", async () => {
     const before = await membershipRecords();
@@ -266,32 +282,32 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
     const { scope, revision, importOperationId, fileFingerprint } = await reviewTheFixtureFile();
     const acceptance = await acceptUnderLostAcknowledgement(scope, revision, fileFingerprint, importOperationId);
     const acceptedTotal = await partnerTotal();
-    const reviewed = envelopeOf(await reads.import.readImportProposal({ session: SESSION, importOperationId, pageSize: 200 }), "the accepted import's proposal").data;
+    const reviewed = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, importOperationId, pageSize: 200 }), "the accepted import's proposal").data;
     expect(reviewed.inFlight).toBe(false);
     const cancelOperationId = newOperationId();
     const cancelled = await mutations.import.cancelImport({ operationId: cancelOperationId, scope, expectedRevision: reviewed.revision, payload: {} }, SESSION);
     expectOutcome(cancelled, "accepted");
-    const cancellation = envelopeOf(await reads.import.readImportReceipt(cancelOperationId, { session: SESSION, pageSize: 200 }), "the cancellation's receipt").data;
+    const cancellation = expectEnvelope(await reads.import.readImportReceipt(cancelOperationId, { session: SESSION, pageSize: 200 }), "the cancellation's receipt").data;
     expect([cancellation.cancelled, cancellation.cancellation?.acceptedRowsRetained, cancellation.cancellation?.stoppedRows, cancellation.counts.accepted]).toEqual([true, 3, FIXTURE_DATA_ROWS - 3, 3]);
     expect(cancellation.rows.filter((row) => row.state === "skipped")).toHaveLength(FIXTURE_DATA_ROWS - 3);
     expect(await partnerTotal()).toBe(acceptedTotal);
     for (const result of acceptance.receipt.results.filter((entry) => entry.state === "accepted")) {
       if (result.route === null || result.route.kind !== "partner") throw new Error(`row ${String(result.rowNumber)} is ${result.state} without the contact it points at`);
-      const detail = envelopeOf(await reads.partners.readPartner(result.route.partnerRef.reference, {}, SESSION), `the record row ${String(result.rowNumber)} points at`).data;
+      const detail = expectEnvelope(await reads.partners.readPartner(result.route.partnerRef.reference, {}, SESSION), `the record row ${String(result.rowNumber)} points at`).data;
       expect(detail.partner.partnerId).toBe(result.route.partnerRef.reference);
     }
-    const stopped = envelopeOf(await reads.import.readImportReceipt(importOperationId, { session: SESSION, pageSize: 200 }), "the import's receipt after the cancellation").data; // What the results step reads: the import's own identity states the stop the cancellation recorded.
+    const stopped = expectEnvelope(await reads.import.readImportReceipt(importOperationId, { session: SESSION, pageSize: 200 }), "the import's receipt after the cancellation").data; // What the results step reads: the import's own identity states the stop the cancellation recorded.
     expect([stopped.cancelled, stopped.cancellation?.acceptedRowsRetained, stopped.cancellation?.stoppedRows, stopped.counts.accepted]).toEqual([true, 3, FIXTURE_DATA_ROWS - 3, 3]);
-    const untouched = envelopeOf(await reads.import.readImportReceipt(acceptance.input.operationId, { session: SESSION, pageSize: 200 }), "the acceptance's receipt").data;
+    const untouched = expectEnvelope(await reads.import.readImportReceipt(acceptance.input.operationId, { session: SESSION, pageSize: 200 }), "the acceptance's receipt").data;
     expect(untouched.cancelled).toBe(false);
     expect(untouched.counts).toEqual(acceptance.receipt.counts);
   });
   it("publishes the file fingerprint, the recorded decisions and a reconciled summary an acceptance takes", async () => {
     const { scope } = await reviewTheFixtureFile();
-    const inFlight = envelopeOf(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal in flight").data; // A second decision, so what the read publishes is more than the one skip the review already holds.
+    const inFlight = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal in flight").data; // A second decision, so what the read publishes is more than the one skip the review already holds.
     const decided = await mutations.import.setRowDecision({ operationId: newOperationId(), scope, expectedRevision: inFlight.revision, payload: { kind: "create", rowNumber: CREATED_ROW } }, SESSION);
     expectOutcome(decided, "accepted");
-    const published = envelopeOf(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal after two decisions").data;
+    const published = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, pageSize: 200 }), "the import proposal after two decisions").data;
     expect(published.fileFingerprint).toMatch(/^csv-1-[0-9a-f]{16}$/);
     expect(published.recordedDecisions).toEqual([
       { kind: "create", rowNumber: CREATED_ROW, corrections: [] },
@@ -318,7 +334,7 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
     expect(changedIdentity).toBeDefined();
     expect(changedIdentity).not.toBe(importOperationId);
     if (changedIdentity === undefined) throw new Error("the changed file's proposal named no import identity, so its review cannot be read back");
-    const changed = envelopeOf(await reads.import.readImportProposal({ session: SESSION, importOperationId: changedIdentity, pageSize: 200 }), "the changed file's proposal").data;
+    const changed = expectEnvelope(await reads.import.readImportProposal({ session: SESSION, importOperationId: changedIdentity, pageSize: 200 }), "the changed file's proposal").data;
     expect([changed.inFlight, changed.importOperationId, changed.file.rowCount, changed.file.columnCount, changed.file.bytes, changed.summary.decisionsRecorded]).toEqual([true, changedIdentity, FIXTURE_DATA_ROWS + 1, FIXTURE_COLUMNS, changedBytes.byteLength, 0]);
     expect(changed.summary.unresolved).toBe(FIXTURE_DATA_ROWS + 1);
     // Every row of an undecided review awaits a decision exactly once, so the summary a worker reads before deciding anything counts the rows themselves: a row that is both undecided and still blocked is one row needing review, and the count can never run past the rows the file holds.
@@ -326,10 +342,10 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
     const changedAcceptanceId = newOperationId();
     const changedAccepted = await mutations.import.acceptImportRows({ operationId: changedAcceptanceId, scope, expectedRevision: changed.revision, payload: { acknowledged: true, fileFingerprint: changed.fileFingerprint, decisions: [{ kind: "create", rowNumber: FIXTURE_DATA_ROWS + 1 }] } }, SESSION);
     expectOutcome(changedAccepted, "accepted");
-    const changedReceipt = envelopeOf(await reads.import.readImportReceipt(changedAcceptanceId, { session: SESSION, pageSize: 200 }), "the changed file's receipt").data;
+    const changedReceipt = expectEnvelope(await reads.import.readImportReceipt(changedAcceptanceId, { session: SESSION, pageSize: 200 }), "the changed file's receipt").data;
     expect(changedReceipt.file.rowCount).toBe(FIXTURE_DATA_ROWS + 1);
     expect(changedReceipt.revision).not.toContain(acceptance.receipt.fingerprint.checksum); // Each receipt states its own file's checksum in its revision, so the two files cannot be confused.
-    const firstReceipt = envelopeOf(await reads.import.readImportReceipt(acceptance.input.operationId, { session: SESSION, pageSize: 200 }), "the first acceptance's receipt").data;
+    const firstReceipt = expectEnvelope(await reads.import.readImportReceipt(acceptance.input.operationId, { session: SESSION, pageSize: 200 }), "the first acceptance's receipt").data;
     expect(firstReceipt.file.rowCount).toBe(FIXTURE_DATA_ROWS);
     expect(firstReceipt.revision).toContain(acceptance.receipt.fingerprint.checksum);
   });
@@ -345,13 +361,13 @@ describe("contact import: recovering an acceptance whose acknowledgement was los
     if (again.outcome !== "unchanged") throw new Error(`proposing the same file under a fresh identity answered "${again.outcome}" instead of "unchanged": ${JSON.stringify(again)}`);
     expect(again.operationId).toBe(repeated);
     // A journey that left the review and came back holds the identity it minted and nothing else, so that identity has to name the review the attempt found.
-    const byFirst = envelopeOf(await reads.import.readImportProposal({ importOperationId: first, session: SESSION, pageSize: 200 }), "the proposal the first attempt wrote").data;
-    const byRepeated = envelopeOf(await reads.import.readImportProposal({ importOperationId: repeated, session: SESSION, pageSize: 200 }), "the proposal the attempt that changed nothing found").data;
+    const byFirst = expectEnvelope(await reads.import.readImportProposal({ importOperationId: first, session: SESSION, pageSize: 200 }), "the proposal the first attempt wrote").data;
+    const byRepeated = expectEnvelope(await reads.import.readImportProposal({ importOperationId: repeated, session: SESSION, pageSize: 200 }), "the proposal the attempt that changed nothing found").data;
     expect([byRepeated.importOperationId, byRepeated.revision, byRepeated.fileFingerprint, byRepeated.summary]).toEqual([first, again.revision, byFirst.fileFingerprint, byFirst.summary]);
     const replayed = await mutations.import.proposeImport({ operationId: repeated, scope, expectedRevision: NO_REVISION_TO_COMPARE, payload }, SESSION); // Replaying that attempt still changes nothing, and the proposal stands at the revision both answers named.
     if (replayed.outcome !== "unchanged") throw new Error(`replaying the attempt that changed nothing answered "${replayed.outcome}" instead of "unchanged": ${JSON.stringify(replayed)}`);
     expect(replayed.revision).toBe(again.revision);
-    expect(envelopeOf(await reads.import.readImportProposal({ importOperationId: first, session: SESSION, pageSize: 200 }), "the proposal after the replay").data.revision).toBe(byFirst.revision);
+    expect(expectEnvelope(await reads.import.readImportProposal({ importOperationId: first, session: SESSION, pageSize: 200 }), "the proposal after the replay").data.revision).toBe(byFirst.revision);
     const entries = await ledgerEntriesFor(repeated); // The attempt that changed nothing is recorded as such, stating the import it found: that record is what the read above resolved the caller's own identity through.
     expect([entries.length, entries[0]?.["outcome"], entries[0]?.["result"]]).toEqual([1, "unchanged", { importOperationId: first }]);
     // An identity that names neither a proposal nor an attempt is still refused, and the refusal states nothing about what was asked for beyond the code every unreachable identity answers.

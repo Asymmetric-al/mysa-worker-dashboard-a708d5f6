@@ -9,8 +9,7 @@ import { SUPPORT_BASIS, assertSingleBasis, type GiftRow, type SupportBasis, type
 import { GOAL_MEASURE, goalProgress, type GoalProgress, type GoalRecord } from "./goal";
 export const PAGE_SIZE_DEFAULT = 50;
 export const PAGE_SIZE_CAP = 200;
-/** Turns any requested page size into the one the service serves: the default when none was stated, the cap when more was asked for, and never fewer than one row. */
-export function clampPageSize(size?: number): number {
+/** Turns any requested page size into the one the service serves: the default when none was stated, the cap when more was asked for, and never fewer than one row. */ export function clampPageSize(size?: number): number {
   if (size === undefined || !Number.isFinite(size)) return PAGE_SIZE_DEFAULT;
   const whole = Math.trunc(size);
   return whole < 1 ? 1 : whole > PAGE_SIZE_CAP ? PAGE_SIZE_CAP : whole;
@@ -44,30 +43,25 @@ export interface ReportQuery {
 }
 export type ReportQueryProblem = { readonly field: string; readonly message: string };
 const SCOPE_FIELDS = ["organizationId", "ministryId", "supportSubjectId", "principalId"] as const;
-/** The zone a period preset resolves in when the caller states none, so no host zone is ever used. */
-export const REPORT_DEFAULT_TIME_ZONE = "UTC";
+/** The zone a period preset resolves in when the caller states none, so no host zone is ever used. */ export const REPORT_DEFAULT_TIME_ZONE = "UTC";
 const ZONE_PROBE_INSTANT = Temporal.Instant.fromEpochMilliseconds(0);
 const isResolvableZone = (timeZone: string): boolean => todayInZone(timeZone, ZONE_PROBE_INSTANT).status === "resolved";
 export function validateReportQuery(query: ReportQuery): ReportQueryProblem[] {
   const problems: ReportQueryProblem[] = [];
   if (!REPORT_IDS.includes(query.reportId)) problems.push({ field: "reportId", message: "This application reports received support in four fixed ways. Choose one of the four identities; no other report is computed and none is substituted for an unrecognised one." });
   const scope: ReportScope | undefined = query.scope; // The three structures below are checked for presence before they are read, so a request body that failed to decode is answered with per-field problems rather than with a thrown fault.
-  if (typeof scope !== "object" || scope === null) {
-    problems.push({ field: "scope", message: "Every report runs under the four references that state its authority, and this request states none. No report is computed under an assumed context." });
-  } else {
+  if (typeof scope !== "object" || scope === null) problems.push({ field: "scope", message: "Every report runs under the four references that state its authority, and this request states none. No report is computed under an assumed context." });
+  else
     for (const field of SCOPE_FIELDS) {
       const value: string = scope[field];
       if (typeof value !== "string" || value.trim() === "") problems.push({ field: `scope.${field}`, message: "Every report runs under the four references that state its authority. This one is missing, and a report is never computed under an assumed context." });
     }
-  }
   const period: ReportPeriod | undefined = query.period;
-  if (typeof period !== "object" || period === null) {
-    problems.push({ field: "period", message: "A report covers a period, and this request states none. No period is assumed in its place." });
-  } else problems.push(...validatePeriod(period));
+  if (typeof period !== "object" || period === null) problems.push({ field: "period", message: "A report covers a period, and this request states none. No period is assumed in its place." });
+  else problems.push(...validatePeriod(period));
   const currency: CurrencySelection | undefined = query.currency;
-  if (typeof currency !== "object" || currency === null) {
-    problems.push({ field: "currency", message: "A report states the currency or currencies its figures are in, and this request states none. No currency is assumed in its place." });
-  } else problems.push(...validateCurrency(query));
+  if (typeof currency !== "object" || currency === null) problems.push({ field: "currency", message: "A report states the currency or currencies its figures are in, and this request states none. No currency is assumed in its place." });
+  else problems.push(...validateCurrency(query));
   problems.push(...validateFilters(query));
   problems.push(...validateSort(query.sort));
   problems.push(...validatePage(query.page));
@@ -109,9 +103,9 @@ function validateCurrency(query: ReportQuery): ReportQueryProblem[] {
   if (selection.kind === "one") {
     if (typeof selection.currency !== "string" || selection.currency.trim() === "") problems.push({ field: "currency.currency", message: "A single-currency selection states the currency code. This one is empty, and no currency is assumed in its place." });
     if (range !== undefined) {
-      if (!Number.isSafeInteger(range.minMinor) || !Number.isSafeInteger(range.maxMinor)) {
+      if (!Number.isSafeInteger(range.minMinor) || !Number.isSafeInteger(range.maxMinor))
         problems.push({ field: "amountRange", message: "An amount range states whole counts of the selected currency's minor units. A fractional or non-finite bound is refused rather than rounded, because rounding would change which rows match." });
-      } else if (range.minMinor > range.maxMinor) problems.push({ field: "amountRange", message: "The amount range starts above where it ends, so it matches nothing. State the lower bound first; both bounds are inclusive." });
+      else if (range.minMinor > range.maxMinor) problems.push({ field: "amountRange", message: "The amount range starts above where it ends, so it matches nothing. State the lower bound first; both bounds are inclusive." });
     }
     return problems;
   }
@@ -127,9 +121,8 @@ function validateFilters(query: ReportQuery): ReportQueryProblem[] {
     } else if (partner.kind !== "anonymous" && partner.kind !== "unresolved") problems.push({ field: "partner.kind", message: "An attribution filter is a partner reference, anonymous support or unattributed support. This one is none of those." });
   }
   if (query.designation !== undefined && query.designation.trim() === "") problems.push({ field: "designation", message: "A designation filter states the source's own designation. An empty one selects nothing rather than everything, so it is refused; omit the filter to read every designation." });
-  if (query.method !== undefined) {
+  if (query.method !== undefined)
     problems.push({ field: "method", message: "The support projection carries no giving-method or classification field, so a method facet cannot be applied to it. The filter is refused rather than quietly ignored, because a result that was never filtered must not be presented as a filtered one." });
-  }
   if (query.search !== undefined && query.search.trim() === "") problems.push({ field: "search", message: "A search term states the text to look for. An empty term matches every row rather than none, so it is refused; omit the search to read the whole result." });
   return problems;
 }
@@ -147,8 +140,7 @@ function validatePage(page: ReportQuery["page"]): ReportQueryProblem[] {
   if (page.size !== undefined && !Number.isFinite(page.size)) problems.push({ field: "page.size", message: "A page size is a finite number of rows. This one is not, and the default page size is not substituted for a stated one that cannot be read." });
   return problems;
 }
-/** Builds the query a report is computed from, refusing one that could produce a dishonest total. */
-export function buildReportQuery(input: ReportQuery): { ok: true; query: ReportQuery } | { ok: false; problems: ReportQueryProblem[] } {
+/** Builds the query a report is computed from, refusing one that could produce a dishonest total. */ export function buildReportQuery(input: ReportQuery): { ok: true; query: ReportQuery } | { ok: false; problems: ReportQueryProblem[] } {
   const normalised = trimOptionalFields(input);
   const problems = validateReportQuery(normalised);
   if (problems.length > 0) return { ok: false, problems };
@@ -208,8 +200,7 @@ export interface ReportComparison {
   readonly equalElapsed: boolean;
   readonly perCurrency: readonly { readonly currency: string; readonly currentMinor: MinorUnits; readonly baselineMinor: MinorUnits; readonly differenceMinor: MinorUnits; readonly direction: "increase" | "decrease" | "unchanged"; readonly valueState: ValueState }[];
   readonly contributorDeltas: readonly ContributorDelta[];
-  /** Every contributor change the comparison counted in each currency, before the stated list is bounded. */
-  readonly contributorDeltaCounts: Readonly<Record<string, number>>;
+  /** Every contributor change the comparison counted in each currency, before the stated list is bounded. */ readonly contributorDeltaCounts: Readonly<Record<string, number>>;
   readonly reconciles: boolean;
 }
 export interface Snapshot {
@@ -225,17 +216,12 @@ export interface Snapshot {
 }
 /** The window a paged collection serves: the page the read answered with, the row count served, and how many pages the whole result fills. */
 export type PageWindow = { readonly index: number; readonly size: number; readonly totalPages: number };
-/** One designation the whole filtered result carries, with the state the count of its rows is stated in. */
-export type DesignationFacetValue = { readonly designation: string } & StatedCount;
+/** One designation the whole filtered result carries, with the state the count of its rows is stated in. */ export type DesignationFacetValue = { readonly designation: string } & StatedCount;
 /** One attribution the whole filtered result carries: a partner's own reference, or the kind when no partner is named, with the state the count of its rows is stated in. */
 export type AttributionFacetValue = { readonly attribution: GiftAttribution } & StatedCount;
 /** The values the whole filtered result contains, stated so a filter offers every value that result holds rather than the values one page happens to show. */
-export interface ReportFacets {
-  readonly designations: readonly DesignationFacetValue[];
-  readonly attributions: readonly AttributionFacetValue[];
-}
-/** The result of a run that requested the facet projection: the same figures every surface reads, with the values the ledger's filters can offer. */
-export type FacetsReportResult = ReportResult & { readonly facets: ReportFacets };
+export type ReportFacets = { readonly designations: readonly DesignationFacetValue[]; readonly attributions: readonly AttributionFacetValue[] };
+/** The result of a run that requested the facet projection: the same figures every surface reads, with the values the ledger's filters can offer. */ export type FacetsReportResult = ReportResult & { readonly facets: ReportFacets };
 export interface ReportResult {
   readonly snapshot: Snapshot;
   readonly summary: readonly CurrencySummary[];
@@ -253,8 +239,7 @@ type PeriodRange = { readonly from: CivilDate; readonly to: CivilDate };
 type ResolvedPeriod = PeriodRange & { readonly state: PeriodState };
 type MonthBucket = { readonly start: CivilDate; readonly end: CivilDate };
 type Windowed<T> = { readonly items: readonly T[]; readonly page?: PageWindow };
-/** How many pages a whole-result count fills at a stated row count; a result that matched nothing fills none. */
-const totalPagesOf = (total: number, size: number): number => (total === 0 ? 0 : Math.ceil(total / size));
+/** How many pages a whole-result count fills at a stated row count; a result that matched nothing fills none. */ const totalPagesOf = (total: number, size: number): number => (total === 0 ? 0 : Math.ceil(total / size));
 /** The sections one computation builds: the equal-elapsed comparison a report renders, and the facet values the gifts ledger's filters offer. A member is built only when its caller asks for it, so a surface that renders neither pays for neither. */
 export type ReportSections = { readonly comparison?: boolean; readonly facets?: boolean };
 /** The one report computation: it filters, sums, buckets, compares and pages the whole authorised result, and builds only the sections its trailing request states a caller renders. The plain signature is declared last so `ReturnType<typeof runReport>` stays the result every surface reads; only the gifts ledger asks for the facet projection, so every other report, the CSV writer and the print model read the same result they read before. */
@@ -263,14 +248,11 @@ export function runReport(query: ReportQuery, projection: SupportProjection, sec
 export function runReport(query: ReportQuery, projection: SupportProjection, sections: ReportSections = {}): ReportResult {
   assertQueryGate(query);
   assertSingleBasis(projection);
-  const basis: SupportBasis = SUPPORT_BASIS;
-  const asOf = instantOf(projection.asOf);
   const timeZone = query.timeZone ?? REPORT_DEFAULT_TIME_ZONE;
-  const today = civilTodayIn(timeZone, asOf);
+  const today = civilTodayIn(timeZone, instantOf(projection.asOf));
   const period = resolvePeriod(query.period, today);
   // A read whose surface renders no comparison asks for its projection without one: the preceding window is never resolved, no row is measured against it and no per-contributor delta is built for a caller that would show none. The default states the equal-elapsed comparison every report read renders.
-  const withComparison = needsComparison(query.reportId) && sections.comparison !== false;
-  const baseline = withComparison ? precedingEqualElapsed(period) : undefined;
+  const baseline = needsComparison(query.reportId) && sections.comparison !== false ? precedingEqualElapsed(period) : undefined;
   const searchTerm = query.search === undefined ? undefined : query.search.toLowerCase(); // One filtering pass over every authorised row, then one de-duplication at the grain. Both artifacts below are derived from this same set, so a filter can never apply to one surface and not another.
   const prepared = prepareRows(deduplicateAtGrain(projection.gifts.filter((row) => matchesNonDateFilters(row, query, searchTerm))), period.from);
   const current = sortPreparedRows(
@@ -292,7 +274,7 @@ export function runReport(query: ReportQuery, projection: SupportProjection, sec
   const facets = sections.facets === true ? buildFacets(current, projection.coverage) : undefined;
   const snapshotCurrencies = statedCurrenciesOf(query.reportId, currencies, comparison);
   return {
-    snapshot: { query, scope: query.scope, basis, currencies: snapshotCurrencies, period: { from: period.from, to: period.to, state: period.state }, coverage: projection.coverage, asOf: projection.asOf, lastSourceUpdate: projection.lastSourceUpdate, source: projection.source },
+    snapshot: { query, scope: query.scope, basis: SUPPORT_BASIS, currencies: snapshotCurrencies, period: { from: period.from, to: period.to, state: period.state }, coverage: projection.coverage, asOf: projection.asOf, lastSourceUpdate: projection.lastSourceUpdate, source: projection.source },
     summary,
     series,
     rows,
@@ -330,35 +312,19 @@ function resolvePeriod(period: ReportPeriod, today: CivilDate): ResolvedPeriod {
   return { from: range.from, to: range.to, state };
 }
 function periodRangeOf(period: ReportPeriod, today: CivilDate): PeriodRange {
-  switch (period.kind) {
-    case "explicit":
-      return { from: period.from, to: period.to };
-    case "year":
-      return yearRange(period.year);
-    case "preset":
-      return presetRange(period.preset, today);
-    default:
-      throw new TypeError("The report's period is a preset, two civil dates or a calendar year, and this value is none of those. No period is assumed for it.");
-  }
+  if (period.kind === "explicit") return { from: period.from, to: period.to };
+  if (period.kind === "year") return yearRange(period.year);
+  if (period.kind === "preset") return presetRange(period.preset, today);
+  throw new TypeError("The report's period is a preset, two civil dates or a calendar year, and this value is none of those. No period is assumed for it.");
 }
 function presetRange(preset: PeriodPreset, today: CivilDate): PeriodRange {
   const monthStart = today.with({ day: 1 });
-  switch (preset) {
-    case "this-month":
-      return { from: monthStart, to: monthStart.add({ months: 1 }).subtract({ days: 1 }) };
-    case "last-month": {
-      const end = monthStart.subtract({ days: 1 });
-      return { from: end.with({ day: 1 }), to: end };
-    }
-    case "this-year":
-      return yearRange(today.year);
-    case "last-year":
-      return yearRange(today.year - 1);
-    case "year-to-date":
-      return { from: yearRange(today.year).from, to: today };
-    default:
-      throw new TypeError(`"${String(preset)}" is not one of the five preset periods this application offers, so no period is assumed for it.`);
-  }
+  if (preset === "this-month") return { from: monthStart, to: monthStart.add({ months: 1 }).subtract({ days: 1 }) };
+  if (preset === "last-month") return { from: monthStart.subtract({ days: 1 }).with({ day: 1 }), to: monthStart.subtract({ days: 1 }) };
+  if (preset === "this-year") return yearRange(today.year);
+  if (preset === "last-year") return yearRange(today.year - 1);
+  if (preset === "year-to-date") return { from: yearRange(today.year).from, to: today };
+  throw new TypeError(`"${String(preset)}" is not one of the five preset periods this application offers, so no period is assumed for it.`);
 }
 const yearRange = (year: number): PeriodRange => ({ from: Temporal.PlainDate.from({ year, month: 1, day: 1 }), to: Temporal.PlainDate.from({ year, month: 12, day: 31 }) });
 function precedingEqualElapsed(period: PeriodRange): PeriodRange {
@@ -369,9 +335,8 @@ function precedingEqualElapsed(period: PeriodRange): PeriodRange {
 const daysInclusive = (from: CivilDate, to: CivilDate): number => from.until(to, { largestUnit: "days" }).days + 1;
 function monthBuckets(from: CivilDate, to: CivilDate): readonly MonthBucket[] {
   const buckets: MonthBucket[] = [];
-  const lastMonthStart = to.with({ day: 1 });
   let monthStart = from.with({ day: 1 });
-  while (Temporal.PlainDate.compare(monthStart, lastMonthStart) <= 0) {
+  while (Temporal.PlainDate.compare(monthStart, to.with({ day: 1 })) <= 0) {
     const monthEnd = monthStart.add({ months: 1 }).subtract({ days: 1 });
     buckets.push({ start: Temporal.PlainDate.compare(monthStart, from) < 0 ? from : monthStart, end: Temporal.PlainDate.compare(monthEnd, to) > 0 ? to : monthEnd });
     monthStart = monthStart.add({ months: 1 });
@@ -394,10 +359,7 @@ const isWithin = (row: PreparedRow, fromKey: number, toKey: number): boolean => 
 function matchesNonDateFilters(row: GiftRow, query: ReportQuery, searchTerm: string | undefined): boolean {
   if (query.currency.kind === "one" && row.amount.currency !== query.currency.currency) return false;
   const range = query.amountRange;
-  if (range !== undefined) {
-    const amount: number = row.amount.minorUnits;
-    if (amount < range.minMinor || amount > range.maxMinor) return false;
-  }
+  if (range !== undefined && (row.amount.minorUnits < range.minMinor || row.amount.minorUnits > range.maxMinor)) return false;
   if (query.designation !== undefined && row.designation !== query.designation) return false;
   const partner = query.partner;
   if (partner !== undefined) {
@@ -418,9 +380,7 @@ function deduplicateAtGrain(rows: readonly GiftRow[]): readonly GiftRow[] {
   const kept: GiftRow[] = [];
   for (const row of rows) {
     if (seen.has(row.giftRowId)) continue;
-    const isGiftGrainRow = row.allocationId === undefined;
-    const isCorrection = row.refundOf !== undefined;
-    if (isGiftGrainRow && !isCorrection && giftsWithAllocations.has(row.giftId)) continue;
+    if (row.allocationId === undefined && row.refundOf === undefined && giftsWithAllocations.has(row.giftId)) continue;
     seen.add(row.giftRowId);
     kept.push(row);
   }
@@ -444,9 +404,7 @@ function compareText(left: string | undefined, right: string | undefined, descen
 function compareAmounts(left: Money, right: Money): number {
   if (left.currency !== right.currency) return compareIdentifiers(left.currency, right.currency);
   if (isKnownCurrency(left.currency)) return compareMinor(left, right);
-  const leftUnits: number = left.minorUnits;
-  const rightUnits: number = right.minorUnits;
-  return leftUnits === rightUnits ? 0 : leftUnits < rightUnits ? -1 : 1;
+  return left.minorUnits === right.minorUnits ? 0 : left.minorUnits < right.minorUnits ? -1 : 1;
 }
 const signOf = (order: number, descending: boolean): number => (descending ? -order : order);
 function compareIdentifiers(left: string, right: string): number {
@@ -480,23 +438,17 @@ function summarise(rows: readonly PreparedRow[], currencies: readonly string[], 
     return { currency, exponent: exponentOf(currency), received: statedValue(receivedMinor, coverage), giftCount: statedCount(aggregate?.giftIds.size ?? 0, coverage), allocationCount: statedCount(aggregate?.allocationCount ?? 0, coverage), donorCount: statedCount(aggregate?.donorIds.size ?? 0, coverage) };
   });
 }
-function aggregateFor(aggregates: Map<string, CurrencyAggregate>, currency: string): CurrencyAggregate {
-  const existing = aggregates.get(currency);
-  if (existing !== undefined) return existing;
-  const created: CurrencyAggregate = { total: undefined, giftIds: new Set<string>(), allocationCount: 0, donorIds: new Set<string>() };
-  aggregates.set(currency, created);
-  return created;
-}
+const aggregateFor = (aggregates: Map<string, CurrencyAggregate>, currency: string): CurrencyAggregate => forKey(aggregates, currency, () => ({ total: undefined, giftIds: new Set<string>(), allocationCount: 0, donorIds: new Set<string>() }));
 const measuredState = (zero: boolean, coverage: Coverage): ValueState => (coverage.state === "partial" ? "incomplete-subtotal" : zero ? "zero" : "value"); // The state a measured figure carries: a partial period states a subtotal, and a complete one keeps zero distinct from a value.
 const statedValue = (minorUnits: MinorUnits | null, coverage: Coverage): StatedValue => (minorUnits === null || coverage.state === "unknown" ? { minorUnits: null, valueState: "unknown" } : { minorUnits, valueState: measuredState(minorUnits === 0, coverage) });
 const statedCount = (count: number, coverage: Coverage): StatedCount => ({ count, valueState: coverage.state === "unknown" ? "unknown" : measuredState(count === 0, coverage) });
-// One bucket's figure as every surface states it: a bucket with no recorded row is a gap rather than a zero.
+// One bucket's figure as every surface states it: a month the source recorded no row in is a gap rather than a zero, while a recorded row whose amount it did not establish (a currency this basis cannot sum) states an unknown amount, never an absence.
 const statedPoint = (bucket: MonthBucket, currency: string, count: number, total: Money | undefined, coverage: Coverage): SeriesPoint => ({
   bucketStart: bucket.start,
   bucketEnd: bucket.end,
   currency,
   value: count > 0 && total !== undefined ? statedValue(total.minorUnits, coverage) : { minorUnits: null, valueState: "unknown" },
-  gap: !(count > 0 && total !== undefined),
+  gap: count === 0,
 });
 const zeroMoney = (currency: string): Money => ({ currency, minorUnits: minorUnitsOf(0) });
 type CurrencySeries = { readonly totals: Money[]; readonly counts: number[] };
@@ -538,8 +490,7 @@ export const CONTRIBUTOR_DELTA_LIMIT = 25;
 function buildComparison(input: ComparisonInput): ReportComparison {
   const current = sumKnownByCurrency(input.current);
   const baseline = sumKnownByCurrency(input.baselineRows);
-  const currencies = [...new Set([...current.keys(), ...baseline.keys()])].sort(compareIdentifiers);
-  const perCurrency = currencies.map((currency) => {
+  const perCurrency = [...new Set([...current.keys(), ...baseline.keys()])].sort(compareIdentifiers).map((currency) => {
     const currentMoney = current.get(currency) ?? zeroMoney(currency);
     const baselineMoney = baseline.get(currency) ?? zeroMoney(currency);
     const difference = addMinor(currentMoney, negateMinor(baselineMoney));
@@ -610,9 +561,7 @@ function forKey<Value>(map: Map<string, Value>, key: string, create: () => Value
 function compareContributorDeltas(left: ContributorDelta, right: ContributorDelta): number {
   const byCurrency = compareIdentifiers(left.currency, right.currency);
   if (byCurrency !== 0) return byCurrency;
-  const leftKind = left.attribution?.kind ?? "partner";
-  const rightKind = right.attribution?.kind ?? "partner";
-  const byKind = ATTRIBUTION_ORDER.indexOf(leftKind) - ATTRIBUTION_ORDER.indexOf(rightKind);
+  const byKind = ATTRIBUTION_ORDER.indexOf(left.attribution?.kind ?? "partner") - ATTRIBUTION_ORDER.indexOf(right.attribution?.kind ?? "partner");
   return byKind !== 0 ? byKind : compareIdentifiers(left.partnerId ?? "", right.partnerId ?? "");
 }
 /** The whole number of contributor changes the comparison counted in each currency, whatever the stated list holds, so a surface can state how many changes it is not listing. */
@@ -694,11 +643,7 @@ const bucketTotalsFor = (totals: Map<string, (Money | undefined)[]>, currency: s
 const bucketCountsFor = (counts: Map<string, number[]>, currency: string, bucketCount: number): number[] => forKey(counts, currency, () => Array.from({ length: bucketCount }, () => 0));
 function buildMatrixCells(accumulator: MatrixAccumulator, input: MatrixInput): readonly MatrixCell[] {
   const cells: MatrixCell[] = [];
-  for (const currency of input.currencies) {
-    const counts = accumulator.counts.get(currency);
-    const totals = accumulator.totals.get(currency);
-    for (const [index, bucket] of input.buckets.entries()) cells.push(statedPoint(bucket, currency, counts?.[index] ?? 0, totals?.[index], input.coverage));
-  }
+  for (const currency of input.currencies) for (const [index, bucket] of input.buckets.entries()) cells.push(statedPoint(bucket, currency, accumulator.counts.get(currency)?.[index] ?? 0, accumulator.totals.get(currency)?.[index], input.coverage));
   return cells;
 }
 /** The query a matrix cell stands for: the result's own query narrowed to that cell's month, attribution and currency, carrying no page window, so the rows it reads are a subset of the result's rows and their sums add to the cell. */
@@ -706,16 +651,7 @@ export function matrixDrilldownQuery(query: ReportQuery, attribution: GiftAttrib
   return { ...query, period: { kind: "explicit", from: bucketStart, to: bucketEnd }, partner: attribution, currency: { kind: "one", currency }, page: undefined };
 }
 const attributionKey = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? `partner:${attribution.partnerId}` : attribution.kind);
-function labelOf(attribution: GiftAttribution): string {
-  switch (attribution.kind) {
-    case "partner":
-      return attribution.partnerId;
-    case "anonymous":
-      return ANONYMOUS_LABEL;
-    default:
-      return UNRESOLVED_LABEL;
-  }
-}
+const labelOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? attribution.partnerId : attribution.kind === "anonymous" ? ANONYMOUS_LABEL : UNRESOLVED_LABEL);
 /** The matrix's one order — partners by their own reference, then the two unnamed attributions — taken over the whole result so a served page is a slice of that one ordering. */
 function compareAttributions(left: GiftAttribution, right: GiftAttribution): number {
   const byKind = ATTRIBUTION_ORDER.indexOf(left.kind) - ATTRIBUTION_ORDER.indexOf(right.kind);
@@ -723,14 +659,12 @@ function compareAttributions(left: GiftAttribution, right: GiftAttribution): num
 }
 function buildGoal(goal: SupportGoalRecord, summary: readonly CurrencySummary[], selection: CurrencySelection, coverage: Coverage): GoalProgress {
   const record = goalRecordOf(goal);
-  const entry = summary.find((candidate) => candidate.currency === record.currency);
   const currencySelected = selection.kind === "all" || selection.currency === record.currency;
   let numerator: MinorUnits | undefined;
   if (currencySelected) {
-    const received = entry?.received;
-    if (received !== undefined) {
-      numerator = received.minorUnits ?? undefined;
-    } else if (coverage.state === "complete") numerator = minorUnitsOf(0);
+    const received = summary.find((candidate) => candidate.currency === record.currency)?.received;
+    if (received !== undefined) numerator = received.minorUnits ?? undefined;
+    else if (coverage.state === "complete") numerator = minorUnitsOf(0);
   }
   return goalProgress({ goal: record, measureCompatible: currencySelected, ...(numerator === undefined ? {} : { numeratorMinor: numerator }) });
 }
@@ -751,17 +685,14 @@ function collectValueStates(input: ValueStateInput): Readonly<Record<string, Val
     states[`summary.${entry.currency}.donorCount`] = entry.donorCount.valueState;
   }
   for (const point of input.series) states[`series.${point.currency}.${serialiseCivilDate(point.bucketStart)}`] = point.value.valueState;
-  input.rows.forEach((row, index) => {
-    states[`rows.${index}.amount`] = row.amount.minorUnits === 0 ? "zero" : "value";
-  });
+  input.rows.forEach((row, index) => (states[`rows.${index}.amount`] = row.amount.minorUnits === 0 ? "zero" : "value"));
   const comparison = input.comparison;
-  if (comparison !== undefined) {
+  if (comparison !== undefined)
     for (const entry of comparison.perCurrency) {
       states[`comparison.${entry.currency}.current`] = entry.valueState;
       states[`comparison.${entry.currency}.baseline`] = entry.valueState;
       states[`comparison.${entry.currency}.difference`] = entry.valueState;
     }
-  }
   return states;
 }
 type AttributionCount = { readonly attribution: GiftAttribution; count: number };

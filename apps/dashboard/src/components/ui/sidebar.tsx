@@ -12,11 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { PanelLeftIcon } from "lucide-react";
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "16rem";
-const SIDEBAR_WIDTH_MOBILE = "18rem";
-const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_MOBILE_DIALOG_ID = "sidebar-mobile-dialog";
-const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 type SidebarContextProps = { state: "expanded" | "collapsed"; open: boolean; setOpen: (open: boolean) => void; openMobile: boolean; setOpenMobile: (open: boolean) => void; isMobile: boolean; toggleSidebar: () => void };
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
 function useSidebar() {
@@ -48,7 +44,7 @@ function SidebarProvider({ defaultOpen = true, open: openProp, onOpenChange: set
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
-      if (event.defaultPrevented || (target instanceof HTMLElement && target.isContentEditable) || event.key !== SIDEBAR_KEYBOARD_SHORTCUT || !(event.metaKey || event.ctrlKey)) return;
+      if (event.defaultPrevented || (target instanceof HTMLElement && target.isContentEditable) || event.key !== "b" || !(event.metaKey || event.ctrlKey)) return;
       event.preventDefault();
       toggleSidebar();
     };
@@ -59,7 +55,7 @@ function SidebarProvider({ defaultOpen = true, open: openProp, onOpenChange: set
   const contextValue = React.useMemo<SidebarContextProps>(() => ({ state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar }), [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]);
   return (
     <SidebarContext.Provider value={contextValue}>
-      <div data-slot="sidebar-wrapper" style={{ "--sidebar-width": SIDEBAR_WIDTH, "--sidebar-width-icon": SIDEBAR_WIDTH_ICON, ...style } as React.CSSProperties} className={cn("group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar", className)} {...props}>
+      <div data-slot="sidebar-wrapper" style={{ "--sidebar-width": "16rem", "--sidebar-width-icon": "3rem", ...style } as React.CSSProperties} className={cn("group/sidebar-wrapper flex min-h-svh w-full has-data-[variant=inset]:bg-sidebar", className)} {...props}>
         {children}
       </div>
     </SidebarContext.Provider>
@@ -77,7 +73,7 @@ function Sidebar({ side = "left", variant = "sidebar", collapsible = "offcanvas"
   if (isMobile) {
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
-        <SheetContent dir={dir} id={SIDEBAR_MOBILE_DIALOG_ID} aria-modal="true" data-sidebar="sidebar" data-slot="sidebar" data-mobile="true" className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden" style={{ "--sidebar-width": SIDEBAR_WIDTH_MOBILE } as React.CSSProperties} side={side}>
+        <SheetContent dir={dir} id={SIDEBAR_MOBILE_DIALOG_ID} aria-modal="true" data-sidebar="sidebar" data-slot="sidebar" data-mobile="true" className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden" style={{ "--sidebar-width": "18rem" } as React.CSSProperties} side={side}>
           <SheetHeader className="sr-only">
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>

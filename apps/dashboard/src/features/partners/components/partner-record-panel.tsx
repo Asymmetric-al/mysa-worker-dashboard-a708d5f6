@@ -1,20 +1,19 @@
 "use client";
-/** One partner record as it appears in place beside the roster: the family's own detail body over the family's own browser reads, in the panel presentation on a desktop and the sheet presentation on a phone. It merges nothing and re-projects nothing, so a denial, an outage and a refused request read here exactly as they read on the record's own route, and no private note body is read outside the worker's own preparation read. */
+/** One partner record as it appears in place beside the roster: the family's one record body over the family's own browser reads, in the panel presentation on a desktop and the sheet presentation on a phone. The body is the one the record's own route renders, composed from the same facts, so every section, action and destination is offered here against the revision this panel read. It merges nothing and re-projects nothing, so a denial, an outage and a refused request read here exactly as they read on the record's own route, and no private note body is read outside the worker's own preparation read. */
 import type { ReactElement } from "react";
 import { scopeKey } from "@/components/context-switch-guard";
 import type { RecordDetailLayout } from "@/components/record-detail";
 import { isNonEmptyString, isRecord } from "@/lib/guards";
-import { fetchRead, useReadQuery, type ReadQueryResult } from "@/lib/read-transport";
+import { envelopeIn, fetchRead, useReadQuery, type ReadQueryResult } from "@/lib/read-transport";
 import type { Scope, reads } from "@/modules/data-service";
 import type { InteractionRecord } from "@/modules/data-service/envelope";
 import { PARTNER_KEY, type PartnerKeySegment } from "../hooks/use-partner-mutations";
-import PartnerDetailSections, { type PartnerDetailData, type PartnerPrivateData, type PartnerReadResult } from "./partner-detail-sections";
+import type { PartnerDetailData, PartnerPrivateData, PartnerReadResult } from "./partner-detail-sections";
+import PartnerRecordBody, { type PartnerRecordFacts } from "./partner-record-body";
 /** The record body's payload, the worker's own preparation and the activity, taken from the service's reads rather than restated. */
 type RecordPayload = Extract<Awaited<ReturnType<typeof reads.partners.readPartner>>, { readonly kind: "envelope" }>["envelope"]["data"];
 type PreparationPayload = Extract<Awaited<ReturnType<typeof reads.partners.readPrivatePreparation>>, { readonly kind: "envelope" }>["envelope"]["data"];
 type InteractionPayload = Extract<Awaited<ReturnType<typeof reads.interactions.readInteractions>>, { readonly kind: "envelope" }>["envelope"]["data"];
-/** The interface language the body states, the same one the record's own route renders it in, and where the worker came from. */
-const INTERFACE_LOCALE = "en-GB";
 const ROSTER_CRUMB = [{ label: "Partners", href: "/partners" }] as const;
 const READ_JOB = { record: "record", preparation: "preparation", interactions: "interactions" } as const;
 const isRecordPayload = (data: unknown): boolean => isRecord(data) && isRecord(data["partner"]) && isNonEmptyString(data["partner"]["partnerId"]) && Array.isArray(data["relationshipContext"]) && Array.isArray(data["openTasks"]);
@@ -40,14 +39,29 @@ function readStateOf<TData, Shown>(query: ReadQueryResult<TData>, project: (data
       return { kind: "refused", fields: answer.refused.fields };
   }
 }
-export type PartnerRecordPanelProps = { readonly scope: Scope; readonly partnerId: string; readonly layout: Extract<RecordDetailLayout, "panel" | "sheet"> };
+/** The facts the record's own actions are derived from, taken from the two envelopes this panel already read: a record read that has not answered states none, so the body offers no action against a revision it has not read, and a preparation read without a preparation record states no archive control. */
+function factsOf(record: ReadQueryResult<RecordPayload>, preparation: ReadQueryResult<PreparationPayload>, tagSuggestions: readonly string[]): PartnerRecordFacts | undefined {
+  const envelope = envelopeIn(record.data);
+  if (envelope === null) return undefined;
+  const { partner } = envelope.data;
+  const preparationRecord = envelopeIn(preparation.data)?.data.preparation;
+  return {
+    scope: envelope.scope,
+    revision: envelope.revision,
+    actions: envelope.actions,
+    partner: { partnerId: partner.partnerId, kind: partner.kind, displayName: partner.displayName, tags: partner.tags, favourite: partner.favourite },
+    tagSuggestions,
+    ...(preparationRecord === undefined ? {} : { preparationArchived: preparationRecord.archived }),
+  };
+}
+export type PartnerRecordPanelProps = { readonly scope: Scope; readonly partnerId: string; readonly layout: Extract<RecordDetailLayout, "panel" | "sheet">; readonly tagSuggestions?: readonly string[] };
 /** One partner record presented in place: the shared facts, the worker's own private preparation and the activity that actually happened, each read on its own so a refusal or an outage costs its own section rather than the whole record. */
-export default function PartnerRecordPanel({ scope, partnerId, layout }: PartnerRecordPanelProps): ReactElement {
+export default function PartnerRecordPanel({ scope, partnerId, layout, tagSuggestions = [] }: PartnerRecordPanelProps): ReactElement {
   const record = useRecordJob<RecordPayload>(scope, partnerId, PARTNER_KEY.record, READ_JOB.record, isRecordPayload);
   const preparation = useRecordJob<PreparationPayload>(scope, partnerId, PARTNER_KEY.preparation, READ_JOB.preparation, isPreparationPayload);
   const interactions = useRecordJob<InteractionPayload>(scope, partnerId, PARTNER_KEY.interactions, READ_JOB.interactions, isInteractionPayload);
   return (
-    <PartnerDetailSections
+    <PartnerRecordBody
       partner={readStateOf(
         record,
         (data: RecordPayload): PartnerDetailData => data,
@@ -64,8 +78,9 @@ export default function PartnerRecordPanel({ scope, partnerId, layout }: Partner
         () => void interactions.refetch(),
       )}
       layout={layout}
-      locale={INTERFACE_LOCALE}
+      locale={"en-GB"}
       breadcrumb={ROSTER_CRUMB}
+      facts={factsOf(record, preparation, tagSuggestions)}
     />
   );
 }

@@ -5,7 +5,6 @@ import { isRecord } from "@/lib/guards";
 import { fetchRead, useReadQuery } from "@/lib/read-transport";
 import type { reads } from "@/modules/data-service";
 import type { Scope } from "@/modules/data-service/envelope";
-const REPORT_JOB = "report";
 export type ReportReadResult = Awaited<ReturnType<typeof reads.support.readReport>>;
 export type ReportEnvelope = Extract<ReportReadResult, { readonly kind: "envelope" }>["envelope"];
 export type ReportFilters = NonNullable<Parameters<typeof reads.support.readReport>[1]>;
@@ -23,10 +22,7 @@ function canonicalJson(value: unknown): string {
   }
   if (!isRecord(value)) throw new TypeError("A report query must be plain JSON, so it can be identified by its content.");
   const members: string[] = [];
-  for (const key of Object.keys(value).sort()) {
-    const member = value[key];
-    if (member !== undefined) members.push(`${JSON.stringify(key)}:${canonicalJson(member)}`);
-  }
+  for (const key of Object.keys(value).sort()) if (value[key] !== undefined) members.push(`${JSON.stringify(key)}:${canonicalJson(value[key])}`);
   return `{${members.join(",")}}`;
 }
 /** A pure, deterministic identity for one report request: equal queries give equal ids on every render, in every component and in the export call, and two distinct queries can never share one. */ export const reportSnapshotId = (query: ReportRequestQuery): string => `report-${canonicalJson(query)}`;
@@ -36,7 +32,7 @@ export function useReport({ scope, query, snapshotId, enabled, initialAnswer }: 
   const identity = snapshotId ?? reportSnapshotId(query);
   return useReadQuery<ReportEnvelope["data"], ReportEnvelope["coverage"]>({
     key: scopeKey(scope),
-    job: REPORT_JOB,
+    job: "report",
     segment: [query],
     read: () => fetchRead<ReportEnvelope["data"], ReportEnvelope["coverage"]>({ url: "/api/report", body: { query, snapshotId: identity }, admits: isRecord }),
     staleTime: REPORT_STALE_TIME_MS,

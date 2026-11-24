@@ -8,26 +8,20 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/cn";
 import { sameScope, type MinistryId, type MutationInput, type OrganizationId, type PrincipalId, type Scope, type SupportSubjectId } from "@/modules/data-service/envelope";
 import { unknown as unknownOutcome, type JsonValue, type MutationOutcome } from "@/modules/data-service/outcome";
-/** The literal leading segment of every query key: the scope a read ran under. */
-export const SCOPE_KEY_ROOT = "scope";
+/** The literal leading segment of every query key: the scope a read ran under. */ export const SCOPE_KEY_ROOT = "scope";
 /** The leading four segments every cache key in this application starts with, beside the literal root: the organisation, the ministry, the support subject and the principal, so a key states the whole authority the envelope states. */
 export type ScopeKey = readonly [typeof SCOPE_KEY_ROOT, OrganizationId, MinistryId, SupportSubjectId, PrincipalId];
-/** The plain JSON values a query's parameters may hold, so a key stays comparable and cacheable. */
-export type QueryParams = Readonly<Record<string, JsonValue>>;
+/** The plain JSON values a query's parameters may hold, so a key stays comparable and cacheable. */ export type QueryParams = Readonly<Record<string, JsonValue>>;
 export type ScopedQueryKey = readonly [...ScopeKey, string, QueryParams];
-/** The scope segments of a query key, in the order every consumer uses. */
-export const scopeKey = (scope: Scope): ScopeKey => [SCOPE_KEY_ROOT, scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId];
-/** A complete query key for one job in one context. */
-export const queryKey = (scope: Scope, job: string, params: QueryParams = {}): ScopedQueryKey => [...scopeKey(scope), job, params];
-/** Whether a response that started in `scopeAtRequestTime` has been overtaken by `currentScope`. */
-export const isStale = (scopeAtRequestTime: Scope, currentScope: Scope): boolean => !sameScope(scopeAtRequestTime, currentScope);
+/** The scope segments of a query key, in the order every consumer uses. */ export const scopeKey = (scope: Scope): ScopeKey => [SCOPE_KEY_ROOT, scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId];
+/** A complete query key for one job in one context. */ export const queryKey = (scope: Scope, job: string, params: QueryParams = {}): ScopedQueryKey => [...scopeKey(scope), job, params];
+/** Whether a response that started in `scopeAtRequestTime` has been overtaken by `currentScope`. */ export const isStale = (scopeAtRequestTime: Scope, currentScope: Scope): boolean => !sameScope(scopeAtRequestTime, currentScope);
 const mintOperationId = (): string => globalThis.crypto.randomUUID();
 export type SwitchTone = "switched" | "refused" | "uncertain";
 export type OutcomeDetail = { readonly label: string; readonly value: string };
 export type OutcomeSummary = { readonly tone: SwitchTone; readonly sentence: string; readonly detail?: OutcomeDetail };
 export type ContextSwitchGuardCopy = { readonly title: string; readonly body: string; readonly saveLabel: string; readonly discardLabel: string; readonly stayLabel: string; readonly saveNote: string; readonly unsavedWorkNote: string; readonly conflictNote: string; readonly stayNote: string };
-/** Says what a mutation outcome means for a context switch, exactly once. */
-export function summariseOutcome(outcome: MutationOutcome, copy: ContextSwitchGuardCopy): OutcomeSummary {
+/** Says what a mutation outcome means for a context switch, exactly once. */ export function summariseOutcome(outcome: MutationOutcome, copy: ContextSwitchGuardCopy): OutcomeSummary {
   switch (outcome.outcome) {
     case "accepted":
       return { tone: "switched", sentence: "The switch was accepted. The context you selected is loading." };
@@ -59,8 +53,7 @@ export type ContextSwitchRequest = { readonly pendingScope: Scope; readonly expe
 export type ContextSwitchResult = { readonly requestedScope: Scope; readonly operationId: string; readonly switched: boolean; readonly outcome: MutationOutcome; readonly summary: OutcomeSummary; readonly announcement: string };
 export type ContextFenceOptions = { readonly scope: Scope; readonly selectContext: SelectContextDispatch; readonly copy: ContextSwitchGuardCopy };
 export type ContextFence = { readonly switchContext: (request: ContextSwitchRequest) => Promise<ContextSwitchResult>; readonly isSwitching: boolean; readonly lastResult: ContextSwitchResult | null; readonly isStale: (scopeAtRequestTime: Scope) => boolean };
-/** The context switch, performed once and safely against the one query cache. */
-export function useContextFence({ scope, selectContext, copy }: ContextFenceOptions): ContextFence {
+/** The context switch, performed once and safely against the one query cache. */ export function useContextFence({ scope, selectContext, copy }: ContextFenceOptions): ContextFence {
   const queryClient = useQueryClient();
   const [isSwitching, setIsSwitching] = useState(false);
   const [lastResult, setLastResult] = useState<ContextSwitchResult | null>(null);
@@ -133,8 +126,6 @@ export type ContextSwitchGuardProps = {
   readonly outcome?: MutationOutcome | null;
 };
 const DISCARD_FAILED = "The switch did not complete and its result is not known. Nothing here has been discarded; check the current context before trying again.";
-const SAVE_FAILED = "The save did not report a result, so the switch did not happen. Nothing here has been discarded; check whether the save is in place before trying again.";
-const IDENTIFIER_CLASS = "mono-identifier break-all";
 /** The Save / Discard / Stay guard for a context change. */
 export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onStay, onDiscard, onSaveAndSwitch, busy = false, className, pendingScopeLabel, outcome = null }: ContextSwitchGuardProps): ReactElement {
   const [pendingAction, setPendingAction] = useState<GuardAction | null>(null);
@@ -170,7 +161,7 @@ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onSt
             await onDiscard();
           }
         } catch {
-          setActionFailure(action === "save" ? SAVE_FAILED : DISCARD_FAILED);
+          setActionFailure(action === "save" ? "The save did not report a result, so the switch did not happen. Nothing here has been discarded; check whether the save is in place before trying again." : DISCARD_FAILED);
         } finally {
           pendingRef.current = null;
           setPendingAction(null);
@@ -219,7 +210,7 @@ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onSt
                 {notice.detail === undefined ? null : (
                   <>
                     {" "}
-                    {notice.detail.label}: <bdi className={IDENTIFIER_CLASS}>{notice.detail.value}</bdi>
+                    {notice.detail.label}: <bdi className={"mono-identifier break-all"}>{notice.detail.value}</bdi>
                   </>
                 )}
               </AlertDescription>

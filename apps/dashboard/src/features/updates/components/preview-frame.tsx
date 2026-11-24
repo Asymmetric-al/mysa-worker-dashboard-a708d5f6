@@ -54,29 +54,14 @@ export type PreviewFrameProps = {
 const PREVIEW_HEADING = "Preview";
 /** The one type scale's heading utility for each level, so this surface's headings take the measure of the level they are given rather than one fixed size. */
 const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
-const HEADING_WRAP_CLASS = "text-pretty";
 const NOTE_CLASS = "min-w-0 type-supporting text-pretty wrap-anywhere";
-const IDENTITY_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground";
-const IDENTITY_PAIR_CLASS = "flex min-w-0 items-baseline gap-1.5 wrap-anywhere";
 const FIELD_LABELS = { revision: "Revision", language: "Language" } as const;
-const LANGUAGE_SWITCHER_LABEL = "Language of this edition";
-const AUDIENCE_PREFIX = "Audience";
 const RETRY_LABEL = "Try reading this preview again";
-const MEDIA_RETRY_LABEL = "Try loading this media again";
 const DIRECTION_WORDS: Readonly<Record<PreviewDirection, string>> = { ltr: "left to right", rtl: "right to left" };
-const EXACT_REVISION_NOTE = "This is the exact revision this preview acknowledged: the markup below is the one renderer's output for it. A later draft edit cannot change what is shown here, and a preview never follows the edition forward to a newer revision.";
-const LANGUAGE_NOTE = "A preview shows an edition in the language it is written in and never re-renders it in another, so no fallback is disclosed or concealed here.";
 const INERT_STATEMENT =
   "This preview is inert. It cannot publish the edition, it cannot submit a notification to any recipient, it cannot subscribe a reader, and it cannot start giving. The read that authorised it offers no action of any kind, so nothing on this surface changes the edition, its audience or its giving destination.";
-const RECHECKED_NOTE = "Every request this preview makes is authorised again when it is made, including each image, video, poster, caption track and transcript. A copied address or a switched language therefore admits nothing the reader could not already open.";
 const MEDIA_HEADING = "Media in this preview";
 const MEDIA_NOT_READY_TITLE: Readonly<Record<PreviewPlacement["kind"], string>> = { image: "This image is unavailable", video: "This video is unavailable" };
-const MEDIA_NOT_READY_FALLBACK = "The revision still names this placement and the source could not serve it, so it is stated as unavailable rather than omitted or replaced.";
-const MEDIA_TEXT_ALTERNATIVE_NOTE = "The revision's own text alternative stands in its place in the reading above, so nothing here substitutes a picture or a player for what is missing.";
-const TRANSCRIPT_LINK_LABEL = "Read the transcript";
-const TRANSCRIPT_CONTEXT = "for";
-const TRANSCRIPT_NOTE = "Each transcript is the video's own admitted rendition, requested from the address this read named, and that request is authorised again when it is made.";
-const TRANSCRIPT_WITHOUT_NAME = "the video in this revision";
 const PREVIEW_PROSE = cn(
   "min-w-0 type-body break-words",
   "[&_p]:mb-3 [&_p:last-child]:mb-0",
@@ -101,7 +86,7 @@ function Heading({ level, className, children }: { readonly level: NoticeHeading
   return <Tag className={cn(HEADING_SCALE[level], className)}>{children}</Tag>;
 }
 const IdentityPair = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
-  <div className={IDENTITY_PAIR_CLASS}>
+  <div className="flex min-w-0 items-baseline gap-1.5 wrap-anywhere">
     <dt>{label}</dt>
     <dd className="min-w-0">{children}</dd>
   </div>
@@ -120,7 +105,6 @@ function servedPathOf(path: string): string | undefined {
 }
 const retryOf = (onRetry: (() => void | Promise<void>) | undefined, label: string): NoticeRetry | undefined => (onRetry === undefined ? undefined : { label, onClick: onRetry });
 const sameTag = (left: string, right: string): boolean => left.trim().toLowerCase() === right.trim().toLowerCase();
-const placementNameOf = (placement: PreviewPlacement): string => (placement.altText.trim() === "" ? TRANSCRIPT_WITHOUT_NAME : placement.altText.trim());
 type TranscriptLink = { readonly key: string; readonly href: string; readonly label: string };
 function transcriptLinksOf(preview: PreviewAuthorised): readonly TranscriptLink[] {
   const admitted = new Set<string>(preview.renditionIds);
@@ -129,7 +113,7 @@ function transcriptLinksOf(preview: PreviewAuthorised): readonly TranscriptLink[
     return (placement.renditions ?? []).flatMap((rendition): readonly TranscriptLink[] => {
       if (rendition.purpose !== "transcript" || !admitted.has(rendition.renditionId)) return [];
       const href = servedPathOf(rendition.path);
-      return href === undefined ? [] : [{ key: `${placement.placementId}:${rendition.renditionId}`, href, label: placementNameOf(placement) }];
+      return href === undefined ? [] : [{ key: `${placement.placementId}:${rendition.renditionId}`, href, label: ((placement: PreviewPlacement): string => (placement.altText.trim() === "" ? "the video in this revision" : placement.altText.trim()))(placement) }];
     });
   });
 }
@@ -139,16 +123,15 @@ function unreadyDescriptionOf(placement: PreviewPlacement): string {
   const label = reason === null ? "" : reason.label.trim();
   const action = reason === null ? "" : (reason.action ?? "").trim();
   if (label.length === 0) {
-    parts.push(MEDIA_NOT_READY_FALLBACK);
+    parts.push("The revision still names this placement and the source could not serve it, so it is stated as unavailable rather than omitted or replaced.");
   } else {
     parts.push(label);
     if (action.length > 0) parts.push(action);
   }
-  parts.push(MEDIA_TEXT_ALTERNATIVE_NOTE);
+  parts.push("The revision's own text alternative stands in its place in the reading above, so nothing here substitutes a picture or a player for what is missing.");
   return parts.join(" ");
 }
-type MediaNotesProps = { readonly preview: PreviewAuthorised; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined };
-function MediaNotes({ preview, headingLevel, onRetry }: MediaNotesProps): ReactElement | null {
+function MediaNotes({ preview, headingLevel, onRetry }: { readonly preview: PreviewAuthorised; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined }): ReactElement | null {
   const transcripts = transcriptLinksOf(preview);
   const unready = preview.placements.filter((placement) => placement.state !== "ready");
   if (transcripts.length === 0 && unready.length === 0) return null;
@@ -161,22 +144,21 @@ function MediaNotes({ preview, headingLevel, onRetry }: MediaNotesProps): ReactE
             {transcripts.map((transcript) => (
               <li key={transcript.key} className="min-w-0 wrap-anywhere">
                 <a href={transcript.href} className="inline-flex min-h-6 items-center text-primary inline-link">
-                  {TRANSCRIPT_LINK_LABEL} {TRANSCRIPT_CONTEXT} <bdi>{transcript.label}</bdi>
+                  {"Read the transcript"} {"for"} <bdi>{transcript.label}</bdi>
                 </a>
               </li>
             ))}
           </ul>
-          <p className="min-w-0 text-xs text-muted-foreground text-pretty wrap-anywhere">{TRANSCRIPT_NOTE}</p>
+          <p className="min-w-0 text-xs text-muted-foreground text-pretty wrap-anywhere">{"Each transcript is the video's own admitted rendition, requested from the address this read named, and that request is authorised again when it is made."}</p>
         </div>
       )}
       {unready.map((placement) => (
-        <StateNotice key={placement.placementId} kind="unavailable" title={MEDIA_NOT_READY_TITLE[placement.kind]} description={unreadyDescriptionOf(placement)} retry={retryOf(onRetry, MEDIA_RETRY_LABEL)} headingLevel={nestedNoticeHeadingLevel(headingLevel)} />
+        <StateNotice key={placement.placementId} kind="unavailable" title={MEDIA_NOT_READY_TITLE[placement.kind]} description={unreadyDescriptionOf(placement)} retry={retryOf(onRetry, "Try loading this media again")} headingLevel={nestedNoticeHeadingLevel(headingLevel)} />
       ))}
     </section>
   );
 }
 const LOADING = { title: "Reading this preview", description: "A preview is authorised per request, so nothing is shown until the read answers. An empty frame never stands in for one." } as const;
-const DENIED = { title: "This preview cannot be shown" } as const;
 const NOT_ACKNOWLEDGED = { title: "This revision is not one this edition serves", description: "The preview was asked for a revision this edition does not stand on, so nothing is rendered in its place and no newer revision is substituted for it." } as const;
 const LANGUAGE_ABSENT = { title: "Language unavailable", description: "The language requested is not the language this edition is written in, so nothing is rendered in its place: a preview never re-renders an edition into another language and never names a sibling edition to fall back to." } as const;
 const UNRELEASED = { title: "This revision is not a readable release of this edition", description: "No readable release of this edition stands on the revision the preview acknowledged, so nothing is rendered in its place. A draft is not a publication, and a preview does not stand in for one." } as const;
@@ -198,7 +180,7 @@ function AuthorisedPreview({ preview, requestedLocale, headingLevel, locales, on
   const { tag, direction } = preview.locale;
   const requested = requestedLocale === undefined ? "" : requestedLocale.trim();
   const canSwitch = locales !== undefined && locales.length > 0 && onRequestLocale !== undefined && locales.some((edition) => sameTag(edition.tag, tag));
-  const switcher = locales === undefined || onRequestLocale === undefined || !canSwitch ? undefined : <LocaleSwitcher locales={locales} requested={tag} served={tag} onRequest={onRequestLocale} label={LANGUAGE_SWITCHER_LABEL} />;
+  const switcher = locales === undefined || onRequestLocale === undefined || !canSwitch ? undefined : <LocaleSwitcher locales={locales} requested={tag} served={tag} onRequest={onRequestLocale} label="Language of this edition" />;
   const body =
     preview.renderedHtml.trim().length === 0 ? (
       <StateNotice kind="empty" title={EMPTY_BODY.title} description={EMPTY_BODY.description} headingLevel={headingLevel} />
@@ -213,11 +195,11 @@ function AuthorisedPreview({ preview, requestedLocale, headingLevel, locales, on
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <StatusBadge label={audience.label} tone={audience.tone} srPrefix={AUDIENCE_PREFIX} />
+        <StatusBadge label={audience.label} tone={audience.tone} srPrefix="Audience" />
         {kindLabel === undefined ? null : <Badge variant="outline">{kindLabel}</Badge>}
       </div>
       <p className={NOTE_CLASS}>{audience.whoReceives}</p>
-      <dl className={IDENTITY_CLASS}>
+      <dl className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <IdentityPair label={FIELD_LABELS.revision}>
           <bdi className="mono-identifier wrap-anywhere">{preview.revision.revisionId}</bdi>
         </IdentityPair>
@@ -228,7 +210,7 @@ function AuthorisedPreview({ preview, requestedLocale, headingLevel, locales, on
         ) : null}
       </dl>
       {switcher}
-      <p className={NOTE_CLASS}>{LANGUAGE_NOTE}</p>
+      <p className={NOTE_CLASS}>{"A preview shows an edition in the language it is written in and never re-renders it in another, so no fallback is disclosed or concealed here."}</p>
       {requested.length === 0 || sameTag(requested, tag) ? null : (
         <p className={NOTE_CLASS}>
           {"Requested "}
@@ -238,22 +220,21 @@ function AuthorisedPreview({ preview, requestedLocale, headingLevel, locales, on
           {", and that is the language shown here."}
         </p>
       )}
-      <p className={NOTE_CLASS}>{EXACT_REVISION_NOTE}</p>
+      <p className={NOTE_CLASS}>{"This is the exact revision this preview acknowledged: the markup below is the one renderer's output for it. A later draft edit cannot change what is shown here, and a preview never follows the edition forward to a newer revision."}</p>
       <Alert role={undefined} data-slot="preview-inert">
         <AlertDescription>{INERT_STATEMENT}</AlertDescription>
       </Alert>
       <SimulationLabel effect={SIMULATED_EFFECT_BY_TRIGGER.publish} />
       {body}
       <MediaNotes preview={preview} headingLevel={headingLevel} onRetry={onRetry} />
-      <p className={NOTE_CLASS}>{RECHECKED_NOTE}</p>
+      <p className={NOTE_CLASS}>{"Every request this preview makes is authorised again when it is made, including each image, video, poster, caption track and transcript. A copied address or a switched language therefore admits nothing the reader could not already open."}</p>
     </div>
   );
 }
-type DenialPreviewProps = { readonly reason: PreviewDenialReason; readonly requestedLocale: string | undefined; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined };
-function DenialPreview({ reason, requestedLocale, headingLevel, onRetry }: DenialPreviewProps): ReactElement {
+function DenialPreview({ reason, requestedLocale, headingLevel, onRetry }: { readonly reason: PreviewDenialReason; readonly requestedLocale: string | undefined; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined }): ReactElement {
   switch (reason) {
     case "not-authorised":
-      return <StateNotice kind="denied" title={DENIED.title} headingLevel={headingLevel} />;
+      return <StateNotice kind="denied" title={({ title: "This preview cannot be shown" } as const).title} headingLevel={headingLevel} />;
     case "revision-not-acknowledged":
       return <StateNotice kind="refused" title={NOT_ACKNOWLEDGED.title} description={NOT_ACKNOWLEDGED.description} headingLevel={headingLevel} />;
     case "locale-not-admitted":
@@ -271,14 +252,12 @@ function languageAbsentTitle(requestedLocale: string | undefined): string {
   if (requested.length === 0) return LANGUAGE_ABSENT.title;
   return `${LANGUAGE_ABSENT.title}: ${languageLabelOf(requested)}`;
 }
-type InvalidPreviewProps = { readonly issues: readonly { readonly message: string }[]; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined };
-function InvalidPreview({ issues, headingLevel, onRetry }: InvalidPreviewProps): ReactElement {
+function InvalidPreview({ issues, headingLevel, onRetry }: { readonly issues: readonly { readonly message: string }[]; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined }): ReactElement {
   const messages = issues.map((issue) => issue.message.trim()).filter((message) => message.length > 0);
   const description = messages.length === 0 ? INVALID.description : `${INVALID.description} ${messages.join(" ")}`;
   return <StateNotice kind="refused" title={INVALID.title} description={description} retry={retryOf(onRetry, RETRY_LABEL)} headingLevel={headingLevel} />;
 }
-type UnavailablePreviewProps = { readonly source: PreviewSource | undefined; readonly guidance: string | undefined; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined };
-const UnavailablePreview = ({ source, guidance, headingLevel, onRetry }: UnavailablePreviewProps): ReactElement => (
+const UnavailablePreview = ({ source, guidance, headingLevel, onRetry }: { readonly source: PreviewSource | undefined; readonly guidance: string | undefined; readonly headingLevel: NoticeHeadingLevel; readonly onRetry: (() => void | Promise<void>) | undefined }): ReactElement => (
   <StateNotice kind="unavailable" title={UNAVAILABLE.title} description={guidance === undefined || guidance.trim() === "" ? UNAVAILABLE.description : guidance.trim()} source={source} retry={retryOf(onRetry, RETRY_LABEL)} headingLevel={headingLevel} />
 );
 type PreviewBodyProps = {
@@ -307,21 +286,19 @@ function PreviewBody({ preview, headingLevel, requestedLocale, locales, onReques
     }
   }
 }
-export function PreviewFrame({ preview, requestedLocale, locales, onRequestLocale, onRetry, headingLevel = 2, className }: PreviewFrameProps): ReactElement {
-  return (
-    <section
-      aria-label={PREVIEW_HEADING}
-      data-slot="preview-frame"
-      data-preview-status={preview.status}
-      data-preview-variant={preview.status === "authorised" ? preview.variantId : undefined}
-      data-preview-revision={preview.status === "authorised" ? preview.revision.revisionId : undefined}
-      data-preview-locale={preview.status === "authorised" ? preview.locale.tag : undefined}
-      data-preview-direction={preview.status === "authorised" ? preview.locale.direction : undefined}
-      className={cn("flex min-w-0 flex-col gap-4 text-start", className)}
-    >
-      <Heading {...{ level: headingLevel, className: HEADING_WRAP_CLASS }}>{PREVIEW_HEADING}</Heading>
-      <PreviewBody preview={preview} headingLevel={nestedNoticeHeadingLevel(headingLevel)} requestedLocale={requestedLocale} locales={locales} onRequestLocale={onRequestLocale} onRetry={onRetry} />
-    </section>
-  );
-}
+export const PreviewFrame = ({ preview, requestedLocale, locales, onRequestLocale, onRetry, headingLevel = 2, className }: PreviewFrameProps): ReactElement => (
+  <section
+    aria-label={PREVIEW_HEADING}
+    data-slot="preview-frame"
+    data-preview-status={preview.status}
+    data-preview-variant={preview.status === "authorised" ? preview.variantId : undefined}
+    data-preview-revision={preview.status === "authorised" ? preview.revision.revisionId : undefined}
+    data-preview-locale={preview.status === "authorised" ? preview.locale.tag : undefined}
+    data-preview-direction={preview.status === "authorised" ? preview.locale.direction : undefined}
+    className={cn("flex min-w-0 flex-col gap-4 text-start", className)}
+  >
+    <Heading {...{ level: headingLevel, className: "text-pretty" }}>{PREVIEW_HEADING}</Heading>
+    <PreviewBody preview={preview} headingLevel={nestedNoticeHeadingLevel(headingLevel)} requestedLocale={requestedLocale} locales={locales} onRequestLocale={onRequestLocale} onRetry={onRetry} />
+  </section>
+);
 export default PreviewFrame;

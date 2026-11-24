@@ -33,9 +33,7 @@ function intentKeyOf(intent: DevIntent): string {
 // every judgement built on it — a referral's expiry, a series' missed dates, a coaching cutoff, a notification
 // window — and only a fresh read and a fresh render state the answer at the instant now in force. A failure plan
 // arms the fate of named mutations and faults and leaves what every read says as it was, so it is not one of these.
-function changesWhatEveryReadMeans(action: DevTransportAction): boolean {
-  return action === "setScenario" || action === "resetSeed" || action === "setClock" || action === "advanceClock";
-}
+const changesWhatEveryReadMeans = (action: DevTransportAction): boolean => action === "setScenario" || action === "resetSeed" || action === "setClock" || action === "advanceClock";
 export interface DevMutationTransports {
   readonly onSetScenario: (scenarioId: string) => Promise<MutationOutcome>;
   readonly onSetClock: (offsetMilliseconds: number) => Promise<MutationOutcome>;
@@ -79,9 +77,7 @@ export interface DevMutationTransports {
       try {
         if (everyReadIsStale) {
           await queryClient.invalidateQueries({ queryKey: scopeKey(scope) });
-        } else {
-          await queryClient.invalidateQueries({ queryKey: devStateQueryKey(scope) });
-        }
+        } else await queryClient.invalidateQueries({ queryKey: devStateQueryKey(scope) });
       } catch {}
       if (everyReadIsStale) refreshOnceFor(outcome.operationId);
     },
@@ -92,10 +88,7 @@ export interface DevMutationTransports {
     const operationId = attempts.current.get(key) ?? newOperationId();
     attempts.current.delete(key);
     attempts.current.set(key, operationId);
-    for (const oldest of attempts.current.keys()) {
-      if (attempts.current.size <= 32) break;
-      attempts.current.delete(oldest);
-    }
+    for (const oldest of attempts.current.keys()) if (attempts.current.size > 32) attempts.current.delete(oldest);
     return operationId;
   }, []);
   const submit = useCallback(

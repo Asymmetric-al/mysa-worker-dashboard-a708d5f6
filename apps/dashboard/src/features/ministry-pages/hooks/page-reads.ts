@@ -13,14 +13,11 @@ import { pageKey, pageLocalesKey, pageCataloguesKey, pagePreviewKey, pagesPrefix
 import { useCallback, useRef, useSyncExternalStore } from "react";
 const PAGES_ENDPOINT = "/api/pages";
 const PAGE_TRANSPORT_GUIDANCE = "The Page read did not complete, so this builder has no document, no edition and no lock to show. Retry the same read: the builder shows the draft and the editions it was given, and an outage is never presented as an empty page.";
-type PageReadAnswer = Awaited<ReturnType<typeof reads.pages.readPage>>;
 /** The Page one builder works on, exactly as the read's envelope carries it: document, locked fields, sections, editions and reach values. */
-export type PageDetailData = Extract<PageReadAnswer, { readonly kind: "envelope" }>["envelope"]["data"];
-/** The scoped envelope a builder renders once it has narrowed the result to `envelope`. */
+export type PageDetailData = Extract<Awaited<ReturnType<typeof reads.pages.readPage>>, { readonly kind: "envelope" }>["envelope"]["data"];
 export type PageEnvelope = ReadEnvelope<PageDetailData>;
-/** What this read answers for one Page: an envelope, the denial it was given, or an unavailable source. */
 export type PageReadResult = ReadResult<PageEnvelope>;
-/** Reads one Page: its document, per-edition draft/candidate/release, sections with fields and placements, managed lock reasons, and the advisory actions; returns an envelope or a … */
+/** Reads one Page: its document, per-edition draft/candidate/release, sections with fields and placements, managed lock reasons, and the advisory actions; returns an envelope, a denial or an outage. */
 export const usePage = (scope: Scope, documentId: string | undefined): UseQueryResult<PageReadResult, never> => useQuery<PageReadResult, never>({ queryKey: pageKey(scope, documentId ?? ""), queryFn: () => readPageAnswer(documentId ?? ""), enabled: Boolean(documentId), retry: false });
 const pageRequestPath = (documentId: string): string => `${PAGES_ENDPOINT}?view=${"page"}&documentId=${encodeURIComponent(documentId)}`;
 async function readPageAnswer(documentId: string): Promise<PageReadResult> {
@@ -30,7 +27,6 @@ const ADMITTED_PRESENTATION: Readonly<Record<keyof PresentationChoice, readonly 
 const admits = (admitted: readonly string[], candidate: unknown): boolean => typeof candidate === "string" && admitted.includes(candidate);
 const isAdmittedPresentation = (value: unknown): value is PresentationChoice =>
   isRecord(value) && admits(ADMITTED_PRESENTATION.treatment, value.treatment) && admits(ADMITTED_PRESENTATION.layout, value.layout) && admits(ADMITTED_PRESENTATION.alignment, value.alignment) && admits(ADMITTED_PRESENTATION.imageFit, value.imageFit);
-const isText = (value: unknown): boolean => typeof value === "string";
 const isPointer = (value: unknown): boolean => value === null || typeof value === "string";
 const isManagedField = (value: unknown): boolean => isRecord(value) && typeof value.key === "string" && value.locked === true && typeof value.lockReasonKey === "string";
 function isSection(value: unknown): boolean {
@@ -58,21 +54,16 @@ function isPageData(value: unknown): value is PageDetailData {
     Array.isArray(value.editions) &&
     value.editions.every(isEdition) &&
     Array.isArray(value.reachOptions) &&
-    value.reachOptions.every(isText) &&
+    value.reachOptions.every((option: unknown) => typeof option === "string") &&
     Array.isArray(value.presets)
   );
 }
 const PAGES_READ_ENDPOINT = "/api/pages";
 const TRANSPORT_SOURCE = { system: "browser-transport", reference: PAGES_READ_ENDPOINT } as const;
 const LOCALES_TRANSPORT_GUIDANCE = "The request for this Page's language editions did not complete, so this list states nothing about which editions exist. Reading it changes nothing, so retrying the same read is safe.";
-type PageLocalesServiceResult = Awaited<ReturnType<typeof reads.pages.readPageLocales>>;
-/** The payload of that answer: the canonical Page, how the requested language was resolved, one entry per edition, and the locales a reader may open. */
-export type PageLocalesData = Extract<PageLocalesServiceResult, { readonly kind: "envelope" }>["envelope"]["data"];
-/** One edition of the Page as the service states it. */
+export type PageLocalesData = Extract<Awaited<ReturnType<typeof reads.pages.readPageLocales>>, { readonly kind: "envelope" }>["envelope"]["data"];
 export type PageLocaleEdition = PageLocalesData["editions"][number];
-/** The envelope this read returns: the payload with the scope, source, revision, as-of, coverage and value states the service stated. */
 export type PageLocalesEnvelope = ReadEnvelope<PageLocalesData>;
-/** What this read answers: the scoped envelope, a denial, or an unavailable source. */
 export type PageLocalesReadResult = ReadResult<PageLocalesEnvelope>;
 function isPageLocalesData(value: unknown): value is PageLocalesData {
   if (!isRecord(value)) return false;
@@ -85,11 +76,9 @@ const requestPageLocales = async (documentId: string): Promise<PageLocalesReadRe
 export const usePageLocales = (scope: Scope, documentId: string | undefined): UseQueryResult<PageLocalesReadResult, never> => useQuery<PageLocalesReadResult, never>({ queryKey: pageLocalesKey(scope, documentId ?? ""), queryFn: () => requestPageLocales(documentId ?? ""), enabled: Boolean(documentId), retry: false });
 /** What `reads.pages.readPageCatalogues` answers, taken from the service so this hook cannot drift from it. */
 export type PageCataloguesAnswer = Awaited<ReturnType<typeof reads.pages.readPageCatalogues>>;
-/** The envelope arm of {@link PageCataloguesAnswer}: both catalogues and the facts that state what they are. */
 export type PageCataloguesEnvelope = Extract<PageCataloguesAnswer, { readonly kind: "envelope" }>["envelope"];
 /** The catalogue payload — two family catalogues, the admitted section types and their bounded presentation choices. Mirrors the service's payload, which remains authoritative for it. */
 export type PageCataloguesData = PageCataloguesEnvelope["data"];
-/** This read's whole answer: the envelope, a denial, or an outage. */
 export type PageCataloguesRead = ReadResult<ReadEnvelope<PageCataloguesData>>;
 const CATALOGUES_TRANSPORT_GUIDANCE = "The catalogue request did not reach the application, so the family catalogues are unavailable rather than empty. Reload this surface to read them again.";
 const isAdmittedValueSet = (value: unknown, admitted: readonly string[]): boolean => Array.isArray(value) && value.length > 0 && value.every((member: unknown) => typeof member === "string" && admitted.includes(member));
@@ -122,12 +111,9 @@ const requestCatalogues = async (): Promise<PageCataloguesRead> => fetchReadOrOu
 export const usePageCatalogues = (scope: Scope): UseQueryResult<ReadResult<ReadEnvelope<PageCataloguesData>>, never> => useQuery<PageCataloguesRead, never>({ queryKey: pageCataloguesKey(scope), queryFn: requestCatalogues, retry: false });
 /** The language the preview is read in, sent as the read's `requestedLocale`. A tag the edition does not serve is answered as a denial rather than as another edition's content. */
 export type PagePreviewParams = { readonly documentId: string; readonly variantId: string; readonly revisionId?: string; readonly candidateId?: string; readonly locale?: string };
-type ServicePreviewEnvelope = Extract<Awaited<ReturnType<typeof reads.pages.readPreview>>, { kind: "envelope" }>["envelope"];
-/** The preview payload the service's authorised decision supplies: the rendered revision, the language and direction it is read in, the admitted rendition ids, and inertness stated as a literal — `givingAction` cannot hold any value but `"none"`, so no caller can offer a give action from a preview by m… */
-export type PagePreviewData = ServicePreviewEnvelope["data"];
-/** The scoped envelope a preview surface renders once it has narrowed the result to `envelope`. */
+/** The preview payload the service's authorised decision supplies: the rendered revision, the language and direction it is read in, the admitted rendition ids, and inertness stated as a literal — `givingAction` cannot hold any value but `"none"`, so no caller can offer a give action from a preview by mistake. */
+export type PagePreviewData = Extract<Awaited<ReturnType<typeof reads.pages.readPreview>>, { kind: "envelope" }>["envelope"]["data"];
 export type PagePreviewEnvelope = ReadEnvelope<PagePreviewData>;
-/** What this read answers with: the envelope, the service's denial, the source that could not answer, or the request it does not admit. */
 export type PagePreviewReadResult = ReadResult<PagePreviewEnvelope>;
 const PREVIEW_ENDPOINT = "/api/pages/preview";
 const HANDLER_SOURCE_SYSTEM = "data-service";
@@ -144,9 +130,7 @@ function previewUrl(params: RequestablePreview): string {
   query.set(PARAM.requestedLocale, params.locale);
   return `${PREVIEW_ENDPOINT}?${query.toString()}`;
 }
-const isPreviewData = (value: unknown): boolean => isRecord(value);
-const requestPreview = async (params: RequestablePreview): Promise<PagePreviewReadResult> =>
-  fetchReadOrOutage<PagePreviewData, PagePreviewEnvelope["coverage"]>({ url: previewUrl(params), admits: isPreviewData, source: { system: HANDLER_SOURCE_SYSTEM, reference: PREVIEW_ENDPOINT }, guidance: PREVIEW_TRANSPORT_GUIDANCE });
+const requestPreview = async (params: RequestablePreview): Promise<PagePreviewReadResult> => fetchReadOrOutage<PagePreviewData, PagePreviewEnvelope["coverage"]>({ url: previewUrl(params), admits: isRecord, source: { system: HANDLER_SOURCE_SYSTEM, reference: PREVIEW_ENDPOINT }, guidance: PREVIEW_TRANSPORT_GUIDANCE });
 function previewKey(scope: Scope, requestable: RequestablePreview): readonly unknown[] {
   const stated = pagePreviewKey(scope, requestable);
   return requestable.candidateId === undefined ? stated : [...stated, requestable.candidateId];
@@ -163,16 +147,12 @@ export function usePagePreview(scope: Scope, params: PagePreviewParams | undefin
 }
 const UNNAMED_DOCUMENT = "";
 const GIVING_BINDING_TRANSPORT_GUIDANCE = "The giving-binding read did not complete, so this placement has no giving destination to show. Reload the placement to try again; no fallback designation and no amount is shown in the meantime.";
-type GivingBindingAnswer = Awaited<ReturnType<typeof reads.pages.readGivingBinding>>;
-/** What a giving read states: the Page, the release it belongs to, the placement's binding and the progress the source qualifies. */
-export type GivingBindingData = Extract<GivingBindingAnswer, { readonly kind: "envelope" }>["envelope"]["data"];
-/** The scoped envelope a giving read answers with, which is what the placement renders. */
+export type GivingBindingData = Extract<Awaited<ReturnType<typeof reads.pages.readGivingBinding>>, { readonly kind: "envelope" }>["envelope"]["data"];
 export type GivingBindingEnvelope = ReadEnvelope<GivingBindingData>;
 /** What the placement carries: the one approved Designation, or the *Giving unavailable* state with its cause. */
 export type GivingBindingState = GivingBindingData["binding"];
 /** The closed set of causes a placement can show no giving for, spelled as the service sends them. */
 export type GivingUnavailableCause = Extract<GivingBindingState, { readonly state: "unavailable" }>["cause"];
-/** The three answers a giving read gives: the envelope, a denial carrying nothing about the record, or an outage. */
 export type GivingBindingReadResult = ReadResult<GivingBindingEnvelope>;
 /** What the placement's query hands back: the result above, and no error, because every failure is one of its three answers. */
 export type UseGivingBindingResult = UseQueryResult<GivingBindingReadResult, never>;
@@ -192,17 +172,15 @@ function isGivingBindingState(value: unknown): value is GivingBindingState {
       return false;
   }
 }
-const givingBindingPath = (documentId: string): string => `${PAGES_ENDPOINT}?view=${"giving-binding"}&documentId=${encodeURIComponent(documentId)}`;
 const handlerUnavailable = (reference: string, guidance: string): GivingBindingReadResult => ({ kind: "unavailable", unavailable: unavailable({ operationId: "read", source: { system: HANDLER_SOURCE_SYSTEM, reference }, guidance }) });
 const isGivingBindingData = (value: unknown): boolean => isRecord(value) && isGivingBindingState(value.binding);
 async function fetchGivingBinding(documentId: string | undefined): Promise<GivingBindingReadResult> {
   if (documentId === undefined || documentId === UNNAMED_DOCUMENT) return handlerUnavailable(PAGES_ENDPOINT, "No Page was named, so there is no giving placement to read and no designation is assumed.");
-  const path = givingBindingPath(documentId);
+  const path = `${PAGES_ENDPOINT}?view=${"giving-binding"}&documentId=${encodeURIComponent(documentId)}`;
   return fetchReadOrOutage<GivingBindingData, GivingBindingEnvelope["coverage"]>({ url: path, admits: isGivingBindingData, source: { system: HANDLER_SOURCE_SYSTEM, reference: path }, guidance: GIVING_BINDING_TRANSPORT_GUIDANCE });
 }
 /** Reads the Page's one approved giving Designation, or the *Giving unavailable* state with its cause and no fallback fund; returns an envelope or a `denied`/`unavailable` outcome. */
 export const useGivingBinding = (scope: Scope, documentId: string | undefined): UseGivingBindingResult => useQuery<GivingBindingReadResult, never>({ queryKey: givingBindingKey(scope, documentId ?? UNNAMED_DOCUMENT), queryFn: () => fetchGivingBinding(documentId), enabled: Boolean(documentId), retry: false });
-/** The authority one section change presents: the scope the edition was read in, and the Page it belongs to. */
 export type EditionAuthority = { readonly scope: Scope; readonly documentId: string };
 function statesEdition(data: Readonly<Record<string, unknown>>, variantId: string): boolean {
   const draft = data["draft"];

@@ -59,9 +59,8 @@ function fieldsOf(error: ZodError): FieldMessages {
   return fields;
 }
 const invalidOutcome = (operationId: string, error: ZodError): MutationOutcome => ({ outcome: "invalid", operationId, fields: fieldsOf(error) });
-const structuredFields = (payload: object): WireFields => Object.fromEntries(Object.entries(payload));
 function wireFieldsOf<TPayload extends object>(config: PartnerMutationConfig<TPayload>, payload: TPayload): WireFields {
-  const stated: WireFields = config.wire === undefined ? structuredFields(payload) : config.wire(payload);
+  const stated: WireFields = config.wire === undefined ? Object.fromEntries(Object.entries(payload)) : config.wire(payload);
   return config.routeDiscriminant === undefined ? stated : { ...stated, [config.routeDiscriminant.field]: config.name };
 }
 function refreshedReads(name: PartnerMutationName): readonly { readonly segment: PartnerKeySegment; readonly addressedRecord?: true }[] {

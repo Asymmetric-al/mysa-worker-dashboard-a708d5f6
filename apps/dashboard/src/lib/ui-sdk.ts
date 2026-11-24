@@ -4,8 +4,7 @@ import { bindLayer, createRovingFocus, createTypeahead, isComposing, isTypeahead
 import { mergeProps } from "@ui-sdk/react/primitive";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
-/** Why a dismissable layer or a modal asked to close: Escape, a pointer press outside it and outside its trigger, or the window losing focus. */
-export type DismissReason = "escape-key" | "outside-press" | "window-blur";
+/** Why a dismissable layer or a modal asked to close: Escape, a pointer press outside it and outside its trigger, or the window losing focus. */ export type DismissReason = "escape-key" | "outside-press" | "window-blur";
 function toDismissReason(reason: LayerDismissReason): DismissReason {
   switch (reason) {
     case "escape-key":
@@ -36,8 +35,7 @@ function isTextEntry(target: EventTarget | null): boolean {
 }
 export type DismissableLayerOptions = { open: boolean; layerRef: RefObject<HTMLElement | null>; triggerRef?: RefObject<HTMLElement | null>; onDismiss: (reason: DismissReason) => void; modal?: boolean; topLayer?: boolean; closeOnBlur?: boolean };
 export type DismissableLayerApi = { restoreFocus: () => void };
-/** Dismisses a layer on Escape or a press outside it and outside its trigger, and returns focus to the trigger when it closes. */
-export function useDismissableLayer(options: DismissableLayerOptions): DismissableLayerApi {
+/** Dismisses a layer on Escape or a press outside it and outside its trigger, and returns focus to the trigger when it closes. */ export function useDismissableLayer(options: DismissableLayerOptions): DismissableLayerApi {
   const { open, layerRef, triggerRef, onDismiss, modal = false, topLayer = false } = options;
   const closeOnBlur = options.closeOnBlur ?? false;
   const latest = useRef({ onDismiss, triggerRef }); // Handlers below read the newest callbacks and refs through this, so a parent render never forces the layer to unbind and rebind mid-interaction.
@@ -67,12 +65,10 @@ export function useDismissableLayer(options: DismissableLayerOptions): Dismissab
 }
 type RovingConfig = { orientation: RovingFocusOrientation; loop: boolean; disabled?: (key: string) => boolean; preferred?: (key: string) => boolean; onActiveKeyChange?: (key: string | null) => void };
 type RovingState = { stop: string | null; options: RovingConfig };
-type RovingPart = { readonly key: string };
-type RovingStoreListener = (liveOnly: boolean, delivered: boolean, changed: readonly string[]) => void;
 type RovingStore = Store<RovingState> & { setOptions(options: RovingConfig): void };
 function createRovingStore(initial: RovingConfig): RovingStore {
   let state: RovingState = { stop: null, options: initial };
-  const listeners = new Set<RovingStoreListener>();
+  const listeners = new Set<(liveOnly: boolean, delivered: boolean, changed: readonly string[]) => void>();
   return {
     get: () => state,
     set: (patch, delivered) => {
@@ -93,19 +89,15 @@ function createRovingStore(initial: RovingConfig): RovingStore {
     view: (_next, read) => read(),
   };
 }
-/** Which arrows walk a roving group: one axis, or all four as a rating does. */
-export type RovingFocusOrientation = RovingOrientation | "both";
+/** Which arrows walk a roving group: one axis, or all four as a rating does. */ export type RovingFocusOrientation = RovingOrientation | "both";
 export type RovingFocusOptions = { orientation?: RovingFocusOrientation; loop?: boolean; disabled?: (key: string) => boolean; preferred?: (key: string) => boolean; onActiveKeyChange?: (key: string | null) => void };
 /** The props one item of a roving group spreads onto its element: the behaviour's own props, which `getItemProps` composes with the caller's own element props. */
 export type RovingItemProps = { ref: (element: HTMLElement | null) => void | (() => void); tabIndex: 0 | -1; onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void; onFocus: () => void };
 export type RovingFocusApi = { activeKey: string | null; getItemProps: <Own extends Record<string, unknown> = Record<string, never>>(key: string, ownProps?: Own) => RovingItemProps & Own; focusItem: (key: string) => void };
 type RovingRegistration = { elements: Map<string, HTMLElement>; refs: Map<string, (element: HTMLElement | null) => void | (() => void)> };
 type RovingGroup = { readonly teardowns: Set<() => void>; readonly roving: RovingFocus };
-function rovingConfigOf(options: RovingFocusOptions): RovingConfig {
-  return { orientation: options.orientation ?? "vertical", loop: options.loop ?? false, disabled: options.disabled, preferred: options.preferred, onActiveKeyChange: options.onActiveKeyChange };
-}
-/** Gives a list one tab stop and moves focus between its items with the arrow keys, Home and End; it never traps focus, so Tab leaves the group. */
-export function useRovingFocus(options: RovingFocusOptions = {}): RovingFocusApi {
+const rovingConfigOf = (options: RovingFocusOptions): RovingConfig => ({ orientation: options.orientation ?? "vertical", loop: options.loop ?? false, disabled: options.disabled, preferred: options.preferred, onActiveKeyChange: options.onActiveKeyChange });
+/** Gives a list one tab stop and moves focus between its items with the arrow keys, Home and End; it never traps focus, so Tab leaves the group. */ export function useRovingFocus(options: RovingFocusOptions = {}): RovingFocusApi {
   const [store] = useState<RovingStore>(() => createRovingStore(rovingConfigOf(options))); // The SDK reads these options on each key press rather than while rendering, so the group's store carries them and the group itself is built once.
   useEffect(() => {
     store.setOptions(rovingConfigOf(options));
@@ -114,7 +106,7 @@ export function useRovingFocus(options: RovingFocusOptions = {}): RovingFocusApi
     const teardowns = new Set<() => void>();
     return {
       teardowns,
-      roving: createRovingFocus<RovingState, RovingPart>(
+      roving: createRovingFocus<RovingState, { readonly key: string }>(
         { store, onDestroy: (cleanup) => teardowns.add(cleanup) },
         { slot: "item", key: "stop", orientation: () => store.get().options.orientation, loop: () => store.get().options.loop, disabled: (item) => store.get().options.disabled?.(item.key) ?? false, preferred: (item) => store.get().options.preferred?.(item.key) ?? false },
       ),
@@ -186,8 +178,7 @@ export function useRovingFocus(options: RovingFocusOptions = {}): RovingFocusApi
 }
 export type TypeaheadOptions = { labels: () => readonly string[]; currentIndex?: () => number; onMatch: (index: number) => void; idleMs?: number; enabled?: boolean };
 export type TypeaheadApi = { onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => boolean; reset: () => void; isActive: () => boolean };
-/** Accumulates printable characters into a query that moves selection, cycling through the items that share the prefix and clearing after a short idle. */
-export function useTypeahead(options: TypeaheadOptions): TypeaheadApi {
+/** Accumulates printable characters into a query that moves selection, cycling through the items that share the prefix and clearing after a short idle. */ export function useTypeahead(options: TypeaheadOptions): TypeaheadApi {
   const { labels, onMatch, currentIndex, idleMs = TYPEAHEAD_IDLE_MS, enabled = true } = options;
   const search = useMemo(() => createTypeahead(idleMs), [idleMs]);
   const onKeyDown = useCallback(

@@ -8,10 +8,8 @@ import { reads } from "@/modules/data-service";
 import { ReadNotices, searchSuffixOf, type ReadNoticeCopy, type SearchParams } from "../../page-frame";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: INITIATIVE_COPY.listHeading };
-/** This surface's own address, so a retry re-reads the view the reader was in rather than dropping it. */
-const LIST_HREF = "/partners/initiatives";
-/** This route's own wording for the three answers that are not the list. Not one of them states a count, a name, a working list or a size. */
-const PAGE_COPY = {
+/** This surface's own address, so a retry re-reads the view the reader was in rather than dropping it. */ const LIST_HREF = "/partners/initiatives";
+/** This route's own wording for the three answers that are not the list. Not one of them states a count, a name, a working list or a size. */ const PAGE_COPY = {
   denied: { title: "Initiatives are not available in this context", body: "This session may not read initiatives in the context it is working in, so no initiative, working list or count is stated here — a refusal is not an empty list. Another context, if this session holds one, can be chosen from the shell." },
   unavailable: { title: "The initiative list could not be read", retry: "Try this read again" },
   refused: { title: "The initiative list's request was refused", body: "The address states a view the initiative read does not admit, so nothing was read and the source behind the list did not fail. State a view it admits and ask again." },

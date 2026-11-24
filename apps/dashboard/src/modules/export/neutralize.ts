@@ -11,8 +11,7 @@ function opensCellAt(value: string, index: number): boolean {
   return previous === LINE_FEED ? true : previous === CARRIAGE_RETURN && value.charCodeAt(index) !== LINE_FEED;
 }
 const startsDangerousCell = (value: string, index: number): boolean => opensCellAt(value, index) && isDangerousAt(value, index);
-/** Whether `value` holds a formula trigger at any position where a spreadsheet could begin a cell. */
-export function requiresNeutralisation(value: string): boolean {
+/** Whether `value` holds a formula trigger at any position where a spreadsheet could begin a cell. */ export function requiresNeutralisation(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) if (startsDangerousCell(value, index)) return true;
   return false;
 }

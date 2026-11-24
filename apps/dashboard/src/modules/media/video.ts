@@ -1,4 +1,5 @@
 import { ALL_FORMATS, BufferSource, BufferTarget, Conversion, Input, Mp4InputFormat, Mp4OutputFormat, Output, UnsupportedInputFormatError, WebMInputFormat, WebMOutputFormat, type DiscardedTrack, type InputFormat, type MetadataTags, type Rotation } from "mediabunny";
+import { countFormatOf } from "@/lib/count-format";
 import { ADMITTED_VIDEO_PROFILES, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, type AdmittedAudioCodec, type AdmittedContainer, type AdmittedVideoCodec, type AdmittedVideoProfile } from "./profile";
 export { ADMITTED_VIDEO_PROFILES, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH };
 export type { AdmittedAudioCodec, AdmittedContainer, AdmittedVideoCodec, AdmittedVideoProfile };
@@ -16,7 +17,7 @@ type Admission = { readonly ok: true; readonly detail: AdmittedVideoDetail } | V
 const DESCRIPTIVE_TAG_KEYS = ["title", "description", "artist", "album", "albumArtist", "trackNumber", "tracksTotal", "discNumber", "discsTotal", "beatsPerMinute", "genre", "date", "lyrics", "comment", "images"] as const;
 const CONTAINER_TIMESTAMP_RAW_KEY = /^(?:creationtime|modificationtime|dateutc|timestamp)$/i;
 const refuse = (code: VideoRefusalCode, message: string, action?: string): VideoRefusal => (action === undefined ? { ok: false, code, message } : { ok: false, code, message, action });
-const describesBytes = (byteLength: number): string => `${byteLength.toLocaleString("en-US")} bytes (${(byteLength / (1024 * 1024)).toFixed(1)} MiB)`;
+const describesBytes = (byteLength: number): string => `${countFormatOf().format(byteLength)} bytes (${(byteLength / (1024 * 1024)).toFixed(1)} MiB)`; // A byte count is a whole number, so it groups through the one whole-number formatter in the application's default interface locale rather than a second hard-coded tag.
 function asAlternatives(codecs: readonly string[]): string {
   const last = codecs.at(-1);
   return last === undefined ? "" : codecs.length === 1 ? last : `${codecs.slice(0, -1).join(", ")} or ${last}`;
@@ -64,9 +65,8 @@ async function admit(bytes: Uint8Array): Promise<Admission> {
       return refuse("undecodable", "The file could not be read as media.", "Export the video again and upload the new file.");
     }
     const container = containerOf(format);
-    if (container === null) {
+    if (container === null)
       return refuse("unsupported-container", `The file is in the ${format.name} container, which this profile does not admit.`, `Upload an MP4 (${admittedVideoCodecs("mp4")} video with ${admittedAudioCodecs("mp4")} audio) or a WebM (${admittedVideoCodecs("webm")} video with ${admittedAudioCodecs("webm")} audio).`);
-    }
     const duration = await readDuration(input);
     if (!duration.ok) return duration.refusal;
     if (duration.durationS > VIDEO_MAX_DURATION_S) return refuse("too-long-duration", `The video is ${duration.durationS.toFixed(1)} seconds long; the limit is ${VIDEO_MAX_DURATION_S} seconds.`, `Trim the video to ${VIDEO_MAX_DURATION_S} seconds or less and upload it again.`);

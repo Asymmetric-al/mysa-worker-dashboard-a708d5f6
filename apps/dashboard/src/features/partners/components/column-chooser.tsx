@@ -104,9 +104,7 @@ export default function ColumnChooser({ value, onValueChange, envelope = null, c
                   <Label htmlFor={optionId} className="cursor-pointer items-start font-normal leading-snug">
                     <bdi className="min-w-0 break-words">{column.displayName}</bdi>
                   </Label>
-                  <p id={hintId} className={cn("type-supporting text-pretty", locked ? undefined : "sr-only sm:not-sr-only")}>
-                    {locked ? "This is the last visible column, so it stays shown. Show another column to hide this one." : column.hint}
-                  </p>
+                  <p {...{ id: hintId, className: cn("type-supporting text-pretty", locked ? undefined : "sr-only sm:not-sr-only") }}>{locked ? "This is the last visible column, so it stays shown. Show another column to hide this one." : column.hint}</p>
                 </div>
               </div>
             );

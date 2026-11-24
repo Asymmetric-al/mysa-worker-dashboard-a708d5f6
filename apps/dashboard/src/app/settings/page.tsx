@@ -7,7 +7,6 @@ import SettingsSourceStatusPanel from "@/features/shell/components/settings-sour
 import { RESET_COPY } from "@/features/shell/copy/dev-labels";
 import { reads } from "@/modules/data-service";
 import { PageColumn } from "../page-frame";
-type DevelopmentResult = Awaited<ReturnType<typeof reads.dev.readDevState>>;
 export const dynamic = "force-dynamic";
 const PAGE_TITLE = "Settings";
 export const metadata: Metadata = { title: PAGE_TITLE };
@@ -24,7 +23,7 @@ function refusalDescription(fields: Readonly<Record<string, readonly string[]>>)
   const messages = Object.values(fields).flat();
   return messages.length === 0 ? COPY.resetRefused : `${COPY.resetRefused} ${messages.join(" ")}`;
 }
-function ResetSection({ development }: { readonly development: DevelopmentResult }): ReactElement {
+function ResetSection({ development }: { readonly development: Awaited<ReturnType<typeof reads.dev.readDevState>> }): ReactElement {
   switch (development.kind) {
     case "envelope":
       return <DevResetControl scope={development.envelope.scope} expectedRevision={development.envelope.revision} />;
@@ -36,8 +35,7 @@ function ResetSection({ development }: { readonly development: DevelopmentResult
       return <StateNotice kind="refused" headingLevel={SECTION_HEADING_LEVEL} title={RESET_COPY.title} description={refusalDescription(development.refused.fields)} />;
   }
 }
-/** The Settings screen: appearance, interface language, display time zone, source status and the destructive development reset. */
-export default async function SettingsPage(): Promise<ReactElement> {
+/** The Settings screen: appearance, interface language, display time zone, source status and the destructive development reset. */ export default async function SettingsPage(): Promise<ReactElement> {
   const [sourceStatus, development] = await Promise.all([reads.context.readAdmissionState(), reads.dev.readDevState()]);
   const developmentState = development.kind === "envelope" ? development.envelope.data : null;
   return (

@@ -23,14 +23,8 @@ const MESSAGES = {
   nothingToSave: "Change a field or an option, or there is nothing to save.",
 } as const;
 const SECTION_OPERATIONS = ["addSection", "moveSection", "duplicateSection", "removeSection", "saveSectionFields", "applyPreset"] as const;
-type SectionOperation = (typeof SECTION_OPERATIONS)[number];
-type AddSectionPayload = Parameters<typeof mutations.pages.addSection>[1]["payload"];
-type MoveSectionPayload = Parameters<typeof mutations.pages.moveSection>[1]["payload"];
-type DuplicateSectionPayload = Parameters<typeof mutations.pages.duplicateSection>[1]["payload"];
-type RemoveSectionPayload = Parameters<typeof mutations.pages.removeSection>[1]["payload"];
 type SaveSectionFieldsPayload = Parameters<typeof mutations.pages.saveSectionFields>[1]["payload"];
 type ApplyPresetPayload = Parameters<typeof mutations.pages.applyPreset>[1]["payload"];
-type SaveSectionFieldsPresentation = NonNullable<SaveSectionFieldsPayload["presentation"]>;
 const referenceField = (message: string) => z.string({ error: message }).trim().min(1, message).max(160, message);
 const sectionReference = referenceField(MESSAGES.sectionReference);
 const draftReference = referenceField(MESSAGES.draftReference);
@@ -39,20 +33,20 @@ const namesDraftTarget = (payload: { readonly draftRevisionId?: string; readonly
 function requireDraftTarget(payload: { readonly draftRevisionId?: string; readonly variantId?: string }, ctx: z.RefinementCtx): void {
   if (!namesDraftTarget(payload)) ctx.addIssue({ code: "custom", path: ["draftRevisionId"], message: MESSAGES.draftTargetMissing });
 }
-const presentationSchema: z.ZodType<SaveSectionFieldsPresentation> = z.strictObject({
+const presentationSchema: z.ZodType<NonNullable<SaveSectionFieldsPayload["presentation"]>> = z.strictObject({
   treatment: z.enum(PRESENTATION_CHOICES.treatment, { error: MESSAGES.treatment }),
   layout: z.enum(PRESENTATION_CHOICES.layout, { error: MESSAGES.layout }),
   alignment: z.enum(PRESENTATION_CHOICES.alignment, { error: MESSAGES.alignment }),
   imageFit: z.enum(PRESENTATION_CHOICES.imageFit, { error: MESSAGES.imageFit }),
 });
-const addSectionPayloadSchema: z.ZodType<AddSectionPayload & { readonly operation: "addSection" }> = z
+const addSectionPayloadSchema: z.ZodType<Parameters<typeof mutations.pages.addSection>[1]["payload"] & { readonly operation: "addSection" }> = z
   .strictObject({ operation: z.literal("addSection"), ...draftTargetShape, sectionType: z.enum(PAGE_SECTION_TYPES, { error: MESSAGES.sectionType }), afterSectionId: sectionReference.optional() })
   .superRefine(requireDraftTarget);
-const moveSectionPayloadSchema: z.ZodType<MoveSectionPayload & { readonly operation: "moveSection" }> = z
+const moveSectionPayloadSchema: z.ZodType<Parameters<typeof mutations.pages.moveSection>[1]["payload"] & { readonly operation: "moveSection" }> = z
   .strictObject({ operation: z.literal("moveSection"), ...draftTargetShape, sectionId: sectionReference, targetIndex: z.int({ error: MESSAGES.position }).nonnegative(MESSAGES.position) })
   .superRefine(requireDraftTarget);
-const duplicateSectionPayloadSchema: z.ZodType<DuplicateSectionPayload & { readonly operation: "duplicateSection" }> = z.strictObject({ operation: z.literal("duplicateSection"), ...draftTargetShape, sectionId: sectionReference }).superRefine(requireDraftTarget);
-const removeSectionPayloadSchema: z.ZodType<RemoveSectionPayload & { readonly operation: "removeSection" }> = z.strictObject({ operation: z.literal("removeSection"), ...draftTargetShape, sectionId: sectionReference }).superRefine(requireDraftTarget);
+const duplicateSectionPayloadSchema: z.ZodType<Parameters<typeof mutations.pages.duplicateSection>[1]["payload"] & { readonly operation: "duplicateSection" }> = z.strictObject({ operation: z.literal("duplicateSection"), ...draftTargetShape, sectionId: sectionReference }).superRefine(requireDraftTarget);
+const removeSectionPayloadSchema: z.ZodType<Parameters<typeof mutations.pages.removeSection>[1]["payload"] & { readonly operation: "removeSection" }> = z.strictObject({ operation: z.literal("removeSection"), ...draftTargetShape, sectionId: sectionReference }).superRefine(requireDraftTarget);
 const saveSectionFieldsPayloadSchema: z.ZodType<SaveSectionFieldsPayload & { readonly operation: "saveSectionFields" }> = z
   .strictObject({ operation: z.literal("saveSectionFields"), ...draftTargetShape, sectionId: sectionReference, fields: z.record(z.string(), z.string()).optional(), presentation: presentationSchema.optional() })
   .superRefine((payload, ctx) => {
@@ -91,7 +85,7 @@ const SECTION_ROUTES = {
   removeSection: sectionRoute(removeSectionRequestSchema, (sessionId, input) => mutations.pages.removeSection(sessionId, input)),
   saveSectionFields: sectionRoute(saveSectionFieldsRequestSchema, (sessionId, input) => mutations.pages.saveSectionFields(sessionId, input)),
   applyPreset: sectionRoute(applyPresetRequestSchema, (sessionId, input) => mutations.pages.applyPreset(sessionId, input)),
-} satisfies Record<SectionOperation, SectionRoute>;
-/** Makes exactly one of the six named section changes, chosen by `payload.operation`, and answers with one of `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid` … */
+} satisfies Record<(typeof SECTION_OPERATIONS)[number], SectionRoute>;
+/** Makes exactly one of the six named section changes, chosen by `payload.operation`, and answers with one of `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 const changeSection = (request: NextRequest): Promise<Response> => claimedWriteRoute(request, operationClaimSchema, (claim) => claim.payload.operation, SECTION_ROUTES);
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ POST: changeSection });

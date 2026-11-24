@@ -21,7 +21,9 @@ export type MediaPlacement = { readonly placementId: string; readonly assetId: s
 export type SharePresentation = { readonly title?: string; readonly description?: string; readonly imageAssetId?: string };
 type TextRecord = Readonly<Record<string, string>>;
 export type RevisionContent = { readonly body: ContentDocumentJson; readonly sections: readonly ContentSection[]; readonly mediaPlacements: readonly MediaPlacement[]; readonly captions: TextRecord; readonly altText: TextRecord; readonly sharePresentation: SharePresentation };
+/** One authored revision of one variant, identified by its `revisionId` and its `variantId`: its `contentChecksum` is 32-bit change detection that can collide, so it is never an identity and never the sole comparison of two renditions. */
 export type ContentRevision = RevisionContent & { readonly revisionId: string; readonly variantId: string; readonly contentChecksum: string; readonly authorPrincipalId: string; readonly createdAt: Temporal.Instant };
+/** A frozen revision awaiting review, identified by its `candidateId` and the `revisionId` it froze: its `contentChecksum` is 32-bit change detection that can collide, never the sole comparison of two renditions. */
 export type ContentCandidate = { readonly candidateId: string; readonly variantId: string; readonly revisionId: string; readonly contentChecksum: string; readonly frozenAt: Temporal.Instant; readonly reviewRound: typeof REVIEW_STEPS_PER_CANDIDATE };
 export interface Release {
   readonly releaseId: string;
@@ -31,6 +33,7 @@ export interface Release {
   readonly locale: VariantLocale;
   readonly publishedAt: Temporal.Instant;
   readonly reach: ReleaseReach;
+  /** Change detection only: 32 bits that can collide. The release is identified by `releaseId`, `variantId` and `revisionId`, so a matching digest is never the sole comparison of two renditions. */
   readonly contentChecksum: string;
   readonly withdrawnAt?: Temporal.Instant;
   readonly supersededBy?: string;
@@ -66,8 +69,7 @@ export function assertVariantKeyUnique(existing: readonly ContentVariant[], key:
 export type TranslationSourceEvidence = { readonly variant: ContentVariant; readonly revision: ContentRevision };
 export type CreateVariantInput = { readonly variantId: string; readonly document: ContentDocument; readonly audience: VariantAudience; readonly locale: VariantLocale; readonly existingVariants: readonly ContentVariant[]; readonly translationSource?: TranslationSourceEvidence };
 export type CreateVariantResult = { readonly status: "created"; readonly variant: ContentVariant } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
-/** Creates one working variant of one document, with no draft, candidate or release yet. */
-export function createVariant(input: CreateVariantInput): CreateVariantResult {
+/** Creates one working variant of one document, with no draft, candidate or release yet. */ export function createVariant(input: CreateVariantInput): CreateVariantResult {
   const issues: DocumentIssue[] = [];
   const { document } = input;
   if (isBlank(input.variantId)) issues.push({ path: "variantId", message: "A variant states its own identity." });
@@ -78,9 +80,8 @@ export function createVariant(input: CreateVariantInput): CreateVariantResult {
   if (isBlank(document.sourceSubject.system) || isBlank(document.sourceSubject.reference)) issues.push({ path: "document.sourceSubject", message: "A document states the source system and its opaque reference for the subject it belongs to." });
   if (document.givingBinding !== undefined && (isBlank(document.givingBinding.system) || isBlank(document.givingBinding.reference))) issues.push({ path: "document.givingBinding", message: "A giving binding is a source-qualified reference; an unqualified one would name no Designation." });
   if (Object.values(document.managedFields).some((value) => typeof value !== "string")) issues.push({ path: "document.managedFields", message: "A managed field carries the source's text value, stated as a string." });
-  if (!isOneOf(VARIANT_AUDIENCES, input.audience)) {
-    issues.push({ path: "audience", message: `A variant serves one of ${VARIANT_AUDIENCES.join(", ")}.` });
-  } else if (!variantKeyAllowed(document.family, input.audience)) {
+  if (!isOneOf(VARIANT_AUDIENCES, input.audience)) issues.push({ path: "audience", message: `A variant serves one of ${VARIANT_AUDIENCES.join(", ")}.` });
+  else if (!variantKeyAllowed(document.family, input.audience)) {
     const admitted = admittedAudiences(document.family);
     issues.push({ path: "audience", message: admitted.length === 0 ? `"${document.family}" is not a content family, so it admits no audience.` : `A ${document.family} admits ${admitted.join(" and ")} editions only; ${input.audience} is not one of them.` });
   }
@@ -116,7 +117,7 @@ function sortedEntries(record: Readonly<Record<string, string>>): ReadonlyArray<
     });
 }
 const digestCarrier = (canonical: string, direction: ContentDirection): ContentDocumentJson => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: [{ type: "paragraph", content: [{ type: "text", text: canonical }] }], sections: [] });
-/** The change-detection digest of one revision's content: the profile's checksum over the canonical serialisation of the document, the placements in authored order, the alternative-text and. */
+/** The change-detection digest of one revision's content: the profile's checksum over the canonical serialisation of the document, the placements in authored order, the alternative text and captions those placements carry, and the share presentation's title, description and image asset. It is 32 bits and collidable, so identities come from `variantId` and `revisionId`, and it is never the sole comparison of two renditions. */
 export function revisionChecksum(content: RevisionContent): string {
   const canonical = [
     serialise(content.body),
@@ -139,7 +140,7 @@ export interface CreateRevisionInput {
   readonly at?: Temporal.Instant;
 }
 export type CreateRevisionResult = { readonly status: "created"; readonly revision: ContentRevision } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
-/** Writes one revision: it validates the authored document against the content profile, proves every placement is identified by the revision and carries alternative text, computes the. */
+/** Writes one revision: it validates the authored document against the content profile, proves every placement is identified by the revision and carries alternative text, computes the 32-bit change-detection digest it records and returns the created revision. */
 export function createRevision(input: CreateRevisionInput): CreateRevisionResult {
   const issues: DocumentIssue[] = [];
   if (isBlank(input.revisionId)) issues.push({ path: "revisionId", message: "A revision states its own identity." });
@@ -152,11 +153,9 @@ export function createRevision(input: CreateRevisionInput): CreateRevisionResult
   const captions = input.captions ?? {};
   const placementIds = new Set<string>();
   for (const placement of placements) {
-    if (isBlank(placement.placementId)) {
-      issues.push({ path: "mediaPlacements", message: "A placement states its own identity, because captions and alternative text key on it." });
-    } else if (placementIds.has(placement.placementId)) {
-      issues.push({ path: `mediaPlacements.${placement.placementId}`, message: `Two placements share the identity "${placement.placementId}".` });
-    } else placementIds.add(placement.placementId);
+    if (isBlank(placement.placementId)) issues.push({ path: "mediaPlacements", message: "A placement states its own identity, because captions and alternative text key on it." });
+    else if (placementIds.has(placement.placementId)) issues.push({ path: `mediaPlacements.${placement.placementId}`, message: `Two placements share the identity "${placement.placementId}".` });
+    else placementIds.add(placement.placementId);
     if (isBlank(placement.assetId)) issues.push({ path: `mediaPlacements.${placement.placementId}.assetId`, message: "A placement names the media asset it shows." });
   }
   for (const placementId of placementIds) if (isBlank(altText[placementId] ?? "")) issues.push({ path: `altText.${placementId}`, message: "Every image and video placement states the alternative text a reader is given when the media itself cannot be seen." });
@@ -168,9 +167,9 @@ export function createRevision(input: CreateRevisionInput): CreateRevisionResult
   return { status: "created", revision };
 }
 export type RestoreDraftInput = { readonly authorPrincipalId: string; readonly revisionId: string; readonly at?: Temporal.Instant };
-/** Restores a revision as a new draft: a new identity, a new author and a new creation instant, with the body, sections, placements, captions, alternative text, share presentation and content. */
+/** Restores a revision as a new draft: a new identity, a new author and a new creation instant, with the body, sections, placements, captions, alternative text, share presentation and content checksum carried through unchanged. */
 export const restoreAsNewDraft = (revision: ContentRevision, restored: RestoreDraftInput): ContentRevision => ({ ...revision, revisionId: restored.revisionId, authorPrincipalId: restored.authorPrincipalId, createdAt: restored.at ?? now() });
-/** Points the variant's draft at a revision of that same variant, and changes nothing else: the candidate pointer and the release head are carried through untouched, because saving a draft. */
+/** Points the variant's draft at a revision of that same variant, and changes nothing else: the candidate pointer and the release head are carried through untouched, because saving a draft neither submits it for review nor releases it. */
 /** Every archive transition answers the same way: the problems it found, or the change it applied. */
 const transition = (issues: readonly DocumentIssue[], applied: () => VariantChange): VariantChange => (issues.length === 0 ? applied() : { status: "invalid", issues });
 const revisionProblem = (failed: boolean, path: string, message: string): DocumentIssue[] => (failed ? [{ path, message }] : []);
@@ -182,7 +181,7 @@ export function applyDraftRevision(variant: ContentVariant, revision: ContentRev
 }
 export type FreezeCandidateInput = { readonly candidateId: string; readonly at?: Temporal.Instant };
 export type FreezeCandidateResult = { readonly status: "frozen"; readonly candidate: ContentCandidate; readonly variant: ContentVariant } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
-/** Freezes one exact revision for review: the candidate records that revision's identity and its own content digest, so what a reviewer reads cannot drift afterwards, and the variant points at. */
+/** Freezes one exact revision for review: the candidate records the identity of the revision it freezes and that revision's 32-bit change-detection digest, so what a reviewer reads cannot drift afterwards, and the variant points at the candidate that froze it. */
 export function freezeCandidate(variant: ContentVariant, revision: ContentRevision, input: FreezeCandidateInput): FreezeCandidateResult {
   const issues: DocumentIssue[] = [];
   if (isBlank(input.candidateId)) issues.push({ path: "candidateId", message: "A candidate states its own identity." });
@@ -199,7 +198,7 @@ export function applyReviewDecision(variant: ContentVariant, decision: ReviewDec
 }
 export type CreateReleaseInput = { readonly releaseId: string; readonly variant: ContentVariant; readonly revision: ContentRevision; readonly reach?: ReleaseReach; readonly at?: Temporal.Instant };
 export type CreateReleaseResult = { readonly status: "created"; readonly release: Release } | { readonly status: "invalid"; readonly issues: readonly DocumentIssue[] };
-/** Builds one release of one revision: the variant's own audience and locale are copied onto it, the revision's digest is recorded, and the reach defaults to `not-public` so publishing an. */
+/** Builds one release of one revision: the variant's own audience and locale are copied onto it, the revision's 32-bit change-detection digest is recorded, and the reach defaults to `not-public` so publishing an edition never reaches a reader by itself; putting an edition in front of readers is a separate, explicit decision. */
 export function createRelease(input: CreateReleaseInput): CreateReleaseResult {
   const issues: DocumentIssue[] = [];
   const { variant, revision } = input;
@@ -227,6 +226,7 @@ export function applyReleaseOutcome(variant: ContentVariant, outcome: ReleaseOut
   const advanced: ContentVariant = releaseConsumesCandidate(variant, release) ? { ...variant, releaseHeadId: release.releaseId, candidateId: undefined } : { ...variant, releaseHeadId: release.releaseId };
   return currentHead === undefined ? { status: "applied", variant: advanced } : { status: "applied", variant: advanced, supersededRelease: { ...currentHead, supersededBy: release.releaseId } };
 }
+/** Whether the release publishes the content the revision holds, as change detection for the comparison surface: one variant and one matching 32-bit digest, which can collide, so this answer is never the sole comparison of two renditions — the release's own `releaseId` and `revisionId` are what identify the revision it published. */
 export const isReleaseUnchanged = (release: Release, revision: ContentRevision): boolean => release.variantId === revision.variantId && release.contentChecksum === revision.contentChecksum;
 export type TranslationSourceContext = { readonly sourceVariant: ContentVariant; readonly sourceRevision: ContentRevision };
 export type TranslationStaleness =

@@ -11,13 +11,11 @@ export type AutosaveState = (typeof AUTOSAVE_STATES)[number];
 const MIRROR_DISPOSITION = { idle: "empty", unsaved: "holds-unacknowledged-text", saving: "holds-unacknowledged-text", saved: "empty", "failed-local-kept": "holds-unacknowledged-text", conflict: "holds-unacknowledged-text", unknown: "holds-unacknowledged-text" } as const satisfies Readonly<
   Record<AutosaveState, "empty" | "holds-unacknowledged-text">
 >;
-const keepsUnacknowledgedText = (state: AutosaveState): boolean => MIRROR_DISPOSITION[state] === "holds-unacknowledged-text";
 const MIRROR_KEY = "mysa.updates.draft-recovery.v1";
 const MIRROR_VERSION = 1;
 type MirrorEntry = { readonly version: typeof MIRROR_VERSION; readonly scopeKey: string; readonly variantId: string; readonly body: ContentDocument; readonly expectedRevision: Revision };
 type RecoveryContext = { readonly scopeKeyText: string; readonly variantId: string };
 type HeldDraft = { readonly body: ContentDocument; readonly scopeKeyText: string; readonly variantId: string };
-const belongsHere = (held: HeldDraft, context: RecoveryContext): boolean => held.scopeKeyText === context.scopeKeyText && held.variantId === context.variantId;
 function withStorage<R>(use: (storage: Storage) => R, fallback: R): R {
   if (typeof window === "undefined" || !("sessionStorage" in window)) return fallback;
   try {
@@ -47,13 +45,11 @@ function readMirrorEntry(): MirrorEntry | null {
   removeMirrorEntry();
   return null;
 }
-const writeMirrorEntry = (entry: MirrorEntry): void => withStorage((storage) => storage.setItem(MIRROR_KEY, JSON.stringify(entry)), undefined);
 const removeMirrorEntry = (): void => withStorage((storage) => storage.removeItem(MIRROR_KEY), undefined);
 function entryFor(context: RecoveryContext): MirrorEntry | null {
   const entry = readMirrorEntry();
   return entry !== null && entry.scopeKey === context.scopeKeyText && entry.variantId === context.variantId ? entry : null;
 }
-const sameBody = (left: ContentDocument, right: ContentDocument): boolean => JSON.stringify(left) === JSON.stringify(right);
 export type Revision = string;
 export type DraftPlacementRef = NonNullable<SaveDraftPayload["mediaPlacements"]>[number];
 export type DraftRecoveryOptions = { readonly scope: Scope; readonly variantId: string; readonly initialRevision: Revision; readonly initialBody?: ContentDocument; readonly placements?: readonly DraftPlacementRef[]; readonly debounceMs?: number };
@@ -68,13 +64,10 @@ export type DraftRecovery = {
   retrySameWork: () => void;
   discardLocalRecovery: () => void;
 };
-const DEFAULT_DEBOUNCE_MS = 800;
-type Settlement = { readonly state: AutosaveState; readonly confirmedRevision: Revision | null };
 const SETTLEMENT_STATE = { accepted: "saved", alreadyAccepted: "saved", unchanged: "saved", conflict: "conflict", invalid: "failed-local-kept", unavailable: "failed-local-kept", denied: "failed-local-kept", unknown: "unknown" } as const satisfies Readonly<Record<MutationOutcome["outcome"], AutosaveState>>;
-const settlementOf = (outcome: MutationOutcome): Settlement => ({ state: SETTLEMENT_STATE[outcome.outcome], confirmedRevision: "revision" in outcome ? outcome.revision : null });
 type SaveContext = RecoveryContext & { readonly scope: Scope; readonly initialRevision: Revision; readonly placements: readonly DraftPlacementRef[] | undefined; readonly debounceMs: number };
 type Snapshot = { readonly state: AutosaveState; readonly outcome: MutationOutcome | null; readonly acknowledgedRevision: Revision | null; readonly heldBody: ContentDocument | null; readonly mirrorBody: ContentDocument | null };
-export function useDraftRecovery({ scope, variantId, initialRevision, initialBody, placements, debounceMs = DEFAULT_DEBOUNCE_MS }: DraftRecoveryOptions): DraftRecovery {
+export function useDraftRecovery({ scope, variantId, initialRevision, initialBody, placements, debounceMs = 800 }: DraftRecoveryOptions): DraftRecovery {
   const { submit: submitDraft } = useSaveDraft();
   const scopeKeyText = JSON.stringify(scopeKey(scope));
   const context: SaveContext = { scope, variantId, scopeKeyText, initialRevision, placements, debounceMs };
@@ -119,7 +112,7 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
   useEffect(() => {
     const entry = entryFor({ scopeKeyText, variantId });
     const startedFrom = initialBodyRef.current;
-    patch({ mirrorBody: entry === null || (startedFrom !== undefined && sameBody(entry.body, startedFrom)) ? null : entry.body });
+    patch({ mirrorBody: entry === null || (startedFrom !== undefined && ((left: ContentDocument, right: ContentDocument): boolean => JSON.stringify(left) === JSON.stringify(right))(entry.body, startedFrom)) ? null : entry.body });
   }, [patch, scopeKeyText, variantId]);
   const send = useCallback(
     async (reference?: Revision): Promise<void> => {
@@ -127,7 +120,7 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
       let expectedRevision = reference ?? referenceRevision();
       for (;;) {
         const held = heldRef.current;
-        if (held === null || !belongsHere(held, contextRef.current)) {
+        if (held === null || !((held: HeldDraft, context: RecoveryContext): boolean => held.scopeKeyText === context.scopeKeyText && held.variantId === context.variantId)(held, contextRef.current)) {
           if (lastSettledRef.current !== null) settleWaiters(lastSettledRef.current);
           return;
         }
@@ -141,7 +134,7 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
           inFlightRef.current = false;
         });
         lastSettledRef.current = outcome;
-        const settlement = settlementOf(outcome);
+        const settlement = ((outcome: MutationOutcome): { readonly state: AutosaveState; readonly confirmedRevision: Revision | null } => ({ state: SETTLEMENT_STATE[outcome.outcome], confirmedRevision: "revision" in outcome ? outcome.revision : null }))(outcome);
         if (settlement.confirmedRevision !== null) {
           acknowledgedRef.current = settlement.confirmedRevision;
           expectedRevision = settlement.confirmedRevision;
@@ -171,7 +164,7 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
       const { scopeKeyText: currentScopeKey, variantId: currentVariantId, debounceMs: currentDebounceMs } = contextRef.current;
       if (placedAs !== undefined) placementsOverrideRef.current = placedAs;
       heldRef.current = { body, scopeKeyText: currentScopeKey, variantId: currentVariantId };
-      writeMirrorEntry({ version: MIRROR_VERSION, scopeKey: currentScopeKey, variantId: currentVariantId, body, expectedRevision: referenceRevision() });
+      ((entry: MirrorEntry): void => withStorage((storage) => storage.setItem(MIRROR_KEY, JSON.stringify(entry)), undefined))({ version: MIRROR_VERSION, scopeKey: currentScopeKey, variantId: currentVariantId, body, expectedRevision: referenceRevision() });
       patch({ state: "unsaved", outcome: null, heldBody: body, mirrorBody: null });
       clearTimer();
       const settled = new Promise<MutationOutcome>((resolve) => {
@@ -203,15 +196,6 @@ export function useDraftRecovery({ scope, variantId, initialRevision, initialBod
     if (entryFor(contextRef.current) !== null) removeMirrorEntry();
     patch({ mirrorBody: null });
   }, [patch]);
-  return {
-    state: snapshot.state,
-    outcome: snapshot.outcome,
-    acknowledgedRevision: snapshot.acknowledgedRevision,
-    keptBody: keepsUnacknowledgedText(snapshot.state) ? snapshot.heldBody : null,
-    localRecovery: { present: snapshot.mirrorBody !== null, body: snapshot.mirrorBody },
-    notifyChange,
-    adoptConfirmedRevision,
-    retrySameWork,
-    discardLocalRecovery,
-  };
+  const keptBody = ((state: AutosaveState): boolean => MIRROR_DISPOSITION[state] === "holds-unacknowledged-text")(snapshot.state) ? snapshot.heldBody : null;
+  return { state: snapshot.state, outcome: snapshot.outcome, acknowledgedRevision: snapshot.acknowledgedRevision, keptBody, localRecovery: { present: snapshot.mirrorBody !== null, body: snapshot.mirrorBody }, notifyChange, adoptConfirmedRevision, retrySameWork, discardLocalRecovery };
 }

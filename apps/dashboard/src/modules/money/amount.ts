@@ -2,8 +2,7 @@ import { exponentOf, isKnownCurrency } from "./currency";
 export type MinorUnits = number & { readonly __brand: "MinorUnits" };
 export type Money = { readonly currency: string; readonly minorUnits: MinorUnits };
 export type MoneyOperationErrorCode = "fractional-minor-units" | "unsafe-minor-units" | "currency-mismatch" | "unknown-currency" | "allocation-mismatch";
-/** The single refusal this module raises, so a caller maps one error type to the closed outcome set instead of guessing from a message. */
-export class MoneyOperationError extends Error {
+/** The single refusal this module raises, so a caller maps one error type to the closed outcome set instead of guessing from a message. */ export class MoneyOperationError extends Error {
   readonly code: MoneyOperationErrorCode;
   constructor(code: MoneyOperationErrorCode, message: string) {
     super(message);
@@ -33,29 +32,25 @@ export function minorUnitsOf<T extends number>(value: WholeNumber<T>): MinorUnit
 export function minorUnitsOf(value: number): MinorUnits {
   return assertMinorUnits(value, "minorUnitsOf");
 }
-/** Adds two amounts of the same currency. */
-export function addMinor(a: Money, b: Money): Money {
+/** Adds two amounts of the same currency. */ export function addMinor(a: Money, b: Money): Money {
   assertSameKnownCurrency(a, b, "addMinor");
   const left = assertMinorUnits(a.minorUnits, "addMinor");
   const right = assertMinorUnits(b.minorUnits, "addMinor");
   const total = left + right;
   return !Number.isSafeInteger(total) ? refuse("unsafe-minor-units", `addMinor: the total of these ${a.currency} amounts is beyond the safe-integer range, so it is refused rather than kept at a precision that would drift.`) : { currency: a.currency, minorUnits: minorUnitsOf(total) };
 }
-/** Compares two amounts of the same currency, returning `-1`, `0` or `1`. */
-export function compareMinor(a: Money, b: Money): -1 | 0 | 1 {
+/** Compares two amounts of the same currency, returning `-1`, `0` or `1`. */ export function compareMinor(a: Money, b: Money): -1 | 0 | 1 {
   assertSameKnownCurrency(a, b, "compareMinor");
   const left = assertMinorUnits(a.minorUnits, "compareMinor");
   const right = assertMinorUnits(b.minorUnits, "compareMinor");
   return left < right ? -1 : left > right ? 1 : 0;
 }
-/** Reverses the sign of an amount, keeping its currency — the correction case, such as a refund that offsets a gift. */
-export function negateMinor(a: Money): Money {
+/** Reverses the sign of an amount, keeping its currency — the correction case, such as a refund that offsets a gift. */ export function negateMinor(a: Money): Money {
   assertKnownCurrency(a.currency, "negateMinor");
   const amount = assertMinorUnits(a.minorUnits, "negateMinor");
   return amount === 0 ? { currency: a.currency, minorUnits: minorUnitsOf(0) } : { currency: a.currency, minorUnits: minorUnitsOf(-amount) };
 }
-/** Sums amounts into one total per currency, plus the amounts that could not be summed at all. */
-export function sumMinor(items: readonly Money[]): { readonly totals: readonly Money[]; readonly unsurmmed: readonly Money[] } {
+/** Sums amounts into one total per currency, plus the amounts that could not be summed at all. */ export function sumMinor(items: readonly Money[]): { readonly totals: readonly Money[]; readonly unsurmmed: readonly Money[] } {
   const running = new Map<string, Money>();
   const unsurmmed: Money[] = [];
   for (const item of items) {

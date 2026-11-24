@@ -3,8 +3,7 @@ export const REPEAT_PROFILE_LABELS: Record<RepeatProfile, string> = { none: "Doe
 export type RepeatRuleFacts = { readonly profile: RepeatProfile; readonly interval: number; readonly dayOfMonth: number | null };
 type IntervalUnit = "week" | "month"; /** An interval counted in its own unit, so a plan that repeats every single week reads as such rather than as "every 1 weeks". */
 const everyInterval = (interval: number, unit: IntervalUnit): string => (interval === 1 ? `Every ${unit}` : `Every ${String(interval)} ${unit}s`);
-/** One rule stated with its own numbers, so a plan's rule reads as the rule it states rather than as its profile's placeholder name. */
-export function repeatRuleLabel(rule: RepeatRuleFacts): string {
+/** One rule stated with its own numbers, so a plan's rule reads as the rule it states rather than as its profile's placeholder name. */ export function repeatRuleLabel(rule: RepeatRuleFacts): string {
   switch (rule.profile) {
     case "none":
       return REPEAT_PROFILE_LABELS.none;
@@ -19,8 +18,7 @@ export function repeatRuleLabel(rule: RepeatRuleFacts): string {
   }
 }
 export const REPEAT_PROFILE_ORDER = ["none", "weekly", "everyNWeeks", "monthlyOnDay", "everyNMonths"] as const satisfies readonly RepeatProfile[];
-type UnlistedRepeatProfile = Exclude<RepeatProfile, (typeof REPEAT_PROFILE_ORDER)[number]>;
-export const REPEAT_PROFILE_ORDER_IS_COMPLETE: UnlistedRepeatProfile extends never ? true : false = true;
+export const REPEAT_PROFILE_ORDER_IS_COMPLETE: Exclude<RepeatProfile, (typeof REPEAT_PROFILE_ORDER)[number]> extends never ? true : false = true;
 export type RepeatProfileField = "interval" | "dayOfMonth";
 export const REPEAT_PROFILE_FIELDS: Record<RepeatProfile, readonly RepeatProfileField[]> = { none: [], weekly: [], everyNWeeks: ["interval"], monthlyOnDay: ["dayOfMonth"], everyNMonths: ["interval", "dayOfMonth"] };
 export const REPEAT_PROFILE_DESCRIPTIONS: Record<RepeatProfile, string> = {

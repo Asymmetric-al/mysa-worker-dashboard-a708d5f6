@@ -93,11 +93,9 @@ const linkedMedia = (src: string, placement: RenderMediaPlacement): string => `<
 function renderPlacement(placement: RenderMediaPlacement, media: RenderMediaMode, renditions: RenderRenditions): string {
   const parts: string[] = [];
   const main = renditionAt(renditions, placement.placementId, placement.kind === "image" ? "display" : "playback");
-  if (main === undefined) {
-    parts.push(`<p>${escapeHtml(placement.altText)}</p>`);
-  } else if (media === "links-only") {
-    parts.push(linkedMedia(main, placement));
-  } else parts.push(inlineMedia(main, renditions, placement));
+  if (main === undefined) parts.push(`<p>${escapeHtml(placement.altText)}</p>`);
+  else if (media === "links-only") parts.push(linkedMedia(main, placement));
+  else parts.push(inlineMedia(main, renditions, placement));
   const caption = placement.caption;
   if (caption !== undefined && caption.trim().length > 0) parts.push(`<figcaption>${escapeHtml(caption)}</figcaption>`);
   return `<figure>${parts.join("")}</figure>`;
@@ -127,8 +125,6 @@ function renderSection(section: ContentSection, documentDirection: ContentDirect
   return `<section${direction} class="content-section ${presentationClasses(section.presentation)}"><div class="content-section-text">${paragraphs.join("")}</div>${mediaBlock}</section>`;
 }
 function composeDocument(document: ContentDocumentJson, options: RenderOptions): string {
-  const media = options.media ?? "inline";
-  const renditions = options.renditions ?? {};
   const placements = options.placements ?? [];
   // A section is rendered when it states text of its own or holds a placement: an image or video section states its words in the placement rather
   // than in a field, so its media belongs in its own frame instead of at the end of the document, detached from the section it was composed into.
@@ -137,7 +133,7 @@ function composeDocument(document: ContentDocumentJson, options: RenderOptions):
   const trailing: string[] = [];
   // A placement naming a rendered section is rendered inside it, beside that section's own text; one that names no section, or one this document does not render, stays at the end of the document in the order the read supplied it, and where two sections share one catalogue element the first of them carries the media so it is rendered exactly once.
   for (const placement of placements) {
-    const rendered = renderPlacement(placement, media, renditions);
+    const rendered = renderPlacement(placement, options.media ?? "inline", options.renditions ?? {});
     const named = placement.sectionElement;
     const index = named === undefined || named === null ? -1 : sections.findIndex((entry) => entry.section.element === named);
     if (index < 0) trailing.push(rendered);

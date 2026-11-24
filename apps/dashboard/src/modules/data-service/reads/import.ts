@@ -6,46 +6,14 @@ import { decisionInputOf, fingerprintOf, recordedDecisionInputOf, type ImportDec
 import { IMPORT_FIELD_VOCABULARY, suggestMapping, type ImportFieldId, type ImportSuggestedMapping } from "@/modules/import/map";
 import { IMPORT_LIMIT_DESCRIPTORS, parseCsv, type ImportLimitId, type ImportLimitUnit } from "@/modules/import/parse";
 import { IMPORT_RECEIPT_FORMAT, readStoredReceipt, type ImportReceipt, type ImportReceiptRead, type ImportResultRoute } from "@/modules/import/receipt";
-import {
-  flagDuplicateLookingRows,
-  suggestMatches,
-  validateRows,
-  type ImportDuplicateLooking,
-  type ImportFieldIssue,
-  type ImportMappedCell,
-  type ImportMatchReference,
-  type ImportMatchSuggestion,
-  type ImportPreservedCell,
-  type ImportRestriction,
-  type ImportRowVerdict,
-  type ImportValidationCounts,
-  type ImportValidationProblem,
-} from "@/modules/import/validate";
+import { flagDuplicateLookingRows, suggestMatches, validateRows } from "@/modules/import/validate";
+import type { ImportDuplicateLooking, ImportFieldIssue, ImportMappedCell, ImportMatchReference, ImportMatchSuggestion, ImportPreservedCell, ImportRestriction, ImportRowVerdict, ImportValidationCounts, ImportValidationProblem } from "@/modules/import/validate";
 import { readSession } from "@/modules/store/repository";
 import { clampPageSize } from "@/modules/support/report";
 import { instantAt } from "@/modules/time/clock";
 import { assertScope, readResultOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type SessionSource } from "../authorize";
-import {
-  IMPORT_ROW_DECISIONS,
-  importProposalRecordSchema,
-  operationRecordSchema,
-  partnerRecordSchema,
-  project,
-  sameScope,
-  type Coverage,
-  type ImportFileMetaRecord,
-  type ImportProposalRecord,
-  type ImportRowDecision,
-  type ImportRowDecisionRecord,
-  type ImportRowResultRecord,
-  type ImportRowState,
-  type OperationRecord,
-  type PartnerRecord,
-  type ReadAction,
-  type ReadEnvelope,
-  type RecordedValueState,
-  type Scope,
-} from "../envelope";
+import { IMPORT_ROW_DECISIONS, importProposalRecordSchema, operationRecordSchema, partnerRecordSchema, project, sameScope } from "../envelope";
+import type { Coverage, ImportFileMetaRecord, ImportProposalRecord, ImportRowDecision, ImportRowDecisionRecord, ImportRowResultRecord, ImportRowState, OperationRecord, PartnerRecord, ReadAction, ReadEnvelope, RecordedValueState, Scope } from "../envelope";
 import { candidatesOf, importReviewRecordSchema, type ImportReviewRecord } from "../mutations/import";
 import { LOCAL_STORE_SYSTEM, type ReadResult } from "../outcome";
 import { answerOf, deniedRead, storeUnavailableRead } from "./frame";
@@ -169,8 +137,7 @@ async function readImportDocuments(sessionId: string): Promise<ImportDocuments |
 type OwnedProposal = { readonly record: ImportProposalRecord; readonly entry: OperationRecord };
 /** The ledger as a lookup keyed by the identity each entry is recorded under, built once per read and shared by everything that resolves an identity through it. */
 const ledgerIndex = (entries: readonly OperationRecord[]): ReadonlyMap<string, OperationRecord> => new Map(entries.map((entry): [string, OperationRecord] => [entry.operationId, entry]));
-/** The proposals this scope owns, each with the ledger entry that records it. */
-function ownedProposals(documents: ImportDocuments, scope: Scope, entryByOperationId: ReadonlyMap<string, OperationRecord>): OwnedProposal[] {
+/** The proposals this scope owns, each with the ledger entry that records it. */ function ownedProposals(documents: ImportDocuments, scope: Scope, entryByOperationId: ReadonlyMap<string, OperationRecord>): OwnedProposal[] {
   const { proposals, entries } = documents;
   if (proposals === null || entries === null) return [];
   const owned: OwnedProposal[] = [];

@@ -22,10 +22,8 @@ const updateListQuerySchema = z.strictObject(
   },
   { error: MESSAGES.parameterUnrecognised },
 );
-type UpdateListQueryParams = z.output<typeof updateListQuerySchema>;
 /** The page the list read is asked for, stated in the read's own vocabulary: an unstated half is left unstated rather than defaulted here. */
-const updateListQueryOf = (params: UpdateListQueryParams): NonNullable<Parameters<typeof reads.updates.findContentDocuments>[0]> => ({ families: [UPDATE_FAMILY], ...(params.page === undefined ? {} : { page: params.page }), ...(params.pageSize === undefined ? {} : { pageSize: params.pageSize }) });
-/** Answers the two reads this path carries: the ministry's own Updates when the request names none, and one Update's edition matrix when it names one. */
+const updateListQueryOf = (params: z.output<typeof updateListQuerySchema>): NonNullable<Parameters<typeof reads.updates.findContentDocuments>[0]> => ({ families: [UPDATE_FAMILY], ...(params.page === undefined ? {} : { page: params.page }), ...(params.pageSize === undefined ? {} : { pageSize: params.pageSize }) });
 function readUpdates(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
   const documentId = search.get("documentId");

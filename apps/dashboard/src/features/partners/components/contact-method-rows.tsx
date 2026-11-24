@@ -96,34 +96,32 @@ export interface ContactMethodListProps {
   readonly onAdd: () => void;
 }
 /** The contact-method rows one form holds, in the order the worker wrote them, with the one control that adds another. */
-export function ContactMethodList({ rows, headingId, errors, valueDescription, emptyNote, addNote, showPermittedFact = false, onRowsChange, onAdd }: ContactMethodListProps): ReactElement {
-  return (
-    <div className="flex min-w-0 flex-col gap-4">
-      {rows.length === 0 ? (
-        <p className="text-sm text-pretty text-muted-foreground">{emptyNote}</p>
-      ) : (
-        <ul aria-labelledby={headingId} className="flex min-w-0 list-none flex-col gap-4 p-0">
-          {rows.map((row, index) => (
-            <li key={row.rowKey} className="min-w-0">
-              <ContactMethodRowField
-                index={index}
-                row={row}
-                errors={errors}
-                valueDescription={valueDescription}
-                showPermittedFact={showPermittedFact}
-                onChange={(next) => onRowsChange(rows.map((candidate) => (candidate.rowKey === row.rowKey ? next : candidate)))}
-                onRemove={() => onRowsChange(rows.filter((candidate) => candidate.rowKey !== row.rowKey))}
-              />
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex min-w-0 flex-col gap-1">
-        <Button type="button" variant="outline" className="min-h-target w-fit max-w-full whitespace-normal" onClick={onAdd}>
-          Add a contact method
-        </Button>
-        <p className="text-xs text-pretty text-muted-foreground">{addNote}</p>
-      </div>
+export const ContactMethodList = ({ rows, headingId, errors, valueDescription, emptyNote, addNote, showPermittedFact = false, onRowsChange, onAdd }: ContactMethodListProps): ReactElement => (
+  <div className="flex min-w-0 flex-col gap-4">
+    {rows.length === 0 ? (
+      <p className="text-sm text-pretty text-muted-foreground">{emptyNote}</p>
+    ) : (
+      <ul aria-labelledby={headingId} className="flex min-w-0 list-none flex-col gap-4 p-0">
+        {rows.map((row, index) => (
+          <li key={row.rowKey} className="min-w-0">
+            <ContactMethodRowField
+              index={index}
+              row={row}
+              errors={errors}
+              valueDescription={valueDescription}
+              showPermittedFact={showPermittedFact}
+              onChange={(next) => onRowsChange(rows.map((candidate) => (candidate.rowKey === row.rowKey ? next : candidate)))}
+              onRemove={() => onRowsChange(rows.filter((candidate) => candidate.rowKey !== row.rowKey))}
+            />
+          </li>
+        ))}
+      </ul>
+    )}
+    <div className="flex min-w-0 flex-col gap-1">
+      <Button type="button" variant="outline" className="min-h-target w-fit max-w-full whitespace-normal" onClick={onAdd}>
+        Add a contact method
+      </Button>
+      <p className="text-xs text-pretty text-muted-foreground">{addNote}</p>
     </div>
-  );
-}
+  </div>
+);

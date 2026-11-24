@@ -20,14 +20,13 @@ const MAPPING_HEADING_WIDTHS: readonly (string | undefined)[] = ["w-20", "w-40",
 type ColumnChoice = "suggestion" | "ignore" | ImportFieldId;
 const SUGGESTION_CHOICE = "suggestion" satisfies ColumnChoice;
 const IGNORE_CHOICE = "ignore" satisfies ColumnChoice;
-const initialChoice = (column: ImportColumnMapping): ColumnChoice => (column.suggestedField === null ? IGNORE_CHOICE : SUGGESTION_CHOICE);
-const readChoice = (value: string): ColumnChoice | null => (value === SUGGESTION_CHOICE ? SUGGESTION_CHOICE : value === IGNORE_CHOICE ? IGNORE_CHOICE : (IMPORT_FIELD_VOCABULARY.find((field) => field.id === value)?.id ?? null));
 const fieldDescriptorOf = (fieldId: ImportFieldId | null): ImportFieldDescriptor | undefined => (fieldId === null ? undefined : IMPORT_FIELD_VOCABULARY.find((field) => field.id === fieldId));
-type ColumnEdits = { readonly fileIdentity: string; readonly choices: Readonly<Record<number, ColumnChoice>> };
 const NO_CHOICES: Readonly<Record<number, ColumnChoice>> = {};
 const NO_REFUSALS: readonly ImportMappingRefusal[] = [];
 const NO_FIELD_IDS: readonly ImportFieldId[] = [];
 const fileIdentityOf = (proposal: ReadEnvelope<ImportMappingProposal>): string => JSON.stringify([proposal.data.fileMeta.name, proposal.data.fileMeta.bytes, proposal.data.fileMeta.rowCount, proposal.data.fileMeta.columnCount]);
+const initialChoice = (column: ImportColumnMapping): ColumnChoice => (column.suggestedField === null ? IGNORE_CHOICE : SUGGESTION_CHOICE);
+const readChoice = (value: string): ColumnChoice | null => (value === SUGGESTION_CHOICE ? SUGGESTION_CHOICE : value === IGNORE_CHOICE ? IGNORE_CHOICE : (IMPORT_FIELD_VOCABULARY.find((field) => field.id === value)?.id ?? null));
 const choicesFromConfirmation = (confirmed: ImportConfirmedMapping | null): Readonly<Record<number, ColumnChoice>> =>
   confirmed === null
     ? NO_CHOICES
@@ -73,8 +72,7 @@ const CHOSEN_STATUS: ColumnStatus = { kind: "chosen", label: "Chosen by you", va
 const NOT_USED_STATUS: ColumnStatus = { kind: "ignored", label: "Not used", variant: "outline" };
 const UNMAPPED_STATUS: ColumnStatus = { kind: "ignored", label: "Not mapped", variant: "outline" };
 type ColumnView = { readonly column: ImportColumnMapping; readonly choice: ColumnChoice; readonly occurrenceLabel: string | null; readonly suggestedLabel: string; readonly status: ColumnStatus; readonly reason: string | null; readonly note: string | null; readonly errors: readonly string[] };
-type ColumnViewInput = { readonly suggestion: ImportSuggestedMapping; readonly ignored: readonly ImportIgnoredColumn[]; readonly refusals: ReadonlyMap<number, readonly ImportMappingRefusal[]>; readonly choiceOf: (columnIndex: number) => ColumnChoice };
-function buildColumnViews(input: ColumnViewInput): readonly ColumnView[] {
+function buildColumnViews(input: { readonly suggestion: ImportSuggestedMapping; readonly ignored: readonly ImportIgnoredColumn[]; readonly refusals: ReadonlyMap<number, readonly ImportMappingRefusal[]>; readonly choiceOf: (columnIndex: number) => ColumnChoice }): readonly ColumnView[] {
   return input.suggestion.columns.map((column) => {
     const choice = input.choiceOf(column.index);
     const ignored = input.ignored.find((candidate) => candidate.index === column.index) ?? null;
@@ -156,7 +154,7 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
   const { suggestion } = proposal.data;
   const { name, rowCount, columnCount } = proposal.data.fileMeta;
   const fileIdentity = fileIdentityOf(proposal);
-  const [edits, setEdits] = useState<ColumnEdits>({ fileIdentity, choices: NO_CHOICES });
+  const [edits, setEdits] = useState<{ readonly fileIdentity: string; readonly choices: Readonly<Record<number, ColumnChoice>> }>({ fileIdentity, choices: NO_CHOICES });
   const choiceOf = (columnIndex: number): ColumnChoice => {
     const remembered = (edits.fileIdentity === fileIdentity ? edits.choices : NO_CHOICES)[columnIndex] ?? choicesFromConfirmation(confirmedMapping)[columnIndex];
     if (remembered !== undefined) return remembered;

@@ -3,13 +3,10 @@ import type { ReactElement } from "react";
 import { CommitmentList } from "@/features/support/components/commitment-list";
 import { reads, type ReadAction } from "@/modules/data-service";
 import { paramOf, readPageOf, wholeNumberOf, type ReadNoticeCopy, type SearchParams } from "../../page-frame";
-type CommitmentsQuery = NonNullable<Parameters<typeof reads.support.readCommitments>[0]>;
 type RefusedFilter = { readonly name: string; readonly reason: string };
 export const dynamic = "force-dynamic";
 const PAGE_TITLE = "Commitments";
 export const metadata: Metadata = { title: PAGE_TITLE };
-const PARAM_PAGE_INDEX = "page.index";
-const PARAM_PAGE_SIZE = "page.size";
 const NARROWING_HEADING_ID = "commitments-narrowing";
 const COMMITMENTS_PAGE_COPY = {
   title: PAGE_TITLE,
@@ -20,9 +17,9 @@ const COMMITMENTS_PAGE_COPY = {
   refusedTitle: "This list's request was refused",
 } as const;
 const FILTER_ACTION_LABELS: Readonly<Record<string, string>> = { filterByPeriod: "Period", filterByCurrency: "Currency" };
-function pageQueryOf(params: SearchParams): CommitmentsQuery {
-  const index = wholeNumberOf(paramOf(params, PARAM_PAGE_INDEX));
-  const size = wholeNumberOf(paramOf(params, PARAM_PAGE_SIZE));
+function pageQueryOf(params: SearchParams): NonNullable<Parameters<typeof reads.support.readCommitments>[0]> {
+  const index = wholeNumberOf(paramOf(params, "page.index"));
+  const size = wholeNumberOf(paramOf(params, "page.size"));
   if (index === undefined && size === undefined) return {};
   return { page: { ...(index === undefined ? {} : { index }), ...(size === undefined ? {} : { size }) } };
 }

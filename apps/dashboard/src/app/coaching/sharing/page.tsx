@@ -1,10 +1,4 @@
-/**
- * `/coaching/sharing` — the worker's invitation and grant surface: every relationship the coaching read returns, each named by its own opaque grant and coach references, with the five modules and the state a coach meets in each, the duration and the cutoff frozen when it was accepted, the separately reviewed financial range, and the closed set of stop-type effects.
- *
- * One section per relationship, because one worker can hold more than one grant with the same coach in the same ministry: a surface that showed only the live grant it named first would leave a second grant — one a coach can still read through, and one nothing on the page had disclosed — standing after the first was revoked, so the page would read as if the revoke had changed nothing. Each section is built from its own relationship, with its own grant view, its own modules and its own stop controls, so no control on this page ever stands for another grant.
- *
- * The sections are ordered here, live before closed, rather than in the read: the read's own order is the identity order it shares with the API and the coach surfaces, and a relationship a coach can still read through must never sit below one that is already over. The disclosures a section states twice are stated here once each: the module controls carry the five modules in that relationship's section, and the range review carries that relationship's reviewed range, so the summary beside them omits what those two cards already state and keeps every fact it alone states.
- */
+/** `/coaching/sharing` — the worker's invitation and grant surface: every relationship the coaching read returns, each named by its own opaque grant and coach references, with the five modules and the state a coach meets in each, the duration and the cutoff frozen when it was accepted, the separately reviewed financial range, and the closed set of stop-type effects. One section per relationship, because one worker can hold more than one grant with the same coach in the same ministry: a surface that showed only the live grant it named first would leave a second grant — one a coach can still read through, and one nothing on the page had disclosed — standing after the first was revoked, so the page would read as if the revoke had changed nothing. Each section is built from its own relationship, with its own grant view, its own modules and its own stop controls, so no control on this page ever stands for another grant. The sections are ordered here, live before closed, rather than in the read: the read's own order is the identity order it shares with the API and the coach surfaces, and a relationship a coach can still read through must never sit below one that is already over. The disclosures a section states twice are stated here once each: the module controls carry the five modules in that relationship's section, and the range review carries that relationship's reviewed range, so the summary beside them omits what those two cards already state and keeps every fact it alone states. */
 import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { StateNotice } from "@/components/state-notice";
@@ -20,14 +14,8 @@ import { PageColumn, PageHeading, pageRefusalOf, type ReadNoticeCopy } from "../
 type SharingEnvelope = Extract<Awaited<ReturnType<typeof reads.coaching.readCoachingOverview>>, { readonly kind: "envelope" }>["envelope"];
 type SharingOverview = SharingEnvelope["data"];
 type SharingRelationship = SharingOverview["relationships"][number];
-type SharingScope = SharingEnvelope["scope"];
-type SharingCandidates = InvitationFormProps["candidates"];
 const INTERFACE_LOCALE = "en-GB";
-/** One relationship's own section: its heading, the summary it states, and the controls that act on it alone. */
-const RELATIONSHIP_CLASS = "flex min-w-0 flex-col gap-4";
-const RELATIONSHIP_HEADING_CLASS = "type-section-title text-pretty wrap-anywhere";
-/** An opaque reference is rendered as the read reports it, so a reader sees the identity a record carries. */
-const IDENTIFIER_CLASS = "mono-identifier wrap-anywhere";
+/** An opaque reference is rendered as the read reports it, so a reader sees the identity a record carries. */ const IDENTIFIER_CLASS = "mono-identifier wrap-anywhere";
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: 1, denied: { title: COACHING_COPY.sharing.heading }, unavailable: { title: COACHING_COPY.sharing.heading, body: COACHING_COPY.sharing.unavailable }, refused: { title: COACHING_COPY.sharing.heading } };
 const GRANT_LEVEL_STOP_EFFECTS = ["end-relationship", "revoke"] as const satisfies readonly StopEffect[];
 const GRANT_LEVEL_STOP_MUTATION: Readonly<Record<(typeof GRANT_LEVEL_STOP_EFFECTS)[number], string>> = { "end-relationship": "endCoaching", revoke: "revokeGrant" };
@@ -61,8 +49,7 @@ function grantViewOf(relationship: SharingRelationship): CoachingGrantView {
     outcomes: { delivery: outcomeOf(relationship.outcomes.invitationIssued), identityVerification: outcomeOf(relationship.outcomes.identityVerified), acceptance: outcomeOf(relationship.outcomes.accepted), access: outcomeOf(relationship.outcomes.accessLive) },
   };
 }
-/** One relationship's reviewed range in the summary's own shape, with nothing derived here: the read computed the figure. */
-const summaryRangeOf = (relationship: SharingRelationship): FinancialRange | null =>
+/** One relationship's reviewed range in the summary's own shape, with nothing derived here: the read computed the figure. */ const summaryRangeOf = (relationship: SharingRelationship): FinancialRange | null =>
   relationship.financialRange === null ? null : { from: relationship.financialRange.from, to: relationship.financialRange.to, currency: relationship.financialRange.currency, money: relationship.financialRange.money, valueState: relationship.financialRange.valueState };
 /** The same range for the review card, which also states the coverage its figure was reported over and the instant it was read at. The coverage travels with the figure from the projection behind it, so a partial subtotal is never presented as a complete one; both values are the read's own and neither is recomputed here. */
 const reviewedRangeOf = (relationship: SharingRelationship, asOf: string): SharedFinancialRange | null =>
@@ -76,7 +63,7 @@ function moduleEntriesOf(relationship: SharingRelationship): readonly ModuleTogg
 }
 const grantLevelStopEffectsOf = (actions: SharingEnvelope["actions"]): readonly StopEffect[] => GRANT_LEVEL_STOP_EFFECTS.filter((effect) => actions.some((action) => action.name === GRANT_LEVEL_STOP_MUTATION[effect] && action.available));
 /** The three closed choices one invitation offers. The admitted contexts come from the read whose job is to enumerate them, and the people come from the overview this page composes: that read projects the service's own session records, so the roster is an identity fact the service holds rather than the development runtime's persona catalogue, which belongs to the preview switcher alone. A context source that cannot answer leaves its own list empty, and the form states the missing choice rather than this route inventing a candidate an invitation could then be recorded against. */
-async function readInvitationCandidates(invitableCoaches: SharingOverview["invitableCoaches"]): Promise<SharingCandidates> {
+async function readInvitationCandidates(invitableCoaches: SharingOverview["invitableCoaches"]): Promise<InvitationFormProps["candidates"]> {
   const chooser = await reads.context.readContextChooser();
   const groups = chooser.kind === "envelope" ? chooser.envelope.data.groups : [];
   return {
@@ -86,14 +73,11 @@ async function readInvitationCandidates(invitableCoaches: SharingOverview["invit
     ministries: groups.flatMap((group) => group.ministries.map((ministry) => ({ ministryId: ministry.ministryId, displayName: ministry.ministryLabel === "" ? ministry.ministryId : ministry.ministryLabel }))),
   };
 }
-/** What one relationship's section is built from: the relationship itself, its place in the read, and the envelope it was read in. */
 interface RelationshipSectionProps {
   readonly relationship: SharingRelationship;
   readonly index: number;
-  readonly scope: SharingScope;
-  /** The instant the envelope was read at, which the range review states beside the figure it was read with. */
+  readonly scope: SharingEnvelope["scope"];
   readonly asOf: string;
-  /** The grant-level effects the envelope published as available, offered on this relationship alone. */
   readonly grantLevelEffects: readonly StopEffect[];
 }
 /** One relationship, disclosed in full and stoppable on its own: the grant and coach references it is known by, the state and duration it currently stands in, the reviewed financial range its own record states, the five modules with the state a coach meets in each, and the grant-level stop-type effects that act on this grant and no other. A relationship the read refused — a revoked, ended, expired or out-of-scope episode — states that refusal in the read's own words and offers neither a module switch nor a stop effect, because offering either would present a control the service refuses. */
@@ -101,9 +85,9 @@ function RelationshipSection({ relationship, index, scope, asOf, grantLevelEffec
   const headingId = `coaching-relationship-${String(index)}`; // The heading's identity is this section's own, so several relationships on one page keep distinct sections for a screen reader's outline rather than sharing one label.
   const refusal = relationship.readRefusal; // The read's own refusal for this relationship, or `null` when it admitted the episode: the one fact that decides whether there is anything to switch or stop here at all.
   return (
-    <section data-slot="coaching-relationship" data-grant={relationship.grantId} data-state={relationship.state} aria-labelledby={headingId} className={RELATIONSHIP_CLASS}>
+    <section data-slot="coaching-relationship" data-grant={relationship.grantId} data-state={relationship.state} aria-labelledby={headingId} className={"flex min-w-0 flex-col gap-4"}>
       {/* Both references are opaque and are shown exactly as the read reports them: the grant a stop-type effect names, and the principal the coach acts as. Neither is parsed, shortened or resolved to a name here. */}
-      <h2 id={headingId} className={RELATIONSHIP_HEADING_CLASS}>
+      <h2 id={headingId} className={"type-section-title text-pretty wrap-anywhere"}>
         Sharing with <bdi className={IDENTIFIER_CLASS}>{relationship.recipientPrincipalId}</bdi> under <bdi className={IDENTIFIER_CLASS}>{relationship.grantId}</bdi>
       </h2>
       {/* The summary states only what this section does not already state in a card of its own: the module controls below carry the five modules for a relationship the read admitted, and the range review below carries that relationship's reviewed range. Everything else — the relationship itself, the four outcomes, the duration and the closing instant — is stated by the summary and nothing else. */}

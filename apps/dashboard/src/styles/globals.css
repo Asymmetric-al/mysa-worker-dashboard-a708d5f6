@@ -76,7 +76,7 @@
   --card-foreground: oklch(0.141 0.005 285.823);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.141 0.005 285.823);
-  /* The modal and sheet scrim is a token rather than a palette literal, so it follows the theme. It is painted at 80% (`bg-overlay/80`); this step renders the same near-black scrim the palette literal did in the light theme. */
+  /* The modal and sheet scrim is a token rather than a palette literal, so it follows the theme. It is painted at 80% (`bg-overlay/80`); the light theme takes the same near-black the page's own foreground text uses, and `.dark` states true black. */
   --overlay: oklch(0.141 0.005 285.823);
   --primary: oklch(0.21 0.006 285.885);
   --primary-foreground: oklch(0.985 0 0);

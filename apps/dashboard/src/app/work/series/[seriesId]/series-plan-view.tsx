@@ -1,9 +1,5 @@
 "use client";
-/**
- * The locale-aware composition of one repeating plan, rendered by `/work/series/[seriesId]`.
- *
- * The record body belongs to the work feature, and a feature may not reach another feature's provider, so the route states the viewer's interface locale here and hands it to the body: the plan's next-dates preview formats its dates in the locale this browser chose. Nothing else about the plan depends on it — the zone the dates are planned in is the plan's own, and the locale never decides which date a rule produces.
- */
+/** The locale-aware composition of one repeating plan, rendered by `/work/series/[seriesId]`. The record body belongs to the work feature, and a feature may not reach another feature's provider, so the route states the viewer's interface locale here and hands it to the body: the plan's next-dates preview formats its dates in the locale this browser chose. Nothing else about the plan depends on it — the zone the dates are planned in is the plan's own, and the locale never decides which date a rule produces. */
 import type { ReactElement } from "react";
 import { StateNotice } from "@/components/state-notice";
 import { useViewerPreferences } from "@/features/shell/components/viewer-preferences-provider";
@@ -12,10 +8,8 @@ import { SERIES_REREAD_BACK_LABEL, SERIES_REREAD_DENIED_BODY, SERIES_REREAD_DENI
 import { useSeries, type SeriesResult } from "@/features/work/hooks/use-series";
 import { prospectiveRevisionBoundary } from "@/features/work/series-revision-boundary";
 import { assertNever } from "@/lib/result";
-/** The list a refusal or a failed read returns to: every plan this surface shows is opened from the Work lists. */
-const WORK_HREF = "/work";
-/** What the series route hands its body: the one series read's envelope and nothing re-derived. */
-export interface SeriesPlanViewProps {
+/** The list a refusal or a failed read returns to: every plan this surface shows is opened from the Work lists. */ const WORK_HREF = "/work";
+/** What the series route hands its body: the one series read's envelope and nothing re-derived. */ export interface SeriesPlanViewProps {
   readonly envelope: OccurrenceActionsProps["envelope"];
 }
 /** Renders one repeating plan's record body with the viewer's interface locale, from the plan as the browser last read it: the server render seeds the read, and every settled change to the plan invalidates the family's key so the rule, state and dates on screen are the ones the plan holds now. */

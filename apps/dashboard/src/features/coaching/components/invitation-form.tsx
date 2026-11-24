@@ -153,12 +153,7 @@ type InvitationCandidates = {
   readonly organizations: ReadonlyArray<{ readonly organizationId: string; readonly displayName: string }>;
   readonly ministries: ReadonlyArray<{ readonly ministryId: string; readonly displayName: string }>;
 };
-/**
- * The props of {@link InvitationForm}: the admitted choices, the currencies this session's support source holds, and the
- * context and revision the mutation is submitted under. `rangeCurrencies` is the read's own answer: a reviewed range
- * names one of them and nothing else, and an empty list offers no range at all, because a source nothing can be read
- * from is never a zero figure.
- */
+/** The props of {@link InvitationForm}: the admitted choices, the currencies this session's support source holds, and the context and revision the mutation is submitted under. `rangeCurrencies` is the read's own answer: a reviewed range names one of them and nothing else, and an empty list offers no range at all, because a source nothing can be read from is never a zero figure. */
 export type InvitationFormProps = { readonly candidates: InvitationCandidates; readonly rangeCurrencies: readonly string[]; readonly scope: Scope; readonly expectedRevision: string; readonly locale: string; readonly onInvited?: (outcome: MutationOutcome) => void; readonly className?: string };
 const SECTION_LEAD = COACHING_COPY.sharing.purpose;
 const MODULES_HEADING = "Five modules, each starting unselected";
@@ -176,10 +171,8 @@ const CHOICE_FIELDS: readonly { readonly name: ChoiceFieldName; readonly label: 
   { name: ORGANIZATION_FIELD, label: ORGANIZATION_LABEL, description: "The organization this invitation is recorded under, chosen from those admitted to this context.", placeholder: "Choose the organization" },
   { name: MINISTRY_FIELD, label: MINISTRY_LABEL, description: "The one ministry this invitation covers. A coach reads nothing outside the ministry chosen here.", placeholder: "Choose the ministry" },
 ];
-const NOT_CHOSEN = "Not chosen";
 const CONFIRM_LABEL = "Record invitation";
 const NO_RECIPIENTS = "No coach is named in your own coaching records yet, so there is no one this surface can invite.";
-const NO_ORGANIZATIONS = "No organization is admitted in this context.";
 const NO_MINISTRIES = "No ministry is admitted in this context.";
 const RANGE_FIELD = "financialRange"; // The reviewed financial range: the one fact an invitation may carry and may equally leave out. It is a separate decision from the modules, so the wording never presents it as part of them and never presents silence as a zero.
 const RANGE_FROM_FIELD = "financialRange.fromDate";
@@ -222,28 +215,21 @@ const FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
   [RANGE_TO_FIELD]: RANGE_COPY.toLabel,
   [RANGE_CURRENCY_FIELD]: RANGE_COPY.currencyLabel,
 };
-/** The reviewed range as the form holds it: two calendar dates as their fields state them, and the one currency chosen. */
 type RangeValue = { readonly fromDate: string; readonly toDate: string; readonly currency: string };
 type InvitationFormValues = { coachPrincipalId: string; organizationId: string; ministryId: string; duration: DurationValue | null; financialRange: RangeValue | null };
-/** Nothing is chosen yet, no module is switched on and no range is stated, so the form opens in the state an invitation must start in. */
 const INITIAL_VALUES: InvitationFormValues = { coachPrincipalId: "", organizationId: "", ministryId: "", duration: null, financialRange: null };
 const UNSELECTED_MODULES = { "support-goal": false, "support-results": false, targets: false, "check-ins": false, "task-summaries": false } satisfies InvitationPayload["modules"];
 const isoDateOf = (date: CivilDate | null): string => (date === null ? "" : serialiseCivilDate(date));
 const durationOf = (value: DurationValue | null): InvitationPayload["duration"] => (value === null ? { kind: "through-date", shareThroughDate: "" } : value.kind === "ongoing" ? { kind: "ongoing" } : { kind: "through-date", shareThroughDate: isoDateOf(value.throughDate) });
 /** Whether the worker is stating a range at all: a currency on its own shares nothing, so only the dates decide it. */
 const statesRange = (value: RangeValue | null): boolean => value !== null && (value.fromDate.trim() !== "" || value.toDate.trim() !== "");
-/** The one currency a range is reviewed in: the chosen one, or the only currency the source holds when it holds one. */
 const currencyOf = (value: RangeValue | null, rangeCurrencies: readonly string[]): string => {
   const chosen = value?.currency.trim() ?? "";
   return chosen !== "" ? chosen : rangeCurrencies.length === 1 ? (rangeCurrencies[0] ?? "") : "";
 };
 /** Whether two stated dates describe no period at all: such a pair is never sent, because no figure could be read for it. */
 const rangeReversedOf = (value: RangeValue | null): boolean => value !== null && value.fromDate.trim() !== "" && value.toDate.trim() !== "" && value.toDate.trim() < value.fromDate.trim();
-/**
- * The range as the payload states it, or nothing at all when the worker states no range. A stated range keeps its dates
- * exactly as the fields hold them — including one not chosen yet — so the schema names what is missing rather than this
- * form inviting a coach over a shorter period than the one being reviewed.
- */
+/** The range as the payload states it, or nothing at all when the worker states no range. A stated range keeps its dates exactly as the fields hold them — including one not chosen yet — so the schema names what is missing rather than this form inviting a coach over a shorter period than the one being reviewed. */
 function rangeOf(value: RangeValue | null, rangeCurrencies: readonly string[]): InvitationPayload["financialRange"] {
   if (value === null || !statesRange(value)) return undefined;
   const currency = currencyOf(value, rangeCurrencies);
@@ -276,10 +262,10 @@ const recipientOptionsOf = (candidates: InvitationCandidates): readonly ChoiceOp
 const organizationOptionsOf = (candidates: InvitationCandidates): readonly ChoiceOption[] => candidates.organizations.map((organization) => ({ value: organization.organizationId, label: organization.displayName }));
 const ministryOptionsOf = (candidates: InvitationCandidates): readonly ChoiceOption[] => candidates.ministries.map((ministry) => ({ value: ministry.ministryId, label: ministry.displayName }));
 function candidatesGap(candidates: InvitationCandidates): string | null {
-  const missing = [candidates.recipients.length === 0 ? NO_RECIPIENTS : null, candidates.organizations.length === 0 ? NO_ORGANIZATIONS : null, candidates.ministries.length === 0 ? NO_MINISTRIES : null].filter((sentence): sentence is string => sentence !== null);
+  const missing = [candidates.recipients.length === 0 ? NO_RECIPIENTS : null, candidates.organizations.length === 0 ? "No organization is admitted in this context." : null, candidates.ministries.length === 0 ? NO_MINISTRIES : null].filter((sentence): sentence is string => sentence !== null);
   return missing.length === 0 ? null : missing.join(" ");
 }
-const chosenName = (options: readonly ChoiceOption[], value: string): string => options.find((option) => option.value === value)?.label ?? NOT_CHOSEN;
+const chosenName = (options: readonly ChoiceOption[], value: string): string => options.find((option) => option.value === value)?.label ?? "Not chosen";
 const admittedReference = (value: string, options: readonly ChoiceOption[]): string => (options.some((option) => option.value === value.trim()) ? value.trim() : "");
 type ChoiceSelectProps = {
   readonly name: string;
@@ -325,11 +311,7 @@ function ChoiceSelect({ name, label, description, placeholder, value, options, e
 }
 const ReviewedFact = ({ term, value }: { readonly term: string; readonly value: string }): ReactElement => <Fact term={term}>{<bdi>{value}</bdi>}</Fact>;
 type RangeDateFieldProps = { readonly name: string; readonly label: string; readonly description: string; readonly value: string; readonly min: string; readonly max: string; readonly error: readonly string[] | undefined; readonly locale: string; readonly onChange: (next: string) => void };
-/**
- * One calendar day of the reviewed range: a native date field, which is the control this application enters a civil day
- * through, so the value is a civil day rather than a fabricated midnight. The paired day bounds it while the range is
- * being stated, so the calendar a worker opens cannot offer a pair that describes no period.
- */
+/** One calendar day of the reviewed range: a native date field, which is the control this application enters a civil day through, so the value is a civil day rather than a fabricated midnight. The paired day bounds it while the range is being stated, so the calendar a worker opens cannot offer a pair that describes no period. */
 const RangeDateField = ({ name, label, description, value, min, max, error, locale, onChange }: RangeDateFieldProps): ReactElement => (
   <FormField name={name} label={label} description={`${description} ${civilDateConvention(value)}`} error={error}>
     {(control) => (
@@ -350,11 +332,7 @@ function ReviewedDuration({ value }: { readonly value: DurationValue | null }): 
     </Fact>
   );
 }
-/**
- * The reviewed range as the confirmation states it: the two exact calendar days and the one currency that would be
- * recorded, or the plain statement that this invitation shares no figure. The period and the currency are shown as the
- * payload carries them, so the review can never promise a wider share than the mutation records.
- */
+/** The reviewed range as the confirmation states it: the two exact calendar days and the one currency that would be recorded, or the plain statement that this invitation shares no figure. The period and the currency are shown as the payload carries them, so the review can never promise a wider share than the mutation records. */
 const ReviewedRange = ({ value, rangeCurrencies }: { readonly value: RangeValue | null; readonly rangeCurrencies: readonly string[] }): ReactElement => {
   const term = RANGE_COPY.reviewTerm;
   if (value === null || !statesRange(value)) return <Fact {...{ term, detailClassName: "min-w-0 text-pretty" }}>{RANGE_COPY.reviewNone}</Fact>;
@@ -511,9 +489,7 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
               {rangeCurrencies.length === 0 ? (
                 // A source nothing could be read from is stated as that, never as a range of zero or as a period of its own.
                 <section aria-labelledby={rangeId} className="flex min-w-0 flex-col gap-2">
-                  <h3 id={rangeId} className="type-subsection-title">
-                    {RANGE_COPY.heading}
-                  </h3>
+                  <h3 {...{ id: rangeId, className: "type-subsection-title" }}>{RANGE_COPY.heading}</h3>
                   <p className="type-supporting text-pretty">{RANGE_COPY.unreadable}</p>
                 </section>
               ) : (
@@ -559,9 +535,9 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
               {outstanding.length === 0 ? null : <p className="type-supporting text-pretty">{`Still needed before this invitation can be recorded: ${listOf(outstanding)}.`}</p>}
               {gap === null && !rangeReversed ? (
                 <ActionReview<InvitationPayload>
-                  title={"Record this invitation"}
+                  title="Record this invitation"
                   description={<ReviewedInvitation values={values} recipientOptions={recipientOptions} organizationOptions={organizationOptions} ministryOptions={ministryOptions} rangeCurrencies={rangeCurrencies} />}
-                  consequence={"Recording an invitation adds the invitation record and nothing else: no message leaves this application, the person's identity is not verified, and no module becomes readable."}
+                  consequence="Recording an invitation adds the invitation record and nothing else: no message leaves this application, the person's identity is not verified, and no module becomes readable."
                   confirmLabel={CONFIRM_LABEL}
                   input={{ scope, expectedRevision, payload }}
                   submit={submit}
@@ -571,12 +547,8 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
                 />
               ) : (
                 <div className="flex min-w-0 flex-col gap-2">
-                  <Button type="button" disabled aria-describedby={gap === null ? rangeBlockedId : gapId}>
-                    {CONFIRM_LABEL}
-                  </Button>
-                  <p id={gap === null ? rangeBlockedId : undefined} className="type-supporting text-pretty">
-                    {gap === null ? RANGE_COPY.reversed : "Nothing can be submitted until the missing choice above is available."}
-                  </p>
+                  <Button {...{ type: "button", disabled: true, "aria-describedby": gap === null ? rangeBlockedId : gapId }}>{CONFIRM_LABEL}</Button>
+                  <p {...{ id: gap === null ? rangeBlockedId : undefined, className: "type-supporting text-pretty" }}>{gap === null ? RANGE_COPY.reversed : "Nothing can be submitted until the missing choice above is available."}</p>
                 </div>
               )}
               {recorded ? <p className="type-supporting text-pretty">{"Recording an invitation reached the first of the four outcomes above and no further: identity verification, deliberate acceptance and live access have not happened."}</p> : null}

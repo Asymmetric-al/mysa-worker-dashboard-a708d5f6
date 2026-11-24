@@ -20,7 +20,6 @@ import { formatMinor } from "@/modules/money/format";
 import { SUPPORT_MEASURE_LABELS, type SupportMeasure } from "@/modules/support/basis";
 import type { CivilDate, DatePrecision } from "@/modules/time/civil";
 import { civilDateText, MODULE_READ_STATE_TONE, ModuleReadStateNotice } from "./sharing-summary";
-const CUTOFF_ABSENT = "This relationship states no end instant, so this page states none.";
 const DUE_PRECISION_WORD: Readonly<Record<DatePrecision, string | null>> = { date: null, approximate: "approximate", unknown: "date not confirmed" };
 const COACH_SHARE_STATE_COPY: Readonly<Record<TaskShareSummaryState, { readonly label: string; readonly sentence: string }>> = {
   shared: { label: "Shared", sentence: "The worker reviewed this description against the task as it stands, so it is current." },
@@ -41,18 +40,14 @@ const COACH_COMPLETE_SENTENCE = "This module is shared in full for this relation
 /** The statement a list holds when it has nothing to show under this relationship: an empty list is said in words rather than left as a heading. */
 const EMPTY_LIST_COPY: Readonly<Record<"check-ins" | "task-shares", string>> = { "check-ins": "No check-in revision has been shared with you under this relationship.", "task-shares": "No task summary has been shared with you under this relationship." };
 const TARGETS_SERIES_LABEL = "Recorded";
-const TARGETS_TABLE_CAPTION = "Recorded target counts by period, the data table alternative to the chart.";
-const PERIOD_COLUMN_LABEL = "Period";
 type CivilDateInput = CivilDate | string;
-type SharedCheckInQuestion = { readonly wording: string; readonly answer: string };
-type SharedCheckIn = { readonly checkInId: string; readonly sharedAt: string; readonly questions: readonly SharedCheckInQuestion[] };
+type SharedCheckIn = { readonly checkInId: string; readonly sharedAt: string; readonly questions: readonly { readonly wording: string; readonly answer: string }[] };
 type SharedTaskSummaryBase = { readonly shareId: string; readonly dueOn: CivilDateInput | null; readonly duePrecision: DatePrecision; readonly status: string };
 type SharedTaskSummary = (SharedTaskSummaryBase & { readonly state: "shared"; readonly reviewedDescription: string }) | (SharedTaskSummaryBase & { readonly state: Exclude<TaskShareSummaryState, "shared">; readonly reviewedDescription: null });
 type TargetProgressFigure = { readonly periodLabel: string; readonly value: number | null; readonly valueState: ValueState };
 type GoalFigure = { readonly amount: Money; readonly measure: string; readonly effectiveFrom: CivilDateInput; readonly valueState: ValueState };
 type ReceivedFigure = { readonly currency: string; readonly minorUnits: number | null; readonly valueState: ValueState; readonly periodState: string; readonly coverageState: CoverageState; readonly from: CivilDateInput; readonly to: CivilDateInput };
-type ReviewedRange = { readonly from: CivilDateInput; readonly to: CivilDateInput; readonly currency: string };
-type SupportResultsBody = { readonly kind: "support-results"; readonly basis: string; readonly range: ReviewedRange | null; readonly received: readonly ReceivedFigure[]; readonly figureProblem: string | null; readonly asOf: string };
+type SupportResultsBody = { readonly kind: "support-results"; readonly basis: string; readonly range: { readonly from: CivilDateInput; readonly to: CivilDateInput; readonly currency: string } | null; readonly received: readonly ReceivedFigure[]; readonly figureProblem: string | null; readonly asOf: string };
 type ModuleBody =
   | { readonly kind: "check-ins"; readonly items: readonly SharedCheckIn[] }
   | { readonly kind: "task-shares"; readonly items: readonly SharedTaskSummary[] }
@@ -110,7 +105,7 @@ const TaskShareList = ({ shares }: { readonly shares: readonly SharedTaskSummary
       return (
         <li key={share.shareId} className="flex min-w-0 flex-col gap-2">
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 type-body">
-            <StatusBadge label={stateCopy.label} tone={SHARE_STATE_TONE[share.state]} srPrefix={"Summary"} />
+            <StatusBadge label={stateCopy.label} tone={SHARE_STATE_TONE[share.state]} srPrefix="Summary" />
             <span className="flex min-w-0 items-baseline gap-x-1.5">
               <span className="font-medium">{"Due"}</span>
               <DueDateText share={share} />
@@ -143,27 +138,16 @@ function TargetProgressChart({ body, locale }: { readonly body: Extract<ModuleBo
   const points = useMemo<readonly ChartPoint[]>(() => body.figures.map((figure) => ({ bucket: figure.periodLabel, value: figure.value, state: figure.valueState })), [body]);
   const series = useMemo<readonly ChartSeries[]>(() => [{ key: "recorded", label: TARGETS_SERIES_LABEL, points }], [points]);
   const table: ChartTable = {
-    caption: TARGETS_TABLE_CAPTION,
+    caption: "Recorded target counts by period, the data table alternative to the chart.",
     columns: [
-      { key: "period", label: PERIOD_COLUMN_LABEL },
+      { key: "period", label: "Period" },
       { key: "recorded", label: TARGETS_SERIES_LABEL },
     ],
     rows: body.figures.map((figure) => ({ period: figure.periodLabel, recorded: figureText(figure) })),
   };
-  return (
-    <ChartFigure
-      title={MODULE_COPY.targets.name}
-      summary={"Each bar is the count recorded for one period, taken from the activity the worker logged. A period with no recorded value is named in the table beneath the chart rather than drawn as zero."}
-      caption={"Bar chart of recorded target counts by period for this worker."}
-      kind="bar"
-      series={series}
-      units={"Recorded counts per period"}
-      coverage={body.coverage}
-      asOf={body.asOf}
-      table={table}
-      locale={locale}
-    />
-  );
+  const chartSummary = "Each bar is the count recorded for one period, taken from the activity the worker logged. A period with no recorded value is named in the table beneath the chart rather than drawn as zero.";
+  const chartCaption = "Bar chart of recorded target counts by period for this worker.";
+  return <ChartFigure title={MODULE_COPY.targets.name} summary={chartSummary} caption={chartCaption} kind="bar" series={series} units="Recorded counts per period" coverage={body.coverage} asOf={body.asOf} table={table} locale={locale} />;
 }
 const EXPECTED_BODY_KIND: Readonly<Record<ModuleKey, ModuleBody["kind"]>> = { "support-goal": "support-goal", "support-results": "support-results", targets: "target-progress", "check-ins": "check-ins", "task-summaries": "task-shares" };
 /** The word one module carries: the read's own state, or the complete share the read answers `null` for, in the same vocabulary the worker's sharing summary states a module in. */
@@ -172,7 +156,6 @@ function moduleStateWord(state: ModuleReadState | null): { readonly label: strin
   return { label: MODULE_READ_STATE_COPY[state].label, tone: MODULE_READ_STATE_TONE[state] };
 }
 const ISO_TEXT_CLASS = "mono-identifier whitespace-nowrap";
-const GOAL_AMOUNT_LABEL = "Goal amount";
 const GOAL_COLUMN_LABEL = { amount: "Amount", measure: "Measure", effectiveFrom: "Effective from" } as const;
 const GOAL_TABLE_CAPTION = "The support goal this relationship shares, as a table: its amount, the measure it is counted in and the date it took effect.";
 const isSupportMeasure = (measure: string): measure is SupportMeasure => Object.hasOwn(SUPPORT_MEASURE_LABELS, measure);
@@ -187,7 +170,7 @@ function SupportGoalFigure({ goal, locale }: { readonly goal: GoalFigure; readon
         <span>
           <bdi>{MODULE_COPY["support-goal"].name}</bdi>
         </span>
-        <StatusBadge label={GOAL_AMOUNT_LABEL} valueState={goal.valueState} />
+        <StatusBadge label="Goal amount" valueState={goal.valueState} />
       </figcaption>
       <p className="tabular-figures text-2xl font-semibold text-end break-words">
         <bdi>{formatting.text}</bdi>
@@ -201,9 +184,7 @@ function SupportGoalFigure({ goal, locale }: { readonly goal: GoalFigure; readon
         {"."}
       </p>
       <div className="flex min-w-0 flex-col gap-2">
-        <p aria-hidden="true" className="text-sm text-muted-foreground">
-          {GOAL_TABLE_CAPTION}
-        </p>
+        <p {...{ "aria-hidden": "true", className: "text-sm text-muted-foreground" }}>{GOAL_TABLE_CAPTION}</p>
         <ScrollRegion label={`${MODULE_COPY["support-goal"].name}: data table`}>
           <Table>
             <TableCaption className="sr-only">{GOAL_TABLE_CAPTION}</TableCaption>
@@ -235,7 +216,6 @@ const RECEIVED_COLUMN_LABEL = { currency: "Currency", received: "Received", peri
 const RECEIVED_TABLE_CAPTION = "The received support this relationship shares, one row per figure the read projected for the reviewed range: its currency, its amount, the period it covers and the state of the value.";
 const RECEIVED_STATE_LABEL: Readonly<Record<ValueState, string>> = { value: "Recorded amount", zero: "Genuine zero", unknown: "Unknown", withheld: "Withheld", unavailable: "Unavailable", "incomplete-subtotal": "Incomplete subtotal" };
 const NUMERIC_STATES: ReadonlySet<ValueState> = new Set<ValueState>(["value", "zero", "incomplete-subtotal"]);
-const NO_RECEIVED_FIGURE = "The report returned no figure in the reviewed range's currency, which is an empty result rather than a zero.";
 const COVERAGE_STATEMENT: Readonly<Record<CoverageState, string>> = {
   complete: "The source reports this reviewed period as fully covered, so the received figure is a whole-period figure rather than a subtotal.",
   partial: "The source reports this reviewed period as only partly covered, so the received figure is an incomplete subtotal and never a whole-period total.",
@@ -297,15 +277,13 @@ function SupportResultsFigure({ body, locale }: { readonly body: SupportResultsB
       {body.figureProblem === null ? null : <p className="text-sm text-pretty text-muted-foreground">{figureProblemText(body.figureProblem)}</p>}
       {figures.length === 0 ? (
         body.figureProblem === null ? (
-          <p className="text-sm text-pretty text-muted-foreground">{NO_RECEIVED_FIGURE}</p>
+          <p className="text-sm text-pretty text-muted-foreground">{"The report returned no figure in the reviewed range's currency, which is an empty result rather than a zero."}</p>
         ) : null
       ) : (
         <>
           <p className="text-sm text-pretty">{`This figure states ${summary} for the reviewed range, one row per currency the read reports, and never a per-record amount behind them.`}</p>
           <div className="flex min-w-0 flex-col gap-2">
-            <p aria-hidden="true" className="text-sm text-muted-foreground">
-              {RECEIVED_TABLE_CAPTION}
-            </p>
+            <p {...{ "aria-hidden": "true", className: "text-sm text-muted-foreground" }}>{RECEIVED_TABLE_CAPTION}</p>
             <ScrollRegion label={`${MODULE_COPY["support-results"].name}: data table`}>
               <Table>
                 <TableCaption className="sr-only">{RECEIVED_TABLE_CAPTION}</TableCaption>
@@ -363,7 +341,6 @@ function ModulePanel({ entry, unavailableSource, locale }: { readonly entry: Adm
   const copy = MODULE_COPY[entry.key];
   const state = moduleStateWord(entry.state);
   const body = entry.body.kind === EXPECTED_BODY_KIND[entry.key] ? entry.body : null;
-  const drawsContent = entry.state === null || entry.state === "partial";
   const listBody = body === null || (body.kind !== "check-ins" && body.kind !== "task-shares") ? null : body;
   const emptyList = listBody !== null && listBody.items.length === 0;
   // A module whose own state word already says nothing is recorded keeps that one statement; a list that is empty under any other state says so in words here, so no panel is left with nothing but its heading.
@@ -378,14 +355,14 @@ function ModulePanel({ entry, unavailableSource, locale }: { readonly entry: Adm
             </h3>
           </CardTitle>
           <CardAction>
-            <StatusBadge label={state.label} tone={state.tone} srPrefix={"State"} />
+            <StatusBadge label={state.label} tone={state.tone} srPrefix="State" />
           </CardAction>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-3">
           {entry.state === null ? <p className="text-sm text-pretty text-muted-foreground">{COACH_COMPLETE_SENTENCE}</p> : <ModuleReadStateNotice readState={entry.state} source={unavailableSource ?? null} headingLevel={4} />}
           <p className="text-sm text-pretty text-muted-foreground">{COACH_MODULE_PURPOSE_COPY[entry.key]}</p>
           {emptyStatement === null ? null : <p className="text-sm text-pretty text-muted-foreground">{emptyStatement}</p>}
-          {drawsContent && body !== null && !emptyList ? <ModuleBodyView body={body} locale={locale} /> : null}
+          {(entry.state === null || entry.state === "partial") && body !== null && !emptyList ? <ModuleBodyView body={body} locale={locale} /> : null}
         </CardContent>
       </Card>
     </section>
@@ -416,13 +393,13 @@ export default function CoachSubjectDetail({ subject, modules, unavailableSource
           </CardTitle>
           <CardDescription>{COACHING_COPY.coachSubject.purpose}</CardDescription>
           <CardAction>
-            <StatusBadge label={lifecycle.label} tone={statusBadgeProps(COACHING_STATUS, subject.grantState).tone} srPrefix={"Access"} />
+            <StatusBadge label={lifecycle.label} tone={statusBadgeProps(COACHING_STATUS, subject.grantState).tone} srPrefix="Access" />
           </CardAction>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-3">
           <p className={cn("type-body text-pretty", cutoff === null ? "text-muted-foreground" : null)}>
             {cutoff === null ? (
-              CUTOFF_ABSENT
+              "This relationship states no end instant, so this page states none."
             ) : (
               <>
                 {"Access ends at "}
@@ -438,10 +415,10 @@ export default function CoachSubjectDetail({ subject, modules, unavailableSource
         </CardContent>
       </Card>
       {first === undefined ? (
-        <StateNotice kind="empty" headingLevel={2} title={COACHING_COPY.coachSubject.heading} description={"No module is shared with you under this relationship, so there is nothing here to read. The lifecycle word above says why."} />
+        <StateNotice kind="empty" headingLevel={2} title={COACHING_COPY.coachSubject.heading} description="No module is shared with you under this relationship, so there is nothing here to read. The lifecycle word above says why." />
       ) : (
         <Tabs defaultValue={first.key} className="gap-3">
-          <TabsList aria-label={"Modules this worker shares"} className="h-auto w-full max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto">
+          <TabsList aria-label="Modules this worker shares" className="h-auto w-full max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto">
             {admitted.map((entry) => (
               <TabsTrigger key={entry.key} value={entry.key} className="h-8 flex-none">
                 <bdi>{MODULE_COPY[entry.key].name}</bdi>

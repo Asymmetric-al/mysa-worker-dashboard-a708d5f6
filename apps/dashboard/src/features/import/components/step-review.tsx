@@ -44,7 +44,7 @@ export type ImportStopControl = { readonly input: Omit<MutationInput<CancelPaylo
 /** Why the last decision about a row was refused, in the closed vocabulary the service answers with. */ export type StepReviewRefusal =
   | { readonly kind: "invalid"; readonly errors: FieldErrorLookup }
   | { readonly kind: "denied"; readonly reasonCode: DenialReason }
-  | { readonly kind: "conflict" }
+  | { readonly kind: "conflict"; readonly rowNumber: number; readonly currentRevision: string; readonly preservedInput: ImportDecisionInput }
   | { readonly kind: "unavailable"; readonly source: SourceReference; readonly guidance: string }
   | { readonly kind: "unknown"; readonly operationId: string };
 /** Props of {@link StepReview}. */ export interface StepReviewProps {
@@ -98,16 +98,29 @@ function decisionOf(rowNumber: number, review: ImportProposalRowReview | null, d
       return { kind: "unresolved", rowNumber };
   }
 }
-const orderedCorrections = (corrections: readonly ImportCellCorrectionInput[] | undefined): readonly ImportCellCorrectionInput[] => [...(corrections ?? [])].sort((left, right) => left.columnNumber - right.columnNumber);
 function decisionSignature(decision: ImportDecisionInput): string {
-  const corrections = orderedCorrections(decision.kind === "create" || decision.kind === "reuse" ? decision.corrections : undefined)
+  const corrections = [...(decision.kind === "create" || decision.kind === "reuse" ? (decision.corrections ?? []) : [])]
+    .sort((left, right) => left.columnNumber - right.columnNumber)
     .map((correction) => `${String(correction.columnNumber)}=${correction.value}`)
     .join("\u001f");
   const candidate = decision.kind === "reuse" ? formatSourceReference(decision.candidate) : "";
   const reason = decision.kind === "skip" ? (decision.reason ?? "").trim() : "";
   return [decision.kind, String(decision.rowNumber), candidate, corrections, reason].join("\u001e");
 }
-const sameDecision = (decision: ImportDecisionInput, recorded: ImportDecisionInput | undefined): boolean => recorded !== undefined && decisionSignature(decision) === decisionSignature(recorded);
+/** The decision a refused attempt posted, in this family's own words: the choice, each corrected cell, the contact a reuse names and the reason a skip gives — never the record itself. */
+function decisionWordsOf(decision: ImportDecisionInput, review: ImportProposalRowReview | null): readonly string[] {
+  const words: string[] = [DECISION_COPY[decision.kind].label];
+  if (decision.kind === "create" || decision.kind === "reuse") {
+    for (const correction of decision.corrections ?? []) {
+      const header = review?.issues.find((issue) => issue.columnNumber === correction.columnNumber)?.header ?? "";
+      words.push(`${header.trim() === "" ? `Column ${String(correction.columnNumber)}` : header}: ${correction.value}`);
+    }
+  }
+  if (decision.kind === "reuse") words.push(formatSourceReference(decision.candidate));
+  const reason = decision.kind === "skip" ? (decision.reason ?? "").trim() : "";
+  if (reason !== "") words.push(reason);
+  return words;
+}
 // The identifying value a row states: the name the row supplies, taken exactly as the file wrote it. A display name or an organization name stands alone, and a given and a family name are joined because either part alone names nobody. It is presentation only and never an identity: two rows may carry the same text and remain two rows.
 const IDENTIFYING_FORMS: readonly (readonly string[])[] = [["display-name"], ["name-organization"], ["name-given", "name-family"]];
 function identifyingValueOf(review: ImportProposalRowReview | null): string | null {
@@ -255,20 +268,13 @@ const decisionConsequenceId = (branch: Branch, rowNumber: number, kind: ImportDe
 // Where the reason a row offers no contact to reuse is stated: beside the consequence of reusing, so a disabled choice explains itself without a line of prose above every row.
 const decisionReuseReasonId = (branch: Branch, rowNumber: number): string => `${fieldControlId(decisionFieldName(branch, rowNumber))}-reuse-reason`;
 /** One labelled run of a row's material, whether it sits in the review table's one material column or in a card. */
-function RowSection({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <p className="text-sm font-medium">{label}</p>
-      {children}
-    </div>
-  );
-}
-/**
- * Everything one row's material says that is too long to sit beside its controls, behind the browser's own disclosure:
- * keyboard operable, named by its row, in the DOM of the row it belongs to, and one disclosure rather than a column per
- * fact. The look-alike signal and what each of the four decisions does are stated here too, so the row keeps only what
- * deciding about it needs.
- */
+const RowSection = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
+  <div className="flex min-w-0 flex-col gap-1">
+    <p className="text-sm font-medium">{label}</p>
+    {children}
+  </div>
+);
+/** Everything one row's material says that is too long to sit beside its controls, behind the browser's own disclosure: keyboard operable, named by its row, in the DOM of the row it belongs to, and one disclosure rather than a column per fact. The look-alike signal and what each of the four decisions does are stated here too, so the row keeps only what deciding about it needs. */
 function RowMaterialDisclosure({ rowNumber, branch, review }: { readonly rowNumber: number; readonly branch: Branch; readonly review: ImportProposalRowReview | null }): ReactElement {
   const duplicateLooking = review === null ? null : review.duplicateLooking;
   const reuseOffered = review !== null && review.suggestions.length > 0;
@@ -332,7 +338,7 @@ function DecisionControl({ rowNumber, branch, review, draft, recorded, pending, 
   const reuseReasonId = decisionReuseReasonId(branch, rowNumber);
   const needsChoiceId = `${fieldControlId(decisionFieldName(branch, rowNumber))}-choice-needed`;
   const recordedId = `${fieldControlId(decisionFieldName(branch, rowNumber))}-already-recorded`;
-  const alreadyRecorded = decision !== null && sameDecision(decision, recorded);
+  const alreadyRecorded = decision !== null && recorded !== undefined && decisionSignature(decision) === decisionSignature(recorded);
   const chooseKind = (next: unknown): void => {
     if (isDecisionKind(next)) onDraft(rowNumber, { ...draft, choice: next, candidate: next === "reuse" && draft.candidate === "" && suggestions.length > 0 ? "0" : draft.candidate });
   };
@@ -438,17 +444,50 @@ const RowDecisionStatus = ({ decisionLabel, decided }: { readonly decisionLabel:
     {decided ? null : <span className="block text-muted-foreground">{REVIEW_COPY.noDecisionRecorded}</span>}
   </div>
 );
-const REFUSAL_COPY: Readonly<Record<"denied" | "conflict" | "unavailable", { readonly title: string; readonly lead: string }>> = {
-  denied: { title: REVIEW_COPY.refusal.deniedTitle, lead: REVIEW_COPY.refusal.deniedLead },
-  conflict: { title: REVIEW_COPY.refusal.conflictTitle, lead: REVIEW_COPY.refusal.conflictLead },
-  unavailable: { title: REVIEW_COPY.refusal.unavailableTitle, lead: REVIEW_COPY.refusal.unavailableLead },
-};
-function RefusalBlock({ refusal }: { readonly refusal: StepReviewRefusal }): ReactElement {
+const REFUSAL_COPY: Readonly<Record<"denied" | "unavailable", { readonly title: string; readonly lead: string }>> = { denied: { title: REVIEW_COPY.refusal.deniedTitle, lead: REVIEW_COPY.refusal.deniedLead }, unavailable: { title: REVIEW_COPY.refusal.unavailableTitle, lead: REVIEW_COPY.refusal.unavailableLead } };
+/** One labelled fact of a refusal: the words that name it, then the value the answer states beside it. */
+const RefusalFact = ({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactElement => (
+  <div className="flex min-w-0 flex-col gap-1">
+    <dt className="font-medium">{label}</dt>
+    <dd className="min-w-0 wrap-anywhere">{children}</dd>
+  </div>
+);
+function RefusalBlock({ refusal, held, review }: { readonly refusal: StepReviewRefusal; readonly held: string | null; readonly review: ImportProposalRowReview | null }): ReactElement {
   if (refusal.kind === "invalid") return <FormErrorSummary errors={refusal.errors} title={REVIEW_COPY.refusal.invalidTitle} description={REVIEW_COPY.refusal.invalidLead} headingLevel={3} />;
   if (refusal.kind === "unknown") return <StateNotice kind="unknown" headingLevel={3} title={REVIEW_COPY.refusal.unknownTitle} description={REVIEW_COPY.refusal.unknownLead} operationId={refusal.operationId} />;
+  // A conflict states three facts rather than the one the notice beside it states — the revision the review now stands at, the decision this attempt posted and the decision the review now holds — and the notice carries one, so the conflict renders its own live region instead of a list squeezed into that sentence.
+  if (refusal.kind === "conflict") {
+    const recorded = decisionWordsOf(refusal.preservedInput, review);
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>{REVIEW_COPY.refusal.conflictRowTitle(refusal.rowNumber)}</AlertTitle>
+        <AlertDescription>
+          <p>{REVIEW_COPY.refusal.conflictLead}</p>
+          <dl className="flex min-w-0 flex-col gap-2">
+            <RefusalFact label={REVIEW_COPY.refusal.conflictCurrentRevision}>
+              <bdi className="mono-identifier">{refusal.currentRevision}</bdi>
+            </RefusalFact>
+            <RefusalFact label={REVIEW_COPY.refusal.conflictPreserved}>
+              <ul className="flex list-disc flex-col gap-0.5 ps-4">
+                {recorded.map((word, index) => (
+                  <li key={`${String(index)}-${word}`} className="text-pretty">
+                    <bdi>{word}</bdi>
+                  </li>
+                ))}
+              </ul>
+            </RefusalFact>
+            <RefusalFact label={REVIEW_COPY.refusal.conflictHeld}>
+              <bdi>{held ?? REVIEW_COPY.noDecisionRecorded}</bdi>
+            </RefusalFact>
+          </dl>
+          <p>{REVIEW_COPY.refusal.conflictRecovery}</p>
+        </AlertDescription>
+      </Alert>
+    );
+  }
   const words = REFUSAL_COPY[refusal.kind];
-  const details = refusal.kind === "denied" ? [{ label: "Reason", value: refusal.reasonCode }] : refusal.kind === "unavailable" ? [{ label: "Source", value: formatSourceReference(refusal.source), guidance: refusal.guidance }] : [];
-  return <ImportNotice {...{ destructive: refusal.kind === "conflict" || refusal.kind === "denied", title: words.title, lead: words.lead, details }} />;
+  const details = refusal.kind === "denied" ? [{ label: "Reason", value: refusal.reasonCode }] : [{ label: "Source", value: formatSourceReference(refusal.source), guidance: refusal.guidance }];
+  return <ImportNotice {...{ destructive: refusal.kind === "denied", title: words.title, lead: words.lead, details }} />;
 }
 /** Step three of the contact import: every row of the returned window, and the decision recorded about each one. */
 export default function StepReview({ proposal, decisions, window, onPageChange, onPageSizeChange, onDecide, decidingRowNumber, refusal, focusRowNumber = null, onContinue, stop }: StepReviewProps): ReactElement {
@@ -458,6 +497,11 @@ export default function StepReview({ proposal, decisions, window, onPageChange, 
   const focusHandled = useRef<string | null>(null);
   const tableBusy = decidingRowNumber !== null;
   const reviewFor = (rowNumber: number): ImportProposalRowReview | null => view.review?.rows.find((row) => row.rowNumber === rowNumber) ?? null;
+  // The conflicted row as the rows below state it: the decision the review now holds for it, and that row's own review material, which the preserved decision is stated against. A row outside the returned window states neither, and the conflict says so rather than inventing a decision.
+  const refusedRow = refusal === null || refusal.kind !== "conflict" ? null : (view.rows.find((row) => row.rowNumber === refusal.rowNumber) ?? null);
+  // The decision the review now holds for that row, in the read's own words; a row the read reports as unresolved holds none, which is stated as no decision rather than as the words for leaving it undecided.
+  const held: string | null = refusedRow === null || refusedRow.decision === "unresolved" ? null : refusedRow.decisionLabel;
+  const refusedReview = refusedRow === null ? null : reviewFor(refusedRow.rowNumber);
   const recorded = Object.values(decisions).filter((decision) => decision !== undefined).length;
   const draftFor = (rowNumber: number): RowDraft => drafts[rowNumber] ?? draftOf(decisions[rowNumber], reviewFor(rowNumber));
   const setDraft = (rowNumber: number, draft: RowDraft): void => setDrafts((previous) => ({ ...previous, [rowNumber]: draft }));
@@ -484,7 +528,7 @@ export default function StepReview({ proposal, decisions, window, onPageChange, 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <p className="text-sm text-pretty text-muted-foreground">{REVIEW_COPY.lead}</p>
-      {refusal === null ? null : <RefusalBlock refusal={refusal} />}
+      {refusal === null ? null : <RefusalBlock refusal={refusal} held={held} review={refusedReview} />}
       {view.review === null ? (
         <Alert>
           <AlertTitle>{REVIEW_COPY.material.heading}</AlertTitle>

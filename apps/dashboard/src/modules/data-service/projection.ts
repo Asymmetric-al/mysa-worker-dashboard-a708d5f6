@@ -2,10 +2,9 @@ import { Temporal } from "temporal-polyfill";
 import { isNonEmptyString } from "@/lib/guards";
 import type { MemberChoice, MembershipRecord as DomainMembership } from "@/modules/audience/membership";
 import type { ContentDocumentJson } from "@/modules/content/document";
-import type { ContentRevision, ContentVariant } from "@/modules/content/variant";
-import type { ContentVariantRecord, MembershipRecord as StoredMembership, Scope, SharePresentationRecord, StoredContentRevisionRecord } from "./envelope";
-/** The domain edition one stored edition states, naming only the pointers it actually holds. */
-export function contentVariantOf(record: ContentVariantRecord): ContentVariant {
+import type { ContentDocument, ContentRevision, ContentVariant } from "@/modules/content/variant";
+import type { ContentDocumentRecord, ContentVariantRecord, MembershipRecord as StoredMembership, Scope, SharePresentationRecord, StoredContentRevisionRecord } from "./envelope";
+/** The domain edition one stored edition states, naming only the pointers it actually holds. */ export function contentVariantOf(record: ContentVariantRecord): ContentVariant {
   return {
     variantId: record.variantId,
     documentId: record.documentId,
@@ -17,8 +16,10 @@ export function contentVariantOf(record: ContentVariantRecord): ContentVariant {
     ...(record.translationSource === null ? {} : { translationSource: { variantId: record.translationSource.variantId, revisionId: record.translationSource.revisionId } }),
   };
 }
-/** The domain revision one stored revision states, with the captions and alternative text its placements record. */
-export function contentRevisionOf(record: StoredContentRevisionRecord, document: ContentDocumentJson): ContentRevision {
+/** The domain document one stored document states, naming the designation its giving binding points at. */ export function contentDocumentOf(record: ContentDocumentRecord): ContentDocument {
+  return { documentId: record.documentId, family: record.family, kind: record.kind, sourceSubject: record.sourceSubject, siteId: record.siteId, ...(record.givingBinding === null ? {} : { givingBinding: record.givingBinding.designation }), managedFields: {} };
+}
+/** The domain revision one stored revision states, with the captions and alternative text its placements record. */ export function contentRevisionOf(record: StoredContentRevisionRecord, document: ContentDocumentJson): ContentRevision {
   const captions: Record<string, string> = {};
   const altText: Record<string, string> = {};
   for (const placement of record.mediaPlacements) {
@@ -60,8 +61,7 @@ export function membershipOf(record: StoredMembership, scope: Pick<Scope, "organ
     revision: revisionOrdinalOf(record.revision),
   };
 }
-/** A stored instant, or nothing when the record states none or states one this runtime cannot read. */
-export function storedInstantOf(value: string | null | undefined): Temporal.Instant | undefined {
+/** A stored instant, or nothing when the record states none or states one this runtime cannot read. */ export function storedInstantOf(value: string | null | undefined): Temporal.Instant | undefined {
   if (value === null || value === undefined || value.length === 0) return undefined;
   try {
     return Temporal.Instant.from(value);
@@ -69,8 +69,7 @@ export function storedInstantOf(value: string | null | undefined): Temporal.Inst
     return undefined;
   }
 }
-/** The ordinal a stored revision token ends in, so a stored `rev-7` reads as the domain's 7. */
-export function revisionOrdinalOf(revision: string): number {
+/** The ordinal a stored revision token ends in, so a stored `rev-7` reads as the domain's 7. */ export function revisionOrdinalOf(revision: string): number {
   const digits = /(\d+)\s*$/u.exec(revision);
   if (digits === null) return 1;
   const parsed = Number.parseInt(digits[1] ?? "", 10);

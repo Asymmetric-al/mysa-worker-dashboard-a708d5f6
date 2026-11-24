@@ -201,11 +201,10 @@ export function buildWorkload(sessionId: string = DEFAULT_WORKLOAD_SESSION_ID): 
   const window = buildWindow();
   const partners = Array.from({ length: WORKLOAD_PARTNER_COUNT }, (_unused, offset) => buildPartner(offset + 1, next));
   const gifts = generateGiftRows(next, window);
-  if (partners.length !== WORKLOAD_PARTNER_COUNT || gifts.length !== WORKLOAD_GIFT_COUNT) {
+  if (partners.length !== WORKLOAD_PARTNER_COUNT || gifts.length !== WORKLOAD_GIFT_COUNT)
     throw new Error(
       `The workload generator produced ${String(partners.length)} partners and ${String(gifts.length)} gift rows where the published workload is ${String(WORKLOAD_PARTNER_COUNT)} and ${String(WORKLOAD_GIFT_COUNT)}; a shortfall would invalidate the whole-query agreement and the measurements this dataset exists for.`,
     );
-  }
   const header: WorkloadHeader = {
     version: WORKLOAD_DOCUMENT_VERSION,
     sessionId,
@@ -230,9 +229,7 @@ async function persistWorkload(sessionId: string, workload: WorkloadDocument): P
     existing = undefined;
   }
   if (existing === undefined) return void (await resetSession(sessionId, { ...seedSessionDocuments(sessionId), workload }));
-  await transact(sessionId, ["workload"], (draft) => {
-    draft.workload = workload;
-  });
+  await transact(sessionId, ["workload"], (draft) => (draft.workload = workload));
 }
 /** Generates the published workload into a seeded session's store document and reports what it did. */
 export async function generateWorkload(sessionId: string = DEFAULT_WORKLOAD_SESSION_ID, options: GenerateWorkloadOptions = {}): Promise<WorkloadSummary> {

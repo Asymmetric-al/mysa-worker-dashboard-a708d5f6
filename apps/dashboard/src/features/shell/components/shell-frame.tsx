@@ -45,10 +45,6 @@ function ShellSurface({ scope, admissionState, contextAdmissions, contextRevisio
       },
     };
   }, [canSwitchContext, contextAdmissions, contextRevision, fence, router, scope.principalId]);
-  return (
-    <AppShell scope={scope} admissionState={admissionState} contextAdmissions={contextAdmissions} contextSwitch={contextSwitch} developmentRegion={developmentRegion} devScenarioId={devScenarioId}>
-      {children}
-    </AppShell>
-  );
+  return <AppShell {...{ scope, admissionState, contextAdmissions, contextSwitch, developmentRegion, devScenarioId }}>{children}</AppShell>;
 }
 export default ShellFrame;

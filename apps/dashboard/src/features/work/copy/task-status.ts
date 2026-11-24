@@ -1,12 +1,10 @@
 import type { TaskRecordStatus as TaskStatus } from "@/modules/data-service/envelope";
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = { open: "Open", completed: "Completed", reopened: "Reopened", cancelled: "Cancelled" };
 export const TASK_STATUS_ORDER = ["open", "completed", "reopened", "cancelled"] as const satisfies readonly TaskStatus[];
-type UnlistedTaskStatus = Exclude<TaskStatus, (typeof TASK_STATUS_ORDER)[number]>;
-export const TASK_STATUS_ORDER_IS_COMPLETE: UnlistedTaskStatus extends never ? true : false = true;
+export const TASK_STATUS_ORDER_IS_COMPLETE: Exclude<TaskStatus, (typeof TASK_STATUS_ORDER)[number]> extends never ? true : false = true;
 export type TaskListKey = "today" | "upcoming" | "overdue" | "all" | "undated";
 export const TASK_LIST_KEYS = ["today", "upcoming", "overdue", "all", "undated"] as const satisfies readonly TaskListKey[];
-type UnlistedTaskListKey = Exclude<TaskListKey, (typeof TASK_LIST_KEYS)[number]>;
-export const TASK_LIST_KEYS_ARE_COMPLETE: UnlistedTaskListKey extends never ? true : false = true;
+export const TASK_LIST_KEYS_ARE_COMPLETE: Exclude<TaskListKey, (typeof TASK_LIST_KEYS)[number]> extends never ? true : false = true;
 export const TASK_LIST_LABELS: Record<TaskListKey, string> = { today: "Today", upcoming: "Upcoming", overdue: "Overdue", all: "All", undated: "Undated" };
 export type TaskKind = "default" | "meeting";
 export const TASK_KIND_LABELS: Record<TaskKind, string> = { default: "Task", meeting: "Meeting" };

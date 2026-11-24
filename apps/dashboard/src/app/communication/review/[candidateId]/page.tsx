@@ -8,8 +8,7 @@ import { reads } from "@/modules/data-service";
 import { ReadNotices, type ReadNoticeCopy } from "../../../page-frame";
 export const metadata: Metadata = { title: "Review" };
 type CandidateEnvelope = Extract<Awaited<ReturnType<typeof reads.updates.readCandidate>>, { kind: "envelope" }>["envelope"];
-type CandidateData = CandidateEnvelope["data"];
-type ReviewableCandidate = Extract<CandidateData, { status: "reviewable" }>;
+type ReviewableCandidate = Extract<CandidateEnvelope["data"], { status: "reviewable" }>;
 const PAGE_HEADING_LEVEL = 1;
 const UNRENDERABLE_TITLE = "The frozen revision cannot be shown";
 const UNRENDERABLE_DESCRIPTION = "This edition's frozen revision cannot be read as the content profile requires, so no reviewer can " + "be asked to approve it. Nothing has been approved, nothing has been released, and the revision " + "keeps its identity until the author submits one that can be shown.";
@@ -64,8 +63,7 @@ function surfaceOf(envelope: CandidateEnvelope): ReactElement {
   }
   return unhandledAnswer(data);
 }
-/** The review surface of one frozen Update candidate. */
-export default async function CommunicationReviewPage({ params }: { readonly params: Promise<{ candidateId: string }> }): Promise<ReactElement> {
+/** The review surface of one frozen Update candidate. */ export default async function CommunicationReviewPage({ params }: { readonly params: Promise<{ candidateId: string }> }): Promise<ReactElement> {
   const { candidateId } = await params;
   const result = await reads.updates.readCandidate({ variantId: candidateId });
   return result.kind === "envelope" ? surfaceOf(result.envelope) : <ReadNotices failure={result} copy={NOTICE_COPY} />;

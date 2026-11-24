@@ -27,9 +27,7 @@ const MESSAGES = {
   pageInvalid: "State the page as a whole number from 1.",
   pageSizeInvalid: "State the page size as a whole number from 1.",
 } as const;
-type ReferralListQuery = NonNullable<Parameters<typeof reads.referrals.readReferrals>[0]>;
-type ReferralListName = NonNullable<ReferralListQuery["list"]>;
-const REFERRAL_LISTS = ["active", "incomplete-date", "expired"] as const satisfies readonly ReferralListName[];
+const REFERRAL_LISTS = ["active", "incomplete-date", "expired"] as const satisfies readonly NonNullable<NonNullable<Parameters<typeof reads.referrals.readReferrals>[0]>["list"]>[];
 const DATE_PRECISIONS = ["date", "approximate", "unknown"] as const satisfies readonly ReferralCycleRecord["datePrecision"][];
 const SOURCE_ZONE_SHAPE = /^(?:[A-Za-z][A-Za-z0-9_+-]*(?:\/[A-Za-z0-9_+-]+)*|[+-]\d{2}:\d{2})$/u;
 const referralListQuerySchema = z.strictObject({
@@ -59,11 +57,9 @@ const introductionPayloadSchema = z
     if (stated === null) context.addIssue({ code: "custom", path: ["originalIntroductionOn"], message: MESSAGES.dateRequired });
   });
 const recordIntroductionBodySchema = mutationInputSchema(introductionPayloadSchema);
-const REFERRAL_ID_PARAM = "referralId";
-/** One page of one referral list, or the one cycle the request named, as one envelope either way, or the read's own `denied`/`unavailable` outcome. */
 async function readReferrals(request: Request): Promise<Response> {
   const search = new URL(request.url).searchParams;
-  const referralId = search.get(REFERRAL_ID_PARAM);
+  const referralId = search.get("referralId");
   if (referralId !== null && referralId.trim().length > 0) return readResponse(READ_ATTEMPT, () => reads.referrals.readReferral(referralId));
   const grammar = referralListQuerySchema.safeParse(rawReferralListParams(search));
   if (!grammar.success) return toResponse(refusedRead(READ_ATTEMPT, grammar.error));

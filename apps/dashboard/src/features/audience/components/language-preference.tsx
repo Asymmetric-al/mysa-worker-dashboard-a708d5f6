@@ -15,12 +15,6 @@ import { useSetPreference } from "../hooks/use-audience-mutations";
 import type { SetPreferencePayload } from "../schemas/preference";
 /** One language the caller's read made available for this membership. The tag is the value submitted; nothing here adds one. */ export type LanguageOption = { readonly tag: string; readonly label: string; readonly direction?: "ltr" | "rtl" };
 const SELECT_LABEL = "Reading language";
-const CONTEXT_LEAD = "This preference applies to notices from";
-const CONTEXT_PURPOSE_LEAD = "for the purpose";
-const CONTEXT_TAIL = "No other publisher, purpose or record about you is affected.";
-const UNNAMED_PUBLISHER = "a publisher this read does not name";
-const AUTHORITY_REASON = "This session cannot change the reading language for this membership.";
-const NO_LANGUAGES = "This publisher offers no language this page can list, so there is nothing to choose here and nothing was written.";
 const NOT_OFFERED_HINT = "The language recorded now is not one this publisher offers here, so choose one of the offered languages and save it.";
 const NO_LANGUAGE_YET_HINT = "No language is recorded for this membership yet. Choose one and save it to state how you read this publisher's Updates.";
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { membershipId: "Membership", choice: "Off or Immediate", languagePreference: SELECT_LABEL };
@@ -113,9 +107,9 @@ export function LanguagePreference({ scope, membershipId, publisherId, purpose, 
   const submittedTag = pending !== null && offeredKeys.has(tagKey(pending)) && tagKey(pending) !== storedKey ? pending.trim() : null;
   const attempt = submittedTag === null ? null : { scope, expectedRevision, payload: { membershipId, choice: currentChoice, languagePreference: submittedTag } };
   const answeredHere = attempt !== null && current !== null && review.reviewedIntent === intentKeyOf(attempt) ? current : null;
-  const reason = disabled ? disabledReason?.trim() || AUTHORITY_REASON : null;
+  const reason = disabled ? disabledReason?.trim() || "This session cannot change the reading language for this membership." : null;
   const state = review.pending ? "working" : current === null ? "review" : "settled";
-  const hint = noLanguages ? NO_LANGUAGES : stored === "" ? NO_LANGUAGE_YET_HINT : !storedOffered ? NOT_OFFERED_HINT : "Choose a language other than the one recorded, then save it.";
+  const hint = noLanguages ? "This publisher offers no language this page can list, so there is nothing to choose here and nothing was written." : stored === "" ? NO_LANGUAGE_YET_HINT : !storedOffered ? NOT_OFFERED_HINT : "Choose a language other than the one recorded, then save it.";
   const statement = current === null ? null : outcomeStatement(current, { offered, stored, selection: pending });
   const settle = useCallback(
     async (run: () => Promise<MutationOutcome | null>): Promise<void> => {
@@ -127,6 +121,7 @@ export function LanguagePreference({ scope, membershipId, publisherId, purpose, 
     },
     [onSaved, router],
   );
+  const retryWork = current !== null && mayReplay(current) ? (): void => void settle(review.retry) : undefined;
   const save = (): void => {
     if (attempt === null || review.pending || disabled) return;
     void settle(() => review.submit(attempt));
@@ -143,11 +138,11 @@ export function LanguagePreference({ scope, membershipId, publisherId, purpose, 
               <p>{LANGUAGE_PREFERENCE_COPY.help}</p>
               <p>{LANGUAGE_PREFERENCE_COPY.separateFromProof}</p>
               <p className="text-muted-foreground">
-                {`${CONTEXT_LEAD} `}
-                <bdi className="mono-identifier">{publisherId === null ? UNNAMED_PUBLISHER : publisherId}</bdi>
-                {` ${CONTEXT_PURPOSE_LEAD} `}
+                {`${"This preference applies to notices from"} `}
+                <bdi className="mono-identifier">{publisherId === null ? "a publisher this read does not name" : publisherId}</bdi>
+                {` ${"for the purpose"} `}
                 <bdi className="mono-identifier">{purpose}</bdi>
-                {`. ${CONTEXT_TAIL}`}
+                {`. ${"No other publisher, purpose or record about you is affected."}`}
               </p>
             </div>
             <FormField label={SELECT_LABEL} name="language-preference-select">
@@ -156,11 +151,7 @@ export function LanguagePreference({ scope, membershipId, publisherId, purpose, 
                 return (
                   <>
                     <NativeSelect id={id} className="w-full max-w-full" value={selected} aria-describedby={describedBy === undefined ? currentValueId : `${describedBy} ${currentValueId}`} disabled={controlDisabled} onChange={(event) => setPending(event.currentTarget.value)}>
-                      {selected === "" ? (
-                        <NativeSelectOption value="" disabled>
-                          {"A language has not been chosen yet"}
-                        </NativeSelectOption>
-                      ) : null}
+                      {selected === "" ? <NativeSelectOption {...{ value: "", disabled: true }}>{"A language has not been chosen yet"}</NativeSelectOption> : null}
                       {offered.length === 0 ? null : (
                         <NativeSelectOptGroup label="Languages this publisher offers">
                           {offered.map((option) => (
@@ -192,9 +183,7 @@ export function LanguagePreference({ scope, membershipId, publisherId, purpose, 
               }}
             </FormField>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <Button type="button" variant="default" onClick={save} disabled={controlDisabled || review.pending || attempt === null}>
-                {"Save language"}
-              </Button>
+              <Button {...{ type: "button", variant: "default", onClick: save, disabled: controlDisabled || review.pending || attempt === null }}>{"Save language"}</Button>
               {review.pending ? <output className="min-w-0 text-sm text-muted-foreground text-pretty wrap-anywhere">Saving the reading language — working. Nothing else on this page changes.</output> : null}
             </div>
             {reason !== null ? <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{reason}</p> : changed || review.pending ? null : <p className="text-sm text-muted-foreground text-pretty wrap-anywhere">{hint}</p>}
@@ -203,14 +192,7 @@ export function LanguagePreference({ scope, membershipId, publisherId, purpose, 
       </FormFieldGroup>
       {current === null ? null : (
         <div key={`${current.outcome}:${current.operationId}`} ref={resultRef} tabIndex={-1} data-slot="language-preference-result" data-outcome={current.outcome} className="mt-4 flex min-w-0 flex-col gap-3">
-          <OperationResult
-            outcome={current}
-            headingLevel={headingLevel}
-            onCheckResult={current.outcome === "unknown" ? onCheckResult : undefined}
-            onRetrySameWork={mayReplay(current) ? () => void settle(review.retry) : undefined}
-            onReapply={reappliableRevision(current) === null ? undefined : () => void settle(review.reapply)}
-            fieldLabels={FIELD_LABELS}
-          />
+          <OperationResult outcome={current} headingLevel={headingLevel} onCheckResult={current.outcome === "unknown" ? onCheckResult : undefined} onRetrySameWork={retryWork} onReapply={reappliableRevision(current) === null ? undefined : () => void settle(review.reapply)} fieldLabels={FIELD_LABELS} />
           {statement === null ? null : <div className="min-w-0 text-muted-foreground">{statement}</div>}
         </div>
       )}

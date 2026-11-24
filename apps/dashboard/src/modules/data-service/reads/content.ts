@@ -9,47 +9,21 @@ import { admittedLocales, directionOfTag, resolveLocale, type AdmittedLocale, ty
 import { PREVIEW_RENDITION_PURPOSES, authorisePreview, type PreviewDenialReason } from "@/modules/content/preview";
 import { REACH_VALUES, isDirectlyReadable, isListedPublicly, reachMetadata, withdrawEdition, type Reach, type ReachMetadata, type Tombstone } from "@/modules/content/reach";
 import { renderToHtml, type RenderMediaPlacement, type RenderRendition, type RenderRenditionPurpose, type RenderRenditions } from "@/modules/content/render";
-import { REVIEW_DECISIONS, REVIEW_STEPS_PER_CANDIDATE, VARIANT_FAMILIES, admittedAudiences, translationStaleness, type ContentCandidate, type ContentDocument, type ContentRevision, type ContentVariant, type Release, type ReviewDecision, type TranslationStaleness } from "@/modules/content/variant";
+import { REVIEW_DECISIONS, REVIEW_STEPS_PER_CANDIDATE, VARIANT_FAMILIES, admittedAudiences, translationStaleness, type ContentCandidate, type ContentRevision, type ContentVariant, type Release, type ReviewDecision, type TranslationStaleness } from "@/modules/content/variant";
 import { scenarioMediaServing } from "@/modules/dev-runtime/scenario";
 import { mediaStateReason, type MediaRenditionPurpose, type MediaStateReason } from "@/modules/media/asset";
 import { GOAL_MEASURE } from "@/modules/support/goal";
 import { clampPageSize } from "@/modules/support/report";
 import { canEdit, canView, type ResolvedSession, type SessionSource } from "../authorize";
-import {
-  PAGE_SECTION_TYPES,
-  contentDocumentRecordSchema,
-  contentVariantRecordSchema,
-  mediaAssetRecordSchema,
-  project,
-  releaseRecordSchema,
-  storedInstantSchema,
-  supportProjectionRecordSchema,
-  type ContentAudience,
-  type ContentCaptionTrackRecord,
-  type ContentDocumentRecord,
-  type ContentFamily,
-  type ContentKind,
-  type Coverage,
-  type CoverageState,
-  type MediaAssetKind,
-  type MediaPlacementRecord,
-  type PageSectionType,
-  type ReadAction,
-  type ReadEnvelope,
-  type RecordedValueState,
-  type ReleaseRecord,
-  type Scope,
-  type SharePresentationRecord,
-  type SupportBasis,
-  type SupportGoalMeasure,
-  type SupportProjectionRecord,
-} from "../envelope";
+import { PAGE_SECTION_TYPES, PAGE_SECTION_TYPES_BY_FAMILY, contentDocumentRecordSchema, contentVariantRecordSchema, mediaAssetRecordSchema, project, releaseRecordSchema, storedInstantSchema, supportProjectionRecordSchema } from "../envelope";
+import type { ContentAudience, ContentCaptionTrackRecord, ContentDocumentRecord, ContentFamily, ContentKind, Coverage, CoverageState, MediaAssetKind, MediaPlacementRecord, PageSectionType, ReadAction, ReadEnvelope, RecordedValueState, ReleaseRecord, Scope, SharePresentationRecord } from "../envelope";
+import type { SupportBasis, SupportGoalMeasure, SupportProjectionRecord } from "../envelope";
 import { storedContentRevisionRecordSchema } from "../envelope";
 import type { StoredContentRevisionRecord } from "../envelope";
 import type { ReadResult } from "../outcome";
 import type { PageWindow } from "./audience";
 import { answerOf, deniedRead, digest, openStatefulRead, readAction, storeSource } from "./frame";
-import { contentRevisionOf, contentVariantOf } from "../projection";
+import { contentDocumentOf, contentRevisionOf, contentVariantOf } from "../projection";
 type StoredContentRevision = StoredContentRevisionRecord;
 const SUBMITTED_RELEASE_MODES = ["publish-only", "publish-and-notify"] as const;
 type SubmittedReleaseMode = (typeof SUBMITTED_RELEASE_MODES)[number];
@@ -148,9 +122,6 @@ function newestReleaseOf(releases: readonly ReleaseRecord[]): ReleaseRecord | un
   return newest;
 }
 const isWithdrawnRelease = (record: ReleaseRecord): boolean => record.withdrawnAt !== null;
-function documentOf(record: ContentDocumentRecord): ContentDocument {
-  return { documentId: record.documentId, family: record.family, kind: record.kind, sourceSubject: record.sourceSubject, siteId: record.siteId, ...(record.givingBinding === null ? {} : { givingBinding: record.givingBinding.designation }), managedFields: {} };
-}
 const NO_DECLARED_SITE_DEFAULT = "";
 const renditionPath = (assetId: string, renditionId: string): string => `/api/media/${encodeURIComponent(assetId)}/${encodeURIComponent(renditionId)}`;
 export type ContentRenditionView = { readonly renditionId: string; readonly purpose: MediaRenditionPurpose; readonly mimeType: string; readonly path: string };
@@ -914,13 +885,14 @@ const PAGE_PRESETS: readonly PagePresetView[] = [
 export type PageCatalogueSectionView = { readonly key: PageSectionType; readonly labelKey: string; readonly managed: boolean; readonly lockReasonKey: string | null; readonly fields: readonly string[]; readonly presentation: ContentPresentationChoices };
 export type PageCatalogueView = { readonly family: ContentFamily; readonly labelKey: string; readonly sections: readonly PageCatalogueSectionView[] };
 export type PageCataloguesData = { readonly catalogues: readonly PageCatalogueView[]; readonly presentation: ContentPresentationChoices; readonly structuralOperations: readonly PageStructuralOperation[]; readonly presets: readonly PagePresetView[] };
+/** One admitted section type as a family catalogue states it: the copy key a surface reads, whether the source owns it and why, the fields it holds and its bounded presentation choices. */
+const catalogueSectionOf = (key: PageSectionType): PageCatalogueSectionView => ({ key, labelKey: `catalogue.${key}`, managed: MANAGED_SECTION_TYPES.has(key), lockReasonKey: SECTION_LOCK_REASON_KEYS[key] ?? null, fields: SECTION_FIELD_KEYS[key], presentation: PRESENTATION_CHOICES });
 /** Reads the two guided family catalogues: the eight admitted section types each offers, the fields and presentation choices each admits, which are managed and why, the structural operations. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readPageCatalogues(input: { readonly session?: SessionSource } = {}): Promise<ReadResult<ReadEnvelope<PageCataloguesData>>> {
   const opened = await openContentWorkspace("readPageCatalogues", input.session);
   if (!opened.ok) return opened.result;
   const { workspace } = opened;
-  const sections: readonly PageCatalogueSectionView[] = PAGE_SECTION_TYPES.map((key) => ({ key, labelKey: `catalogue.${key}`, managed: MANAGED_SECTION_TYPES.has(key), lockReasonKey: SECTION_LOCK_REASON_KEYS[key] ?? null, fields: SECTION_FIELD_KEYS[key], presentation: PRESENTATION_CHOICES }));
-  const data: PageCataloguesData = { catalogues: PAGE_FAMILIES.map((family) => ({ family, labelKey: `catalogue.family.${family}`, sections })), presentation: PRESENTATION_CHOICES, structuralOperations: PAGE_STRUCTURAL_OPERATIONS, presets: PAGE_PRESETS };
+  const data: PageCataloguesData = { catalogues: PAGE_FAMILIES.map((family) => ({ family, labelKey: `catalogue.family.${family}`, sections: PAGE_SECTION_TYPES_BY_FAMILY[family].map(catalogueSectionOf) })), presentation: PRESENTATION_CHOICES, structuralOperations: PAGE_STRUCTURAL_OPERATIONS, presets: PAGE_PRESETS };
   return respond(workspace, "page-catalogues", PAGE_CATALOGUE_REVISION, data, { catalogues: "value", sectionTypes: "value", presets: PAGE_PRESETS.length === 0 ? "zero" : "value" }, [{ name: "add-section", available: true }]);
 }
 export type PageManagedFieldView = { readonly key: string; readonly locked: true; readonly lockReasonKey: string };
@@ -1016,7 +988,7 @@ export async function readPageLocales(input: { readonly pageId: string; readonly
   const requestedLocale = isNonEmptyString(asked) ? asked : (newest?.locale ?? variantRecords[0]?.locale ?? "");
   const requestedLocaleSource: RequestedLocaleSource = isNonEmptyString(asked) ? "caller" : "document-default";
   const releases: readonly (Release & { readonly documentId: string; readonly siteId: string })[] = releasesOf(workspace.state, documentRecord.documentId).map((release) => ({ ...releaseOf(release, checksums), documentId: documentRecord.documentId, siteId: documentRecord.siteId }));
-  const query = { document: documentOf(documentRecord), siteDefaultLocale: NO_DECLARED_SITE_DEFAULT, audience: "public" as const, releases };
+  const query = { document: contentDocumentOf(documentRecord), siteDefaultLocale: NO_DECLARED_SITE_DEFAULT, audience: "public" as const, releases };
   const resolution = resolveLocale({ ...query, requestedLocale });
   const data: PageLocalesData = { document: documentViewOf(documentRecord), requestedLocale, requestedLocaleSource, resolution, editions, admittedLocales: admittedLocales(query) };
   const actions: readonly ReadAction[] = [{ name: "add-locale-edition", available: true }, readAction("open-edition", resolution.status === "resolved", "No permitted edition serves this language, so there is nothing to open.")];

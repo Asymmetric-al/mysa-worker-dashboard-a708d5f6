@@ -116,22 +116,18 @@ const sameFingerprint = (left: ImportFileFingerprint, right: ImportFileFingerpri
 function inputRefusalOf(input: ImportReceiptBuildInput): ImportReceiptRefusal | null {
   const { fileMeta, summary, rowDecisions } = input;
   const { fingerprint } = summary;
-  if (summary.totalRowCount !== summary.rows.length || summary.counts.total !== summary.totalRowCount || summary.totalRowCount !== fileMeta.rowCount) {
+  if (summary.totalRowCount !== summary.rows.length || summary.counts.total !== summary.totalRowCount || summary.totalRowCount !== fileMeta.rowCount)
     return { code: "file-mismatch", message: `The summary describes ${summary.totalRowCount} row(s) in ${summary.rows.length} row entries, and the file metadata reports ${fileMeta.rowCount}. A receipt reports the rows of one file, so review this file's decisions again.` };
-  }
-  if (fingerprint.columnCount !== fileMeta.columnCount || fingerprint.dataRowCount !== fileMeta.rowCount) {
+  if (fingerprint.columnCount !== fileMeta.columnCount || fingerprint.dataRowCount !== fileMeta.rowCount)
     return { code: "file-mismatch", message: `The file metadata reports ${fileMeta.rowCount} data row(s) in ${fileMeta.columnCount} column(s), and the summary's fingerprint describes ${fingerprint.dataRowCount} in ${fingerprint.columnCount}. A changed file needs a fresh review.` };
-  }
-  if (!sameFingerprint(rowDecisions.fingerprint, fingerprint)) {
+  if (!sameFingerprint(rowDecisions.fingerprint, fingerprint))
     return {
       code: "decisions-mismatch",
       message: `These row decisions were recorded against a different version of this file: it held ${rowDecisions.fingerprint.dataRowCount} data row(s) in ${rowDecisions.fingerprint.columnCount} column(s) then, and holds ${fingerprint.dataRowCount} in ${fingerprint.columnCount} now. A changed file needs a fresh review.`,
     };
-  }
   return null;
 }
-/** Builds the receipt for one acceptance, or refuses inputs that describe two different files. */
-export function buildReceipt(input: ImportReceiptBuildInput): ImportReceiptBuild {
+/** Builds the receipt for one acceptance, or refuses inputs that describe two different files. */ export function buildReceipt(input: ImportReceiptBuildInput): ImportReceiptBuild {
   const refusal = inputRefusalOf(input);
   if (refusal !== null) return { ok: false, refusal };
   const results = input.summary.rows.map((row) => resultFor(row, indexApplications(input.applications).get(row.rowNumber)));
@@ -285,8 +281,7 @@ export function readStoredReceipt(stored: unknown, importOperationId: string): I
   const problem = integrityProblemOf(receipt);
   return problem !== null ? { kind: "unavailable", importOperationId, reasonCode: "receipt-inconsistent", reason: `The receipt stored under this import operation does not add up: ${problem} ${UNTRUSTWORTHY_TRAILER}` } : { kind: "found", receipt };
 }
-/** Stops every row the acceptance had not applied, and leaves every row it had applied exactly as it stands. */
-export function cancelUnacceptedRows(receipt: ImportReceipt, cancelledAt: string): ImportReceipt {
+/** Stops every row the acceptance had not applied, and leaves every row it had applied exactly as it stands. */ export function cancelUnacceptedRows(receipt: ImportReceipt, cancelledAt: string): ImportReceipt {
   if (receipt.cancellation !== null) return receipt;
   const results = receipt.results.map((result) => (result.state === "accepted" || result.state === "already-accepted" ? result : cancelledResult(result.rowNumber)));
   const counts = countsOf(results);

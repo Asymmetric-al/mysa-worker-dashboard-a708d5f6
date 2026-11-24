@@ -28,10 +28,7 @@ const TRANSPORT_GUIDANCE = "The request did not complete, so this read has no an
 const pageParams = (query: { readonly page?: number; readonly pageSize?: number }): QueryParams => ({ ...(query.page === undefined ? {} : { page: query.page }), ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }) });
 function searchOf(params: QueryParams): string {
   const search = new URLSearchParams();
-  for (const name of Object.keys(params).sort()) {
-    const value = params[name];
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") search.set(name, String(value));
-  }
+  for (const name of Object.keys(params).sort()) if (typeof params[name] === "string" || typeof params[name] === "number" || typeof params[name] === "boolean") search.set(name, String(params[name]));
   const encoded = search.toString();
   return encoded === "" ? "" : `?${encoded}`;
 }
@@ -59,9 +56,7 @@ function useRouteEnvelope<T extends { readonly scope: Scope }>(scope: Scope, key
     if (queryClient.getQueryData<ReadResult<T>>(key) === initialEnvelope) return;
     queryClient.setQueryData<ReadResult<T>>(key, initialEnvelope);
   }, [queryClient, key, scope, initialEnvelope]);
-  const refresh = useCallback(() => {
-    router.refresh();
-  }, [router]);
+  const refresh = useCallback(() => router.refresh(), [router]);
   return { result: entry.data ?? initialEnvelope, refresh, isFetching: entry.isFetching };
 }
 /** What {@link useReceivingList} needs: the authority to read under, the params the entry is keyed by (omitted because the read itself defaults its query), and the envelope the Server Component read. */

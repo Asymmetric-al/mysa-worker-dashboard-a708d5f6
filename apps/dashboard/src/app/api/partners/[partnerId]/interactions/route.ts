@@ -4,7 +4,6 @@ import { jsonBodyOf, mutate, refusalIdentityGiven } from "../../../handler";
 import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const UNATTEMPTED_REQUEST_ID = "no-operation-attempted";
 const MESSAGES = {
   bodyNotJson: "Send the interaction as a JSON object carrying operationId, scope, expectedRevision and payload.",
   partnerIdInvalid: "A record reference is text, so open the contact again and retry from its own page.",
@@ -51,10 +50,8 @@ function interactionRequestSchema(pathPartnerId: string) {
   return mutationInputSchema(payload);
 }
 const jsonObjectSchema = z.custom<Record<string, unknown>>((value) => typeof value === "object" && value !== null && !Array.isArray(value), { error: MESSAGES.bodyNotJson });
-const refusalIdentityOf = refusalIdentityGiven(UNATTEMPTED_REQUEST_ID);
-type InteractionRouteParams = { readonly partnerId: string };
-/** Records something that actually happened with the contact the address names, as one named mutation. */
-async function logInteraction(request: Request, context: { params: Promise<InteractionRouteParams> }): Promise<Response> {
+const refusalIdentityOf = refusalIdentityGiven("no-operation-attempted");
+/** Records something that actually happened with the contact the address names, as one named mutation. */ async function logInteraction(request: Request, context: { params: Promise<{ readonly partnerId: string }> }): Promise<Response> {
   const { partnerId } = await context.params;
   const body = await jsonBodyOf(request);
   const operationId = refusalIdentityOf(body);

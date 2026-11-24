@@ -1,7 +1,7 @@
 "use client";
 import { CheckIcon, ChevronDownIcon, UsersIcon, XIcon } from "lucide-react";
 import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from "react";
-import ActionReview, { type MutationSubmit, type ReviewHeadingLevel } from "@/components/action-review";
+import ActionReview, { type MutationSubmit } from "@/components/action-review";
 import { PerItemResults, PER_ITEM_RESULT_STATES, PER_ITEM_RESULT_STATUS, type PerItemResultState } from "@/components/operation-result";
 import { StateNotice } from "@/components/state-notice";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -16,11 +16,8 @@ import type { MutationInput, MutationOutcome, PerItemResult, ReadEnvelope, Scope
 import { MEMBERSHIP_RULES_COPY, MEMBERSHIP_STATE_COPY, STATE_NOTICE_COPY, type MembershipState } from "../copy";
 import { useAddMembers, type NamedChange } from "../hooks/use-initiative-mutations";
 import { addMembersPayloadSchema, type AddMembersPayload } from "../schemas/member";
-type SourceReference = ReadEnvelope<unknown>["source"];
-/** One partner the enclosing read offers for selection, as this control renders it. */
 export type MemberCandidate = { readonly partnerId: string; readonly displayName: string; readonly membership?: { readonly memberId: string; readonly state: MembershipState } | null };
-/** The candidate read the envelope supplied: the eligible set, or the source's refusal to answer for it. */
-export type MemberCandidates = { readonly state: "available"; readonly partners: readonly MemberCandidate[] } | { readonly state: "unavailable"; readonly source: SourceReference };
+export type MemberCandidates = { readonly state: "available"; readonly partners: readonly MemberCandidate[] } | { readonly state: "unavailable"; readonly source: ReadEnvelope<unknown>["source"] };
 /** Props of {@link MemberPicker}. */
 export interface MemberPickerProps {
   readonly initiativeId: string;
@@ -60,8 +57,7 @@ const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 type MemberPickerHeadingLevel = keyof typeof HEADING_TAG;
 const HEADING_SCALE: Readonly<Record<MemberPickerHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 type ResultWordVariant = "default" | "secondary" | "outline" | "destructive";
-type ResultWord = { readonly label: string; readonly variant: ResultWordVariant };
-const RESULT_WORDS: Readonly<Record<PerItemResultState, ResultWord>> = {
+const RESULT_WORDS: Readonly<Record<PerItemResultState, { readonly label: string; readonly variant: ResultWordVariant }>> = {
   accepted: { label: MEMBERSHIP_STATE_COPY.included.label, variant: "default" },
   unchanged: { label: PER_ITEM_RESULT_STATUS.unchanged.label, variant: "secondary" },
   excluded: { label: MEMBERSHIP_STATE_COPY.excluded.label, variant: "outline" },
@@ -96,9 +92,7 @@ function PartnerSelection({ selection, results, onRemove }: PartnerSelectionProp
   if (selection.length === 0) return <p className="text-sm text-pretty text-muted-foreground">{PICKER_COPY.selectedEmpty}</p>;
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <p id={headingId} className="text-xs font-medium text-muted-foreground">
-        {PICKER_COPY.selectedHeading}
-      </p>
+      <p {...{ id: headingId, className: "text-xs font-medium text-muted-foreground" }}>{PICKER_COPY.selectedHeading}</p>
       <ul aria-labelledby={headingId} className="flex min-w-0 flex-wrap items-center gap-2">
         {selection.map((entry) => {
           const item = results.get(entry.partnerId);
@@ -106,11 +100,7 @@ function PartnerSelection({ selection, results, onRemove }: PartnerSelectionProp
           return (
             <li key={entry.partnerId} className="flex min-w-0 max-w-full items-center gap-1">
               <PartnerNameTag name={entry.displayName} />
-              {word === null ? null : (
-                <Badge variant={word.variant} className="h-auto py-1 whitespace-normal">
-                  {word.label}
-                </Badge>
-              )}
+              {word === null ? null : <Badge {...{ variant: word.variant, className: "h-auto py-1 whitespace-normal" }}>{word.label}</Badge>}
               <Button type="button" variant="ghost" size="icon-xs" aria-label={PICKER_COPY.removeLabel(entry.displayName)} onClick={() => onRemove(entry.partnerId)}>
                 <XIcon aria-hidden="true" />
               </Button>
@@ -209,7 +199,6 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
   if (read.state === "unavailable") return <StateNotice kind="unavailable" title={PICKER_COPY.unavailableTitle} description={PICKER_COPY.unavailableBody} source={read.source} headingLevel={headingLevel} className={className} />;
   if (eligible.length === 0) return <StateNotice kind="empty" title={PICKER_COPY.emptyTitle} description={PICKER_COPY.emptyBody} action={{ label: PICKER_COPY.backToWorkingList, href: workingListHref(initiativeId) }} headingLevel={headingLevel} className={className} />;
   const Heading = HEADING_TAG[headingLevel];
-  const reviewHeadingLevel: ReviewHeadingLevel = headingLevel === 2 ? 3 : 4;
   const reviewDescription = (
     <div className="flex min-w-0 flex-col gap-2">
       <p className="text-pretty">{PICKER_COPY.reviewDescription}</p>
@@ -222,14 +211,13 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
       </ul>
     </div>
   );
+  const reviewHeadingLevel: MemberPickerHeadingLevel = headingLevel === 2 ? 3 : 4;
   const reviewCopy = { title: PICKER_COPY.reviewTitle, description: reviewDescription, confirmLabel: PICKER_COPY.confirmLabel, cancelLabel: PICKER_COPY.cancelLabel, onCancel: () => setOpen(true), headingLevel: reviewHeadingLevel };
   const itemAction = (item: PerItemResult): ReactElement => <bdi className="text-sm min-w-0 break-words">{nameOf(item.targetId)}</bdi>;
   return (
     <section aria-labelledby={headingId} data-slot="member-picker" className={cn("flex min-w-0 flex-col gap-3", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading id={headingId} className={cn(HEADING_SCALE[headingLevel], "text-pretty")}>
-          {PICKER_COPY.heading}
-        </Heading>
+        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty") }}>{PICKER_COPY.heading}</Heading>
         <p className="text-sm text-pretty text-muted-foreground">{MEMBERSHIP_RULES_COPY.explicitSelectionOnly}</p>
       </div>
       <ul className="flex min-w-0 flex-col gap-1 text-xs text-pretty text-muted-foreground">
@@ -252,9 +240,7 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
             </PopoverTrigger>
             <PopoverContent ref={layerRef} align="start" className="w-80 max-w-[calc(100vw-2rem)] gap-3">
               <div className="flex min-w-0 flex-col gap-1.5">
-                <Label htmlFor={searchId} className="text-xs text-muted-foreground">
-                  {PICKER_COPY.searchLabel}
-                </Label>
+                <Label {...{ htmlFor: searchId, className: "text-xs text-muted-foreground" }}>{PICKER_COPY.searchLabel}</Label>
                 <InputGroup className="w-full">
                   <InputGroupInput
                     id={searchId}
@@ -304,9 +290,7 @@ export default function MemberPicker({ initiativeId, candidates, scope, expected
                           },
                         })}
                       >
-                        <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center">
-                          {isSelected ? <CheckIcon className="size-4" /> : null}
-                        </span>
+                        <span {...{ "aria-hidden": "true", className: "flex size-4 shrink-0 items-center justify-center" }}>{isSelected ? <CheckIcon className="size-4" /> : null}</span>
                         <bdi className="min-w-0 flex-1 truncate">{candidate.displayName}</bdi>
                       </div>
                     );

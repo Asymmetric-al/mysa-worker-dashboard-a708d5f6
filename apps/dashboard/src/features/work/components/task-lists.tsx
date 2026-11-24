@@ -21,44 +21,23 @@ import { useTaskLists, type TaskListsQuery, type TaskListsResult } from "../hook
 import BulkActionBar, { type BulkSelectionRow } from "./bulk-action-bar";
 import TaskActions, { TASK_STATUS_TONES } from "./task-actions";
 import TaskComposer, { type TaskComposerInitialValues, type TaskLinkChoices } from "./task-composer";
-type TaskListEnvelope = Extract<TaskListsResult, { readonly kind: "envelope" }>["envelope"];
-type TaskListRow = TaskListEnvelope["data"]["tasks"][number];
+type TaskListRow = Extract<TaskListsResult, { readonly kind: "envelope" }>["envelope"]["data"]["tasks"][number];
 function editableTaskRecord(row: TaskListRow, scope: Scope): TaskRecord | null {
   if (!row.selectable) return null;
-  return {
-    taskId: row.taskId,
-    title: row.title,
-    category: row.category,
-    dueOn: row.dueOn,
-    plannedTime: row.plannedTime,
-    timeZone: row.timeZone,
-    kind: row.kind,
-    status: row.status,
-    partnerId: row.partnerId,
-    initiativeId: row.initiativeId,
-    seriesId: row.seriesId,
-    ownerPrincipalId: scope.principalId,
-    note: row.note,
-    revision: row.revision,
-  };
+  const { taskId, title, category, dueOn, plannedTime, timeZone, kind, status, partnerId, initiativeId, seriesId, note, revision } = row;
+  return { taskId, title, category, dueOn, plannedTime, timeZone, kind, status, partnerId, initiativeId, seriesId, ownerPrincipalId: scope.principalId, note, revision };
 }
 const TASK_SORT_FIELDS = ["dueOn", "title", "category", "status"] as const;
-type TaskSortField = (typeof TASK_SORT_FIELDS)[number];
-type SortInstruction = { readonly field: TaskSortField; readonly direction: "asc" | "desc" };
+type SortInstruction = { readonly field: (typeof TASK_SORT_FIELDS)[number]; readonly direction: "asc" | "desc" };
 type ListQueryState = { readonly list: TaskListKey; readonly sort: readonly SortInstruction[]; readonly page: number; readonly pageSize: number };
 const PARAM = { list: "list", sort: "sort", page: "page", pageSize: "pageSize" } as const;
 const SORT_TOKEN_SEPARATOR = ":";
-const WHOLE_NUMBER = /^\d{1,9}$/u;
-const DEFAULT_LIST: TaskListKey = "all";
 const FIRST_PAGE = 1;
-type SearchParameters = { readonly get: (name: string) => string | null; readonly getAll: (name: string) => string[] };
 const LIST_SWITCHER_LABEL = "Choose a task list";
 const TASK_NOUN = "tasks";
 const NEW_TASK_LABEL = "New task";
 const MUTED_TEXT_CLASS = "text-muted-foreground";
 const IDENTIFIER_CLASS = "mono-identifier";
-const TAG_COLUMN_LABEL = "Private tags";
-const NO_PRIVATE_TAG_LABEL = "No private tag";
 const INITIATIVE_ROUTE_PREFIX = "/partners/initiatives";
 /** One row's private tags as chips, wrapped so a long tag never widens the column. */ const TAG_CHIP_GROUP_CLASS = "flex min-w-0 flex-wrap items-center gap-1";
 const TAG_CHIP_TEXT_CLASS = "min-w-0 wrap-anywhere"; /** A row's link, sized so its target is at least 24 CSS px tall (WCAG 2.5.8) and carrying the one inline-link underline so its affordance is never carried by colour alone. */
@@ -73,11 +52,10 @@ const EMPTY_LIST_COPY: Readonly<Record<TaskListKey, { readonly title: string; re
   all: { title: "This context holds no task", description: "No task exists in this context yet — open, completed, reopened or cancelled — so there is nothing to complete, reopen, edit or cancel." },
   undated: { title: "No task is undated", description: "Every task in this context states a due date, so the work that has no date is a list of its own and holds nothing." },
 };
-const LOADING_LINES = 4;
 const LIST_DENIED_DESCRIPTION = "This session may not read this list in the context it is working in, so no row and no count is stated here. Another context, if this session holds one, can be chosen from the shell.";
 const NO_IDS: readonly string[] = [];
 const overLists = <T,>(valueOf: (list: TaskListKey) => T): Readonly<Record<TaskListKey, T>> => Object.fromEntries(TASK_LIST_KEYS.map((list) => [list, valueOf(list)])) as Readonly<Record<TaskListKey, T>>;
-const listNameOf = (stated: string | null): TaskListKey => TASK_LIST_KEYS.find((list) => list === stated) ?? DEFAULT_LIST;
+const listNameOf = (stated: string | null): TaskListKey => TASK_LIST_KEYS.find((list) => list === stated) ?? "all";
 function sortInstructionsOf(tokens: readonly string[]): readonly SortInstruction[] {
   const instructions: SortInstruction[] = [];
   for (const token of tokens) {
@@ -90,7 +68,7 @@ function sortInstructionsOf(tokens: readonly string[]): readonly SortInstruction
   return instructions;
 }
 function wholeNumberOf(stated: string | null): number | undefined {
-  if (stated === null || !WHOLE_NUMBER.test(stated)) return undefined;
+  if (stated === null || !/^\d{1,9}$/u.test(stated)) return undefined;
   const value = Number.parseInt(stated, 10);
   return Number.isFinite(value) && value >= FIRST_PAGE ? value : undefined;
 }
@@ -98,7 +76,7 @@ const pageSizeOf = (stated: string | null): number => {
   const size = wholeNumberOf(stated);
   return size === undefined ? PAGE_SIZE_DEFAULT : size >= PAGE_SIZE_CAP ? PAGE_SIZE_CAP : PAGE_SIZE_DEFAULT;
 };
-const queryStateOf = (parameters: SearchParameters): ListQueryState => ({ list: listNameOf(parameters.get(PARAM.list)), sort: sortInstructionsOf(parameters.getAll(PARAM.sort)), page: wholeNumberOf(parameters.get(PARAM.page)) ?? FIRST_PAGE, pageSize: pageSizeOf(parameters.get(PARAM.pageSize)) });
+type SearchParameters = { readonly get: (name: string) => string | null; readonly getAll: (name: string) => string[] };
 function searchOf(state: ListQueryState): string {
   const parameters = new URLSearchParams();
   parameters.set(PARAM.list, state.list);
@@ -115,11 +93,9 @@ function sortInstructionsOfColumns(sort: readonly { readonly id: string; readonl
   }
   return instructions;
 }
-const queryOfList = (list: TaskListKey, state: ListQueryState, displayTimeZone: string): TaskListsQuery => ({ list, displayTimeZone, page: state.page, pageSize: state.pageSize, ...(state.sort.length === 0 ? {} : { sort: state.sort }) });
 const sortKeyOf = (sort: TaskListsQuery["sort"]): string => (sort ?? []).map((instruction) => `${instruction.field}${SORT_TOKEN_SEPARATOR}${instruction.direction}`).join(",");
-function sameQuery(left: TaskListsQuery, right: TaskListsQuery): boolean {
-  return left.list === right.list && left.displayTimeZone === right.displayTimeZone && (left.page ?? FIRST_PAGE) === (right.page ?? FIRST_PAGE) && (left.pageSize ?? PAGE_SIZE_DEFAULT) === (right.pageSize ?? PAGE_SIZE_DEFAULT) && sortKeyOf(left.sort) === sortKeyOf(right.sort);
-}
+const sameQuery = (left: TaskListsQuery, right: TaskListsQuery): boolean =>
+  left.list === right.list && left.displayTimeZone === right.displayTimeZone && (left.page ?? FIRST_PAGE) === (right.page ?? FIRST_PAGE) && (left.pageSize ?? PAGE_SIZE_DEFAULT) === (right.pageSize ?? PAGE_SIZE_DEFAULT) && sortKeyOf(left.sort) === sortKeyOf(right.sort);
 function seedOf(result: TaskListsResult | undefined, query: TaskListsQuery): TaskListsResult | undefined {
   if (result === undefined || result.kind !== "envelope") return undefined;
   const { list, displayTimeZone, page, pageSize } = result.envelope.data;
@@ -200,13 +176,13 @@ export function taskListColumns({ partnerLabels }: TaskListColumnOptions): Reado
     },
     {
       id: "tags",
-      header: TAG_COLUMN_LABEL,
+      header: "Private tags",
       enableSorting: false, // The read orders by a task's own fields, so this column states the labels a row carries and offers no order.
       cell: (context) => {
         const { tags } = context.row.original;
         // A private tag is stated only to the principal who applied it, and the read has already kept the ones this session may see; no tag is a fact of its own, never an empty cell.
         return tags.length === 0 ? (
-          <span className={MUTED_TEXT_CLASS}>{NO_PRIVATE_TAG_LABEL}</span>
+          <span className={MUTED_TEXT_CLASS}>{"No private tag"}</span>
         ) : (
           <span className={TAG_CHIP_GROUP_CLASS}>
             {tags.map((tag) => (
@@ -255,7 +231,6 @@ interface TaskListsProps {
   readonly initialValues?: TaskComposerInitialValues;
   readonly className?: string;
 } /** The composer's state: closed, open on a new task, or open on the one record the worker chose to edit together with the private tags that row was read with. */
-type EditorState = { readonly mode: "create" } | { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] };
 type SelectionState = { readonly signature: string; readonly ids: readonly string[] };
 const NO_SELECTION: SelectionState = { signature: "", ids: NO_IDS };
 const selectionSignatureOf = (scope: Scope, list: TaskListKey): string => [scope.organizationId, scope.ministryId, scope.supportSubjectId, scope.principalId, list].join("\u0000"); /** The five lists, the switcher, the rows a worker selects, and the composer and bulk actions over them. */
@@ -267,9 +242,9 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
   const switcherId = useId();
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>({});
   const [selection, setSelection] = useState<SelectionState>(NO_SELECTION);
-  const [editor, setEditor] = useState<EditorState | null>(null);
-  const query = queryStateOf(searchParameters);
-  const listQueries = overLists((list) => queryOfList(list, query, displayTimeZone));
+  const [editor, setEditor] = useState<{ readonly mode: "create" } | { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] } | null>(null);
+  const query = ((parameters: SearchParameters): ListQueryState => ({ list: listNameOf(parameters.get(PARAM.list)), sort: sortInstructionsOf(parameters.getAll(PARAM.sort)), page: wholeNumberOf(parameters.get(PARAM.page)) ?? FIRST_PAGE, pageSize: pageSizeOf(parameters.get(PARAM.pageSize)) }))(searchParameters);
+  const listQueries = overLists((list) => ((list: TaskListKey, state: ListQueryState, displayTimeZone: string): TaskListsQuery => ({ list, displayTimeZone, page: state.page, pageSize: state.pageSize, ...(state.sort.length === 0 ? {} : { sort: state.sort }) }))(list, query, displayTimeZone));
   const seeds = overLists((list) => seedOf(lists[list], listQueries[list]));
   const reads = {
     today: useTaskLists(scope, listQueries.today, seeds.today),
@@ -318,7 +293,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
     const retry = { label: "Try this list again", onClick: () => void active.refetch() };
     if (reading === undefined) {
       if (active.isError) return <StateNotice kind="unavailable" headingLevel={3} title={`The ${name} list could not be read`} description="This page's request for the list did not answer, so nothing is shown in its place. Retry the list, and reset the development data if it keeps failing." retry={retry} />;
-      return <StateNotice kind="loading" headingLevel={3} title={`Reading the ${name} list`} loadingLines={LOADING_LINES} />;
+      return <StateNotice kind="loading" headingLevel={3} title={`Reading the ${name} list`} loadingLines={4} />;
     }
     if (reading.kind === "denied") return <StateNotice kind="denied" headingLevel={3} title={`The ${name} list is not available in this context`} description={LIST_DENIED_DESCRIPTION} reasonCode={reading.denied.reasonCode} />;
     if (reading.kind === "unavailable") return <StateNotice kind="unavailable" headingLevel={3} title={`The ${name} list could not be read`} description={reading.unavailable.guidance} source={reading.unavailable.source} retry={retry} />;
@@ -326,23 +301,9 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
       return <StateNotice kind="refused" headingLevel={3} title={`The request for the ${name} list was refused`} description="This surface states only the list, the display time zone and a page size the read admits, so a request it refuses is answered here in its own words. The source behind it did not fail." />;
     const { tasks, total } = reading.envelope.data;
     if (total === 0) return <StateNotice kind="empty" headingLevel={3} title={EMPTY_LIST_COPY[query.list].title} description={EMPTY_LIST_COPY[query.list].description} action={{ label: NEW_TASK_LABEL, onClick: openCreate }} />;
-    return (
-      <RecordList
-        label={`${name} ${TASK_NOUN}`}
-        columns={columns}
-        rows={tasks}
-        rowCount={total}
-        getRowId={taskRowId}
-        rowLabel={taskRowLabel}
-        queryState={listState}
-        onQueryStateChange={handleQueryStateChange}
-        selectedIds={selectedIds}
-        onSelectionChange={handleSelectionChange}
-        rowActions={(row) => <TaskActions taskId={row.taskId} title={row.title} status={row.status} revision={row.revision} scope={scope} actions={row.actions} presentation="row" onEdit={() => openEdit(row)} onCheckResult={refreshAll} headingLevel={4} />}
-        itemNoun={TASK_NOUN}
-        pageSizeOptions={PAGE_SIZE_OPTIONS}
-      />
-    );
+    const rowActionsOf = (row: TaskListRow) => <TaskActions taskId={row.taskId} title={row.title} status={row.status} revision={row.revision} scope={scope} actions={row.actions} presentation="row" onEdit={() => openEdit(row)} onCheckResult={refreshAll} headingLevel={4} />;
+    const listQuery = { queryState: listState, onQueryStateChange: handleQueryStateChange };
+    return <RecordList {...{ label: `${name} ${TASK_NOUN}`, columns, rows: tasks, rowCount: total, getRowId: taskRowId, rowLabel: taskRowLabel, ...listQuery, selectedIds, onSelectionChange: handleSelectionChange, rowActions: rowActionsOf, itemNoun: TASK_NOUN, pageSizeOptions: PAGE_SIZE_OPTIONS }} />;
   }
   const body = listContent();
   const listRegion = isNarrow ? (

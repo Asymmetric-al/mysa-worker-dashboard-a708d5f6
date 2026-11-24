@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useId, useMemo, useRef, type ReactElement, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import { usePathname, useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, Columns3Icon } from "lucide-react";
 import {
@@ -30,15 +30,14 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
+import { countFormatOf } from "@/lib/count-format";
 import type { SourceReference } from "@/lib/ids";
 export const recordListFeatures = tableFeatures({ rowSortingFeature, rowSelectionFeature, columnVisibilityFeature, rowPaginationFeature });
 export type RecordListFeatureSet = typeof recordListFeatures;
 export type RecordListColumnDef<TRow extends RowData> = ColumnDef<RecordListFeatureSet, TRow>;
 export type SortDescriptor = ColumnSort;
-/** The list state the owner controls, passed straight through to the service query. */
-export type RecordListQueryState = { sort: SortDescriptor[]; page: number; pageSize: number; columnVisibility: ColumnVisibilityState };
-/** The page window alone, in the pager's own one-based numbering: the part of the list state that belongs in the address. */
-export type RecordListWindow = { readonly page: number; readonly pageSize: number };
+/** The list state the owner controls, passed straight through to the service query. */ export type RecordListQueryState = { sort: SortDescriptor[]; page: number; pageSize: number; columnVisibility: ColumnVisibilityState };
+/** The page window alone, in the pager's own one-based numbering: the part of the list state that belongs in the address. */ export type RecordListWindow = { readonly page: number; readonly pageSize: number };
 export type RecordListProps<TRow extends RowData> = {
   label: string;
   columns: ReadonlyArray<RecordListColumnDef<TRow>>;
@@ -55,6 +54,8 @@ export type RecordListProps<TRow extends RowData> = {
   rowActions?: (row: TRow) => ReactNode;
   rowLabel?: (row: TRow) => string;
   itemNoun?: string;
+  /** The interface locale this list formats its counts in, stated by the route that composes it; left off, the application default interface locale applies. */
+  locale?: string;
   pageSizeOptions?: readonly number[];
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
@@ -68,7 +69,6 @@ export type RecordListProps<TRow extends RowData> = {
 };
 const SELECT_COLUMN_ID = "__record_list_select";
 const ACTIONS_COLUMN_ID = "__record_list_actions";
-const DEFAULT_STICKY_OFFSET = "calc(var(--app-shell-sticky-offset, 4rem) + 3rem)";
 const LOADING_ROW_MINIMUM = 3;
 const LOADING_ROW_MAXIMUM = 8;
 const FALLBACK_PAGE_SIZE = 50;
@@ -80,6 +80,12 @@ const MIXED_CHECKBOX_CLASS = cn(
   "data-[indeterminate]:before:h-[2px] data-[indeterminate]:before:w-2 data-[indeterminate]:before:rounded-full",
   "data-[indeterminate]:before:bg-primary-foreground data-[indeterminate]:before:content-['']",
 );
+/** The identifier of the region a list gives its rows' actions to render a settled result into, so the result is read at the list's full width below the table instead of inside a row's actions cell; `null` where no list provides one, and the result then renders where it is produced. The identifier travels rather than the element, because the region is part of the list's own markup: no row needs to hold a copy of it in state, and no row's render has to wait for one. */
+const RowResultsIdContext = createContext<string | null>(null);
+/** The identifier of the list's row-result region, or `null` for a surface that renders outside a list and places its own result. */
+export function useRecordListRowResultsId(): string | null {
+  return useContext(RowResultsIdContext);
+}
 type ColumnVisibilityItem = { readonly id: string; readonly label: string; readonly visible: boolean; readonly canHide: boolean };
 function querySignature(queryState: RecordListQueryState): string {
   const sorting = queryState.sort.map((entry) => `${entry.id}:${entry.desc ? "desc" : "asc"}`).join(",");
@@ -129,17 +135,13 @@ const ColumnVisibilityMenu = ({ tableLabel, items, visibleCount, onToggle, onSho
   </DropdownMenu>
 );
 const EMPTY_SELECTION: ReadonlyArray<string> = [];
-const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 function normalisePageSize(pageSize: number): number {
   const whole = Math.trunc(pageSize);
   return Number.isFinite(pageSize) && whole >= 1 ? whole : FALLBACK_PAGE_SIZE;
 }
-/** The first page of a list's window, in the pager's own one-based numbering. */
-const FIRST_PAGE = 1;
-/** The two address parameters a list's window travels in, named once because every family that already keeps its window in the address writes these two. */
-const WINDOW_PARAM = { page: "page", pageSize: "pageSize" } as const;
-/** A stated page or row size as a whole number at or above one, or the number the window already states when it is neither. */
-function wholeWindowNumber(stated: number, current: number): number {
+/** The first page of a list's window, in the pager's own one-based numbering. */ const FIRST_PAGE = 1;
+/** The two address parameters a list's window travels in, named once because every family that already keeps its window in the address writes these two. */ const WINDOW_PARAM = { page: "page", pageSize: "pageSize" } as const;
+/** A stated page or row size as a whole number at or above one, or the number the window already states when it is neither. */ function wholeWindowNumber(stated: number, current: number): number {
   if (!Number.isFinite(stated)) return current;
   const whole = Math.trunc(stated);
   return whole >= FIRST_PAGE ? whole : current;
@@ -177,8 +179,7 @@ export function useRecordListWindow(opening: RecordListWindow): RecordListWindow
   );
   return { page, pageSize, setWindow };
 }
-/** The one table preset: a processed page of rows, rendered with selection, sorting, column visibility and an honest pager, inside the application's only horizontal scroll region. */
-export function RecordList<TRow extends RowData>({
+/** The one table preset: a processed page of rows, rendered with selection, sorting, column visibility and an honest pager, inside the application's only horizontal scroll region. */ export function RecordList<TRow extends RowData>({
   label,
   columns,
   rows,
@@ -194,6 +195,7 @@ export function RecordList<TRow extends RowData>({
   rowActions,
   rowLabel,
   itemNoun = "records",
+  locale,
   pageSizeOptions,
   hasActiveFilters = false,
   onClearFilters,
@@ -204,6 +206,7 @@ export function RecordList<TRow extends RowData>({
   className,
 }: RecordListProps<TRow>): ReactElement {
   const cellIdBase = useId();
+  const rowResultsId = useId();
   const selectionEnabled = onSelectionChange !== undefined;
   const actionsEnabled = rowActions !== undefined;
   const selectedKeys = selectedIds ?? EMPTY_SELECTION;
@@ -278,7 +281,7 @@ export function RecordList<TRow extends RowData>({
   const firstDataCellIndex = selectionEnabled ? 1 : 0;
   const loadingRowCount = Math.min(Math.max(LOADING_ROW_MINIMUM, pageSize), LOADING_ROW_MAXIMUM);
   const showTable = isLoading || bodyRows.length > 0;
-  const resolvedStickyOffset = stickyOffset ?? DEFAULT_STICKY_OFFSET;
+  const resolvedStickyOffset = stickyOffset ?? "calc(var(--app-shell-sticky-offset, 4rem) + 3rem)";
   const rowLabelId = (rowIndex: number): string => `${cellIdBase}-row-${rowIndex}-label`;
   function selectionLabelFor(row: Row<RecordListFeatureSet, TRow>): { "aria-label"?: string; "aria-labelledby"?: string } {
     const name = rowLabel === undefined ? "" : rowLabel(row.original).trim();
@@ -286,7 +289,7 @@ export function RecordList<TRow extends RowData>({
     return visibleDataColumnCount > 0 ? { "aria-labelledby": rowLabelId(row.index) } : { "aria-label": `Select row ${row.index + 1}` };
   }
   const selectedCount = selectedKeys.length;
-  const selectionSummary = selectedCount === 0 ? "" : `${countFormat.format(selectedCount)} selected. A selection is not an audience or a consent: the action you choose re-checks every selected row.`;
+  const selectionSummary = selectedCount === 0 ? "" : `${countFormatOf(locale).format(selectedCount)} selected. A selection is not an audience or a consent: the action you choose re-checks every selected row.`;
   if (unavailable !== undefined) {
     return (
       <div data-slot="record-list" className={cn("flex flex-col gap-3", className)}>
@@ -308,7 +311,17 @@ export function RecordList<TRow extends RowData>({
     </div>
   );
   const pager = (
-    <PaginationBar total={table.getRowCount()} page={pagination.pageIndex + 1} pageSize={pagination.pageSize} pageSizeOptions={pageSizeOptions} onPageChange={(page) => commitQuery({ page })} onPageSizeChange={(nextPageSize) => commitQuery({ pageSize: nextPageSize })} itemNoun={itemNoun} disabled={isLoading} />
+    <PaginationBar
+      total={table.getRowCount()}
+      page={pagination.pageIndex + 1}
+      pageSize={pagination.pageSize}
+      pageSizeOptions={pageSizeOptions}
+      onPageChange={(page) => commitQuery({ page })}
+      onPageSizeChange={(nextPageSize) => commitQuery({ pageSize: nextPageSize })}
+      itemNoun={itemNoun}
+      locale={locale}
+      disabled={isLoading}
+    />
   );
   return (
     <div data-slot="record-list" className={cn("flex flex-col gap-3", className)}>
@@ -385,7 +398,7 @@ export function RecordList<TRow extends RowData>({
                           if (cell.column.id === ACTIONS_COLUMN_ID) {
                             return (
                               <TableCell key={cell.id} className="w-10 text-end">
-                                {rowActions === undefined ? null : rowActions(row.original)}
+                                <RowResultsIdContext.Provider value={rowResultsId}>{rowActions === undefined ? null : rowActions(row.original)}</RowResultsIdContext.Provider>
                               </TableCell>
                             );
                           }
@@ -400,6 +413,8 @@ export function RecordList<TRow extends RowData>({
               </TableBody>
             </Table>
           </ScrollRegion>
+          {/* A row's settled result renders here, at the list's full width: inside the row's actions cell it widened the table past a phone's viewport and scrolled the table region onto the cell it sat in. `empty:hidden` keeps the region out of the layout while no row has a result, so it adds no gap above the pager. */}
+          <div id={rowResultsId} data-slot="record-list-row-results" className="flex min-w-0 flex-col gap-2 text-pretty wrap-anywhere empty:hidden" />
           {pager}
         </>
       ) : (

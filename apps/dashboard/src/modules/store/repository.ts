@@ -9,16 +9,10 @@ const DOCUMENT_KEYS = ["state", "operations", "meta", "workload"] as const satis
 const DOCUMENT_KEY_NAMES: readonly string[] = DOCUMENT_KEYS;
 /** Source bytes the memo may hold across every session: four times the generated workload's own size, so the session the published measurement reads stays resident while a handful of others share the memo. */
 export const MEMO_BYTE_BUDGET = 4 * 67_229_868;
-/** How long the memo keeps an entry nothing has read: long enough that the reads behind one screen never re-parse, short enough that a session nobody is visiting gives its dataset back. */
-export const MEMO_IDLE_MS = 10 * 60 * 1000;
+/** How long the memo keeps an entry nothing has read: long enough that the reads behind one screen never re-parse, short enough that a session nobody is visiting gives its dataset back. */ export const MEMO_IDLE_MS = 10 * 60 * 1000;
 /** One document as the memo holds it: the signature of the file it was parsed from, the value it parsed to and the source bytes that cost. An entry holds all four of a session's documents, an absent one as an absent value, so a session that has no workload document is not looked for one on every read. */
-interface HeldDocument {
-  readonly signature: string;
-  readonly value: unknown;
-  readonly sourceBytes: number;
-}
-/** One session's memo entry: the documents it holds, the set the last read answered with, and the bookkeeping the byte budget and the idle window are kept from. */
-interface MemoizedSession {
+type HeldDocument = { readonly signature: string; readonly value: unknown; readonly sourceBytes: number };
+/** One session's memo entry: the documents it holds, the set the last read answered with, and the bookkeeping the byte budget and the idle window are kept from. */ interface MemoizedSession {
   /** The set the last read answered with, kept while every document in it is still the document on disk; `undefined` once a transaction has dropped a document it declared, so the next read builds a fresh set around the documents it still holds. */
   readonly container: SessionDocuments | undefined;
   readonly held: ReadonlyMap<SessionDocumentKey, HeldDocument>;
@@ -27,10 +21,7 @@ interface MemoizedSession {
 }
 const documentMemo = new Map<string, MemoizedSession>(); // Sessions in the order they were last read, which is the order they are dropped in: the memo is a cache in front of the disk and nothing else, so a session that is not here is answered by its files.
 let memoizedBytes = 0;
-interface DocumentMeasurement {
-  readonly signature: string;
-  readonly sourceBytes: number;
-}
+type DocumentMeasurement = { readonly signature: string; readonly sourceBytes: number };
 /** One document as the disk states it: its own `mtimeMs:size` signature, which is what lets a read re-parse only the document that moved, and the bytes it costs; a document the store does not hold states `-`, so its absence is a state to remember rather than a reason to look for it again. */
 async function measureDocument(file: string): Promise<DocumentMeasurement> {
   try {
@@ -45,18 +36,14 @@ async function measureSession(paths: ReturnType<typeof sessionPaths>): Promise<R
   return { state, operations, meta, workload };
 }
 /** Whether every document the entry holds is still the document the disk states: one comparison per document, because a write of one says nothing about the other three. */
-function holdsCurrentDocuments(held: ReadonlyMap<SessionDocumentKey, HeldDocument>, measured: Readonly<Record<SessionDocumentKey, DocumentMeasurement>>): boolean {
-  return DOCUMENT_KEYS.every((key) => held.get(key)?.signature === measured[key].signature);
-}
-/** Drops one session's entry and its bytes from the total, so the bound is maintained incrementally rather than re-measured from the entries. */
-function forget(sessionId: string): void {
+const holdsCurrentDocuments = (held: ReadonlyMap<SessionDocumentKey, HeldDocument>, measured: Readonly<Record<SessionDocumentKey, DocumentMeasurement>>): boolean => DOCUMENT_KEYS.every((key) => held.get(key)?.signature === measured[key].signature);
+/** Drops one session's entry and its bytes from the total, so the bound is maintained incrementally rather than re-measured from the entries. */ function forget(sessionId: string): void {
   const forgotten = documentMemo.get(sessionId);
   if (forgotten === undefined) return;
   memoizedBytes -= forgotten.sourceBytes;
   documentMemo.delete(sessionId);
 }
-/** Records a session's entry as the newest, then drops the least recently read entries until the total is inside the budget. */
-function remember(sessionId: string, entry: MemoizedSession): void {
+/** Records a session's entry as the newest, then drops the least recently read entries until the total is inside the budget. */ function remember(sessionId: string, entry: MemoizedSession): void {
   forget(sessionId);
   documentMemo.set(sessionId, entry);
   memoizedBytes += entry.sourceBytes;
@@ -66,8 +53,7 @@ function remember(sessionId: string, entry: MemoizedSession): void {
     documentMemo.delete(candidateId);
   }
 }
-/** Drops every entry nothing has read within the idle window; the map is kept in read order, so the first entry still inside the window ends the scan. */
-function dropIdle(nowMs: number): void {
+/** Drops every entry nothing has read within the idle window; the map is kept in read order, so the first entry still inside the window ends the scan. */ function dropIdle(nowMs: number): void {
   for (const [sessionId, entry] of documentMemo) {
     if (nowMs - entry.readAtMs < MEMO_IDLE_MS) return;
     forget(sessionId);
@@ -95,8 +81,7 @@ async function readRequiredDocument(file: string): Promise<unknown> {
   if (document === undefined) throw new CorruptJsonError(file, new Error("the document is missing although the session's state document exists"));
   return document;
 }
-/** Raised when the store root itself is absent, so no session can be read from it. */
-export class StoreAbsentError extends Error {
+/** Raised when the store root itself is absent, so no session can be read from it. */ export class StoreAbsentError extends Error {
   readonly code = "ENOENT" as const;
   readonly root: string;
   constructor(root: string) {
@@ -145,8 +130,7 @@ export async function readSession(sessionId: string): Promise<SessionDocuments |
   remember(sessionId, { container: documents, held, sourceBytes, readAtMs: nowMs });
   return documents;
 }
-/** Refusal raised by `transact` for a session the store does not hold, which it never creates. */
-export class SessionNotFoundError extends Error {
+/** Refusal raised by `transact` for a session the store does not hold, which it never creates. */ export class SessionNotFoundError extends Error {
   readonly sessionId: string;
   constructor(sessionId: string) {
     super(`No session ${JSON.stringify(sessionId)} exists in the store, and a transaction never creates one.`);

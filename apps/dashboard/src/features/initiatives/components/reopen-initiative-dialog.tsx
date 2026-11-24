@@ -15,9 +15,7 @@ import DiscardConfirmation from "./discard-confirmation";
 import { StatedInstant } from "./figures";
 type InitiativeEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiative>>, { readonly kind: "envelope" }>["envelope"];
 type InitiativeDetail = InitiativeEnvelope["data"];
-type InitiativeView = InitiativeDetail["initiative"];
 type WorkingListEntry = InitiativeDetail["workingList"]["items"][number];
-type InitiativeLifecycle = InitiativeView["lifecycle"];
 const REOPEN_COPY = {
   reviewHeading: "Review this reopen",
   evidenceHeading: "What reopening keeps",
@@ -40,8 +38,7 @@ const REOPEN_COPY = {
   reopenedStatement: "This initiative is open again. The earlier closure and its disposition stay recorded, and every partner marked not eligible stays excluded.",
 } as const;
 const DIALOG_TITLE = CLOSURE_COPY.reopenHeading;
-const CONFIRM_LABEL = CLOSURE_COPY.reopenHeading;
-const LIFECYCLE_NOTE: Readonly<Record<InitiativeLifecycle, string>> = {
+const LIFECYCLE_NOTE: Readonly<Record<InitiativeDetail["initiative"]["lifecycle"], string>> = {
   closed: "The initiative is closed now. That closure is the record this attempt adds to rather than replaces.",
   reopened: "This initiative was closed before and reopened. That earlier closure is the history this attempt keeps.",
   open: "The read states this initiative is already open, so reopening it has nothing to apply and the attempt will answer so.",
@@ -75,9 +72,7 @@ function PreservedEvidence({ detail }: { readonly detail: InitiativeDetail }): R
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <h3 id={headingId} className="type-subsection-title">
-          {REOPEN_COPY.evidenceHeading}
-        </h3>
+        <h3 {...{ id: headingId, className: "type-subsection-title" }}>{REOPEN_COPY.evidenceHeading}</h3>
         <Badge variant="secondary">{INITIATIVE_STATE_COPY[initiative.state].label}</Badge>
       </div>
       <dl className="flex min-w-0 flex-col gap-1.5 text-sm">
@@ -181,7 +176,7 @@ function ReopenInitiativeBody({ initiativeId, envelope, registerCloseGuard, onCl
             <p className="type-supporting">{CLOSURE_COPY.historyPreservedNote}</p> <p className="type-supporting">{REOPEN_COPY.exclusionsKept}</p>
           </>
         }
-        confirmLabel={CONFIRM_LABEL}
+        confirmLabel={CLOSURE_COPY.reopenHeading}
         onCancel={requestClose}
         input={input}
         submit={submit}

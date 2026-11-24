@@ -55,16 +55,14 @@ export function referralWindowState(input: { windowEnd: Temporal.Instant | undef
 }
 export type ReferralCycleState = { consumed: boolean; predecessorId?: string; successorId?: string };
 export type ContinuedWindowEnd = { status: "bounded"; endInstant: Temporal.Instant; elapsedSeconds: number } | { status: "refused"; reason: "invalid-days" | "already-consumed" };
-/** Resolves a referral continuation: the acceptance instant plus `N` days of elapsed seconds. */
-export function continuedWindowEnd(input: { acceptedAt: Temporal.Instant; days: number; cycle: ReferralCycleState }): ContinuedWindowEnd {
+/** Resolves a referral continuation: the acceptance instant plus `N` days of elapsed seconds. */ export function continuedWindowEnd(input: { acceptedAt: Temporal.Instant; days: number; cycle: ReferralCycleState }): ContinuedWindowEnd {
   const { acceptedAt, days, cycle } = input;
   if (!Number.isSafeInteger(days) || days <= 0) return { status: "refused", reason: "invalid-days" };
   if (cycle.consumed || cycle.successorId !== undefined) return { status: "refused", reason: "already-consumed" };
   const elapsedSeconds = days * SECONDS_PER_DAY;
   if (!Number.isSafeInteger(elapsedSeconds)) return { status: "refused", reason: "invalid-days" };
   try {
-    const endInstant = acceptedAt.add({ seconds: elapsedSeconds });
-    return { status: "bounded", endInstant, elapsedSeconds };
+    return { status: "bounded", endInstant: acceptedAt.add({ seconds: elapsedSeconds }), elapsedSeconds };
   } catch {
     return { status: "refused", reason: "invalid-days" };
   }

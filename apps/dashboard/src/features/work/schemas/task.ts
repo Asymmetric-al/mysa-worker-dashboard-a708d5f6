@@ -60,8 +60,7 @@ export const taskNoteSchema = z
   })
   .optional()
   .transform((value) => (value === undefined || value.length === 0 ? undefined : value));
-const TASK_KIND_VALUES = ["default", "meeting"] as const satisfies readonly TaskKind[];
-export const taskKindSchema = z.enum(TASK_KIND_VALUES, { error: TASK_SCHEMA_MESSAGES.taskKindInvalid });
+export const taskKindSchema = z.enum(["default", "meeting"] as const satisfies readonly TaskKind[], { error: TASK_SCHEMA_MESSAGES.taskKindInvalid });
 type PlannedTimePairing = { readonly kind: TaskKind; readonly plannedTime?: string | null | undefined; readonly timeZone?: string | null | undefined }; /** The one planned-time rule: a schedule belongs to a meeting, and a time is always stated in a zone. A null member is a cleared one, so it states no schedule. */
 export function refinePlannedTimePairing(value: PlannedTimePairing, ctx: z.RefinementCtx): void {
   const hasTime = value.plannedTime !== undefined && value.plannedTime !== null;
@@ -77,8 +76,7 @@ export function refinePlannedTimePairing(value: PlannedTimePairing, ctx: z.Refin
   }
 }
 const COMPOSED_TASK_FIELDS = { title: taskTitleSchema, category: taskCategorySchema, dueOn: civilDateSchema.optional(), plannedTime: plannedTimeSchema.optional(), timeZone: timeZoneSchema.optional(), note: taskNoteSchema, partnerId: linkIdSchema.optional(), initiativeId: linkIdSchema.optional() };
-/** An optional member of an edit. The handler clears a field it receives as null and leaves a field it does not receive as it is, so this set is the one the client composes an edit against. */
-const nullableMember = <T extends z.ZodType>(field: T) => z.union([field, z.null()]).optional();
+/** An optional member of an edit. The handler clears a field it receives as null and leaves a field it does not receive as it is, so this set is the one the client composes an edit against. */ const nullableMember = <T extends z.ZodType>(field: T) => z.union([field, z.null()]).optional();
 const EDITED_TASK_FIELDS = {
   title: taskTitleSchema,
   category: nullableMember(taskCategorySchema),

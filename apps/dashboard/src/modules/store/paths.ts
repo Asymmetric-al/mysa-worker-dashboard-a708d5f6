@@ -21,8 +21,7 @@ export type SessionDocuments = { state: unknown; operations: unknown; meta: unkn
 const SESSION_DOCUMENT_SUFFIX: Readonly<Record<SessionDocumentKey, string>> = { state: ".state.json", operations: ".operations.json", meta: ".meta.json", workload: ".workload.json" };
 const SESSION_DOCUMENT_SUFFIXES: readonly string[] = Object.values(SESSION_DOCUMENT_SUFFIX);
 const describeSessionIdValue = (value: unknown): string => (typeof value === "string" ? (value.length <= 40 ? JSON.stringify(value) : `a ${String(value.length)}-character string`) : value === null ? "null" : value === undefined ? "undefined" : typeof value === "object" ? "an object" : `a ${typeof value}`);
-/** Refusal raised when a value cannot be used as a session id; it is never repaired into one. */
-export class InvalidSessionIdError extends Error {
+/** Refusal raised when a value cannot be used as a session id; it is never repaired into one. */ export class InvalidSessionIdError extends Error {
   readonly sessionId: unknown;
   constructor(sessionId: unknown) {
     super(`Cannot use ${describeSessionIdValue(sessionId)} as a session id: a session id must be 1 to 64 characters drawn only from A-Z, a-z, 0-9, underscore and hyphen.`);

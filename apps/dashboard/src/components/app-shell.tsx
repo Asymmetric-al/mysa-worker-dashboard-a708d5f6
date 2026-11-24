@@ -9,11 +9,8 @@ import StateNotice, { type StateNoticeProps } from "@/components/state-notice";
 import { Sidebar, SidebarContent, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/cn";
 import type { Scope, SessionState } from "@/modules/data-service/envelope";
-/** How a session was admitted, which decides whether the shell renders the route or a recovery surface. */
-export type AdmissionState = SessionState;
-type RecoveryState = Exclude<AdmissionState, "signed-in">;
-/** The context switch, so it is available wherever the context indicator is visible. */
-export type AppShellContextSwitch = {
+/** How a session was admitted, which decides whether the shell renders the route or a recovery surface. */ export type AdmissionState = SessionState;
+/** The context switch, so it is available wherever the context indicator is visible. */ export type AppShellContextSwitch = {
   readonly copy: ContextSwitchGuardCopy;
   readonly resolvePendingScope: (request: ContextRequest) => Scope | null;
   readonly switchTo: (pendingScope: Scope) => Promise<ContextSwitchResult>;
@@ -32,14 +29,9 @@ export type AppShellProps = {
   readonly children: ReactNode;
   readonly className?: string;
 };
-/** The `main` landmark's id, declared once so the skip link and any caller naming the same target cannot disagree about it. */
-export const MAIN_CONTENT_ID = "main-content";
-const SKIP_LINK_LABEL = "Skip to main content";
-const DEVELOPMENT_REGION_LABEL = "Development controls";
-const HELP_HREF = "/help";
-type RecoveryActionKind = "help" | "refresh";
-type RecoveryCopy = { readonly noticeKind: StateNoticeProps["kind"]; readonly reasonCode?: StateNoticeProps["reasonCode"]; readonly title: string; readonly description: string; readonly actionLabel: string; readonly actionKind: RecoveryActionKind };
-const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
+/** The `main` landmark's id, declared once so the skip link and any caller naming the same target cannot disagree about it. */ export const MAIN_CONTENT_ID = "main-content";
+type RecoveryCopy = { readonly noticeKind: StateNoticeProps["kind"]; readonly reasonCode?: StateNoticeProps["reasonCode"]; readonly title: string; readonly description: string; readonly actionLabel: string; readonly actionKind: "help" | "refresh" };
+const RECOVERY_COPY: Readonly<Record<Exclude<AdmissionState, "signed-in">, RecoveryCopy>> = {
   unavailable: {
     noticeKind: "unavailable",
     title: "This workspace could not be read",
@@ -74,12 +66,10 @@ const RECOVERY_COPY: Readonly<Record<RecoveryState, RecoveryCopy>> = {
   },
 };
 const NO_ADMISSIONS: readonly AdmittedContext[] = [];
-type PendingSwitch = { readonly request: ContextRequest; readonly scope: Scope };
 const describeMembership = (admission: AdmittedContext): string => `${admission.organizationLabel.trim() || admission.organizationId}, ${admission.ministryLabel.trim() || admission.ministryId}`;
 const isCurrentMembership = (admission: AdmittedContext, scope: Scope): boolean => admission.organizationId === scope.organizationId && admission.ministryId === scope.ministryId;
 const showsFinancialFacts = (currentPath: string): boolean => isCurrent(currentPath, "/support") || isCurrent(currentPath, "/coaching");
-/** The custom property this shell publishes for the sticky chrome's height. */
-export const STICKY_OFFSET_PROPERTY = "--app-shell-sticky-offset";
+/** The custom property this shell publishes for the sticky chrome's height. */ export const STICKY_OFFSET_PROPERTY = "--app-shell-sticky-offset";
 function useStickyOffset(headerRef: RefObject<HTMLElement | null>): void {
   useEffect(() => {
     const header = headerRef.current;
@@ -105,16 +95,15 @@ const SKIP_LINK_CLASS = cn("absolute start-3 top-3 z-50 -translate-y-[200%] roun
 export const AppShell = ({ className, ...chrome }: AppShellProps): ReactElement => (
   <SidebarProvider className={cn("relative", "print:[&>[data-slot=sidebar]]:hidden", className)}>
     <a href={`#${MAIN_CONTENT_ID}`} className={SKIP_LINK_CLASS}>
-      {SKIP_LINK_LABEL}
+      {"Skip to main content"}
     </a>
     <ShellChrome {...chrome} />
   </SidebarProvider>
 );
-type ShellChromeProps = Omit<AppShellProps, "className">;
-function ShellChrome({ scope, admissionState, currentPath: suppliedPath, developmentRegion, devScenarioId, contextAdmissions, contextSwitch, direction, children }: ShellChromeProps): ReactElement {
+function ShellChrome({ scope, admissionState, currentPath: suppliedPath, developmentRegion, devScenarioId, contextAdmissions, contextSwitch, direction, children }: Omit<AppShellProps, "className">): ReactElement {
   const { setOpenMobile } = useSidebar();
   const headerRef = useRef<HTMLElement | null>(null);
-  const [pending, setPending] = useState<PendingSwitch | null>(null);
+  const [pending, setPending] = useState<{ readonly request: ContextRequest; readonly scope: Scope } | null>(null);
   const [switching, setSwitching] = useState(false);
   const [lastSwitch, setLastSwitch] = useState<ContextSwitchResult | null>(null);
   const router = useRouter();
@@ -175,12 +164,12 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
             {recovery === null ? (
               children
             ) : (
-              <StateNotice kind={recovery.noticeKind} reasonCode={recovery.reasonCode} title={recovery.title} description={recovery.description} headingLevel={1} action={recovery.actionKind === "refresh" ? { label: recovery.actionLabel, onClick: requestPageAgain } : { label: recovery.actionLabel, href: HELP_HREF }} />
+              <StateNotice kind={recovery.noticeKind} reasonCode={recovery.reasonCode} title={recovery.title} description={recovery.description} headingLevel={1} action={recovery.actionKind === "refresh" ? { label: recovery.actionLabel, onClick: requestPageAgain } : { label: recovery.actionLabel, href: "/help" }} />
             )}
           </div>
         </main>
         {showsDevelopmentRegion ? (
-          <aside aria-label={DEVELOPMENT_REGION_LABEL} className="border-t border-border bg-muted/30 print:hidden">
+          <aside aria-label={"Development controls"} className="border-t border-border bg-muted/30 print:hidden">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-3 py-4">{developmentRegion}</div>
           </aside>
         ) : null}

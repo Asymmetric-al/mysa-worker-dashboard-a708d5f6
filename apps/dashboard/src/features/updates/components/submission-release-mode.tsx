@@ -8,12 +8,9 @@ import { PUBLISH_MODE_LABELS, SUBMISSION_RELEASE_MODE } from "../copy/updates-co
 import { SUBMISSION_NOTIFY_MODES, type SubmissionNotifyMode } from "../schemas";
 /** The family's own words for each mode a submission records: `notify-now` is the release review's spelling of the store's `notify`, so one copy serves both surfaces. */
 const MODE_COPY: Readonly<Record<SubmissionNotifyMode, { readonly label: string; readonly consequence: string }>> = { "publish-only": PUBLISH_MODE_LABELS["publish-only"], "publish-and-notify": PUBLISH_MODE_LABELS["publish-and-notify-now"] };
-/** The mode a submission records until its author chooses otherwise: publishing only sends nothing, so a notice is never the answer someone gave by not answering. */
-export const DEFAULT_SUBMISSION_RELEASE_MODE: SubmissionNotifyMode = "publish-only";
-/** The two values this control takes: the mode a submission records, and the one callback that changes it. */
-export type SubmissionReleaseModeProps = { readonly value: SubmissionNotifyMode; readonly onChange: (mode: SubmissionNotifyMode) => void; readonly className?: string };
-/** The author's release choice for one submission, as a labelled group of two options with each one's consequence stated. */
-export function SubmissionReleaseMode({ value, onChange, className }: SubmissionReleaseModeProps): ReactElement {
+/** The mode a submission records until its author chooses otherwise: publishing only sends nothing, so a notice is never the answer someone gave by not answering. */ export const DEFAULT_SUBMISSION_RELEASE_MODE: SubmissionNotifyMode = "publish-only";
+/** The two values this control takes: the mode a submission records, and the one callback that changes it. */ export type SubmissionReleaseModeProps = { readonly value: SubmissionNotifyMode; readonly onChange: (mode: SubmissionNotifyMode) => void; readonly className?: string };
+/** The author's release choice for one submission, as a labelled group of two options with each one's consequence stated. */ export function SubmissionReleaseMode({ value, onChange, className }: SubmissionReleaseModeProps): ReactElement {
   const idPrefix = useId();
   // A control's own report is judged against the closed pair rather than trusted: a value this surface does not speak is not a choice it can record.
   const choose = (next: unknown): void => {

@@ -1,8 +1,7 @@
 import type { z } from "zod";
 import { outcomeFromError, refusedRead, toResponse, type MutationOutcome, type ReadResult } from "@/modules/data-service";
 import type { FieldMessages } from "@/modules/data-service/outcome";
-/** The marker a read that reached no mutation reports under: a read makes no operation identity of its own. */
-export const READ_ATTEMPT = "read";
+/** The marker a read that reached no mutation reports under: a read makes no operation identity of its own. */ export const READ_ATTEMPT = "read";
 /** One URL judged by a read's own grammar: the value the read takes, or the per-field refusal the caller has to correct. */
 export type ReadGrammar<Value> = (search: URLSearchParams) => { readonly value: Value } | { readonly refusal: z.ZodError | FieldMessages };
 /** The grammar one Zod schema and its raw-parameter reader make: a request the schema refuses is answered with its own messages, keyed by field path. */

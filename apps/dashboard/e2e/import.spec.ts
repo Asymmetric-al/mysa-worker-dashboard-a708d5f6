@@ -35,16 +35,14 @@ const stepHeading = (page: Page, step: string): Locator => page.getByRole("headi
 const reviewTable = (page: Page): Locator => page.getByRole("table", { name: REVIEW_TABLE });
 const reviewRow = (page: Page, marker: string): Locator => reviewTable(page).getByRole("row").filter({ hasText: marker }); // One row of the review, found by a value only that row of the fixture carries.
 const resultsTable = (page: Page): Locator => page.getByRole("table", { name: "Per-row import results" });
-function resultsRow(page: Page, rowNumber: number): Locator {
-  return resultsTable(page) // One row of that receipt, by the file's own row number, which is the row header it states.
+const resultsRow = (page: Page, rowNumber: number): Locator =>
+  resultsTable(page)
     .getByRole("row")
-    .filter({ hasText: `Row ${String(rowNumber)}` });
-}
-function rowsReporting(page: Page, state: string): Locator {
-  return resultsTable(page) // Every row of the receipt that reports one state, read from the word the row's badge carries.
+    .filter({ hasText: `Row ${String(rowNumber)}` }); // One row of the receipt, by the file's own row number, which is the row header it states.
+const rowsReporting = (page: Page, state: string): Locator =>
+  resultsTable(page)
     .getByRole("row")
-    .filter({ has: page.getByText(state, { exact: true }) });
-}
+    .filter({ has: page.getByText(state, { exact: true }) }); // Every row of the receipt that reports one state, read from the word the row's badge carries.
 const audienceTable = (page: Page): Locator => page.getByRole("table", { name: "Memberships of this publisher's Update email for this purpose" });
 async function openJourney(page: Page): Promise<void> {
   await page.goto("/partners/import"); // Opens the journey and states that it starts, as it always starts, at an unchosen file.
@@ -244,4 +242,57 @@ test("a file over the row limit and a workbook are each refused before a single 
   await expect(stepHeading(page, "Choose file")).toBeVisible();
   await expect(page.getByRole("button", { name: "Confirm the column mapping" })).toHaveCount(0);
   await expect(page.getByRole("table", { name: REVIEW_TABLE })).toHaveCount(0);
+});
+test("a decision whose revision moved on states the conflict beside the decision it kept, and the reread rows let it be recorded", async ({ page }) => {
+  await openJourney(page);
+  await chooseFile(page, exampleFixturePath(), EXAMPLE_FILE);
+  await confirmSuggestedMapping(page);
+  const statuses: number[] = []; // The two answers this test reads, so the refusal it asserts on is the service's own and not an armed one.
+  page.on("response", (response) => {
+    if (response.url().includes("/api/import/decisions")) statuses.push(response.status());
+  });
+  // Two decisions pressed back to back, both presenting the revision the review was read at: the first is held at the transport until the second has been sent, so exactly one reaches the service at the revision it presented and the other is refused as stale. Nothing is injected — the refusal is the service's own `conflict`, which is why this case can assert on it.
+  let sent = 0;
+  let secondSent: () => void = () => {};
+  const secondArrived = new Promise<void>((resolve) => {
+    secondSent = resolve;
+  });
+  await page.route("**/api/import/decisions", async (route) => {
+    sent += 1;
+    if (sent === 1) await secondArrived;
+    else secondSent();
+    await route.continue();
+  });
+  const press = async (row: Locator): Promise<void> => {
+    await row.getByRole("radio", { name: "Create a new private entry" }).click();
+    await row.getByRole("button", { name: /^Record the decision about row /u }).click();
+  };
+  const firstRow = reviewRow(page, ROW_MARKER.duplicateLooking);
+  const secondRow = reviewRow(page, ROW_MARKER.restriction);
+  await press(firstRow);
+  await expect(firstRow.getByRole("button", { name: `Recording the decision about row ${String(ROW.duplicateLooking)}…` }), "A row whose own decision is in flight states that it is recording it, rather than looking idle while it waits.").toBeVisible();
+  await press(secondRow);
+  await expect(page.getByRole("button", { name: /^Recording the decision about row /u }), "Every attempt settles, so no row is left reading as if its decision were still being recorded.").toHaveCount(0);
+  const conflict = page.locator('[role="alert"]').filter({ hasText: "the review changed before it arrived" });
+  await expect(conflict, "A stale revision is answered on the row it refused with the conflict outcome, rather than with silence or a changed decision.").toBeVisible();
+  const panel = (await conflict.innerText()).replace(/\s+/gu, " ");
+  const named = /Decision about row (\d+)/u.exec(panel);
+  expect(named, "The conflict names the row whose decision it refused.").not.toBeNull();
+  const refusedRowNumber = Number(named?.[1] ?? "");
+  expect([ROW.duplicateLooking, ROW.restriction], "The conflict is about one of the two rows this test pressed back to back.").toContain(refusedRowNumber);
+  // Which of the two rows was refused is read off the rows themselves — the refused row recorded nothing, so it is the one still stating that no decision is recorded — and the conflict's own title is checked against it rather than trusted on its own.
+  const firstStillUndecided = (await firstRow.getByText("No decision recorded").count()) > 0;
+  const refusedRow = firstStillUndecided ? firstRow : secondRow;
+  const recordedRow = firstStillUndecided ? secondRow : firstRow;
+  expect(refusedRowNumber, "The row the conflict names is the row whose decision recorded nothing.").toBe(firstStillUndecided ? ROW.duplicateLooking : ROW.restriction);
+  // The conflict states the record's current value beside the caller's preserved input (AAP 0.7.1): the revision the review now stands at, the decision this attempt posted, and the decision the review now holds for that row.
+  for (const stated of ["Current revision", "rev-", "The decision you recorded", "Create a new private entry", "The decision the review now holds"]) expect(panel, `The conflict states ${JSON.stringify(stated)}.`).toContain(stated);
+  expect(statuses.slice().sort(), "One decision was accepted at the revision both presented, and the other was refused as stale.").toEqual([200, 409]);
+  await expect(recordedRow.getByText("No decision recorded"), "The decision that reached the service first is recorded, so this row no longer states that none is.").toHaveCount(0);
+  await expect(refusedRow.getByText("No decision recorded"), "The refused row recorded nothing, so it still states that no decision is recorded for it.").toBeVisible();
+  await refusedRow.getByRole("button", { name: /^Record the decision about row /u }).click(); // The recovery the panel promises: the row kept the decision, and pressing it again submits against the revision the reread rows state.
+  await expect(refusedRow.getByText("No decision recorded"), "The kept decision is recorded once the row is pressed against the revision the review now stands at.").toHaveCount(0);
+  await expect(page.locator('[role="alert"]').filter({ hasText: "the review changed before it arrived" }), "Recording the decision again clears the conflict it was refused with.").toHaveCount(0);
+  await expect(refusedRow.getByText(new RegExp(`already recorded for row ${String(refusedRowNumber)}`, "u")), "The row reports the decision it now holds rather than offering the same one again.").toBeVisible();
+  await page.unroute("**/api/import/decisions");
 });

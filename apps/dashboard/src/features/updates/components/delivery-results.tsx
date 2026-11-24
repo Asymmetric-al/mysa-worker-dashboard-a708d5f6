@@ -21,33 +21,31 @@ import NoticePresentation from "./notice-presentation";
 type SendResultRow = SendResultData["rows"][number];
 type SendOutcome = SendResultRow["state"];
 type UnservedRecipient = SendResultData["unserved"][number];
-type RenditionRefusal = Extract<UnservedRecipient, { readonly reason: "no-eligible-rendition" }>["renditionRefusal"];
 type Usefulness = SendResultData["usefulness"];
 type ValueStates = Readonly<Record<string, ValueState>>;
-type DeliveryEnvelope = Extract<SendResultReadResult, { readonly kind: "envelope" }>["envelope"];
 const SURFACE = {
   heading: "Delivery results",
   intro:
     "One row per recipient of one submitted notice: the copy that was pinned for them, the outcome this application recorded, and whether a repeat is still permitted. A definite failure may be repeated from here while the notice is inside its usefulness window; acceptance is not delivery and not reading, no figure here is added to another, and an unknown outcome is recovered by reading this same notice again rather than by sending anything a second time.",
   loadingTitle: "Delivery results",
-  loadingDescription: "The recorded outcomes for this notice are being read. No count, no empty row and no zero stands in for " + "them while the read runs.",
+  loadingDescription: "The recorded outcomes for this notice are being read. No count, no empty row and no zero stands in for them while the read runs.",
   unavailableTitle: "The recorded outcomes could not be read",
-  unavailableDescription: "This screen states no acceptance, no failure and no unknown outcome for anyone until the read succeeds: " + "an outage is not a notice that failed and not one that was accepted.",
+  unavailableDescription: "This screen states no acceptance, no failure and no unknown outcome for anyone until the read succeeds: an outage is not a notice that failed and not one that was accepted.",
   deniedTitle: "This notice's results are not available in this session",
   deniedDescription: "The answer is the same whether or not this notice exists, so nothing here reveals what it cannot show.",
   refusedTitle: "This screen's request was refused",
   noNoticeTitle: "No submitted notice is named",
-  noNoticeDescription: "This screen reports the delivery results of one notice that was already submitted, so it needs that " + "notice's own identity. Nothing is shown and nothing is counted until one is named, because a screen that " + "guessed would report whichever notice was submitted last.",
+  noNoticeDescription: "This screen reports the delivery results of one notice that was already submitted, so it needs that notice's own identity. Nothing is shown and nothing is counted until one is named, because a screen that guessed would report whichever notice was submitted last.",
   noNoticeAction: "Open the Updates list",
   emptyTitle: "No recipient outcome was recorded for this notice",
-  emptyDescription: "Nothing here states that the notice reached anyone: the service recorded no per-recipient outcome for " + "this intent. The eligible recipients it did not serve are listed above, and no outcome is inferred for " + "them.",
-  orderNote: "The service states this order and this read takes no ordering parameter, so the table offers no sort " + "that would change nothing.",
-  recipientHelp: "A recipient is an opaque reference recorded for this notice. It is not a name, not an address and not a " + "link, and two references describe the same person only when they are the same reference.",
+  emptyDescription: "Nothing here states that the notice reached anyone: the service recorded no per-recipient outcome for this intent. The eligible recipients it did not serve are listed above, and no outcome is inferred for them.",
+  orderNote: "The service states this order and this read takes no ordering parameter, so the table offers no sort that would change nothing.",
+  recipientHelp: "A recipient is an opaque reference recorded for this notice. It is not a name, not an address and not a link, and two references describe the same person only when they are the same reference.",
   pinnedHelp:
     "Each recipient's copy was pinned to one rendition when the notice was submitted, so a later change of audience, language or restriction cannot substitute a different copy for the one recorded here. A row states that copy's identity: the audience and the language belong to the edition this notice was submitted for, not to the row, and neither is inferred from a rendition identifier.",
   dedupeHelp:
     "A dedupe identity is four values taken together: the publisher, the purpose, the recipient and the intent. One intent yields at most one message per recipient, so a repeat of the same work is recognised as the same message rather than becoming a second one. The publisher, the purpose and the intent are the same on every row and all four are stated on each row anyway, because a duplicate is the one thing that identity exists to make visible.",
-  noClockNote: "Every instant here is the one the service resolved when it answered, stated exactly as supplied. This " + "screen reads no clock of its own and compares no deadline, so whether a repeat is still permitted is the " + "service's answer and never a browser's.",
+  noClockNote: "Every instant here is the one the service resolved when it answered, stated exactly as supplied. This screen reads no clock of its own and compares no deadline, so whether a repeat is still permitted is the service's answer and never a browser's.",
 } as const;
 const SUMMARY = {
   title: "The notice these outcomes belong to",
@@ -70,48 +68,42 @@ const SUMMARY = {
 const COLUMN = { recipient: "Recipient", pinned: "Pinned copy", outcome: "Outcome", dedupe: "Dedupe identity", recorded: "Recorded at", repeat: "Repeat" } as const;
 const PURPOSE_LABELS: Readonly<Record<SendResultData["purpose"], string>> = { "update-email": "Update email" };
 const OUTCOME_NARRATIVE: Readonly<Record<SendOutcome, string>> = {
-  accepted: "Accepted means this application's simulated submission step took this copy for this recipient. It is not " + "delivery and it is not reading: nothing here states that a message arrived, that anyone received it or " + "that anyone opened it, and no accepted row may be presented as any of those.",
-  failed: "Failed is a definite failure for this recipient: the simulated submission step reports that it did not " + "take the copy, so nothing was submitted under this intent for them. A repeat is permitted under the same " + "identity only while the usefulness window is open.",
-  unknown: "An unknown outcome means this application does not know whether the effect was applied for this " + "recipient: the acknowledgement was lost. It is neither a success nor a failure, and no second attempt " + "starts from here — the result is recovered by reading this same notice again.",
+  accepted: "Accepted means this application's simulated submission step took this copy for this recipient. It is not delivery and it is not reading: nothing here states that a message arrived, that anyone received it or that anyone opened it, and no accepted row may be presented as any of those.",
+  failed: "Failed is a definite failure for this recipient: the simulated submission step reports that it did not take the copy, so nothing was submitted under this intent for them. A repeat is permitted under the same identity only while the usefulness window is open.",
+  unknown: "An unknown outcome means this application does not know whether the effect was applied for this recipient: the acknowledgement was lost. It is neither a success nor a failure, and no second attempt starts from here — the result is recovered by reading this same notice again.",
 };
 const OUTCOMES_BLOCK = { title: "What the outcomes on this page mean", description: "Only the outcomes this page holds are described, and each is described with what it does not mean." } as const;
-/** The message the notice carries, stated where its outcomes are read: a notice the records can no longer resolve is stated as absent rather than reconstructed. */
-const NOTICE_BLOCK = {
+/** The message the notice carries, stated where its outcomes are read: a notice the records can no longer resolve is stated as absent rather than reconstructed. */ const NOTICE_BLOCK = {
   title: "The message this notice carries",
   description: "The one message a recipient of this notice is served, rebuilt from the release the notice was submitted for: the sender, subject and link it states, the wording it carries, and both the HTML and the plain text it renders as.",
   absent: "The message cannot be shown: the release this notice was submitted for no longer resolves from the records, so no message is reconstructed in its place.",
 } as const;
-/** The one write this surface performs: repeating the copies of this notice that definitely failed, while the notice is still inside its usefulness window. */
-const REPEAT = {
+/** The one write this surface performs: repeating the copies of this notice that definitely failed, while the notice is still inside its usefulness window. */ const REPEAT = {
   label: "Repeat the failed copies",
   pendingLabel: "Repeating the failed copies…",
   description:
-    "This notice is still inside its usefulness window, so the copies the service recorded as definite failures may be " +
-    "submitted again under this same notice. Nothing else is resubmitted: an accepted copy is never sent a second time, " +
-    "an outcome the service reports as unknown is recovered by reading this notice again rather than by sending " +
-    "anything, and the earlier failure stays recorded as the failure it was. The repeat is a new notice of its own, so " +
-    "the result below names it.",
+    "This notice is still inside its usefulness window, so the copies the service recorded as definite failures may be submitted again under this same notice. Nothing else is resubmitted: an accepted copy is never sent a second time, an outcome the service reports as unknown is recovered by reading this notice again rather than by sending anything, and the earlier failure stays recorded as the failure it was. The repeat is a new notice of its own, so the result below names it.",
   targetsLead: "The rows on this page the read marks repeatable:",
   openLabel: "Open the repeated notice's results",
 } as const;
-const COUNTS = { title: "Outcomes recorded for this notice", intro: "Each of the three outcomes is counted on its own, from that outcome's own value state. They are never " + "added together: one number across three different outcomes would state something none of them means." } as const;
+const COUNTS = { title: "Outcomes recorded for this notice", intro: "Each of the three outcomes is counted on its own, from that outcome's own value state. They are never added together: one number across three different outcomes would state something none of them means." } as const;
 const USEFULNESS_COPY = {
   title: "The usefulness window",
   stateLabel: "Window at this read",
   deadlineLabel: "Closes at",
   remainingLabel: "Remaining when this read ran",
-  statement: "A definite failure may be repeated only while this window is open, under the same dedupe identity. The " + "window runs 24 elapsed hours from the instant the notice was meant for and is strict at equality: at " + "exactly that instant it is closed, and nothing on this screen reopens it or extends it.",
+  statement: "A definite failure may be repeated only while this window is open, under the same dedupe identity. The window runs 24 elapsed hours from the instant the notice was meant for and is strict at equality: at exactly that instant it is closed, and nothing on this screen reopens it or extends it.",
 } as const;
 const USEFULNESS_STATE: Readonly<Record<Usefulness["state"], StatusBadgeSpec>> = { "within-usefulness": { label: "Within its usefulness window", tone: "info" }, "past-usefulness": { label: "Past its usefulness window", tone: "muted" } };
 const UNSERVED_BLOCK = {
   title: "Eligible recipients this notice did not serve",
-  description: "These recipients were eligible for the notice and received no copy. Each is listed with the reason the " + "service recorded, and none of them is counted as an outcome above.",
+  description: "These recipients were eligible for the notice and received no copy. Each is listed with the reason the service recorded, and none of them is counted as an outcome above.",
   alreadyCovered: "An earlier notice already pinned a copy for this recipient, so this intent did not make a second one.",
   coveredByIntent: "Earlier notice",
   coveredByRendition: "Copy already pinned",
 } as const;
 const UNSERVED_STATE: Readonly<Record<UnservedRecipient["reason"], StatusBadgeSpec>> = { "already-covered": { label: "Already had a copy from an earlier notice", tone: "muted" }, "no-eligible-rendition": { label: "No copy they may read", tone: "caution" } };
-const RENDITION_REFUSAL_NARRATIVE: Readonly<Record<RenditionRefusal, string>> = {
+const RENDITION_REFUSAL_NARRATIVE: Readonly<Record<Extract<UnservedRecipient, { readonly reason: "no-eligible-rendition" }>["renditionRefusal"], string>> = {
   "no-candidates": "No edition of this notice could be pinned for this recipient when the notice was submitted, so no copy was fixed for them.",
   "no-readable-edition": "Every edition that could have served this recipient was unreadable when the notice was submitted, so no copy was fixed for them.",
   "audience-not-admitted": "This recipient is not admitted to the audience of any edition of this notice, so no copy they may read could be fixed for them.",
@@ -119,12 +111,11 @@ const RENDITION_REFUSAL_NARRATIVE: Readonly<Record<RenditionRefusal, string>> = 
 const DUPLICATE_BLOCK = {
   label: "The recorded results disagree",
   title: "Two recorded rows share one dedupe identity",
-  description:
-    "One intent yields at most one message per recipient, so this is a defect in the recorded results rather " + "than a second copy. The rows are listed exactly as recorded and are never added together or reduced to " + "one: a screen that quietly merged them would hide the defect the identity exists to expose.",
+  description: "One intent yields at most one message per recipient, so this is a defect in the recorded results rather than a second copy. The rows are listed exactly as recorded and are never added together or reduced to one: a screen that quietly merged them would hide the defect the identity exists to expose.",
 } as const;
 const RECOVERY = {
   title: "Checking the result",
-  intro: "Checking the result reads this same notice again, under the same identity. A read performs no effect, " + "so checking can reveal an outcome that was recorded and can never repeat a submission.",
+  intro: "Checking the result reads this same notice again, under the same identity. A read performs no effect, so checking can reveal an outcome that was recorded and can never repeat a submission.",
   checkLabel: "Check the result",
   checkingLabel: "Checking the result…",
   checkDescription: "Reading this notice again, under the identity it already has.",
@@ -134,23 +125,15 @@ const RECOVERY = {
   unavailableNoReason: "The service reports this action as unavailable and stated no reason for it, so none is written here.",
   repeatsLabel: "A repeat under the same identity",
 } as const;
-const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const FIRST_PAGE = 1;
 const PAGE_SIZES: readonly number[] = [50, 200];
-const DEFAULT_PAGE_SIZE = 50;
 const NO_SORT: RecordListQueryState["sort"] = [];
 const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
 const ADDRESS = { intentId: "intentId", page: "page", pageSize: "pageSize" } as const;
-const WHOLE_NUMBER = /^\d+$/u;
 const UPDATES_LIST = { label: SURFACE.noNoticeAction, href: "/communication" } as const;
-/** Where this surface is composed, and the one builder of one notice's results address, so a receipt links to exactly the address this surface reads. */
-const DELIVERY_PATH = "/communication/delivery";
-export function deliveryPathOf(intentId: string): string {
-  return `${DELIVERY_PATH}?${ADDRESS.intentId}=${encodeURIComponent(intentId)}`;
-}
-const ITEM_NOUN = "recipients";
-const RETRY_LABEL = "Try again";
+/** Where this surface is composed, and the one builder of one notice's results address, so a receipt links to exactly the address this surface reads. */ const DELIVERY_PATH = "/communication/delivery";
+export const deliveryPathOf = (intentId: string): string => `${DELIVERY_PATH}?${ADDRESS.intentId}=${encodeURIComponent(intentId)}`;
 const stateOf = (valueStates: ValueStates, path: string): ValueState => valueStates[path] ?? "value";
 const CountFigure = ({ count, valueState, locale }: { readonly count: number; readonly valueState: ValueState; readonly locale: string }): ReactElement => {
   const format = countFormatOf(locale);
@@ -167,7 +150,7 @@ const CountFigure = ({ count, valueState, locale }: { readonly count: number; re
 };
 const formatSpan = (milliseconds: number, locale: string): string => {
   const hours = Math.trunc(milliseconds / HOUR_MS);
-  const minutes = Math.trunc((milliseconds - hours * HOUR_MS) / MINUTE_MS);
+  const minutes = Math.trunc((milliseconds - hours * HOUR_MS) / 60_000);
   const format = countFormatOf(locale);
   return (hours > 0 ? [`${format.format(hours)} h`, `${format.format(minutes)} min`] : [`${format.format(minutes)} min`]).join(" ");
 };
@@ -183,10 +166,9 @@ const coverageSentence = ({ from, to, state }: Coverage): string => {
 };
 const actionOf = (actions: readonly ReadAction[], name: string): ReadAction | undefined => actions.find((action) => action.name === name);
 type AddressWindow = { readonly intentId: string; readonly page: number; readonly pageSize: number };
-const wholeNumberOf = (value: string | null): number | undefined => (value !== null && WHOLE_NUMBER.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined);
+const wholeNumberOf = (value: string | null): number | undefined => (value !== null && /^\d+$/u.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined);
 const pageOf = (value: number | undefined): number => (value !== undefined && Number.isSafeInteger(value) && value >= FIRST_PAGE ? value : FIRST_PAGE);
-const pageSizeOf = (value: number | undefined): number => (value !== undefined && PAGE_SIZES.some((size) => size === value) ? value : DEFAULT_PAGE_SIZE);
-const addressWindowOf = (search: ReadonlyURLSearchParams): AddressWindow => ({ intentId: (search.get(ADDRESS.intentId) ?? "").trim(), page: pageOf(wholeNumberOf(search.get(ADDRESS.page))), pageSize: pageSizeOf(wholeNumberOf(search.get(ADDRESS.pageSize))) });
+const pageSizeOf = (value: number | undefined): number => (value !== undefined && PAGE_SIZES.some((size) => size === value) ? value : 50);
 type DedupeIdentity = { readonly publisherId: string; readonly purpose: SendResultData["purpose"]; readonly recipientId: string; readonly intentId: string };
 const REPEAT_LABELS = { permitted: "Repeat permitted", notPermitted: "Repeat not permitted" } as const;
 const REPEAT_BLOCK = { title: "Why a repeat is or is not permitted", description: "Each sentence below is the service's own reason, stated once with the outcomes it governs rather than repeated beside every row.", missingReason: "The service states no reason for this recipient." } as const;
@@ -280,8 +262,7 @@ const OutcomeCounts = ({ counts, valueStates, locale }: { readonly counts: SendR
     <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{COUNTS.intro}</p>
   </div>
 );
-type UsefulnessRow = { readonly label: string; readonly figure: ReactNode };
-const usefulnessRowsOf = (usefulness: Usefulness, valueStates: ValueStates, locale: string): readonly UsefulnessRow[] => [
+const usefulnessRowsOf = (usefulness: Usefulness, valueStates: ValueStates, locale: string): readonly { readonly label: string; readonly figure: ReactNode }[] => [
   { label: USEFULNESS_COPY.stateLabel, figure: <StatusBadge {...USEFULNESS_STATE[usefulness.state]} /> },
   { label: USEFULNESS_COPY.deadlineLabel, figure: <InstantFigure instant={usefulness.deadline} /> },
   { label: USEFULNESS_COPY.remainingLabel, figure: <RemainingFigure remaining={usefulness.remainingMilliseconds} valueState={stateOf(valueStates, "usefulness.remainingMilliseconds")} locale={locale} /> },
@@ -309,8 +290,7 @@ const NamedReference = ({ name, reference }: { readonly name: string; readonly r
     <ReferenceFigure reference={reference} />
   </>
 );
-/** The notice these outcomes belong to, as the message it carries: read through the one notice presentation the receiving surfaces share rather than through a second rendering here. */
-function NoticeMessageBlock({ notice }: { readonly notice: SendResultData["notice"] }): ReactElement {
+/** The notice these outcomes belong to, as the message it carries: read through the one notice presentation the receiving surfaces share rather than through a second rendering here. */ function NoticeMessageBlock({ notice }: { readonly notice: SendResultData["notice"] }): ReactElement {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} data-slot="delivery-notice" data-notice-state={notice === null ? "absent" : "stated"} className="flex min-w-0 flex-col gap-2">
@@ -326,7 +306,7 @@ function NoticeMessageBlock({ notice }: { readonly notice: SendResultData["notic
     </section>
   );
 }
-function DeliverySummary({ envelope, locale }: { readonly envelope: DeliveryEnvelope; readonly locale: string }): ReactElement {
+function DeliverySummary({ envelope, locale }: { readonly envelope: Extract<SendResultReadResult, { readonly kind: "envelope" }>["envelope"]; readonly locale: string }): ReactElement {
   const { data, valueStates, coverage, asOf, source, revision } = envelope;
   const facts: ReadonlyArray<{ readonly label: string; readonly value: () => ReactNode }> = [
     { label: SUMMARY.noticeLabel, value: () => <ReferenceFigure reference={data.intentId} /> },
@@ -439,25 +419,18 @@ const DuplicateCard = ({ rows }: { readonly rows: readonly SendResultRow[] }): R
     </CardContent>
   </Card>
 );
-/**
- * The repeat this surface can perform: the copies the read marks repeatable, the service's answer to the repeat, and the notice the repeat recorded when it was accepted. `allowed` is false at and past the usefulness boundary, where the read states its own reason and no control is offered at all.
- */
+/** The repeat this surface can perform: the copies the read marks repeatable, the service's answer to the repeat, and the notice the repeat recorded when it was accepted. `allowed` is false at and past the usefulness boundary, where the read states its own reason and no control is offered at all. */
 type RepeatState = {
-  /** The rows of this page the read itself marks repeatable: every one of them is a definite failure inside the window. */
-  readonly targets: readonly SendResultRow[];
+  /** The rows of this page the read itself marks repeatable: every one of them is a definite failure inside the window. */ readonly targets: readonly SendResultRow[];
   readonly allowed: boolean;
-  /** The read's own reason for withholding the repeat, rendered exactly as the service stated it. */
-  readonly withheldReason: string;
+  /** The read's own reason for withholding the repeat, rendered exactly as the service stated it. */ readonly withheldReason: string;
   readonly pending: boolean;
   readonly outcome: MutationOutcome | null;
-  /** The notice a repeat recorded, when the service accepted one: a repeat is a notice of its own, never a rewrite. */
-  readonly repeatedIntentId: string | null;
+  /** The notice a repeat recorded, when the service accepted one: a repeat is a notice of its own, never a rewrite. */ readonly repeatedIntentId: string | null;
   readonly onRepeat: () => void;
 };
-/** The heading level the receipt nests beneath the surface that composes it, so an outcome is never announced out of order. */
-const receiptLevelOf = (headingLevel: DeliveryHeadingLevel): 3 | 4 => (headingLevel === 3 ? 4 : 3);
-/** The notice a repeat recorded, when the service accepted one: the first identifier that acceptance created is that notice's own. */
-const repeatedIntentOf = (outcome: MutationOutcome | null): string | null => {
+/** The heading level the receipt nests beneath the surface that composes it, so an outcome is never announced out of order. */ const receiptLevelOf = (headingLevel: DeliveryHeadingLevel): 3 | 4 => (headingLevel === 3 ? 4 : 3);
+/** The notice a repeat recorded, when the service accepted one: the first identifier that acceptance created is that notice's own. */ const repeatedIntentOf = (outcome: MutationOutcome | null): string | null => {
   if (outcome === null || (outcome.outcome !== "accepted" && outcome.outcome !== "alreadyAccepted")) return null;
   const [created] = outcome.created ?? [];
   return created === undefined || created.trim() === "" ? null : created;
@@ -522,13 +495,12 @@ const actionReasonOf = (action: ReadAction | undefined, absentNote: string): str
   return action === undefined ? absentNote : reason.length === 0 ? RECOVERY.unavailableNoReason : reason;
 };
 type DedupeBase = { readonly publisherId: string; readonly purpose: SendResultData["purpose"]; readonly intentId: string };
-const REFUSED_WITHOUT_FIELDS = "The read's own request was refused and named no field to correct, so nothing was read and nothing is shown in its place.";
 const refusalSummaryOf = (fields: Readonly<Record<string, readonly string[]>>): string => {
   const messages = Object.values(fields)
     .flat()
     .map((message) => message.trim())
     .filter((message) => message.length > 0);
-  return messages.length === 0 ? REFUSED_WITHOUT_FIELDS : messages.join(" ");
+  return messages.length === 0 ? "The read's own request was refused and named no field to correct, so nothing was read and nothing is shown in its place." : messages.join(" ");
 };
 const identityBaseOf = (result: SendResultReadResult | undefined): DedupeBase | undefined => {
   if (result === undefined || result.kind !== "envelope") return undefined;
@@ -572,7 +544,7 @@ export default function DeliveryResults({ scope, locale, intentId: statedIntentI
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const address = useMemo<AddressWindow>(() => addressWindowOf(searchParams), [searchParams]);
+  const address = useMemo<AddressWindow>(() => ((search: ReadonlyURLSearchParams): AddressWindow => ({ intentId: (search.get(ADDRESS.intentId) ?? "").trim(), page: pageOf(wholeNumberOf(search.get(ADDRESS.page))), pageSize: pageSizeOf(wholeNumberOf(search.get(ADDRESS.pageSize))) }))(searchParams), [searchParams]);
   const intentId = (statedIntentId ?? address.intentId).trim();
   const page = controlledState === undefined ? address.page : controlledState.page;
   const pageSize = controlledState === undefined ? address.pageSize : controlledState.pageSize;
@@ -621,7 +593,7 @@ export default function DeliveryResults({ scope, locale, intentId: statedIntentI
       </section>
     );
   }
-  const retry = { label: RETRY_LABEL, onClick: checkResult };
+  const retry = { label: "Try again", onClick: checkResult };
   if (intentId === "") return frame(<StateNotice kind="empty" title={SURFACE.noNoticeTitle} description={SURFACE.noNoticeDescription} action={UPDATES_LIST} headingLevel={headingLevel} />);
   if (read.isPending || stale) return frame(<StateNotice kind="loading" title={SURFACE.loadingTitle} description={SURFACE.loadingDescription} headingLevel={headingLevel} loadingLines={7} />);
   if (result === undefined) return frame(<StateNotice kind="unavailable" title={SURFACE.unavailableTitle} description={SURFACE.unavailableDescription} retry={retry} headingLevel={headingLevel} />);
@@ -665,7 +637,7 @@ export default function DeliveryResults({ scope, locale, intentId: statedIntentI
           once instead of through a second rendering beside it (WCAG 1.3.1, 1.4.10). Only that region may
           scroll sideways; the page itself never does.
         */}
-        <RecordList label={tableLabel} columns={columns} rows={rows} rowCount={data.page.total} queryState={listQueryState} onQueryStateChange={commitQuery} getRowId={(row) => row.recipientId} itemNoun={ITEM_NOUN} pageSizeOptions={PAGE_SIZES} />
+        <RecordList label={tableLabel} columns={columns} rows={rows} rowCount={data.page.total} queryState={listQueryState} onQueryStateChange={commitQuery} getRowId={(row) => row.recipientId} itemNoun="recipients" pageSizeOptions={PAGE_SIZES} locale={locale} />
         <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
           <p className="text-pretty wrap-anywhere">{SURFACE.recipientHelp}</p>
           <p className="text-pretty wrap-anywhere">{SURFACE.pinnedHelp}</p>

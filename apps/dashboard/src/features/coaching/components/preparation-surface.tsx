@@ -39,9 +39,7 @@ export default function PreparationSurface(props: PreparationSurfaceProps): Reac
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="wrap-anywhere">
-            <h2 id="coaching-preparation-heading" className="type-section-title">
-              {"Private preparation"}
-            </h2>
+            <h2 {...{ id: "coaching-preparation-heading", className: "type-section-title" }}>{"Private preparation"}</h2>
           </CardTitle>
           <CardDescription className="text-pretty wrap-anywhere">{COACHING_COPY.overview.purpose}</CardDescription>
           <CardAction>

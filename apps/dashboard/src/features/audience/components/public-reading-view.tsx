@@ -21,19 +21,15 @@ import EditionTombstone from "./edition-tombstone";
 import { ServerHtml } from "./message-reader";
 type ReadingData = ReceivingPageEnvelope["data"];
 type PageRendition = ReadingData["renditions"][number];
-type PageGiving = NonNullable<ReadingData["giving"]>;
 const FIELD_LABELS = { reach: "Reach", language: "Language", designate: "Designation" } as const;
 const NOTICE_TITLES = { denied: "This address cannot be read", refused: "This address is not one this view serves", unavailable: "This edition could not be read", noText: "This edition carries no readable text" } as const;
-const NO_TEXT_DESCRIPTION = "The admitted revision of this edition carries no readable text, so nothing is rendered in its place. This is an edition with nothing in it rather than a source that could not be read, and no substitute is supplied for it.";
-const VIDEO_TITLE_FALLBACK = "Video in this edition";
-const PLAYBACK_PURPOSE = "playback";
 const NOTE_CLASS = "text-xs text-muted-foreground text-pretty wrap-anywhere";
 function languageLabelOf(tag: string): string {
   const trimmed = tag.trim();
   const endonym = languageNameOf(tag).trim();
   return endonym === trimmed ? trimmed : `${endonym} (${trimmed})`;
 }
-const unplacedPlayback = (renditions: readonly PageRendition[], html: string): readonly PageRendition[] => renditions.filter((rendition) => rendition.purpose === PLAYBACK_PURPOSE && rendition.path.length > 0 && !html.includes(rendition.path));
+const unplacedPlayback = (renditions: readonly PageRendition[], html: string): readonly PageRendition[] => renditions.filter((rendition) => rendition.purpose === "playback" && rendition.path.length > 0 && !html.includes(rendition.path));
 const ancillaryPathOf = (renditions: readonly PageRendition[], assetId: string, purpose: string): string | undefined => renditions.find((rendition) => rendition.assetId === assetId && rendition.purpose === purpose && rendition.path.length > 0)?.path;
 function captionsOf(renditions: readonly PageRendition[], assetId: string, languageTag: string): readonly VideoPlayerCaption[] {
   const path = ancillaryPathOf(renditions, assetId, "captions");
@@ -44,7 +40,7 @@ const LanguageUnavailableReading = ({ requestedLocale }: { readonly requestedLoc
     <StateNotice kind="language-unavailable" title={RECEIVING_POST_COPY.languageUnavailable.title} description={RECEIVING_POST_COPY.languageUnavailable.description} headingLevel={2} />
   </div>
 );
-function GivePlacement({ giving }: { readonly giving: PageGiving }): ReactElement {
+function GivePlacement({ giving }: { readonly giving: NonNullable<ReadingData["giving"]> }): ReactElement {
   return giving.state === "available" ? (
     <Card size="sm" data-slot="give-placement" data-giving-state={giving.state} className="min-w-0">
       <CardHeader>
@@ -69,14 +65,13 @@ function GivePlacement({ giving }: { readonly giving: PageGiving }): ReactElemen
     </Alert>
   );
 }
-type EditionMediaProps = { readonly renditions: readonly PageRendition[]; readonly html: string; readonly title: string; readonly direction: ContentLocale["direction"]; readonly languageTag: string; readonly onRetry: () => void };
-function EditionMedia({ renditions, html, title, direction, languageTag, onRetry }: EditionMediaProps): ReactElement | null {
+function EditionMedia({ renditions, html, title, direction, languageTag, onRetry }: { readonly renditions: readonly PageRendition[]; readonly html: string; readonly title: string; readonly direction: ContentLocale["direction"]; readonly languageTag: string; readonly onRetry: () => void }): ReactElement | null {
   const unplaced = unplacedPlayback(renditions, html);
   if (unplaced.length === 0) return null;
   return (
     <div data-slot="public-reading-view-media" className="flex min-w-0 flex-col gap-4">
       {unplaced.map((rendition) => {
-        const name = title.length === 0 ? VIDEO_TITLE_FALLBACK : title;
+        const name = title.length === 0 ? "Video in this edition" : title;
         const language = languageTag.length === 0 ? {} : { language: languageTag };
         // A playback rendition the source cannot serve is stated as unavailable, with the retry this view re-reads with, and is given none of its own addresses: no player and no poster are offered for bytes this reading cannot fetch.
         if (rendition.state === "unavailable") return <VideoPlayer key={rendition.renditionId} title={name} state="unavailable" direction={direction} onRetry={onRetry} {...language} />;
@@ -86,8 +81,7 @@ function EditionMedia({ renditions, html, title, direction, languageTag, onRetry
     </div>
   );
 }
-type ServedEditionProps = { readonly data: ReadingData; readonly served: ContentLocale; readonly onRetry: () => void };
-function ServedEdition({ data, served, onRetry }: ServedEditionProps): ReactElement {
+function ServedEdition({ data, served, onRetry }: { readonly data: ReadingData; readonly served: ContentLocale; readonly onRetry: () => void }): ReactElement {
   const html = data.html ?? "";
   const title = (data.title ?? "").trim();
   const description = (data.description ?? "").trim();
@@ -162,7 +156,7 @@ function readingOf(result: ReadResult<ReceivingPageEnvelope>, onRetry: () => voi
       return data.state !== "served" || data.servedLocale === null ? (
         <LanguageUnavailableReading requestedLocale={data.requestedLocale} />
       ) : (data.html ?? "").trim().length === 0 ? (
-        <StateNotice kind="empty" title={NOTICE_TITLES.noText} description={NO_TEXT_DESCRIPTION} headingLevel={2} />
+        <StateNotice kind="empty" title={NOTICE_TITLES.noText} description={"The admitted revision of this edition carries no readable text, so nothing is rendered in its place. This is an edition with nothing in it rather than a source that could not be read, and no substitute is supplied for it."} headingLevel={2} />
       ) : (
         <ServedEdition data={data} served={data.servedLocale} onRetry={onRetry} />
       );
@@ -176,10 +170,6 @@ function readingOf(result: ReadResult<ReceivingPageEnvelope>, onRetry: () => voi
 export type PublicReadingViewProps = { readonly scope: Scope; readonly pageId: string; readonly locale?: string; readonly initialEnvelope: ReadResult<ReceivingPageEnvelope>; readonly className?: string };
 /** One released Page edition served by direct link: its reach, language, media and Give binding, rendered inert. */ export function PublicReadingView({ scope, pageId, locale, initialEnvelope, className }: PublicReadingViewProps): ReactElement {
   const { result, refresh } = useReceivingPage({ scope, params: { pageId, locale }, initialEnvelope });
-  return (
-    <section data-slot="public-reading-view" data-read-kind={result.kind} aria-label="Page edition" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
-      {readingOf(result, refresh)}
-    </section>
-  );
+  return <section {...{ "data-slot": "public-reading-view", "data-read-kind": result.kind, "aria-label": "Page edition", className: cn("flex min-w-0 flex-col gap-4 text-start", className) }}>{readingOf(result, refresh)}</section>;
 }
 export default PublicReadingView;

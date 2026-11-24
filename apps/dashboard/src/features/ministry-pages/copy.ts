@@ -1,8 +1,9 @@
+import { LIFECYCLE_STATUS } from "@/components/draft-status";
 import { REACH_STATUS } from "@/components/status-badge";
 import type { PresentationChoice } from "@/modules/content/document";
 import type { Reach } from "@/modules/content/reach";
 import type { VariantFamily } from "@/modules/content/variant";
-import { PAGE_SECTION_TYPES, type PageSectionType } from "@/modules/data-service/envelope";
+import { PAGE_SECTION_TYPES_BY_FAMILY, type PageSectionType } from "@/modules/data-service/envelope";
 /** A page is a `worker-page` or a `project-page`; `update` belongs to the Ministry Updates family. */
 export type PageFamily = Exclude<VariantFamily, "update">;
 /** The two families, in the order the Pages surface lists them. */
@@ -23,7 +24,8 @@ const CATALOGUE: Record<PageSectionType, CatalogueSectionCopy> = {
   giving: { label: "Giving", description: "The giving designation approved for this page, supplied by your organization.", managed: true },
   progress: { label: "Support progress", description: "How support is going, shown only when the source can supply an amount and its coverage.", managed: true },
 };
-const CATALOGUE_BY_FAMILY: Record<PageFamily, readonly PageSectionType[]> = { "worker-page": PAGE_SECTION_TYPES, "project-page": PAGE_SECTION_TYPES };
+/** The section types each family admits, read from the one per-family declaration the service states, so the catalogue a builder offers is exactly the set that family's changes are admitted against. */
+const CATALOGUE_BY_FAMILY: Record<PageFamily, readonly PageSectionType[]> = PAGE_SECTION_TYPES_BY_FAMILY;
 const CATALOGUE_COPY = {
   addPrompt: "Add a section to this draft edition. Each type has its own fields and its own presentation choices.",
   addSectionLabel: "Add a section",
@@ -32,14 +34,11 @@ const CATALOGUE_COPY = {
   orderNote: "The outline lists sections in the order a reader meets them. The move buttons on a section change that order.",
 } as const;
 export type PresentationOptionCopy = { readonly label: string; readonly description: string };
-type Treatment = PresentationChoice["treatment"];
 type Layout = PresentationChoice["layout"];
-type Alignment = PresentationChoice["alignment"];
-type ImageFit = PresentationChoice["imageFit"];
-const TREATMENT_COPY: Record<Treatment, PresentationOptionCopy> = { normal: { label: "Normal", description: "The section reads at the page's usual weight." }, emphasized: { label: "Emphasized", description: "The section stands out from those around it." } };
+const TREATMENT_COPY: Record<PresentationChoice["treatment"], PresentationOptionCopy> = { normal: { label: "Normal", description: "The section reads at the page's usual weight." }, emphasized: { label: "Emphasized", description: "The section stands out from those around it." } };
 const LAYOUT_COPY: Record<Layout, PresentationOptionCopy> = { "single-column": { label: "Single column", description: "The content runs in one column." }, "two-column-image-text": { label: "Two columns with image and text", description: "An image beside its text, and above it on a narrow screen." } };
-const ALIGNMENT_COPY: Record<Alignment, PresentationOptionCopy> = { start: { label: "Start", description: "Text begins at the leading edge of the reading direction." }, center: { label: "Center", description: "Text is centered inside the section." } };
-const IMAGE_FIT_COPY: Record<ImageFit, PresentationOptionCopy> = { cover: { label: "Fill the frame", description: "The image fills the frame, so its edges may be cropped." }, contain: { label: "Fit inside the frame", description: "The whole image is shown, inside the frame." } };
+const ALIGNMENT_COPY: Record<PresentationChoice["alignment"], PresentationOptionCopy> = { start: { label: "Start", description: "Text begins at the leading edge of the reading direction." }, center: { label: "Center", description: "Text is centered inside the section." } };
+const IMAGE_FIT_COPY: Record<PresentationChoice["imageFit"], PresentationOptionCopy> = { cover: { label: "Fill the frame", description: "The image fills the frame, so its edges may be cropped." }, contain: { label: "Fit inside the frame", description: "The whole image is shown, inside the frame." } };
 const PRESENTATION_COPY = {
   treatment: TREATMENT_COPY,
   layout: LAYOUT_COPY,
@@ -48,7 +47,6 @@ const PRESENTATION_COPY = {
   outOfSetMessage: "The option chosen is not available for this section, so nothing was saved. Choose one of the options this section offers.",
   boundedNote: "Presentation is limited to the options a section offers; a page has no styles of its own.",
 } as const;
-const positionOption = (position: number): string => `Position ${String(position)}`;
 const BUILDER_COPY = {
   outline: "Sections",
   fields: "Section fields",
@@ -61,7 +59,7 @@ const BUILDER_COPY = {
   moveToPosition: "Move to a position",
   moveToPositionDialogTitle: "Move this section",
   moveToPositionHint: "Enter a position between 1 and the number of sections in this edition.",
-  positionOption,
+  positionOption: (position: number): string => `Position ${String(position)}`,
   ariaMoveUp: "Move this section up one position",
   ariaMoveDown: "Move this section down one position",
   ariaSelected: "This section is selected",
@@ -191,6 +189,8 @@ const PREVIEW_COPY = {
   authorisedAs: "Access is checked for the reader named here",
   recheckedOnOpen: "Access is checked again every time the preview or the edition is opened.",
   exactRevisionNote: "The preview shows the exact revision named above as it renders, not a later draft of it.",
+  withdrawnTitle: `${LIFECYCLE_STATUS.withdrawn.label} edition`,
+  withdrawnDescription: `${LIFECYCLE_STATUS.withdrawn.explanation} This preview is not served, and no other edition or earlier revision is shown in its place.`,
   mediaRetryLabel: "Read this preview again",
   unreadyMediaHeading: "Media in this preview",
   unreadyMediaTitle: { image: "This image is unavailable", video: "This video is unavailable" },

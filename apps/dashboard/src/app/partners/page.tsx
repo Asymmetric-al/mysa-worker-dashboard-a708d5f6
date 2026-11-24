@@ -11,16 +11,13 @@ import { querySearchParamsOf } from "@/lib/query-params";
 import { reads, type ReadAction } from "@/modules/data-service";
 import { PageColumn, PageHeading, ReadNotices, type ReadNoticeCopy, type SearchParams } from "../page-frame";
 type RosterEnvelope = Extract<Awaited<ReturnType<typeof reads.partners.findPartners>>, { readonly kind: "envelope" }>["envelope"];
-/** The admitted roster read: the answer this route composes the family's roster surface for, and the one it seeds that surface with. */
 type RosterEnvelopeRead = { readonly kind: "envelope"; readonly envelope: RosterEnvelope };
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Partners" };
 const ROSTER_HREF = "/partners";
 const ADD_CONTACT_ANCHOR = "add-private-contact";
 /** The one advisory action whose presence mounts the private-contact block below the roster. */
-const CREATE_PREPARATION_ACTION = "createPrivatePreparation";
-/** This route's own wording. Not one word of it is a count, an amount, a record name or a permission. */
-const PAGE_COPY = {
+/** This route's own wording. Not one word of it is a count, an amount, a record name or a permission. */ const PAGE_COPY = {
   lede: "Everyone this ministry's records hold: people, households, churches, organizations and your own private preparation, searched and filtered over the whole authorised result rather than the page on screen.",
   classes:
     "Two records that look alike stay two records, even where a name, an email address or a postal address is identical, and a tag, a favourite or an open task proves nothing about contact, consent or giving. Private preparation is a record class of its own: it is written and read here, and it is never copied into a shared history or another record's audience.",
@@ -41,10 +38,9 @@ const rosterHrefOf = (view: RosterQueryState): string => {
   return query === "" ? ROSTER_HREF : `${ROSTER_HREF}?${query}`;
 };
 const admits = (actions: readonly ReadAction[], name: string): boolean => actions.some((action) => action.name === name && action.available);
-/** What the route renders for an admitted read: the family's roster surface, seeded with this read's own answer, and the private-contact block beside it. */
 function RosterBody({ result }: { readonly result: RosterEnvelopeRead }): ReactElement {
   const { envelope } = result;
-  const mayPrepare = admits(envelope.actions, CREATE_PREPARATION_ACTION);
+  const mayPrepare = admits(envelope.actions, "createPrivatePreparation");
   return (
     <>
       {/* One composition of the list pattern, and only one: the family's roster surface owns the toolbar, the table preset, the pager and the scroll region, and asks the service for the same view this read answered. It is handed this read's answer as its seed, so the first paint states these rows and this whole-result count rather than a loading notice and the mount issues no second read of the same view. The surface's own row action is the way into each record, so this route adds none and cannot offer a second one. */}

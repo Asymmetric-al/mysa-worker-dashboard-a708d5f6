@@ -21,15 +21,10 @@ import { useEditionAuthority, usePageReread } from "../hooks/page-reads";
 import { useRegisterPageMediaAsset, useRemovePagePlacement, useSaveSectionFields } from "../hooks/page-mutations";
 import type { SectionFields as SectionFieldValuesByType } from "../schemas/section";
 import { ManagedSectionLock } from "./managed-section-lock";
-type SaveVariables = Parameters<ReturnType<typeof useSaveSectionFields>["mutateAsync"]>[0];
-type MutationScope = SaveVariables["scope"];
-/** One catalogue section type, taken from the catalogue the copy module already names them by. */
 export type PageSectionType = keyof typeof copy.catalogue.sections;
 type AdmittedFieldKeys<Type> = Type extends { readonly sectionType: string } ? Exclude<keyof Type, "sectionType"> : never;
 export type SectionFieldKey = AdmittedFieldKeys<SectionFieldValuesByType>;
-/** One media placement as the section carries it: the identity a change addresses, the kind, and the description shown. */
 export type SectionPlacement = { readonly placementId: string; readonly kind: MediaPickerKind; readonly altText: string; readonly caption?: string | null; readonly credit?: string | null; readonly state?: "ready" | "unavailable" };
-/** One section of the draft edition as `readPage` states it: the identity a change addresses, the type, whether a source owns it, its fields and its presentation choices. */
 export type PageBuilderSection = {
   readonly sectionId: string;
   readonly sectionType: PageSectionType;
@@ -39,7 +34,6 @@ export type PageBuilderSection = {
   readonly presentation: PresentationChoice;
   readonly placements?: readonly SectionPlacement[];
 };
-/** The revision this form was opened at, presented as `expectedRevision` on every save. · The scope the Page was read in, when the caller already holds it; otherwise it is resolved from that read. · The Page identity, when the caller already holds it; otherwise it is resolved from the Page's own read. · The save result this section holds above the form, and the one way to change it. */
 export type SectionFieldsProps = {
   readonly section: PageBuilderSection;
   readonly variantId: string;
@@ -47,14 +41,13 @@ export type SectionFieldsProps = {
   readonly direction: ContentDirection;
   readonly disabled?: boolean;
   readonly className?: string;
-  readonly scope?: MutationScope;
+  readonly scope?: Parameters<ReturnType<typeof useSaveSectionFields>["mutateAsync"]>[0]["scope"];
   readonly documentId?: string;
   readonly saveState: SectionSaveState | null;
   readonly onSaveStateChange: (next: SectionSaveState) => void;
 };
 type FieldControlKind = "text" | "long-text" | "date";
-type FieldWording = { readonly label: string; readonly description: string; readonly control: FieldControlKind };
-const FIELD_WORDING: Readonly<Record<SectionFieldKey, FieldWording>> = {
+const FIELD_WORDING: Readonly<Record<SectionFieldKey, { readonly label: string; readonly description: string; readonly control: FieldControlKind }>> = {
   heading: { label: "Heading", description: "One short line a reader meets first, in plain text.", control: "text" },
   body: { label: "Body", description: "This section's words, in plain text. A blank line separates one paragraph from the next.", control: "long-text" },
   date: { label: "Date", description: "The civil date this milestone belongs to, as a calendar date rather than a moment.", control: "date" },
@@ -151,7 +144,6 @@ function refusalsByControl(fields: Readonly<Record<string, readonly string[]>>):
   }
   return Object.fromEntries(byControl);
 }
-/** What one section save settled as, in the terms this form states it: the outcome the mutation answered, narrowed to the members the fields pane shows. */
 export type SaveSettlement =
   | { readonly kind: "accepted"; readonly repeated: boolean; readonly revision: string }
   | { readonly kind: "unchanged"; readonly revision: string }
@@ -206,40 +198,23 @@ const intentDigestOf = (body: SaveSectionPayloadBody): string =>
     body.presentation.alignment,
     body.presentation.imageFit,
   ]);
-/** The identity one chosen file contributes to the attempt's intent: its name, its size and its last-modified instant, or nothing when no file was chosen. */
 const fileIdentityOf = (file: File | undefined): string => (file === undefined ? "" : `${file.name}:${String(file.size)}:${String(file.lastModified)}`);
 /** The intent a removal carries: the edition it detaches from, and the placement it detaches. The revision is deliberately absent, so a retry after the Page is read again submits the same attempt instead of a new one. */
 const removalIntentOf = (variantId: string, placementId: string): string => JSON.stringify([variantId, placementId]);
-function readBytesBase64(file: File): Promise<string> {
+/** One chosen file as its bytes' base64 half, or as its own text for a caption track, which is carried to the service as WebVTT text rather than as bytes. */
+function readChosenFile(file: File, asText: boolean): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("The browser could not read the chosen file, so nothing was sent."));
     reader.onload = () => {
       const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("The browser read the chosen file as something other than a data URL, so nothing was sent."));
-        return;
-      }
+      if (typeof result !== "string") return reject(new Error(asText ? "The browser read the chosen file as something other than text, so nothing was sent." : "The browser read the chosen file as something other than a data URL, so nothing was sent."));
+      if (asText) return resolve(result);
       const separator = result.indexOf(",");
       resolve(separator === -1 ? "" : result.slice(separator + 1));
     };
-    reader.readAsDataURL(file);
-  });
-}
-/** The chosen file's own text, for a caption track, which is carried to the service as WebVTT text rather than as bytes. */
-function readTextFile(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("The browser could not read the chosen file, so nothing was sent."));
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string") {
-        reject(new Error("The browser read the chosen file as something other than text, so nothing was sent."));
-        return;
-      }
-      resolve(result);
-    };
-    reader.readAsText(file);
+    if (asText) reader.readAsText(file);
+    else reader.readAsDataURL(file);
   });
 }
 type SettlementNotice = { readonly title: string; readonly destructive: boolean; readonly body: ReactNode; readonly detail: readonly [string, string]; readonly again: string | null };
@@ -327,14 +302,14 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
         documentId: authority.documentId,
         payload: {
           kind: input.kind,
-          source: { bytesBase64: await readBytesBase64(input.file), name: input.file.name },
+          source: { bytesBase64: await readChosenFile(input.file, false), name: input.file.name },
           altText: descriptor.altText,
           ...(descriptor.caption === undefined ? {} : { caption: descriptor.caption }),
           ...(descriptor.credit === undefined ? {} : { credit: descriptor.credit }),
           ...(language === undefined ? {} : { language }),
           placement: descriptor,
-          ...(input.poster === undefined ? {} : { poster: { bytesBase64: await readBytesBase64(input.poster.file), name: input.poster.file.name, altText: descriptor.altText } }),
-          ...(input.captions === undefined ? {} : { captions: { vtt: await readTextFile(input.captions.file), language: input.captions.language, ...(input.captions.label === undefined ? {} : { label: input.captions.label }) } }),
+          ...(input.poster === undefined ? {} : { poster: { bytesBase64: await readChosenFile(input.poster.file, false), name: input.poster.file.name, altText: descriptor.altText } }),
+          ...(input.captions === undefined ? {} : { captions: { vtt: await readChosenFile(input.captions.file, true), language: input.captions.language, ...(input.captions.label === undefined ? {} : { label: input.captions.label }) } }),
           ...(transcript === undefined ? {} : { transcript: { text: transcript } }),
           sectionPlacement: { variantId, sectionElement: section.sectionType },
         },
@@ -413,9 +388,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
                   <RadioGroupItem id={optionId} value={option.value} aria-label={option.label} aria-describedby={`${optionId}-hint`} className="mt-0.5" />
                   <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="text-sm font-medium">{option.label}</span>
-                    <span id={`${optionId}-hint`} className="type-supporting text-pretty">
-                      {option.description}
-                    </span>
+                    <span {...{ id: `${optionId}-hint`, className: "type-supporting text-pretty" as const }}>{option.description}</span>
                   </span>
                 </label>
               );
@@ -481,11 +454,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
             {` — ${FIELDS_COPY.heading}`}
           </h3>
           <p className="type-supporting text-pretty">{FIELDS_COPY.enterNote}</p>
-          {saveReason === null ? null : (
-            <p id={saveReasonId} className="type-supporting text-pretty">
-              {saveReason}
-            </p>
-          )}
+          {saveReason === null ? null : <p {...{ id: saveReasonId, className: "type-supporting text-pretty" as const }}>{saveReason}</p>}
         </div>
         <FormErrorSummary errors={errors} labels={admittedLabels} order={summaryOrder} headingLevel={4} />
         <form
@@ -499,12 +468,8 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
           {fieldKeys.length === 0 ? null : <div className="flex min-w-0 flex-col gap-5">{fieldKeys.map((key) => renderField(key))}</div>}
           <Separator />
           <div className="flex min-w-0 flex-col gap-5">
-            <FormFieldGroup legend="Treatment" name="treatment" error={errors?.byField["treatment"]}>
-              {(group) => renderChoice(TREATMENT_OPTIONS, "treatment", group, isTreatment)}
-            </FormFieldGroup>
-            <FormFieldGroup legend="Layout" name="layout" error={errors?.byField["layout"]}>
-              {(group) => renderChoice(LAYOUT_OPTIONS, "layout", group, isLayout)}
-            </FormFieldGroup>
+            <FormFieldGroup {...{ legend: "Treatment" as const, name: "treatment" as const, error: errors?.byField["treatment"] }}>{(group) => renderChoice(TREATMENT_OPTIONS, "treatment", group, isTreatment)}</FormFieldGroup>
+            <FormFieldGroup {...{ legend: "Layout" as const, name: "layout" as const, error: errors?.byField["layout"] }}>{(group) => renderChoice(LAYOUT_OPTIONS, "layout", group, isLayout)}</FormFieldGroup>
             <p className="type-supporting text-pretty">{copy.presentation.boundedNote}</p>
             <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start">
               {selectChoices.map((choice) => (
@@ -525,12 +490,8 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={disabled || saving || authority === undefined} aria-describedby={saveReason === null ? undefined : saveReasonId}>
-              {saving ? "Saving…" : FIELDS_COPY.save}
-            </Button>
-            <output data-slot="section-fields-status" className="type-supporting text-pretty">
-              {statusTextOf(saving, settlement)}
-            </output>
+            <Button {...{ type: "submit" as const, disabled: disabled || saving || authority === undefined, "aria-describedby": saveReason === null ? undefined : saveReasonId }}>{saving ? "Saving…" : FIELDS_COPY.save}</Button>
+            <output {...{ "data-slot": "section-fields-status" as const, className: "type-supporting text-pretty" as const }}>{statusTextOf(saving, settlement)}</output>
           </div>
         </form>
         {notice === null ? null : (
@@ -542,11 +503,7 @@ function SectionFieldsForm({ section, variantId, expectedRevision, direction, di
                 {`${notice.detail[0]}: `}
                 <bdi className="mono-identifier">{notice.detail[1]}</bdi>
               </p>
-              {notice.again === null ? null : (
-                <Button type="button" variant="outline" size="sm" onClick={() => void submit()}>
-                  {notice.again}
-                </Button>
-              )}
+              {notice.again === null ? null : <Button {...{ type: "button" as const, variant: "outline" as const, size: "sm" as const, onClick: () => void submit() }}>{notice.again}</Button>}
             </AlertDescription>
           </Alert>
         )}

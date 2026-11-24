@@ -1,5 +1,5 @@
 /** The referrals list transport reads the answers `GET /api/referrals` writes: each case below is fed what the service's own outcome constructors and `toResponse` put on the wire, so a change to that mapping or to a status it decides fails this file. */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fetchReferralRead, REFERRALS_ENDPOINT, type ReferralListPage } from "@/features/referrals/hooks/use-referrals";
 import { toResponse } from "@/modules/data-service";
 // The transport's import graph holds one React client module — the query key's scope segments, which belong to the context-switch guard — and the no-DOM runner cannot parse it. The transport under test never reads a query key, so the substitute answers nothing: a call to it would be a defect this file
@@ -69,47 +69,45 @@ function answerWith(reply: () => Promise<Response>): void {
     return reply();
   };
 }
-describe("the referrals list transport", () => {
-  it("reads a 200 flat envelope as the envelope, with its payload intact", async () => {
-    answerWith(async () => jsonAnswer(200, FLAT_ENVELOPE));
-    const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
-    expect(requestedPaths).toEqual([LIST_PATH]);
-    expect(result.kind).toBe("envelope");
-    if (result.kind !== "envelope") throw new Error(`The flat envelope was read as ${result.kind}.`);
-    expect(result.envelope.data).toEqual(LIST_PAGE);
-    expect(result.envelope.revision).toBe("rev-2");
-    expect([result.envelope.source, result.envelope.valueStates]).toEqual([FLAT_ENVELOPE.source, FLAT_ENVELOPE.valueStates]);
-  });
-  it.each([
-    { shown: "reads a 403 denial as denied, never as an empty list", status: 403, body: DENIED_BODY, kind: "denied" },
-    { shown: "reads a 401 session denial as denied, never as an outage", status: 401, body: SESSION_DENIED_BODY, kind: "denied" },
-    { shown: "reads a 503 outage as unavailable, carrying the source that did not answer", status: 503, body: UNAVAILABLE_BODY, kind: "unavailable" },
-  ])("$shown", async ({ status, body, kind }) => {
-    answerWith(async () => jsonAnswer(status, body));
-    const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
-    expect(result.kind).toBe(kind);
-    const held = result.kind === "denied" ? result.denied : result.kind === "unavailable" ? result.unavailable : undefined; // A session that expired is a refusal rather than a source that did not answer, and an outage names the source that did not answer: neither carries an envelope.
-    expect(held).toEqual(body);
-    expect("envelope" in result).toBe(false);
-  });
-  it("reads a 422 refused request as refused, never as an outage", async () => {
-    answerWith(async () => toResponse(REFUSED_BODY));
-    const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
-    expect(result.kind).toBe("refused"); // The page this request stated is not one the list read admits. Reporting it as an outage would tell the worker the referral records failed to arrive when the request was what had to be corrected.
-    if (result.kind !== "refused") throw new Error(`The refusal was read as ${result.kind}.`);
-    expect([result.refused, ["envelope" in result, "unavailable" in result]]).toEqual([REFUSED_BODY, [false, false]]);
-  });
-  it.each([
-    { answer: "a request that never reaches the application", reply: () => Promise.reject(new TypeError("fetch failed")) },
-    { answer: "a 200 body that is not an envelope", reply: async () => jsonAnswer(200, LIST_PAGE) },
-    { answer: "a body that is not JSON", reply: async () => new Response("<html>gateway</html>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }) },
-    { answer: "a status that is none of the three", reply: async () => jsonAnswer(500, { message: "Internal Server Error" }) },
-  ])("answers the folder's own outage for $answer, never an empty list", async ({ reply }) => {
-    answerWith(reply);
-    const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
-    expect(result.kind).toBe("unavailable");
-    if (result.kind !== "unavailable") throw new Error(`The answer was read as ${result.kind}.`);
-    expect([["envelope" in result, result.unavailable.outcome], result.unavailable.source]).toEqual([[false, "unavailable"], FOLDER_SOURCE]);
-    expect(result.unavailable.guidance).not.toBe("");
-  });
+it("the referrals list transport: reads a 200 flat envelope as the envelope, with its payload intact", async () => {
+  answerWith(async () => jsonAnswer(200, FLAT_ENVELOPE));
+  const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
+  expect(requestedPaths).toEqual([LIST_PATH]);
+  expect(result.kind).toBe("envelope");
+  if (result.kind !== "envelope") throw new Error(`The flat envelope was read as ${result.kind}.`);
+  expect(result.envelope.data).toEqual(LIST_PAGE);
+  expect(result.envelope.revision).toBe("rev-2");
+  expect([result.envelope.source, result.envelope.valueStates]).toEqual([FLAT_ENVELOPE.source, FLAT_ENVELOPE.valueStates]);
+});
+it.each([
+  { shown: "reads a 403 denial as denied, never as an empty list", status: 403, body: DENIED_BODY, kind: "denied" },
+  { shown: "reads a 401 session denial as denied, never as an outage", status: 401, body: SESSION_DENIED_BODY, kind: "denied" },
+  { shown: "reads a 503 outage as unavailable, carrying the source that did not answer", status: 503, body: UNAVAILABLE_BODY, kind: "unavailable" },
+])("$shown", async ({ status, body, kind }) => {
+  answerWith(async () => jsonAnswer(status, body));
+  const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
+  expect(result.kind).toBe(kind);
+  const held = result.kind === "denied" ? result.denied : result.kind === "unavailable" ? result.unavailable : undefined; // A session that expired is a refusal rather than a source that did not answer, and an outage names the source that did not answer: neither carries an envelope.
+  expect(held).toEqual(body);
+  expect("envelope" in result).toBe(false);
+});
+it("the referrals list transport: reads a 422 refused request as refused, never as an outage", async () => {
+  answerWith(async () => toResponse(REFUSED_BODY));
+  const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
+  expect(result.kind).toBe("refused"); // The page this request stated is not one the list read admits. Reporting it as an outage would tell the worker the referral records failed to arrive when the request was what had to be corrected.
+  if (result.kind !== "refused") throw new Error(`The refusal was read as ${result.kind}.`);
+  expect([result.refused, ["envelope" in result, "unavailable" in result]]).toEqual([REFUSED_BODY, [false, false]]);
+});
+it.each([
+  { answer: "a request that never reaches the application", reply: () => Promise.reject(new TypeError("fetch failed")) },
+  { answer: "a 200 body that is not an envelope", reply: async () => jsonAnswer(200, LIST_PAGE) },
+  { answer: "a body that is not JSON", reply: async () => new Response("<html>gateway</html>", { status: 200, headers: { "content-type": "text/html; charset=utf-8" } }) },
+  { answer: "a status that is none of the three", reply: async () => jsonAnswer(500, { message: "Internal Server Error" }) },
+])("answers the folder's own outage for $answer, never an empty list", async ({ reply }) => {
+  answerWith(reply);
+  const result = await fetchReferralRead<ReferralListPage>(LIST_PATH);
+  expect(result.kind).toBe("unavailable");
+  if (result.kind !== "unavailable") throw new Error(`The answer was read as ${result.kind}.`);
+  expect([["envelope" in result, result.unavailable.outcome], result.unavailable.source]).toEqual([[false, "unavailable"], FOLDER_SOURCE]);
+  expect(result.unavailable.guidance).not.toBe("");
 });

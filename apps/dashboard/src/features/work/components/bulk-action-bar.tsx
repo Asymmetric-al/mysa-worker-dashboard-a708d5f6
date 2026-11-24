@@ -5,7 +5,7 @@ import type { ZodError } from "zod";
 import ActionReview, { mayReplay, type ActionReviewSelection, type MutationSubmit } from "@/components/action-review";
 import { FactList, type FactSpec } from "@/components/fact-list";
 import { civilDateConvention, fieldMessagesOf } from "@/components/form-field";
-import { OperationResult, OUTCOME_HEADINGS, PerItemResults } from "@/components/operation-result";
+import { OperationResult, focusAnnouncedRegion, OUTCOME_HEADINGS, PerItemResults } from "@/components/operation-result";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import SectionCard from "@/components/section-card";
@@ -49,7 +49,6 @@ const FIELD_STACK_CLASS = "flex min-w-0 flex-col gap-3";
 const NOTE_CLASS = "type-supporting text-pretty";
 const CONTROL_CLASS = `${BUTTON_WRAP_CLASS} text-pretty`;
 const TAG_FIELD_LABEL = "Private tag";
-const TAG_FIELD_DESCRIPTION = `Only you see this tag. Up to ${String(PRIVATE_TAG_MAX_LENGTH)} characters.`;
 const FOLLOW_UP_LABELS = { title: "Title", category: "Category", dueOn: "Due date", note: "Note" } as const;
 const CLOSED_INTENT_REASONS: Readonly<Record<BulkIntent, string>> = {
   "private-tag": "None of the selected rows can be changed from this session, so there is no private tag to apply or remove here.",
@@ -74,13 +73,11 @@ type PreparedBulk =
   | { readonly operation: "bulkRemoveTag"; readonly payload: BulkRemoveTagPayload }
   | { readonly operation: "bulkCreateTasks"; readonly payload: BulkCreateTasksPayload }
   | { readonly operation: "bulkCompleteTasks"; readonly payload: BulkCompleteTasksPayload };
-type Preparation = { readonly kind: "ready"; readonly prepared: PreparedBulk } | { readonly kind: "refused"; readonly error: ZodError };
 type ReviewTarget = { readonly prepared: PreparedBulk; readonly revision: string };
-type DraftTextField = "tag" | "followUpTitle" | "followUpCategory" | "followUpDueOn" | "followUpNote";
 type BulkDraft = { readonly direction: BulkTagDirection; readonly tag: string; readonly followUpTitle: string; readonly followUpCategory: string; readonly followUpDueOn: string; readonly followUpNote: string };
 const EMPTY_DRAFT: BulkDraft = { direction: "apply", tag: "", followUpTitle: "", followUpCategory: "", followUpDueOn: "", followUpNote: "" };
 const optionalText = (value: string): string | undefined => (value.trim() === "" ? undefined : value);
-function prepareBulk(intent: BulkIntent, draft: BulkDraft, taskIds: readonly string[]): Preparation {
+function prepareBulk(intent: BulkIntent, draft: BulkDraft, taskIds: readonly string[]): { readonly kind: "ready"; readonly prepared: PreparedBulk } | { readonly kind: "refused"; readonly error: ZodError } {
   switch (intent) {
     case "private-tag": {
       if (draft.direction === "apply") {
@@ -113,7 +110,6 @@ const SURFACE_REASON_CODES = { excludedBeforeSubmit: "excluded-before-submit", b
 }
 /** One selected row this surface withheld from the submission, reported in the vocabulary the service answers in. */ const excludedRowOf = (row: BulkSelectionRow): PerItemResult => ({ targetId: row.taskId, state: "excluded", reasonCode: SURFACE_REASON_CODES.excludedBeforeSubmit, reason: surfaceExclusionReason(row) });
 /** One submitted row the service answered only as part of a whole-batch `unchanged`, so the intent that was sent states its reason. */
-const unchangedRowOf = (taskId: string, operation: BulkOperation): PerItemResult => ({ targetId: taskId, state: "unchanged", reasonCode: SURFACE_REASON_CODES.batchUnchanged, reason: BULK_UNCHANGED_ROW_REASONS[operation] });
 /** One row per selected task: the service's answers for the rows it was sent, in submission order, then the rows this surface withheld; a whole-batch `unchanged` answer names every submitted row under the reason its intent supports, and an outcome that reported no effect states no rows. */
 function receiptRowsOf(outcome: MutationOutcome, operation: BulkOperation, submittedIds: readonly string[], selected: readonly BulkSelectionRow[]): readonly PerItemResult[] {
   const rows: PerItemResult[] = [];
@@ -122,10 +118,8 @@ function receiptRowsOf(outcome: MutationOutcome, operation: BulkOperation, submi
     // A submitted row the answer never named is reported as failed with the reason that says so, rather than dropped from a receipt that claims one row for every row sent.
     for (const taskId of submittedIds) rows.push(answered.get(taskId) ?? { targetId: taskId, state: "failed", reasonCode: SURFACE_REASON_CODES.unnamed, reason: BULK_UNNAMED_ROW_REASON });
   } else if (outcome.outcome === "unchanged") {
-    for (const taskId of submittedIds) rows.push(unchangedRowOf(taskId, operation));
-  } else {
-    return [];
-  }
+    for (const taskId of submittedIds) rows.push(((taskId: string, operation: BulkOperation): PerItemResult => ({ targetId: taskId, state: "unchanged", reasonCode: SURFACE_REASON_CODES.batchUnchanged, reason: BULK_UNCHANGED_ROW_REASONS[operation] }))(taskId, operation));
+  } else return [];
   const submitted = new Set(submittedIds);
   for (const row of selected) if (!submitted.has(row.taskId)) rows.push(excludedRowOf(row));
   return rows;
@@ -141,7 +135,11 @@ function receiptRowsOf(outcome: MutationOutcome, operation: BulkOperation, submi
     hold(rows);
     return withReceiptRows(outcome, rows);
   };
-const retainedSelectionNote = (count: number): string => `${String(count)} ${count === 1 ? ROW_NOUN.one : ROW_NOUN.many} kept the selection because the result was ${BULK_ITEM_RESULT_LABELS.excluded} or ${BULK_ITEM_RESULT_LABELS.failed}.`;
+/** The region a closed bulk area hands the focus back to. Closing the panel ends the selection as well, so the bar and every control in it are removed in that same update - the intent control that opened it and "Clear selection" alike - and the list whose rows were selected is what is left to carry on from. */
+function selectedListRegion(): HTMLElement | null {
+  const region = document.querySelector<HTMLElement>('[data-slot="record-list"] section[tabindex]');
+  return region !== null && region.isConnected ? region : null;
+}
 function distinctReasons(rows: readonly BulkSelectionRow[]): readonly string[] {
   const reasons = new Set<string>();
   for (const row of rows) {
@@ -240,7 +238,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
   const reviewTarget = panelOpen ? liveTarget : null;
   const receiptRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (settledOutcome !== null && !panelOpen) receiptRef.current?.focus();
+    if (settledOutcome !== null && !panelOpen) focusAnnouncedRegion(receiptRef.current);
   }, [settledOutcome, panelOpen]);
   const settledItems = settledOutcome === null ? [] : settledRows;
   const retainedCount = settledItems.filter((item) => rowKeepsSelection(item.state)).length;
@@ -251,7 +249,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
   const unplacedMessages = refusedFields === null ? [] : Object.entries(refusedFields).flatMap(([key, messages]) => (RENDERED_FIELDS.includes(key) ? [] : messages));
   const recoveryHeld = settledOutcome !== null && (mayReplay(settledOutcome) || settledOutcome.outcome === "conflict");
   const panelTitle = intent === null ? "" : intent === "private-tag" ? BULK_TAG_DIRECTION_LABELS[draft.direction] : BULK_INTENT_LABELS[intent];
-  const updateDraft = (field: DraftTextField, value: string): void => setDraft((current) => ({ ...current, [field]: value }));
+  const updateDraft = (field: "tag" | "followUpTitle" | "followUpCategory" | "followUpDueOn" | "followUpNote", value: string): void => setDraft((current) => ({ ...current, [field]: value }));
   const markTouched = (): void => setTouched(true);
   const openIntent = (next: BulkIntent, direction: BulkTagDirection): void => {
     setIntent(next);
@@ -261,11 +259,16 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
     setSettledRows([]);
     setReviewRevision(expectedRevision);
   };
+  // Ends the selection and puts the focus where the bar leaves off: the bar and every control in it are removed with the selection, so nothing in them can be handed the focus back.
+  const releaseSelection = (): void => {
+    onClearSelection();
+    selectedListRegion()?.focus();
+  };
   const closePanel = (): void => {
     setIntent(null);
     setTouched(false);
     setDraft((current) => ({ ...EMPTY_DRAFT, direction: current.direction }));
-    onClearSelection();
+    releaseSelection();
   };
   const dismissResult = (): void => {
     setSettledOutcome(null);
@@ -342,12 +345,12 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
           <p className={NOTE_CLASS}>{BULK_SELECTION_SCOPE_NOTE}</p>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {intentControls}
-            <Button type="button" variant="ghost" size="sm" className={CONTROL_CLASS} disabled={pending} onClick={onClearSelection}>
+            <Button type="button" variant="ghost" size="sm" className={CONTROL_CLASS} disabled={pending} onClick={releaseSelection}>
               {"Clear selection"}
             </Button>
           </div>
           {closedReasons}
-          {retainedCount === 0 ? null : <p className={NOTE_CLASS}>{retainedSelectionNote(retainedCount)}</p>}
+          {retainedCount === 0 ? null : <p className={NOTE_CLASS}>{((count: number): string => `${String(count)} ${count === 1 ? ROW_NOUN.one : ROW_NOUN.many} kept the selection because the result was ${BULK_ITEM_RESULT_LABELS.excluded} or ${BULK_ITEM_RESULT_LABELS.failed}.`)(retainedCount)}</p>}
         </SectionCard>
       ) : null}
       {panelOpen && intent !== null ? (
@@ -365,7 +368,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
           <p className={NOTE_CLASS}>{BULK_INTENT_DESCRIPTIONS[intent]}</p>
           {intent === "private-tag" ? (
             <div className={FIELD_STACK_CLASS}>
-              <FieldInput id={`${fieldIdPrefix}-tag`} label={TAG_FIELD_LABEL} description={TAG_FIELD_DESCRIPTION} error={fieldError("tag")} value={draft.tag} onChange={(value) => updateDraft("tag", value)} onBlur={markTouched} />{" "}
+              <FieldInput id={`${fieldIdPrefix}-tag`} label={TAG_FIELD_LABEL} description={`Only you see this tag. Up to ${String(PRIVATE_TAG_MAX_LENGTH)} characters.`} error={fieldError("tag")} value={draft.tag} onChange={(value) => updateDraft("tag", value)} onBlur={markTouched} />{" "}
             </div>
           ) : null}
           {intent === "create-follow-up-tasks" ? (

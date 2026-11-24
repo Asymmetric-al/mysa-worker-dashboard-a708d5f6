@@ -9,8 +9,6 @@ type Editions = Extract<OverviewResult, { kind: "envelope" }>["envelope"]["data"
 type Edition = Editions[number];
 type UnavailableSource = Extract<OverviewResult, { kind: "unavailable" }>["unavailable"]["source"];
 const SURFACE_HEADING_LEVEL = 1;
-const NOT_AN_EDITION_DESCRIPTION = "The address names an edition this Update does not hold, so nothing is rendered and no other edition is shown in its place.";
-const NOT_AN_UPDATE_DESCRIPTION = "The address names a document that is not an Update, so this surface has nothing to show for it. A Page edition is previewed from its own route, where its own audience and give placement are stated.";
 const REFUSED_REQUEST_DESCRIPTION = "The request this preview would authorise was refused, so nothing is rendered and no other edition or revision is shown in its place. Opening the same address again is the only way to ask for this revision.";
 const PREVIEW_GUIDANCE_FALLBACK = "The records behind this edition could not be read, so nothing is shown in their place. An outage is not an edition with nothing to preview.";
 const editionOf = (editions: Editions, variantId: string): Edition | undefined => editions.find((edition) => edition.variantId === variantId);
@@ -32,7 +30,7 @@ const emptyNotice = (): ReactElement => (
 );
 async function previewOf(editions: Editions, variantId: string): Promise<ReactElement> {
   const edition = editionOf(editions, variantId);
-  if (edition === undefined) return refusedNotice(NOT_AN_EDITION_DESCRIPTION);
+  if (edition === undefined) return refusedNotice("The address names an edition this Update does not hold, so nothing is rendered and no other edition is shown in its place.");
   const revisionId = acknowledgedRevisionOf(edition);
   if (revisionId === undefined) return emptyNotice();
   const candidateId = frozenCandidateOf(edition, revisionId);
@@ -54,7 +52,7 @@ export default async function CommunicationVariantPreviewPage({ params }: { read
   const overview = await reads.updates.readVariantOverview({ documentId: updateId });
   switch (overview.kind) {
     case "envelope":
-      if (overview.envelope.data.document.family !== "update") return refusedNotice(NOT_AN_UPDATE_DESCRIPTION);
+      if (overview.envelope.data.document.family !== "update") return refusedNotice("The address names a document that is not an Update, so this surface has nothing to show for it. A Page edition is previewed from its own route, where its own audience and give placement are stated.");
       return previewOf(overview.envelope.data.editions, variantId);
     case "denied":
       return deniedNotice(overview.denied.reasonCode);

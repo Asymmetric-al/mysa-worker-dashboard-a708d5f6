@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { PagePreviewFrame, type PagePreviewView } from "@/features/ministry-pages/components/page-preview-frame";
+import { PagePreviewFrame, previewRefusalViewOf, type PagePreviewView } from "@/features/ministry-pages/components/page-preview-frame";
 import { copy } from "@/features/ministry-pages/copy";
 import { reads } from "@/modules/data-service";
 import { PageSurface } from "../../../../page-frame";
@@ -9,8 +9,7 @@ export const metadata: Metadata = { title: SURFACE_TITLE };
 type LocaleEditionsResult = Awaited<ReturnType<typeof reads.pages.readPageLocales>>;
 type LocaleEditionsData = Extract<LocaleEditionsResult, { kind: "envelope" }>["envelope"]["data"];
 type LocaleEdition = LocaleEditionsData["editions"][number];
-type GivingReadResult = Awaited<ReturnType<typeof reads.pages.readGivingBinding>>;
-type GivingBinding = Extract<GivingReadResult, { kind: "envelope" }>["envelope"]["data"]["binding"];
+type GivingBinding = Extract<Awaited<ReturnType<typeof reads.pages.readGivingBinding>>, { kind: "envelope" }>["envelope"]["data"]["binding"];
 const normalisedTag = (tag: string): string => tag.trim().toLowerCase();
 const primarySubtag = (tag: string): string => normalisedTag(tag).split("-")[0] ?? "";
 /** This edition's own preview address, which answers the same exact revision again: the retry a route surface offers without holding a read of its own. */
@@ -60,11 +59,10 @@ async function previewViewOf(pageId: string, locales: LocaleEditionsResult): Pro
       givingBinding: giving.envelope.data.binding,
     };
   }
-  if (data.status === "denied") return withoutGiving({ status: "denied", reason: data.reason });
+  if (data.status === "denied") return withoutGiving(previewRefusalViewOf(data.reason));
   return withoutGiving({ status: "unavailable", source: result.envelope.source });
 }
-/** The per-locale edition preview: resolve the locale edition, then render the service's own preview of it. */
-export default async function PageLocalePreviewRoute({ params }: { params: Promise<{ pageId: string; locale: string }> }) {
+/** The per-locale edition preview: resolve the locale edition, then render the service's own preview of it. */ export default async function PageLocalePreviewRoute({ params }: { params: Promise<{ pageId: string; locale: string }> }) {
   const { pageId, locale } = await params;
   const locales = await reads.pages.readPageLocales({ pageId, requestedLocale: locale });
   const preview = await previewViewOf(pageId, locales);

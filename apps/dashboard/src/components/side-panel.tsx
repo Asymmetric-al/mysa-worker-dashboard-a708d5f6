@@ -12,15 +12,7 @@ export type SidePanelDetailBody = { readonly detail: Omit<RecordDetailProps, "la
 export type SidePanelOwnBody = { readonly body: ReactNode };
 export type SidePanelChrome = { readonly open: boolean; readonly onOpenChange: (open: boolean) => void; readonly variant: SidePanelVariant; readonly title: string; readonly returnFocusTo?: RefObject<HTMLElement | null>; readonly className?: string };
 export type SidePanelProps = SidePanelChrome & (SidePanelDetailBody | SidePanelOwnBody);
-const DESKTOP_SURFACE_CLASS = "flex w-full min-w-0 shrink-0 flex-col border-s border-border bg-card text-card-foreground lg:sticky lg:top-0 lg:max-h-dvh lg:w-96 lg:self-start";
-const DESKTOP_HEADER_CLASS = "flex items-start justify-between gap-2 border-b border-border px-4 py-3";
 // The one documented departure from the level scale: a panel header labels the panel's own chrome rather than a section of the page, so it takes the group-title scale in the muted ink instead of a section title's measure.
-const DESKTOP_HEADING_CLASS = "min-w-0 break-words type-group-title text-muted-foreground";
-const DESKTOP_BODY_CLASS = "min-h-0 flex-1 overflow-y-auto overflow-x-clip px-4";
-const PHONE_SURFACE_CLASS = "max-h-dvh p-0";
-const PHONE_HEADER_CLASS = "gap-1.5 border-b border-border py-3 ps-4 pe-14";
-const PHONE_BODY_CLASS = "min-h-0 flex-1 overflow-y-auto overflow-x-clip px-4";
-const CLOSE_LABEL = "Close";
 const OPEN_POPUP_SELECTOR = [
   '[data-slot="dialog-content"][data-open]',
   '[data-slot="alert-dialog-content"][data-open]',
@@ -47,8 +39,6 @@ function focusWasReleased(): boolean {
   return active === null || active === document.body || !active.isConnected;
 }
 const toHeadingId = (generated: string): string => `side-panel-${generated.replace(/[^a-zA-Z0-9_-]/g, "")}-title`;
-/** Presents one record beside a list on a desktop, or as a sheet on a phone. */
-/** The body this shell presents in the layout its variant is, from whichever of the two statements the caller made. */
 const panelBodyOf = (props: SidePanelProps, layout: "panel" | "sheet"): ReactNode => ("detail" in props ? <RecordDetail {...props.detail} layout={layout} /> : props.body);
 export function SidePanel(props: SidePanelProps) {
   const { open, onOpenChange, variant, title, returnFocusTo, className } = props;
@@ -106,30 +96,30 @@ export function SidePanel(props: SidePanelProps) {
   if (variant === "phone") {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent ref={setSheetElement} side="bottom" className={cn(PHONE_SURFACE_CLASS, className)} initialFocus={false} finalFocus={() => resolveReturnTarget() ?? true} data-side-panel="phone">
-          <SheetHeader className={PHONE_HEADER_CLASS}>
+        <SheetContent ref={setSheetElement} side="bottom" className={cn("max-h-dvh p-0", className)} initialFocus={false} finalFocus={() => resolveReturnTarget() ?? true} data-side-panel="phone">
+          <SheetHeader className={"gap-1.5 border-b border-border py-3 ps-4 pe-14"}>
             <SheetTitle ref={headingRef} tabIndex={-1} className="break-words">
               {title}
             </SheetTitle>
           </SheetHeader>
-          <div className={PHONE_BODY_CLASS}>{panelBodyOf(props, "sheet")}</div>
+          <div className={"min-h-0 flex-1 overflow-y-auto overflow-x-clip px-4"}>{panelBodyOf(props, "sheet")}</div>
         </SheetContent>
       </Sheet>
     );
   }
   if (!open) return null;
   return (
-    <aside ref={panelRef} data-slot="side-panel" data-side-panel="desktop" aria-labelledby={titleId} className={cn(DESKTOP_SURFACE_CLASS, className)}>
-      <div className={DESKTOP_HEADER_CLASS}>
-        <h2 id={titleId} ref={headingRef} tabIndex={-1} className={DESKTOP_HEADING_CLASS}>
+    <aside ref={panelRef} data-slot="side-panel" data-side-panel="desktop" aria-labelledby={titleId} className={cn("flex w-full min-w-0 shrink-0 flex-col border-s border-border bg-card text-card-foreground lg:sticky lg:top-0 lg:max-h-dvh lg:w-96 lg:self-start", className)}>
+      <div className={"flex items-start justify-between gap-2 border-b border-border px-4 py-3"}>
+        <h2 id={titleId} ref={headingRef} tabIndex={-1} className={"min-w-0 break-words type-group-title text-muted-foreground"}>
           {title}
         </h2>
         <Button type="button" variant="ghost" size="icon-sm" onClick={requestClose}>
           <XIcon />
-          <span className="sr-only">{CLOSE_LABEL}</span>
+          <span className="sr-only">{"Close"}</span>
         </Button>
       </div>
-      <div className={DESKTOP_BODY_CLASS}>{panelBodyOf(props, "panel")}</div>
+      <div className={"min-h-0 flex-1 overflow-y-auto overflow-x-clip px-4"}>{panelBodyOf(props, "panel")}</div>
     </aside>
   );
 }

@@ -22,46 +22,25 @@ export interface BoundEntryProps {
   readonly onEdit?: (() => void) | undefined;
   readonly className?: string | undefined;
 }
+type EntryControl = { readonly rows?: number; readonly type?: "text" | "date" };
+function BoundEntry({ field, name, label, description, error, required = false, optionalHint = false, onEdit, className, rows, type = "text" }: BoundEntryProps & EntryControl): ReactElement {
+  const change = (value: string): void => {
+    field.handleChange(value);
+    onEdit?.();
+  };
+  return (
+    <FormField name={name} label={label} description={description} error={error} required={required} optionalHint={optionalHint}>
+      {(control) =>
+        rows === undefined ? (
+          <Input id={control.id} type={type} value={field.state.value} autoComplete="off" {...controlAria(control)} onChange={(event) => change(event.currentTarget.value)} onBlur={field.handleBlur} className={className} />
+        ) : (
+          <Textarea id={control.id} rows={rows} value={field.state.value} {...controlAria(control)} onChange={(event) => change(event.currentTarget.value)} onBlur={field.handleBlur} className={className} />
+        )
+      }
+    </FormField>
+  );
+}
 /** One single-line entry bound to its own field: the caller states the type, and the field states the value and the refusal. */
-export function TextField({ field, name, label, description, error, required = false, optionalHint = false, onEdit, className, type = "text" }: BoundEntryProps & { readonly type?: "text" | "date" }): ReactElement {
-  return (
-    <FormField name={name} label={label} description={description} error={error} required={required} optionalHint={optionalHint}>
-      {(control) => (
-        <Input
-          id={control.id}
-          type={type}
-          value={field.state.value}
-          autoComplete="off"
-          {...controlAria(control)}
-          onChange={(event) => {
-            field.handleChange(event.currentTarget.value);
-            onEdit?.();
-          }}
-          onBlur={field.handleBlur}
-          className={className}
-        />
-      )}
-    </FormField>
-  );
-}
+export const TextField = ({ type, ...props }: BoundEntryProps & { readonly type?: "text" | "date" }): ReactElement => <BoundEntry {...props} type={type} />;
 /** One multi-line entry bound to its own field, for the sentences a worker writes rather than types. */
-export function TextAreaField({ field, name, label, description, error, required = false, optionalHint = false, onEdit, className, rows }: BoundEntryProps & { readonly rows: number }): ReactElement {
-  return (
-    <FormField name={name} label={label} description={description} error={error} required={required} optionalHint={optionalHint}>
-      {(control) => (
-        <Textarea
-          id={control.id}
-          rows={rows}
-          value={field.state.value}
-          {...controlAria(control)}
-          onChange={(event) => {
-            field.handleChange(event.currentTarget.value);
-            onEdit?.();
-          }}
-          onBlur={field.handleBlur}
-          className={className}
-        />
-      )}
-    </FormField>
-  );
-}
+export const TextAreaField = ({ rows, ...props }: BoundEntryProps & { readonly rows: number }): ReactElement => <BoundEntry {...props} rows={rows} />;

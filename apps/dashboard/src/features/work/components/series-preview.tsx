@@ -15,7 +15,6 @@ export type SeriesPreviewReading =
   | { readonly status: "unknown"; readonly operationId: string; readonly retry?: NoticeRetry };
 export type SeriesPreviewProps = { readonly state: SeriesState; readonly rule: RepeatRuleFacts; readonly planningTimeZone: string; readonly reading: SeriesPreviewReading; readonly displayLocale: string; readonly className?: string };
 const SERIES_STATE_TONES: Readonly<Record<SeriesState, StatusTone>> = { active: "positive", paused: "caution", stopped: "neutral" };
-const MAX_PREVIEWED_DATES = 3;
 const DATE_DISPLAY_FORMAT: Intl.DateTimeFormatOptions = { dateStyle: "medium" };
 const MONTH_NAME_FORMAT: Intl.DateTimeFormatOptions = { month: "long" };
 function formatDatePart(date: CivilDate, displayLocale: string, format: Intl.DateTimeFormatOptions): string {
@@ -27,10 +26,9 @@ function formatDatePart(date: CivilDate, displayLocale: string, format: Intl.Dat
   }
 }
 const displayCivilDate = (date: CivilDate, displayLocale: string): string => formatDatePart(date, displayLocale, DATE_DISPLAY_FORMAT);
-const monthNameOf = (date: CivilDate, displayLocale: string): string => formatDatePart(date, displayLocale, MONTH_NAME_FORMAT);
 function resolutionSentence(resolution: DisclosedMonthDayResolution, displayLocale: string): string {
   const { requestedDay, dueOn } = resolution;
-  return LAST_DAY_OF_MONTH_RESOLUTION_TEMPLATE.replace("{day}", String(requestedDay)).replace("{month}", monthNameOf(dueOn, displayLocale));
+  return LAST_DAY_OF_MONTH_RESOLUTION_TEMPLATE.replace("{day}", String(requestedDay)).replace("{month}", ((date: CivilDate, displayLocale: string): string => formatDatePart(date, displayLocale, MONTH_NAME_FORMAT))(dueOn, displayLocale));
 }
 export default function SeriesPreview({ state, rule, planningTimeZone, reading, displayLocale, className }: SeriesPreviewProps): ReactElement {
   const previewLabelId = useId();
@@ -39,7 +37,7 @@ export default function SeriesPreview({ state, rule, planningTimeZone, reading, 
   if (reading.status === "unknown")
     return <StateNotice kind="unknown" title="The next dates are not confirmed" description="Whether the rule produced new dates after this change is not known yet, so no date is shown in place of the answer." operationId={reading.operationId} retry={reading.retry} className={className} />;
   const stopped = state === "stopped";
-  const dates = reading.dates.slice(0, MAX_PREVIEWED_DATES);
+  const dates = reading.dates.slice(0, 3);
   if (!stopped && dates.length === 0) return <StateNotice kind="empty" title="No further dates on this plan" description="The series has reached the end its rule states, so the rule produces no further date to preview." className={className} />;
   const actionableKey = serialiseCivilDate(reading.actionableDueOn);
   const resolutionByDate = new Map<string, DisclosedMonthDayResolution>(reading.monthDayResolutions.map((resolution): [string, DisclosedMonthDayResolution] => [serialiseCivilDate(resolution.dueOn), resolution]));

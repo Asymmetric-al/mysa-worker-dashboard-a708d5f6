@@ -13,8 +13,7 @@ import { COMMITMENT_KINDS, RECURRING_BUCKETS } from "@/modules/support/buckets";
 import { GOAL_MEASURE } from "@/modules/support/goal";
 import { DATE_PRECISIONS, type DatePrecision } from "@/modules/time/civil";
 import { REPEAT_PROFILES, SERIES_STATES, type RepeatProfile } from "@/modules/time/recurrence";
-/** The field shapes the stored records share, stated once so each record's table reads as its field list. */
-const text = z.string().min(1);
+/** The field shapes the stored records share, stated once so each record's table reads as its field list. */ const text = z.string().min(1);
 const nullableText = text.nullable();
 const optionalText = text.optional();
 const textList = z.array(text);
@@ -63,8 +62,7 @@ export interface ReadEnvelopeInput<T, C extends Coverage = Coverage> {
   readonly valueStates: Readonly<Record<string, RecordedValueState>>;
   readonly actions: readonly ReadAction[];
 }
-/** Builds the envelope a read returns, deriving the one state a caller may not choose. */
-export function buildEnvelope<T, C extends Coverage = Coverage>(input: ReadEnvelopeInput<T, C>): ReadEnvelope<T, C> {
+/** Builds the envelope a read returns, deriving the one state a caller may not choose. */ export function buildEnvelope<T, C extends Coverage = Coverage>(input: ReadEnvelopeInput<T, C>): ReadEnvelope<T, C> {
   return Object.freeze({ data: input.data, scope: input.scope, source: input.source, revision: input.revision, asOf: input.asOf, coverage: input.coverage, valueStates: deriveValueStates(input.valueStates, input.coverage.state), actions: Object.freeze([...input.actions]) });
 }
 function deriveValueStates(recorded: Readonly<Record<string, RecordedValueState>>, coverageState: CoverageState): Readonly<Record<string, ValueState>> {
@@ -75,8 +73,7 @@ function deriveValueStates(recorded: Readonly<Record<string, RecordedValueState>
 const deriveValueState = (recorded: RecordedValueState, coverageState: CoverageState): ValueState => (recorded === "withheld" || recorded === "unknown" || recorded === "unavailable" ? recorded : coverageState === "partial" ? "incomplete-subtotal" : recorded);
 const OPERATION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export type MutationInput<P> = { readonly operationId: string; readonly scope: Scope; readonly expectedRevision: string; readonly payload: P };
-/** The one shape guard every mutation runs before any state change. */
-export function mutationInputSchema<P>(payloadSchema: z.ZodType<P>): z.ZodType<MutationInput<P>> {
+/** The one shape guard every mutation runs before any state change. */ export function mutationInputSchema<P>(payloadSchema: z.ZodType<P>): z.ZodType<MutationInput<P>> {
   return z.strictObject({
     operationId: z
       .string({ error: "A mutation names the operationId of the attempt it makes, so a replay is recognised by identity and a lost acknowledgement is re-queried rather than resent." })
@@ -319,8 +316,17 @@ export const storedContentRevisionRecordSchema = z.object({
   revision: recordRevisionSchema,
 });
 export type StoredContentRevisionRecord = StoredRecord<z.infer<typeof storedContentRevisionRecordSchema>>;
+/** Every section type a Page can be composed from: the union of the two family catalogues, and the set a schema or a stored section is checked against. */
 export const PAGE_SECTION_TYPES = ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] as const;
 export type PageSectionType = (typeof PAGE_SECTION_TYPES)[number];
+/** The shape of the two catalogues: one admitted tuple per page family, keyed by the family a section change addresses. */
+type PageFamilyCatalogues = Readonly<Record<Exclude<ContentFamily, "update">, readonly PageSectionType[]>>;
+/** The section types each page family admits, stated once per family so a section is admitted or refused by the family the change addresses rather than by one list both families share. The two families hold the same eight types today and each still states its own tuple: the day one family's set differs, the other family's admission does not move with it. */
+export const PAGE_SECTION_TYPES_BY_FAMILY: PageFamilyCatalogues = { "worker-page": ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"], "project-page": ["introduction", "story", "prayer", "milestone", "image", "video", "giving", "progress"] };
+type FamilyAdmittedSectionType = (typeof PAGE_SECTION_TYPES_BY_FAMILY)[keyof typeof PAGE_SECTION_TYPES_BY_FAMILY][number];
+type SectionTypeOutsideEveryFamily = Exclude<PageSectionType, FamilyAdmittedSectionType>;
+/** Every type the union states is admitted by a page family, so no schema accepts a type no Page can be composed with. */
+export const PAGE_SECTION_TYPES_ARE_ALL_ADMITTED: SectionTypeOutsideEveryFamily extends never ? true : false = true;
 export const PAGE_PRESET_IDS = ["preset-opening-and-story", "preset-story-and-prayer"] as const;
 export type PagePresetId = (typeof PAGE_PRESET_IDS)[number];
 export const MEDIA_ASSET_KINDS = ["image", "video"] as const;
@@ -494,8 +500,7 @@ export const importProposalRecordSchema = z.object({
   processedAt: storedInstantSchema.nullable(),
   revision: recordRevisionSchema,
 });
-/** Narrows a record to the fields a caller is authorised to see. */
-export function project<T extends object, K extends keyof T>(record: T, visible: readonly K[]): Pick<T, K> {
+/** Narrows a record to the fields a caller is authorised to see. */ export function project<T extends object, K extends keyof T>(record: T, visible: readonly K[]): Pick<T, K> {
   const projected = {} as Pick<T, K>;
   for (const key of visible) projected[key] = record[key];
   return projected;

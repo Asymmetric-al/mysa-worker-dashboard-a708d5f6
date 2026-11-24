@@ -1,8 +1,6 @@
 /** Criterion 10 — consent and notification. */
 import type { Page } from "@playwright/test";
-import { arrayAt, devStateOf, expect, sendResultFingerprint, fieldAt, jsonOf, messagesAt, newAttemptId, numberAt, outcomeOf, setClock, stringAt, test, type DevStateEnvelope, type PersonaName } from "../playwright.config";
-const SUBSCRIBER_PERSONA: PersonaName = "subscriber";
-const WORKER_PERSONA: PersonaName = "established-worker";
+import { arrayAt, devStateOf, expect, sendResultFingerprint, fieldAt, jsonOf, messagesAt, newAttemptId, numberAt, outcomeOf, setClock, stringAt, test, type DevStateEnvelope } from "../playwright.config";
 const SEED_INSTANT = "2026-11-20T00:00:00Z";
 const UPDATE_DOCUMENT = "doc-update-autumn";
 const CONFIRMATION_WINDOW_HOURS = 168;
@@ -19,13 +17,8 @@ const OWN_MEMBERSHIP = "principal-established-worker";
 const SIMULATED_MAIL = "simulated — no mail leaves this application"; // The one sentence every simulated mail boundary states, in the specification's own words (AAP 0.7.2).
 const RESEND_CONTROL = /resend|send again|send it again|send a new one|new send/iu;
 const PREFERENCES_PATH = "/preview/preferences";
-const AUDIENCE_API = "/api/audience";
-const PREFERENCES_API = "/api/preferences";
 const CONFIRM_API = "/api/confirm";
 const NOTIFY_API = "/api/notify";
-const INBOX_API = "/api/inbox";
-const SUPPORT_API = "/api/support";
-const REVIEW_API = "/api/review";
 const UPDATES_API = "/api/updates";
 const editorPathOf = (variantId: string): string => `/communication/${encodeURIComponent(UPDATE_DOCUMENT)}/${encodeURIComponent(variantId)}`; // Where one edition's editor is composed, where its frozen candidate is answered, and the Update's own release review.
 const reviewPathOf = (variantId: string): string => `/communication/review/${encodeURIComponent(variantId)}`;
@@ -33,12 +26,12 @@ const RELEASE_PATH = `/communication/${encodeURIComponent(UPDATE_DOCUMENT)}`;
 const AUTOSAVE = '[data-slot="autosave-status"]'; // The status line the editor's autosave keeps, whose own state word is what a save is judged by, and the receipt the release review renders once it has an answer.
 const PROOF_FLOW = '[data-slot="proof-flow"]'; // The proof surface's own slot, so every assertion inside the flow is scoped to the flow rather than the page.
 const controlAuthority = (page: Page): Promise<DevStateEnvelope> => devStateOf(page.request);
-const readPreferences = async (page: Page): Promise<unknown> => jsonOf(await page.request.get(PREFERENCES_API), `GET ${PREFERENCES_API}`);
-const readAudience = async (page: Page): Promise<unknown> => jsonOf(await page.request.get(AUDIENCE_API), `GET ${AUDIENCE_API}`);
-const readInbox = async (page: Page): Promise<unknown> => jsonOf(await page.request.get(INBOX_API), `GET ${INBOX_API}`);
+const readPreferences = async (page: Page): Promise<unknown> => jsonOf(await page.request.get("/api/preferences"), "GET /api/preferences");
+const readAudience = async (page: Page): Promise<unknown> => jsonOf(await page.request.get("/api/audience"), "GET /api/audience");
+const readInbox = async (page: Page): Promise<unknown> => jsonOf(await page.request.get("/api/inbox"), "GET /api/inbox");
 const readSendResult = async (page: Page, intentId: string): Promise<unknown> => jsonOf(await page.request.get(`${NOTIFY_API}?intentId=${encodeURIComponent(intentId)}`), `GET ${NOTIFY_API}`);
-const readSupport = async (page: Page): Promise<unknown> => jsonOf(await page.request.get(SUPPORT_API), `GET ${SUPPORT_API}`); // The publisher's support read, which no consent change may touch: the comparator for "no financial fact changed".
-const readReviewOffer = async (page: Page, variantId: string): Promise<unknown> => jsonOf(await page.request.get(`${REVIEW_API}?variantId=${encodeURIComponent(variantId)}`), `GET ${REVIEW_API}`);
+const readSupport = async (page: Page): Promise<unknown> => jsonOf(await page.request.get("/api/support"), "GET /api/support"); // The publisher's support read, which no consent change may touch: the comparator for "no financial fact changed".
+const readReviewOffer = async (page: Page, variantId: string): Promise<unknown> => jsonOf(await page.request.get(`/api/review?variantId=${encodeURIComponent(variantId)}`), "GET /api/review");
 async function readDocumentRevision(page: Page): Promise<string> {
   const body = await jsonOf(await page.request.get(`${UPDATES_API}?documentId=${encodeURIComponent(UPDATE_DOCUMENT)}`), `GET ${UPDATES_API}`); // The Update document's own revision, which a content mutation presents as the revision it read.
   return stringAt(body, ["revision"], "The Update document's revision");
@@ -143,7 +136,7 @@ async function openAudience(page: Page): Promise<void> {
 }
 const deliveryPathOf = (intentId: string): string => `/communication/delivery?intentId=${encodeURIComponent(intentId)}`;
 test.describe("a reader's own proof flow", () => {
-  test.use({ persona: SUBSCRIBER_PERSONA }); // The seeded subscriber holds one membership awaiting proof, keyed by its own principal, so the proof surface below is the one a reader sees: no membership has to be created for the flow to be walked.
+  test.use({ persona: "subscriber" }); // The seeded subscriber holds one membership awaiting proof, keyed by its own principal, so the proof surface below is the one a reader sees: no membership has to be created for the flow to be walked.
   test("an address is confirmed only by the person's own act, never by rendering or reloading the page", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("Development data", { exact: true }).first()).toBeVisible();
@@ -196,7 +189,7 @@ test.describe("a reader's own proof flow", () => {
   });
 });
 test.describe("the worker who publishes, holds the audience and can be a recipient", () => {
-  test.use({ persona: WORKER_PERSONA });
+  test.use({ persona: "established-worker" });
   test("a confirmation one second inside the 168-elapsed-hour window is accepted", async ({ page }) => {
     await requestNoticesThroughProof(page);
     const opened = await readPreferences(page);
@@ -283,14 +276,10 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     const ownRendition = stringAt(own[0], ["renditionId"], "The rendition the acting person was pinned to");
     const statedRecipients = [...rows, ...arrayAt(result, ["data", "unserved"], "The recipients this intent did not serve")].map((row) => fieldAt(row, "recipientId")); // Only eligible memberships are counted: an address awaiting proof, an Off membership and a restricted one appear neither as served nor as unserved, because they were never candidates.
     for (const excluded of Object.values(SEEDED_MEMBERSHIPS)) expect(statedRecipients, `The excluded membership ${excluded} is not a recipient of this notice`).not.toContain(excluded);
-    expect(
-      arrayAt(result, ["data", "unserved"], "The recipients this intent did not serve").every((row) => fieldAt(row, "reason") === "already-covered"),
-      "Every eligible recipient it did not serve was already covered by an earlier notice",
-    ).toBe(true);
-    expect(
-      arrayAt(result, ["data", "rows"], "The intent's rows").every((row) => fieldAt(row, "state") === "accepted"),
-      "An accepted notice is accepted for every recipient it served",
-    ).toBe(true);
+    const unservedAlreadyCovered = arrayAt(result, ["data", "unserved"], "The recipients this intent did not serve").every((row) => fieldAt(row, "reason") === "already-covered");
+    expect(unservedAlreadyCovered, "Every eligible recipient it did not serve was already covered by an earlier notice").toBe(true);
+    const everyServedRowAccepted = arrayAt(result, ["data", "rows"], "The intent's rows").every((row) => fieldAt(row, "state") === "accepted");
+    expect(everyServedRowAccepted, "An accepted notice is accepted for every recipient it served").toBe(true);
     await openDelivery(page, intentId); // The durable surface: the trigger's own result states the simulated boundary, the window it stands in, each recorded outcome, and that acceptance is neither delivery nor reading.
     for (const said of [SIMULATED_MAIL, "Within its usefulness window", "Outcomes recorded for this notice"]) await expect(page.getByText(said).first()).toBeVisible();
     await expect(page.getByText("Accepted — not delivered", { exact: true }).first()).toBeVisible();
@@ -374,31 +363,23 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     expect(laterRecipients, "The person who turned notices off is not a recipient of the later notice").not.toContain(OWN_MEMBERSHIP);
     const inboxAfter = await readInbox(page);
     expect(numberAt(inboxAfter, ["data", "intentCount"], "Messages in the inbox after the later notice"), "No second message appears for the person who turned them off").toBe(1);
-    expect(
-      arrayAt(inboxAfter, ["data", "messages"], "The inbox's messages").map((message) => fieldAt(message, "intentId")),
-      "The one message is the first intent, not the later one",
-    ).toEqual([firstIntent]);
+    const messageIntents = arrayAt(inboxAfter, ["data", "messages"], "The inbox's messages").map((message) => fieldAt(message, "intentId"));
+    expect(messageIntents, "The one message is the first intent, not the later one").toEqual([firstIntent]);
   });
   test("a notice is repeatable inside its 24-hour usefulness window and cannot be revived at the boundary", async ({ page }) => {
     const stale = await readSendResult(page, SEEDED_NOTICE.intentId);
     expect(fieldAt(stale, "data", "usefulness", "state"), "The seeded notice is past its window at the seed instant").toBe("past-usefulness");
-    expect(
-      arrayAt(stale, ["data", "rows"], "The seeded notice's rows").every((row) => fieldAt(row, "retry", "available") === false),
-      "No row is repeatable past the window",
-    ).toBe(true);
+    const noStaleRowRepeatable = arrayAt(stale, ["data", "rows"], "The seeded notice's rows").every((row) => fieldAt(row, "retry", "available") === false);
+    expect(noStaleRowRepeatable, "No row is repeatable past the window").toBe(true);
     await setClock(page.request, SEEDED_NOTICE.lastUsefulSecond); // One second before the window closes: inside it, because the boundary is strict at equality, and the one definite failure the seed recorded is the only row a repeat is permitted for.
     const open = await readSendResult(page, SEEDED_NOTICE.intentId);
     expect(fieldAt(open, "data", "usefulness", "state"), "One second before the deadline is still inside the window").toBe("within-usefulness");
     expect(stringAt(open, ["data", "usefulness", "deadline"], "The notice's usefulness deadline"), `The deadline is the intended instant plus ${String(NOTIFICATION_USEFULNESS_HOURS)} elapsed hours`).toBe(SEEDED_NOTICE.deadline);
     const openRows = arrayAt(open, ["data", "rows"], "The seeded notice's rows inside the window");
-    expect(
-      openRows.filter((row) => fieldAt(row, "retry", "available") === true),
-      "Only the definite failure may be repeated",
-    ).toHaveLength(1);
-    expect(
-      openRows.filter((row) => fieldAt(row, "state") === "failed").every((row) => fieldAt(row, "retry", "available") === true),
-      "The repeatable row is the failed one",
-    ).toBe(true);
+    const repeatableRows = openRows.filter((row) => fieldAt(row, "retry", "available") === true);
+    expect(repeatableRows, "Only the definite failure may be repeated").toHaveLength(1);
+    const everyFailedRowRepeatable = openRows.filter((row) => fieldAt(row, "state") === "failed").every((row) => fieldAt(row, "retry", "available") === true);
+    expect(everyFailedRowRepeatable, "The repeatable row is the failed one").toBe(true);
     await openDelivery(page, SEEDED_NOTICE.intentId);
     await expect(page.getByText("Within its usefulness window").first()).toBeVisible();
     const rows = page.getByRole("row");
@@ -417,17 +398,13 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     const closed = await readSendResult(page, SEEDED_NOTICE.intentId);
     expect(fieldAt(closed, "data", "usefulness", "state"), "At the deadline the window is closed").toBe("past-usefulness");
     const closedRows = arrayAt(closed, ["data", "rows"], "The seeded notice's rows at the deadline");
-    expect(
-      closedRows.every((row) => fieldAt(row, "retry", "available") === false),
-      "No row may be submitted again at the boundary",
-    ).toBe(true);
-    expect(
-      closedRows
-        .filter((row) => fieldAt(row, "state") === "failed")
-        .map((row) => fieldAt(row, "retry", "reason"))
-        .join(" "),
-      "The failed row states that its window closed",
-    ).toMatch(/usefulness window has closed/u);
+    const noClosedRowRepeatable = closedRows.every((row) => fieldAt(row, "retry", "available") === false);
+    expect(noClosedRowRepeatable, "No row may be submitted again at the boundary").toBe(true);
+    const failedReasons = closedRows
+      .filter((row) => fieldAt(row, "state") === "failed")
+      .map((row) => fieldAt(row, "retry", "reason"))
+      .join(" ");
+    expect(failedReasons, "The failed row states that its window closed").toMatch(/usefulness window has closed/u);
     await openDelivery(page, SEEDED_NOTICE.intentId);
     await expect(page.getByText("Past its usefulness window").first()).toBeVisible();
     await expect(page.getByText(/24-hour usefulness window has closed, so it cannot be revived as a fresh attempt/u)).toBeVisible();

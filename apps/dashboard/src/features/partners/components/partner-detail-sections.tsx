@@ -63,14 +63,12 @@ const STATES_WITH_A_NUMBER: ReadonlySet<ValueState> = new Set<ValueState>(["valu
 const partnerKindLabel = (kind: PartnerKind): string => FACET_VALUE_LABELS["contact-type"][kind] ?? kind;
 const valueStateOf = (valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState => valueStates[path] ?? "unknown";
 const coverageNoticeOf = (coverage: Coverage): SectionNoticeState | undefined => (coverage.state === "complete" ? undefined : "partial-coverage");
-function FactLine({ className, label, value }: { readonly className: string; readonly label?: string; readonly value: ReactNode }): ReactElement {
-  return (
-    <p className={className}>
-      {label === undefined ? null : <span className="sr-only">{label}</span>}
-      {value}
-    </p>
-  );
-}
+const FactLine = ({ className, label, value }: { readonly className: string; readonly label?: string; readonly value: ReactNode }): ReactElement => (
+  <p className={className}>
+    {label === undefined ? null : <span className="sr-only">{label}</span>}
+    {value}
+  </p>
+);
 function PartnerAmount({ amount, valueState, locale }: { readonly amount: GiftRowRecord["amount"]; readonly valueState: ValueState; readonly locale: string }): ReactElement {
   const formatted = formatMinor(amount, valueState, locale);
   const word = valueStateWord(valueState);
@@ -87,21 +85,19 @@ function PartnerAmount({ amount, valueState, locale }: { readonly amount: GiftRo
     </span>
   );
 }
-function SupportFigures({ figures, valueStates, locale }: { readonly figures: readonly PartnerSupportFigure[]; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string }): ReactElement {
-  return (
-    <dl className="flex flex-col gap-2 text-sm">
-      {figures.map((figure, index) => {
-        const amount = <PartnerAmount amount={figure.amount} valueState={valueStateOf(valueStates, figure.path)} locale={locale} />;
-        return (
-          <div key={`${figure.path}-${String(index)}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-            <dt className="text-muted-foreground">{figure.label}</dt>
-            <dd className="flex flex-wrap items-baseline gap-2">{figure.href === undefined ? amount : <Link {...{ className: "inline-link", href: figure.href }}>{amount}</Link>}</dd>
-          </div>
-        );
-      })}
-    </dl>
-  );
-}
+const SupportFigures = ({ figures, valueStates, locale }: { readonly figures: readonly PartnerSupportFigure[]; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string }): ReactElement => (
+  <dl className="flex flex-col gap-2 text-sm">
+    {figures.map((figure, index) => {
+      const amount = <PartnerAmount amount={figure.amount} valueState={valueStateOf(valueStates, figure.path)} locale={locale} />;
+      return (
+        <div key={`${figure.path}-${String(index)}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <dt className="text-muted-foreground">{figure.label}</dt>
+          <dd className="flex flex-wrap items-baseline gap-2">{figure.href === undefined ? amount : <Link {...{ className: "inline-link", href: figure.href }}>{amount}</Link>}</dd>
+        </div>
+      );
+    })}
+  </dl>
+);
 function ValueStateNotes({ states }: { readonly states: readonly ValueState[] }): ReactElement | null {
   const distinct = [...new Set(states)].filter((state) => state !== "value");
   if (distinct.length === 0) return null;
@@ -269,17 +265,15 @@ function ActivityBody({ read, headingLevel, composer, links }: { readonly read: 
     </div>
   );
 }
-function PrivateNoteItem({ note }: { readonly note: PrivateNoteRecord }): ReactElement {
-  return (
-    <li className="flex flex-col gap-1">
-      <StatusBadge label={AUDIENCE_LABEL_COPY[note.audience].label} tone="muted" srPrefix="Audience" />
-      <p className="whitespace-pre-line type-body">
-        <bdi>{note.body}</bdi>
-      </p>
-      <FactLine className="text-xs text-muted-foreground" label="Written at " value={<bdi className="mono-identifier">{note.createdAt}</bdi>} />
-    </li>
-  );
-}
+const PrivateNoteItem = ({ note }: { readonly note: PrivateNoteRecord }): ReactElement => (
+  <li className="flex flex-col gap-1">
+    <StatusBadge label={AUDIENCE_LABEL_COPY[note.audience].label} tone="muted" srPrefix="Audience" />
+    <p className="whitespace-pre-line type-body">
+      <bdi>{note.body}</bdi>
+    </p>
+    <FactLine className="text-xs text-muted-foreground" label="Written at " value={<bdi className="mono-identifier">{note.createdAt}</bdi>} />
+  </li>
+);
 function PrivateNotesBody({ read, headingLevel, composer, preparation: preparationAction, links }: { readonly read: PartnerReadResult<PartnerPrivateData>; readonly headingLevel: NoticeHeadingLevel; readonly composer?: ReactNode; readonly preparation?: ReactNode; readonly links: PartnerDetailLinks }): ReactElement {
   if (read.kind !== "read") return <ReadNotice read={read} surface="private-preparation" headingLevel={headingLevel} />;
   const { notes, preparation } = read.envelope.data;
@@ -316,28 +310,26 @@ function PrivateNotesBody({ read, headingLevel, composer, preparation: preparati
     </div>
   );
 }
-function TaskItem({ task }: { readonly task: TaskRecord }): ReactElement {
-  return (
-    <li className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <bdi className="text-sm font-medium">{task.title}</bdi>
-        <StatusBadge {...TASK_STATUS[task.status]} srPrefix="Task status" />
-      </div>
-      <FactLine className="text-xs text-muted-foreground" label={task.dueOn === null ? undefined : "Due "} value={task.dueOn === null ? "No due date" : <bdi className="mono-identifier">{task.dueOn}</bdi>} />
-      {task.plannedTime === null || task.timeZone === null ? null : (
-        <p className="text-xs text-muted-foreground">
-          <span className="sr-only">Planned time </span>
-          <bdi className="mono-identifier">{task.plannedTime}</bdi> <bdi>{task.timeZone}</bdi> — a planned time is not a held meeting
-        </p>
-      )}
-      {task.category === null ? null : (
-        <Badge variant="outline">
-          <bdi>{task.category}</bdi>
-        </Badge>
-      )}
-    </li>
-  );
-}
+const TaskItem = ({ task }: { readonly task: TaskRecord }): ReactElement => (
+  <li className="flex flex-col gap-1">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <bdi className="text-sm font-medium">{task.title}</bdi>
+      <StatusBadge {...TASK_STATUS[task.status]} srPrefix="Task status" />
+    </div>
+    <FactLine className="text-xs text-muted-foreground" label={task.dueOn === null ? undefined : "Due "} value={task.dueOn === null ? "No due date" : <bdi className="mono-identifier">{task.dueOn}</bdi>} />
+    {task.plannedTime === null || task.timeZone === null ? null : (
+      <p className="text-xs text-muted-foreground">
+        <span className="sr-only">Planned time </span>
+        <bdi className="mono-identifier">{task.plannedTime}</bdi> <bdi>{task.timeZone}</bdi> — a planned time is not a held meeting
+      </p>
+    )}
+    {task.category === null ? null : (
+      <Badge variant="outline">
+        <bdi>{task.category}</bdi>
+      </Badge>
+    )}
+  </li>
+);
 function OpenTasksBody({ tasks, coverage, headingLevel, links }: { readonly tasks: readonly TaskRecord[]; readonly coverage: Coverage; readonly headingLevel: NoticeHeadingLevel; readonly links: PartnerDetailLinks }): ReactElement {
   const partial = coverageNoticeOf(coverage);
   return (
@@ -432,24 +424,17 @@ function SupportHistoryBody({ history, coverage, valueStates, locale, headingLev
           <GiftItem key={row.gift.giftRowId} row={row} valueState={valueStateOf(valueStates, row.amountPath)} locale={locale} />
         ))}
       />
-      <SupportRowList
-        title="Recurring commitments the source states"
-        rows={commitments.map((row) => (
-          <CommitmentItem key={row.commitment.commitmentRowId} row={row} valueState={valueStateOf(valueStates, row.amountPath)} locale={locale} />
-        ))}
-      />
+      <SupportRowList {...{ title: "Recurring commitments the source states", rows: commitments.map((row) => <CommitmentItem key={row.commitment.commitmentRowId} row={row} valueState={valueStateOf(valueStates, row.amountPath)} locale={locale} />) }} />
       {history.ledgerHref === undefined ? null : <Link {...{ className: "text-sm inline-link", href: history.ledgerHref }}>See every gift recorded for this partner</Link>}
     </div>
   );
 }
-function RecordAudienceStatus({ record }: { readonly record: PartnerRecord }): ReactElement {
-  return (
-    <div className="flex flex-col items-end gap-1">
-      <StatusBadge label={FACET_VALUE_LABELS["preparation-state"][record.audience] ?? record.audience} tone={record.audience === "private" ? "muted" : "neutral"} srPrefix="Audience" />
-      {record.stage === null ? null : <StatusBadge label={record.stage} tone="info" srPrefix="Stage" />}
-    </div>
-  );
-}
+const RecordAudienceStatus = ({ record }: { readonly record: PartnerRecord }): ReactElement => (
+  <div className="flex flex-col items-end gap-1">
+    <StatusBadge label={FACET_VALUE_LABELS["preparation-state"][record.audience] ?? record.audience} tone={record.audience === "private" ? "muted" : "neutral"} srPrefix="Audience" />
+    {record.stage === null ? null : <StatusBadge label={record.stage} tone="info" srPrefix="Stage" />}
+  </div>
+);
 export default function PartnerDetailSections({ partner, privatePreparation, interactions, layout, locale, actions, links = {}, breadcrumb }: PartnerDetailSectionsProps): ReactElement {
   const headingLevel = NOTICE_HEADING_BY_LAYOUT[layout];
   if (partner.kind !== "read") return <ReadNotice read={partner} surface="partner-detail" headingLevel={layout === "page" ? 1 : 2} />;

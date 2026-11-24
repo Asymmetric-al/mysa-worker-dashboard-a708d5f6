@@ -4,21 +4,18 @@ import ActionReview, { type MutationSubmit, type ReviewHeadingLevel } from "@/co
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { copy, type ManagedFieldKey } from "../copy";
+import { copy } from "../copy";
 import { useDuplicatePageSection, useRemovePageSection } from "../hooks/page-mutations";
 import type { DuplicateSectionPayload, RemoveSectionPayload } from "../schemas/section";
-const MANAGED_SECTION_REASON: ManagedFieldKey = "source-supplied-section";
 const REVIEW_HEADING_LEVEL: ReviewHeadingLevel = 4;
 const SENTENCE_CLASS = "text-sm text-pretty";
 const POSITION_CLASS = "tabular-figures text-sm text-muted-foreground";
 const REVIEW_BODY_CLASS = "flex min-w-0 flex-col gap-2";
-type OutcomeName = Outcome["outcome"];
 type ChosenAction = "duplicate" | "remove";
 type SectionMutationBody<Payload> = Parameters<MutationSubmit<Payload>>[0];
 type ReviewInput<Payload> = Omit<SectionMutationBody<Payload>, "operationId">;
-type Scope = ReviewInput<unknown>["scope"];
 type Outcome = Awaited<ReturnType<MutationSubmit<unknown>>>;
-const KEEPS_RECEIPT: Readonly<Record<OutcomeName, boolean>> = { accepted: true, alreadyAccepted: true, unchanged: true, unknown: true, conflict: false, denied: false, invalid: false, unavailable: false };
+const KEEPS_RECEIPT: Readonly<Record<Outcome["outcome"], boolean>> = { accepted: true, alreadyAccepted: true, unchanged: true, unknown: true, conflict: false, denied: false, invalid: false, unavailable: false };
 const holdsReceipt = (outcome: Outcome | null): boolean => outcome !== null && KEEPS_RECEIPT[outcome.outcome];
 const inputOf = <Payload,>(attempt: SectionMutationBody<Payload>): ReviewInput<Payload> => ({ scope: attempt.scope, expectedRevision: attempt.expectedRevision, payload: attempt.payload });
 const statedPosition = (index: number): number | null => (Number.isInteger(index) && index >= 0 ? index + 1 : null);
@@ -28,7 +25,7 @@ function copyPosition(index: number, count: number): number | null {
   return stated === null || (size > 0 && index >= size) ? null : stated + 1;
 }
 export interface SectionActionsProps {
-  readonly scope: Scope;
+  readonly scope: ReviewInput<unknown>["scope"];
   readonly documentId: string;
   readonly sectionId: string;
   readonly sectionLabel: string;
@@ -77,7 +74,7 @@ export function SectionActions({ scope, documentId, sectionId, sectionLabel, ind
   }, []);
   const close = useCallback((): void => setChosen(null), []);
   const locked = managed === true;
-  const reason = locked ? copy.lockReasons.reasons[MANAGED_SECTION_REASON] : null;
+  const reason = locked ? copy.lockReasons.reasons["source-supplied-section"] : null;
   const describedBy = reason === null ? undefined : reasonId;
   const label = <bdi className={"min-w-0 font-medium wrap-anywhere"}>{sectionLabel}</bdi>;
   const sourcePosition = statedPosition(index);

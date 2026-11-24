@@ -74,8 +74,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: COACHING_COPY.coachSubject.heading, body: COACHING_COPY.coachSubject.unavailable, action: { label: COACHING_COPY.coachPortfolio.heading, href: PORTFOLIO_HREF } },
   refused: { title: COACHING_COPY.coachSubject.heading, action: { label: COACHING_COPY.coachPortfolio.heading, href: PORTFOLIO_HREF } },
 };
-/** One subject the coach holds a grant for. */
-export default async function CoachSubjectPage({ params }: { readonly params: Promise<{ subjectId: string }> }): Promise<ReactElement> {
+/** One subject the coach holds a grant for. */ export default async function CoachSubjectPage({ params }: { readonly params: Promise<{ subjectId: string }> }): Promise<ReactElement> {
   const { subjectId } = await params;
   const result = await reads.coach.readCoachSubject({ grantId: subjectId });
   if (result.kind !== "envelope") return <ReadNotices failure={result} copy={NOTICE_COPY} className={PAGE_CLASS} />;

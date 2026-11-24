@@ -4,8 +4,7 @@ export const SESSION_COOKIE = "dashboard_session";
 export const SESSION_COOKIE_GRANT = { httpOnly: true, sameSite: "lax", path: "/", maxAge: 365 * 24 * 60 * 60 } as const;
 const SAFE_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const describeSessionIdValue = (value: unknown): string => (typeof value === "string" ? (value.length <= 40 ? JSON.stringify(value) : `a ${String(value.length)}-character string`) : value === null ? "null" : value === undefined ? "undefined" : typeof value === "object" ? "an object" : `a ${typeof value}`);
-/** Refusal raised when a value cannot be used as a session id; it is never repaired into one. */
-export class InvalidSessionIdError extends Error {
+/** Refusal raised when a value cannot be used as a session id; it is never repaired into one. */ export class InvalidSessionIdError extends Error {
   readonly sessionId: unknown;
   constructor(sessionId: unknown) {
     super(`Cannot use ${describeSessionIdValue(sessionId)} as a session id: a session id must be 1 to 64 characters drawn only from A-Z, a-z, 0-9, underscore and hyphen.`);

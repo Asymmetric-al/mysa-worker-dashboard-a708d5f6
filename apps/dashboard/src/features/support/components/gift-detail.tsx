@@ -32,7 +32,6 @@ const GRAIN_WORD: Readonly<Record<RowGrain, string>> = { gift: "Gift grain", all
 const VALUE_STATE_WORD: Readonly<Record<ValueState, string>> = { value: "Recorded amount", zero: "Recorded zero", unknown: "Unknown amount", withheld: "Withheld", unavailable: "Source unavailable", "incomplete-subtotal": "Incomplete subtotal" };
 const PRECISION_LEAD: Readonly<Record<LedgerRow["datePrecision"], string>> = { date: "The source states this as a precise day.", approximate: "The source states this date approximately, so it is a guide rather than a recorded day.", unknown: "The source did not establish this date, so it is not shown as one." };
 const DECIMAL_PLACES_WORD: Readonly<Record<number, string>> = { 0: "no decimal places", 1: "one decimal place", 2: "two decimal places", 3: "three decimal places" };
-const READ_FAILED_DESCRIPTION = "The ledger read behind this record did not answer, so no amount is shown: this is an outage rather than a zero and rather than an empty record.";
 const DENIED_DESCRIPTION = "The read was refused before it enumerated anything, so nothing here states whether a record exists, what it holds, who it is attributed to or what it was for.";
 const FOLLOW_UP_FIELDS = [
   { name: "title", label: TASK_FIELD_LABELS.title, description: "A phrase that reads at a glance in a list, such as \u201cThank her for the March gift\u201d.", required: true, wide: true },
@@ -42,40 +41,36 @@ const FOLLOW_UP_FIELDS = [
 ] as const;
 type FollowUpFieldName = (typeof FOLLOW_UP_FIELDS)[number]["name"];
 const Fact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-1", termClassName: "text-sm font-medium", valueClassName: "min-w-0 text-sm text-pretty break-words text-muted-foreground" });
-function Frame({ dir, className, returnHref, children }: { readonly dir?: "ltr" | "rtl"; readonly className?: string; readonly returnHref: string; readonly children: ReactNode }): ReactElement {
-  return (
-    <div data-slot="gift-detail" dir={dir} className={cn("mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-6 py-6", className)}>
-      <nav aria-label="Return path" className="min-w-0">
-        <Link href={returnHref} className="inline-link inline-flex min-h-target max-w-full items-center gap-1.5 text-sm font-medium text-primary">
-          <ArrowLeftIcon aria-hidden="true" className="size-4 shrink-0 rtl:rotate-180" />
-          <span className="min-w-0 text-pretty">Back to the gifts ledger, with the filters, sort and page you came from</span>
-        </Link>
-      </nav>
-      {children}
+const Frame = ({ dir, className, returnHref, children }: { readonly dir?: "ltr" | "rtl"; readonly className?: string; readonly returnHref: string; readonly children: ReactNode }): ReactElement => (
+  <div data-slot="gift-detail" dir={dir} className={cn("mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-6 py-6", className)}>
+    <nav aria-label="Return path" className="min-w-0">
+      <Link href={returnHref} className="inline-link inline-flex min-h-target max-w-full items-center gap-1.5 text-sm font-medium text-primary">
+        <ArrowLeftIcon aria-hidden="true" className="size-4 shrink-0 rtl:rotate-180" />
+        <span className="min-w-0 text-pretty">Back to the gifts ledger, with the filters, sort and page you came from</span>
+      </Link>
+    </nav>
+    {children}
+  </div>
+);
+const LoadingBody = (): ReactElement => (
+  <div aria-busy={true} className="flex min-w-0 flex-col gap-4">
+    <p className="sr-only">Reading this gift, its grain and the coverage it falls in.</p>
+    <div aria-hidden="true" className="flex min-w-0 flex-col gap-4">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-5 w-2/3" />
+      {[
+        ["h-4 w-32", "h-4 w-5/6"],
+        ["h-4 w-40", "h-4 w-3/4"],
+      ].map(([heading, body]) => (
+        <Card key={heading} className="min-w-0 gap-2 px-(--card-spacing)">
+          <Skeleton className={heading} />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className={body} />
+        </Card>
+      ))}
     </div>
-  );
-}
-function LoadingBody(): ReactElement {
-  return (
-    <div aria-busy={true} className="flex min-w-0 flex-col gap-4">
-      <p className="sr-only">Reading this gift, its grain and the coverage it falls in.</p>
-      <div aria-hidden="true" className="flex min-w-0 flex-col gap-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-5 w-2/3" />
-        {[
-          ["h-4 w-32", "h-4 w-5/6"],
-          ["h-4 w-40", "h-4 w-3/4"],
-        ].map(([heading, body]) => (
-          <Card key={heading} className="min-w-0 gap-2 px-(--card-spacing)">
-            <Skeleton className={heading} />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className={body} />
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
+  </div>
+);
 const ledgerHrefOf = (query: GiftsQuery): string => {
   const stated = toGiftsParams(query).toString();
   return stated === "" ? "/support/gifts" : `/support/gifts?${stated}`;
@@ -89,9 +84,6 @@ function locateRow(envelope: GiftsEnvelope | null, giftId: string): { readonly r
   return row === undefined ? null : { row, index };
 }
 const correctionAgainst = (rows: readonly LedgerRow[], row: LedgerRow): LedgerRow | undefined => rows.find((candidate) => candidate.refundOf !== undefined && candidate.refundOf === row.giftRowId);
-function amountStateOf(row: LedgerRow, index: number, valueStates: Readonly<Record<string, ValueState>>): ValueState {
-  return exponentOf(row.amount.currency) === undefined ? "unknown" : (valueStates[`rows.${String(index)}.amount`] ?? (row.amount.minorUnits === 0 ? "zero" : "value"));
-}
 function withoutField(lookup: FieldErrorLookup | null, path: string): FieldErrorLookup | null {
   if (lookup === null || lookup.byField[path] === undefined) return lookup;
   const byField: Record<string, readonly string[]> = { ...lookup.byField };
@@ -149,13 +141,9 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
   const envelope = read?.kind === "envelope" ? read.envelope : null;
   const located = useMemo(() => locateRow(envelope, giftId), [envelope, giftId]);
   const retry = { label: "Read this gift again", onClick: (): void => void gifts.refetch() };
-  const framed = (children: ReactNode): ReactElement => (
-    <Frame dir={dir} className={className} returnHref={returnHref}>
-      {children}
-    </Frame>
-  );
+  const framed = (children: ReactNode): ReactElement => <Frame {...{ dir, className, returnHref }}>{children}</Frame>;
   if (gifts.isPending) return framed(<LoadingBody />);
-  if (gifts.isError || read === undefined) return framed(<StateNotice kind="unavailable" headingLevel={1} title="This gift could not be read" description={READ_FAILED_DESCRIPTION} retry={retry} />);
+  if (gifts.isError || read === undefined) return framed(<StateNotice kind="unavailable" headingLevel={1} title="This gift could not be read" description={"The ledger read behind this record did not answer, so no amount is shown: this is an outage rather than a zero and rather than an empty record."} retry={retry} />);
   if (read.kind === "denied") return framed(<StateNotice kind="denied" headingLevel={1} title="This gift is not available in this context" reasonCode={read.denied.reasonCode} description={DENIED_DESCRIPTION} />);
   if (read.kind === "unavailable") return framed(<StateNotice kind="unavailable" headingLevel={1} title="The source behind this gift is unavailable" source={read.unavailable.source} description={read.unavailable.guidance} retry={retry} />);
   if (read.kind === "refused") return framed(<StateNotice kind="refused" headingLevel={1} title="This gift's request was refused" description={refusalSummary(read.refused)} />);
@@ -167,7 +155,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
   const { row, index } = located;
   const view = read.envelope;
   const snapshot = view.data.report.snapshot;
-  const amountState = amountStateOf(row, index, view.valueStates);
+  const amountState: ValueState = exponentOf(row.amount.currency) === undefined ? "unknown" : (view.valueStates[`rows.${String(index)}.amount`] ?? (row.amount.minorUnits === 0 ? "zero" : "value"));
   const grain: RowGrain = row.allocationId === undefined ? "gift" : "allocation";
   const correction = correctionAgainst(view.data.report.rows, row);
   const originalDate = row.originalGiftOn === undefined ? undefined : String(row.originalGiftOn);
@@ -190,9 +178,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
           <Badge variant="outline">{VALUE_STATE_WORD[amountState]}</Badge>
           {row.refundOf === undefined ? null : <Badge variant="outline">Correction</Badge>}
         </div>
-        <h1 id={recordHeadingId} className="type-page-title">
-          Gift record
-        </h1>
+        <h1 {...{ id: recordHeadingId, className: "type-page-title" }}>Gift record</h1>
         <p className="type-supporting min-w-0 text-pretty">One row of received support, stated at the grain, in the currency and with the provenance the source reports for it. Nothing on this record is recomputed: every figure is the one the read returned.</p>
         <p className="flex min-w-0 flex-wrap items-baseline gap-2 break-words" data-grain={grain} data-value-state={amountState} data-gift-row-id={row.giftRowId}>
           <AmountValue money={row.amount} valueState={amountState} locale={locale} emphasis="headline" />
@@ -234,7 +220,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
               )}
             </Fact>
             <Fact term="Designation">{row.designation === undefined ? "The source states no designation for this gift." : <bdi>{row.designation}</bdi>}</Fact>
-            <Fact term={"This figure\u2019s state"}>
+            <Fact term="This figure\u2019s state">
               <span className="font-medium text-foreground">{VALUE_STATE_WORD[amountState]}</span> — {VALUE_STATE_MEANING[amountState]}
             </Fact>
           </dl>
@@ -287,9 +273,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
         <p className="type-supporting text-pretty">Every figure on this record was read once, at the snapshot stated here. Two surfaces compare only when their coverage and their as-of instant agree.</p>
       </SectionCard>
       <section aria-labelledby={followUpHeadingId} className="flex min-w-0 flex-col gap-3">
-        <h2 id={followUpHeadingId} className="type-section-title">
-          Follow up on this gift
-        </h2>
+        <h2 {...{ id: followUpHeadingId, className: "type-section-title" }}>Follow up on this gift</h2>
         <p className="type-supporting min-w-0 text-pretty">{GIVING_FOLLOW_UP.description}</p>
         <Card className="min-w-0">
           <CardContent>
@@ -348,9 +332,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
           <div className="flex min-w-0 flex-col gap-2">
             <p className="type-supporting min-w-0 text-pretty">{GIVING_FOLLOW_UP.resultNote}</p>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" onClick={startAnother}>
-                Start another follow-up
-              </Button>
+              <Button {...{ type: "button", variant: "outline", onClick: startAnother }}>Start another follow-up</Button>
             </div>
           </div>
         ) : null}

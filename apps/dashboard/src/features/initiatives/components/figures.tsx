@@ -2,6 +2,7 @@
 import type { ReactNode, ReactElement } from "react";
 import type { ZodError } from "zod";
 import StatusBadge, { statusBadgeProps, VALUE_STATE_WORDS } from "@/components/status-badge";
+import { countFormatOf } from "@/lib/count-format";
 import { assertNever } from "@/lib/result";
 import { fieldErrorsFromInvalid, type FieldErrorLookup } from "@/components/form-field";
 import type { ValueState } from "@/modules/data-service";
@@ -10,8 +11,6 @@ import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT } from "@/modules/support/report";
 export { integerOf, pageNumberOf } from "../query/initiatives-query";
 /** The page size a read may be asked for: the family's own default, its cap, or a value the request states between them. */
 export const pageSizeNumberOf = (value: number): number => (!Number.isSafeInteger(value) || value <= 0 ? PAGE_SIZE_DEFAULT : value >= PAGE_SIZE_CAP ? PAGE_SIZE_CAP : PAGE_SIZE_DEFAULT);
-/** The one whole-number format this family states a count in. */
-export const countFormat = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 /** The value state the read recorded for one field, or `value` when it recorded none. */
 export const statedState = (valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState => valueStates[path] ?? "value";
 /** One count rendered from the value state the read recorded for it. */
@@ -20,11 +19,11 @@ export function CountFigure({ count, state }: { readonly count: number; readonly
   switch (state) {
     case "value":
     case "zero":
-      return <span className="tabular-figures">{countFormat.format(count)}</span>;
+      return <span className="tabular-figures">{countFormatOf().format(count)}</span>;
     case "incomplete-subtotal":
       return (
         <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-          <span className="tabular-figures">{countFormat.format(count)}</span>
+          <span className="tabular-figures">{countFormatOf().format(count)}</span>
           <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, "incomplete-subtotal")} />
         </span>
       );
@@ -39,9 +38,7 @@ export function CountFigure({ count, state }: { readonly count: number; readonly
 /** A civil date or instant exactly as the read supplies it, isolated so a mixed-direction neighbour cannot reorder it. */
 export const StatedInstant = ({ value }: { readonly value: string }): ReactElement => (
   <bdi>
-    <time className="tabular-figures" dateTime={value}>
-      {value}
-    </time>
+    <time {...{ className: "tabular-figures", dateTime: value }}>{value}</time>
   </bdi>
 );
 /** One labelled row of a review, so a step names exactly what it will record. */
@@ -54,9 +51,7 @@ export const ReviewFact = ({ label, value }: { readonly label: string; readonly 
 /** One row of a fact list: the term a surface states, and the value it states for that term. */
 export type FactEntry = { readonly term: string; readonly value: ReactNode };
 /** A run of labelled facts stated from one table: the list and its one map live here, so a surface states its facts once. */
-export function FactList({ className, rows, row }: { readonly className: string; readonly rows: readonly FactEntry[]; readonly row: (entry: FactEntry) => ReactElement }): ReactElement {
-  return <dl className={className}>{rows.map((entry) => row(entry))}</dl>;
-}
+export const FactList = ({ className, rows, row }: { readonly className: string; readonly rows: readonly FactEntry[]; readonly row: (entry: FactEntry) => ReactElement }): ReactElement => <dl className={className}>{rows.map((entry) => row(entry))}</dl>;
 /** One term and its value in an inline fact list, without a list of its own. */
 export const TermFact = ({ term, value }: { readonly term: string; readonly value: ReactNode }): ReactElement => (
   <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">

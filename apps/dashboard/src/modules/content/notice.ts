@@ -76,7 +76,7 @@ function admittedAudiencesOf(recipient: NoticeRecipient): ReadonlySet<VariantAud
 }
 const admittedPosterFor = (releaseId: string | undefined, audience: VariantAudience, poster: NoticeVideoPoster | undefined): NoticeVideoPoster | undefined =>
   poster === undefined || audience !== "public" || poster.purpose !== "poster" || !poster.admittedPublic || identityOf(poster.releaseId) !== identityOf(releaseId) || !isDirectlyReadable(poster.release) ? undefined : poster;
-/** Pins one candidate: its identity as the record a caller stores on the send and compares on a replay, or `undefined` when the candidate names no usable edition. */
+/** Pins one candidate: its identity — `variantId`, `releaseId` and `revisionId` — as the record a caller stores on the send and compares on a replay, or `undefined` when the candidate names no usable edition. Its `checksum` is 32-bit change detection that can collide, so it is never the sole comparison of two renditions. */
 export function pinRendition(candidate: RenditionCandidate): PinnedRendition | undefined {
   const variantId = identityOf(candidate.variantId);
   const releaseId = identityOf(candidate.releaseId);
@@ -187,9 +187,7 @@ export function buildNotice(input: NoticeInput): Notice {
   const publisher = publisherNameOf(input.publisher);
   const phrase = purposePhraseOf(input.purpose);
   const link = sameOriginPath(input.link);
-  const posterPath = posterPathOf(pinned, input.videoPoster);
-  const protectedCopy = pinned.audience === "approved-supporter";
-  const shared = { publisher, phrase, link, posterPath, protectedCopy };
+  const shared = { publisher, phrase, link, posterPath: posterPathOf(pinned, input.videoPoster), protectedCopy: pinned.audience === "approved-supporter" };
   const htmlParagraphs = composeParagraphs({ ...shared, presenters: HTML_PRESENTERS })
     .map((paragraph) => `<p>${paragraph}</p>`)
     .join("\n");

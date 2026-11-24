@@ -1,13 +1,4 @@
-/**
- * The boundary a prospective "this and future" revision of one repeating plan takes effect from.
- *
- * A revision is prospective, so the plan's rule engine refuses a boundary that falls before the latest rule
- * boundary the plan already carries, and a surface presenting today alone would hand such a plan a boundary the
- * service has to refuse: a plan whose rule begins in the future holds its only rule boundary at that first due
- * date, so a change the worker genuinely made would be dropped as nothing to change. The boundary presented is
- * therefore the later of the plan's own today and that latest boundary. Both facts come from the series read, and
- * no date is computed here.
- */
+/** The boundary a prospective "this and future" revision of one repeating plan takes effect from. A revision is prospective, so the plan's rule engine refuses a boundary that falls before the latest rule boundary the plan already carries, and a surface presenting today alone would hand such a plan a boundary the service has to refuse: a plan whose rule begins in the future holds its only rule boundary at that first due date, so a change the worker genuinely made would be dropped as nothing to change. The boundary presented is therefore the later of the plan's own today and that latest boundary. Both facts come from the series read, and no date is computed here. */
 import { Temporal } from "temporal-polyfill";
 import { parseCivilDate } from "@/modules/time/civil";
 /** The two facts the boundary is read from: the plan's own today, and its rule revisions in the order they took effect. */ export interface SeriesRevisionBoundaryFacts {

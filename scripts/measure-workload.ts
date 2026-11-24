@@ -1,8 +1,4 @@
-/**
- * `bun run measure:workload`: one run of the published-workload measurement.
- *
- * The two performance numbers are observations of this host, taken by `apps/dashboard/e2e/workload-timing.spec.ts` rather than by the ordinary test gate, so the measurement has its own command instead of a variable a reader has to know about. The command prints the load average the run starts and ends at — the figure a reader needs to judge the numbers it produces — runs the spec in the application package on this checkout's own port, and exits with the status the spec's assertions produced, so a missed budget fails the command visibly rather than being printed and forgotten.
- */
+/** `bun run measure:workload`: one run of the published-workload measurement. The two performance numbers are observations of this host, taken by `apps/dashboard/e2e/workload-timing.spec.ts` rather than by the ordinary test gate, so the measurement has its own command instead of a variable a reader has to know about. The command prints the load average the run starts and ends at — the figure a reader needs to judge the numbers it produces — runs the spec in the application package on this checkout's own port, and exits with the status the spec's assertions produced, so a missed budget fails the command visibly rather than being printed and forgotten. */
 import { loadavg } from "node:os";
 import { join } from "node:path";
 /** The application package the runner lives in, which is where the spec and the dev server are addressed from. */

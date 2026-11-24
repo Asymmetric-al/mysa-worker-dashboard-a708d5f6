@@ -149,9 +149,8 @@ function scanDocument(input: unknown): DocumentIssue[] {
   const issues: DocumentIssue[] = [];
   if (input["type"] !== "doc") issues.push({ path: "type", message: 'A content document\'s root node is the Tiptap document, so its type is "doc".' });
   const profileVersion = input["profileVersion"];
-  if (typeof profileVersion !== "number") {
-    issues.push({ path: "profileVersion", message: "A content document states the content profile version it was written against." });
-  } else if (profileVersion !== CONTENT_PROFILE_VERSION) issues.push({ path: "profileVersion", message: `Content profile version ${profileVersion} is not admitted: this build reads and writes version ${CONTENT_PROFILE_VERSION} only, so the document is not migrated silently.` });
+  if (typeof profileVersion !== "number") issues.push({ path: "profileVersion", message: "A content document states the content profile version it was written against." });
+  else if (profileVersion !== CONTENT_PROFILE_VERSION) issues.push({ path: "profileVersion", message: `Content profile version ${profileVersion} is not admitted: this build reads and writes version ${CONTENT_PROFILE_VERSION} only, so the document is not migrated silently.` });
   const content = input["content"];
   if (Array.isArray(content)) content.forEach((node, index) => scanNode(node, `content.${index}`, issues, 0));
   const sections = input["sections"];
@@ -203,7 +202,7 @@ function canonicalise(value: unknown): unknown {
 export const serialise = (document: ContentDocumentJson): string => JSON.stringify(canonicalise(document));
 const FNV_OFFSET_BASIS = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
-/** A deterministic 32-bit FNV-1a digest of the canonical serialisation, as eight lowercase hex digits. */
+/** A deterministic 32-bit FNV-1a digest of the canonical serialisation, as eight lowercase hex digits: change detection only, because 32 bits collide. A document, variant, revision or release is identified by its own identifier, so no digest here is ever the sole comparison of two renditions. */
 export function checksum(document: ContentDocumentJson): string {
   const input = serialise(document);
   let hash = FNV_OFFSET_BASIS;

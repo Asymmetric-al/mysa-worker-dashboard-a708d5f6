@@ -14,20 +14,16 @@ import { useAddPageSection, useCreatePageVariant, type SectionMutationVariables 
 import type { CreateVariantPayload } from "../schemas/release";
 import type { AddSectionPayload } from "../schemas/section";
 type CatalogueSectionType = keyof typeof copy.catalogue.sections;
-/** The presentation options one entry admits, exactly as the read carries them: the entry states the bounded set, and its own fields panel is where one option is chosen. */
 export type FamilyCataloguePresentation = {
   readonly treatment: readonly (keyof typeof copy.presentation.treatment)[];
   readonly layout: readonly (keyof typeof copy.presentation.layout)[];
   readonly alignment: readonly (keyof typeof copy.presentation.alignment)[];
   readonly imageFit: readonly (keyof typeof copy.presentation.imageFit)[];
 };
-/** One section type as a family's catalogue lists it: the read's own shape, held to the wording this family keeps for it. */
 export type FamilyCatalogueSection = { readonly key: CatalogueSectionType; readonly labelKey: string; readonly managed: boolean; readonly lockReasonKey: string | null; readonly fields: readonly string[]; readonly presentation: FamilyCataloguePresentation };
 /** One family's catalogue — the value `readPageCatalogues` answers for a family, never a list written here. The read states the content families it knows, so its own wide union is carried as it arrives; the component's `family` prop is what decides which wording applies. */
 export type FamilyCatalogueView = { readonly family: PageFamily | "update"; readonly labelKey: string; readonly sections: readonly FamilyCatalogueSection[] };
-/** The draft edition the catalogue composes into: the section count is what bounds an insertion position, and the revision is what the change presents. */
 export type FamilyCatalogueTarget = { readonly variantId: string; readonly expectedRevision: string; readonly sectionCount: number };
-/** The Page a family's entries belong to: its identity starts and re-reads an edition, its revision is what that change presents, and its language is the edition's. */
 export type FamilyCatalogueDocument = { readonly documentId: string; readonly expectedRevision: string; readonly locale?: string };
 type CatalogueScope = SectionMutationVariables<AddSectionPayload>["scope"];
 type FamilyCatalogueSharedProps = { readonly family: PageFamily; readonly catalogue: FamilyCatalogueView; readonly scope: CatalogueScope; readonly onStarted?: (documentId: string) => void; readonly className?: string };

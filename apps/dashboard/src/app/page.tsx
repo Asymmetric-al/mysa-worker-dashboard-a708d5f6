@@ -14,8 +14,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: HOME_COPY.title },
   refused: { title: HOME_COPY.title },
 };
-/** The Home screen: the worker's day in three sections, or the reason it could not be read. */
-export default async function HomePage(): Promise<ReactElement> {
+/** The Home screen: the worker's day in three sections, or the reason it could not be read. */ export default async function HomePage(): Promise<ReactElement> {
   const result = await reads.context.readHome();
   // Every refusal notice states the page's own title, so it is the page heading itself and the heading block is rendered only for the surface that answered: a heading above a notice repeating the same word would state the route's title twice.
   if (result.kind !== "envelope") return pageRefusalOf(result, NOTICE_COPY, 6);

@@ -1,7 +1,6 @@
-/** Criterion 3 — relationship care: find a person and a church, read what their records honestly say, log */
+/** Criterion 3 — relationship care: find a person and a church, read what their records honestly say, log an interaction, then create a separate task. */
 import type { Locator, Page } from "@playwright/test";
-import { armLostAcknowledgement, clearFailurePlan, expect, expectDevelopmentData, test, type PersonaName } from "../playwright.config";
-const PERSONA: PersonaName = "established-worker";
+import { armLostAcknowledgement, clearFailurePlan, expect, expectDevelopmentData, test } from "../playwright.config";
 const HREF = { roster: "/partners", work: "/work" } as const;
 const ROSTER = { search: "Search", label: "Partner roster", facet: "Contact type", facetValue: "Person" } as const;
 const PERSON = { restricted: "Marcus Webb", care: "Jo Mbeki", church: "St Aidan's Church", churchKind: "Church", phone: "Kenji Nakamura" } as const;
@@ -102,7 +101,7 @@ async function fillLoggedInteraction(page: Page): Promise<void> {
   await page.getByRole("textbox", { name: FORM.howTheyTookPart, exact: true }).fill(VISIT.role);
   await page.getByRole("textbox", { name: FORM.noteField }).fill(VISIT.note);
 }
-test.use({ persona: PERSONA }); // This file acts as the established worker throughout, which is the persona the runner admits the context as, and the runner's automatic fixture restores the deterministic seed before each test.
+test.use({ persona: "established-worker" }); // This file acts as the established worker throughout, which is the persona the runner admits the context as, and the runner's automatic fixture restores the deterministic seed before each test.
 test("a person and a church are found by searching the whole roster and filtering it, and each record states its own restrictions, activity and private text", async ({ page }) => {
   const roster = await openRoster(page);
   const wholeRoster = await wholeResultCount(page);
@@ -219,10 +218,8 @@ test("completing a task and creating the next one close work and change nothing 
   await page.goto(careAddress);
   await expect(page.getByRole("heading", { name: PERSON.care, level: 1 }), "The record this journey acts on is reopened, so the reading above did not move the worker off it.").toBeVisible();
   const openTasksBefore = await section(page, SECTION.openTasks).getByRole("listitem").allInnerTexts();
-  expect(
-    openTasksBefore.some((item) => item.includes(TASK.seeded)),
-    "The seeded task is open work on this record before the journey completes it.",
-  ).toBe(true);
+  const seededTaskOpen = openTasksBefore.some((item) => item.includes(TASK.seeded));
+  expect(seededTaskOpen, "The seeded task is open work on this record before the journey completes it.").toBe(true);
   await page.goto(HREF.work);
   await expect(page.getByRole("heading", { name: "Work", level: 1 }), "The five task lists are a destination of the shell's own navigation.").toBeVisible();
   await expectDevelopmentData(page, "The Work surface");

@@ -10,8 +10,7 @@ export type GoalDenialReason = "capability-absent" | "scope-mismatch" | "source-
 export const canEditGoal = (capabilities: readonly string[]): boolean => capabilities.includes(GOAL_CAPABILITY);
 export type GoalAmountInput = { readonly minorUnits: MinorUnits; readonly currency: string };
 export type GoalAmountProblem = { readonly field: "minorUnits"; readonly message: string } | { readonly field: "currency"; readonly message: string };
-/** Validates a stated goal amount, returning one problem per refused field and an empty list when the amount is acceptable. */
-export function validateGoalAmount(input: GoalAmountInput): GoalAmountProblem[] {
+/** Validates a stated goal amount, returning one problem per refused field and an empty list when the amount is acceptable. */ export function validateGoalAmount(input: GoalAmountInput): GoalAmountProblem[] {
   const problems: GoalAmountProblem[] = [];
   const amount: number = input.minorUnits;
   if (!Number.isSafeInteger(amount) || amount <= 0) problems.push({ field: "minorUnits", message: "Set the goal to a whole number of the currency's minor units greater than zero; a fractional count cannot be stated exactly, and zero or a negative number is not a target." });
@@ -41,8 +40,7 @@ export type GoalProgressInput = { readonly goal?: GoalRecord; readonly numerator
 const BASIS_POINTS_PER_PERCENT = 100n;
 const BASIS_POINTS_PER_RATIO = 10_000n;
 const NO_PERCENTAGE: GoalProgress = { state: "no-percentage", percentageBasisPoints: null };
-/** The percentage behind a progress figure — the only place in the application where a goal percentage is computed. */
-export function goalProgress(input: GoalProgressInput): GoalProgress {
+/** The percentage behind a progress figure — the only place in the application where a goal percentage is computed. */ export function goalProgress(input: GoalProgressInput): GoalProgress {
   if (input.sourceAvailable === false) return { state: "unavailable", percentageBasisPoints: null };
   const goal = input.goal;
   if (goal === undefined) return { state: "no-goal", percentageBasisPoints: null };
@@ -58,8 +56,7 @@ export function goalProgress(input: GoalProgressInput): GoalProgress {
   const percentageBasisPoints = Number(basisPoints);
   return !Number.isSafeInteger(percentageBasisPoints) ? NO_PERCENTAGE : { state: "value", percentageBasisPoints };
 }
-/** Renders basis points as the percentage a surface shows: `12000` is `120%`, `12345` is `123.45%`. */
-export function formatPercentageBasisPoints(basisPoints: number): string {
+/** Renders basis points as the percentage a surface shows: `12000` is `120%`, `12345` is `123.45%`. */ export function formatPercentageBasisPoints(basisPoints: number): string {
   if (!Number.isSafeInteger(basisPoints)) throw new RangeError("formatPercentageBasisPoints: a percentage is stated as a whole number of basis points, so a fractional or non-finite value is refused rather than rounded to a figure no caller computed.");
   const sign = basisPoints < 0 ? "-" : "";
   const magnitude = BigInt(basisPoints < 0 ? -basisPoints : basisPoints);

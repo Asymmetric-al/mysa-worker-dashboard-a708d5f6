@@ -18,22 +18,17 @@ import { DEFAULT_ORDER, FIRST_PAGE, INITIATIVE_ORDERS, STATE_ALL, isInitiativeOr
 import { CountFigure, statedState } from "./figures";
 import InitiativeComposer from "./initiative-composer";
 type InitiativeListEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readInitiatives>>, { readonly kind: "envelope" }>["envelope"];
-/** One page of the initiative list, exactly as the read states it: the rows, the whole-result total and the window they came from. */
 export type InitiativeListPage = InitiativeListEnvelope["data"];
-/** One initiative as the list states it. */
 export type InitiativeRow = InitiativeListPage["items"][number];
 type ValueStates = Readonly<Record<string, ValueState>>;
-// The URL grammar, shared with the route that renders this list
-//
 // The grammar lives in one non-client module, so the Server Component that asks the service for this view and this surface that asks the route handler for it parse and write one address rather than a copy each. It is re-exported here because this list is where the family's surfaces reach for it.
 export { parseInitiativesQuery, toInitiativesParams };
 export type { InitiativeOrder, InitiativeStateFilter, InitiativesViewState };
-const PAGE_SIZE_OPTIONS: readonly number[] = [PAGE_SIZE_DEFAULT, PAGE_SIZE_CAP]; // Fixed values
+const PAGE_SIZE_OPTIONS: readonly number[] = [PAGE_SIZE_DEFAULT, PAGE_SIZE_CAP];
 const NO_SORT: RecordListQueryState["sort"] = [];
 const NO_VALUE_STATES: ValueStates = {};
 const NO_ROWS: InitiativeListPage["items"] = [];
 const DETAILS_PATH = "/partners/initiatives"; // The one address a row opens, and the actions a read may publish
-const CREATE_INITIATIVE = "createInitiative";
 const STATE_FACET = "state";
 const ORDER_FACET = "order";
 const ORDER_VALUE_COPY: Readonly<Record<InitiativeOrder, string>> = { name: "Name, A to Z", "period-start": "Period start, earliest first", state: "State, open first" };
@@ -53,14 +48,12 @@ const SURFACE_COPY = {
   loadingTitle: "Reading the initiatives",
   loadingBody: "The first answer for this view is still arriving, so nothing here is stated as an empty list or as zero.",
 } as const;
-const ROW_LINK_CLASS = "flex min-w-0 flex-col gap-0.5 rounded-sm inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const MUTED_TEXT_CLASS = "text-muted-foreground";
 const membershipStatePath = (initiativeId: string, member: (typeof MEMBERSHIP_STATES)[number]): string => `${initiativeId}.memberStates.${member}`;
 const periodStatePath = (initiativeId: string, end: "from" | "to"): string => `${initiativeId}.period.${end}`;
 const firstApplied = (applied: Readonly<Record<string, readonly string[]>>, facetId: string): string | undefined => applied[facetId]?.[0];
 const stateFilterOf = (value: string | undefined): InitiativeStateFilter => (value !== undefined && isInitiativeState(value) ? value : STATE_ALL);
 const orderOf = (value: string | undefined): InitiativeOrder => (value !== undefined && isInitiativeOrder(value) ? value : DEFAULT_ORDER);
-const activeFilterCount = (view: InitiativesViewState): number => (view.search.trim() === "" ? 0 : 1) + (view.state === STATE_ALL ? 0 : 1);
 function DateEndpoint({ value, state }: { readonly value: string | null; readonly state: ValueState }): ReactElement {
   switch (state) {
     case "value":
@@ -68,9 +61,7 @@ function DateEndpoint({ value, state }: { readonly value: string | null; readonl
         <span className={MUTED_TEXT_CLASS}>{REQUESTED_TERMS_COPY.notStated}</span>
       ) : (
         <bdi>
-          <time className="tabular-figures" dateTime={value}>
-            {value}
-          </time>
+          <time {...{ className: "tabular-figures", dateTime: value }}>{value}</time>
         </bdi>
       );
     case "unknown":
@@ -130,11 +121,7 @@ const HEADING_TAG: Readonly<Record<1 | 2, "h1" | "h2">> = { 1: "h1", 2: "h2" };
 const HEADING_SCALE: Readonly<Record<1 | 2, string>> = { 1: "type-page-title", 2: "type-section-title" };
 function Heading({ level, id, children }: { readonly level: 1 | 2; readonly id: string; readonly children: ReactNode }): ReactElement {
   const Tag = HEADING_TAG[level];
-  return (
-    <Tag id={id} className={cn(HEADING_SCALE[level], "text-pretty break-words")}>
-      {children}
-    </Tag>
-  );
+  return <Tag {...{ id: id, className: cn(HEADING_SCALE[level], "text-pretty break-words") }}>{children}</Tag>;
 }
 /** The envelope the Server Component already read for this address. · The level of this surface's own heading. */
 export type InitiativeListProps = { readonly initialEnvelope: InitiativesEnvelope<InitiativeListPage>; readonly headingLevel?: 1 | 2; readonly className?: string };
@@ -167,8 +154,8 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
   const rows = page === undefined ? NO_ROWS : page.items;
   const valueStates = envelope === undefined ? NO_VALUE_STATES : envelope.valueStates;
   const total = page === undefined ? 0 : page.total;
-  const activeFilters = activeFilterCount(view);
-  const createAction = (envelope ?? initialEnvelope.envelope).actions.find((action) => action.name === CREATE_INITIATIVE);
+  const activeFilters = (view.search.trim() === "" ? 0 : 1) + (view.state === STATE_ALL ? 0 : 1);
+  const createAction = (envelope ?? initialEnvelope.envelope).actions.find((action) => action.name === "createInitiative");
   const readAnswersWithEnvelope = result === undefined || result.kind === "envelope";
   const offersCreate = readAnswersWithEnvelope && createAction?.available === true;
   const createUnavailableReason = !readAnswersWithEnvelope || offersCreate ? null : (createAction?.reason?.trim() ?? SURFACE_COPY.createUnavailableReason);
@@ -192,8 +179,7 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
     return stated;
   }, [view.sort, view.state]);
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<InitiativeRow>>>(() => {
-    const queryString = toInitiativesParams(view).toString();
-    const hrefOf = (initiativeId: string): string => `${DETAILS_PATH}/${encodeURIComponent(initiativeId)}?${queryString}`;
+    const hrefOf = (initiativeId: string): string => `${DETAILS_PATH}/${encodeURIComponent(initiativeId)}?${toInitiativesParams(view).toString()}`;
     return [
       {
         id: "name",
@@ -201,7 +187,7 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
-          <Link href={hrefOf(row.original.initiativeId)} className={ROW_LINK_CLASS}>
+          <Link href={hrefOf(row.original.initiativeId)} className="flex min-w-0 flex-col gap-0.5 rounded-sm inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
             <span className="text-pretty break-words">{row.original.name}</span>
             <bdi className="mono-identifier text-xs break-all">{row.original.initiativeId}</bdi>
           </Link>
@@ -232,6 +218,7 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
     },
     [router],
   );
+  const emptyDescription = createUnavailableReason === null ? INITIATIVE_COPY.listEmptyBody : `${INITIATIVE_COPY.listEmptyBody} ${createUnavailableReason}`;
   let content: ReactElement;
   if (read.status === "loading") {
     content = <StateNotice kind="loading" headingLevel={noticeHeadingLevel} title={SURFACE_COPY.loadingTitle} description={SURFACE_COPY.loadingBody} loadingLines={6} />;
@@ -242,15 +229,7 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
   } else if (result !== undefined && result.kind === "refused") {
     content = <StateNotice kind="refused" headingLevel={noticeHeadingLevel} title={STATE_NOTICE_COPY.refused.title} description={refusalSummary(result.refused)} />;
   } else if (page !== undefined && total === 0 && activeFilters === 0) {
-    content = (
-      <StateNotice
-        kind="empty"
-        headingLevel={noticeHeadingLevel}
-        title={INITIATIVE_COPY.listEmptyTitle}
-        description={createUnavailableReason === null ? INITIATIVE_COPY.listEmptyBody : `${INITIATIVE_COPY.listEmptyBody} ${createUnavailableReason}`}
-        {...(offersCreate ? { action: { label: INITIATIVE_COPY.createLabel, onClick: openComposer } } : {})}
-      />
-    );
+    content = <StateNotice kind="empty" headingLevel={noticeHeadingLevel} title={INITIATIVE_COPY.listEmptyTitle} description={emptyDescription} {...(offersCreate ? { action: { label: INITIATIVE_COPY.createLabel, onClick: openComposer } } : {})} />;
   } else {
     content = (
       <RecordList
@@ -272,24 +251,16 @@ export default function InitiativeList({ initialEnvelope, headingLevel = 2, clas
     <div data-slot="initiative-list" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
-          <Heading level={headingLevel} id={headingId}>
-            {INITIATIVE_COPY.listHeading}
-          </Heading>
+          <Heading {...{ level: headingLevel, id: headingId }}>{INITIATIVE_COPY.listHeading}</Heading>
           <p className="type-supporting text-pretty">{SURFACE_COPY.intro}</p>
         </div>
         <div className="flex min-w-0 flex-col items-start gap-1">
-          {offersCreate ? (
-            <Button type="button" onClick={openComposer} className={BUTTON_WRAP_CLASS}>
-              {INITIATIVE_COPY.createLabel}
-            </Button>
-          ) : null}
+          {offersCreate ? <Button {...{ type: "button", onClick: openComposer, className: BUTTON_WRAP_CLASS }}>{INITIATIVE_COPY.createLabel}</Button> : null}
           {offersCreate || createUnavailableReason !== null ? <p className="text-xs text-pretty text-muted-foreground">{createUnavailableReason ?? SURFACE_COPY.createEffectNote}</p> : null}
         </div>
       </div>
       <QueryToolbar label={SURFACE_COPY.filtersLabel} search={{ value: view.search, onChange: handleSearchChange, placeholder: SURFACE_COPY.searchPlaceholder }} facets={facets} applied={applied} onAppliedChange={handleAppliedChange} pending={read.isFetching} />
-      <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
-        {content}
-      </section>
+      <section {...{ "aria-labelledby": headingId, className: "flex min-w-0 flex-col gap-3" }}>{content}</section>
       <InitiativeComposer open={composerOpen} onOpenChange={setComposerOpen} envelope={envelope ?? initialEnvelope.envelope} onCreated={openCreated} />
     </div>
   );

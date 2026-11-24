@@ -27,7 +27,6 @@ const MESSAGES = {
   readSeriesIdRequired: "Name the one repeating task this read answers for as seriesId, because a series read describes exactly one plan.",
 } as const;
 const SERIES_MUTATION_NAMES = ["createSeries", "editOccurrence", "editThisAndFuture", "skipOccurrence", "pauseSeries", "resumeSeries", "stopSeries", "resolveMissedPlan"] as const;
-type SeriesMutationName = (typeof SERIES_MUTATION_NAMES)[number];
 const REPEAT_PROFILE_VALUES = ["none", "weekly", "everyNWeeks", "monthlyOnDay", "everyNMonths"] as const;
 const TASK_KIND_VALUES = ["default", "meeting"] as const;
 const UNFINISHED_WORK_VALUES = ["keep", "cancel"] as const;
@@ -111,10 +110,8 @@ function rawSeriesReadParams(search: URLSearchParams): Record<string, unknown> {
 }
 const readSeriesIdSchema = z.string({ error: MESSAGES.readSeriesIdRequired }).min(1, MESSAGES.readSeriesIdRequired);
 const seriesReadQuerySchema = z.strictObject({ seriesId: readSeriesIdSchema }, { error: MESSAGES.readingInvalid });
-/** One recurring series by its identifier: the rule in force, the next three dates and any disclosed month-day resolution, the single actionable occurrence and how its plan stands. */
 const readSeries = readRoute(readGrammar(seriesReadQuerySchema, rawSeriesReadParams), (query) => reads.series.readSeries(query), READ_ATTEMPT);
-/** The eight named series mutations, each judged by its own payload schema before it runs. */
-const SERIES_WRITES = claimedWrites<SeriesMutationName>("mutation", {
+/** The eight named series mutations, each judged by its own payload schema before it runs. */ const SERIES_WRITES = claimedWrites<(typeof SERIES_MUTATION_NAMES)[number]>("mutation", {
   createSeries: [createSeriesBodySchema, mutations.series.createSeries],
   editOccurrence: [editOccurrenceBodySchema, mutations.series.editOccurrence],
   editThisAndFuture: [editThisAndFutureBodySchema, mutations.series.editThisAndFuture],

@@ -38,15 +38,13 @@ const bulkRemoveTagBody = mutationInputSchema(bulkRemoveTagPayload);
 const bulkCreateTasksBody = mutationInputSchema(bulkCreateTasksPayload);
 const bulkCompleteTasksBody = mutationInputSchema(bulkCompleteTasksPayload);
 const BULK_OPERATIONS = ["bulkApplyTag", "bulkRemoveTag", "bulkCreateTasks", "bulkCompleteTasks"] as const;
-type BulkOperation = (typeof BULK_OPERATIONS)[number];
-const isBulkOperation = (value: unknown): value is BulkOperation => BULK_OPERATIONS.some((admitted) => admitted === value);
+const isBulkOperation = (value: unknown): value is (typeof BULK_OPERATIONS)[number] => BULK_OPERATIONS.some((admitted) => admitted === value);
 function claimedOperation(body: unknown): unknown {
   if (!isRecord(body)) return undefined;
   const payload: unknown = body.payload;
   return isRecord(payload) ? payload.operation : undefined;
 }
 const refusal = (operationId: string, path: readonly PropertyKey[], message: string): Response => toResponse(outcomeFromError(operationId, new z.ZodError([{ code: "custom", path: [...path], message }])));
-/** One bulk action, chosen by `payload.operation`. */
 async function applyBulkAction(request: Request): Promise<Response> {
   const body = await jsonBodyOf(request);
   if (body === undefined) return refusal(UNIDENTIFIED_ATTEMPT, ["body"], MESSAGES.bodyNotJson);

@@ -24,9 +24,7 @@ export function Panel({ title, description, action, footer, headingLevel = 2, ti
     <Card className={cn(cardClassName)}>
       <CardHeader>
         <CardTitle className={titleClassName}>
-          <Heading id={titleId} className={PANEL_HEADING_SCALE[headingLevel]}>
-            {title}
-          </Heading>
+          <Heading {...{ id: titleId, className: PANEL_HEADING_SCALE[headingLevel] }}>{title}</Heading>
         </CardTitle>
         {description === undefined ? null : <CardDescription className={descriptionClassName}>{description}</CardDescription>}
         {action === undefined ? null : <CardAction>{action}</CardAction>}

@@ -19,9 +19,7 @@ export const recordRequestResponsePayloadSchema = z
   });
 export type RecordRequestResponsePayload = z.infer<typeof recordRequestResponsePayloadSchema>;
 /** Whether a response answers exactly the terms version it was shown. */
-export function matchesPresentedVersion(presentedVersionRef: string, value: string): boolean {
-  return presentedVersionRef === value;
-}
+export const matchesPresentedVersion = (presentedVersionRef: string, value: string): boolean => presentedVersionRef === value;
 /** Parses a response payload and refuses any terms version other than the one presented. */
 export function recordRequestResponsePayloadSchemaFor(presentedVersionRef: string): typeof recordRequestResponsePayloadSchema {
   return recordRequestResponsePayloadSchema.superRefine((payload, context) => {

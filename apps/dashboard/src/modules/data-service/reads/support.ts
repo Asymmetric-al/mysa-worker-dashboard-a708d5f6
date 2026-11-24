@@ -12,52 +12,12 @@ import { BUCKET_LABELS, COMMITMENT_KINDS, OUTSIDE_PARTITION, PARTITION_BUCKETS, 
 import type { SupportProjection } from "@/modules/support/basis";
 import { GOAL_CAPABILITY, GOAL_MEASURE, formatPercentageBasisPoints, goalProgress, type GoalProgress } from "@/modules/support/goal";
 import { CSV_ALL_CURRENCIES, snapshotMetadata, toCsv, type SnapshotFact } from "@/modules/export/csv";
-import {
-  PERIOD_PRESETS,
-  REPORT_IDS,
-  SORT_DIRECTIONS,
-  SORT_FIELDS,
-  buildReportQuery,
-  clampPageSize,
-  runReport,
-  type CurrencySelection,
-  type FacetsReportResult,
-  type PeriodPreset,
-  type PeriodState,
-  type ReportId,
-  type ReportFacets,
-  type ReportPartnerSelection,
-  type ReportPeriod,
-  type ReportQuery,
-  type ReportQueryProblem,
-  type ReportSections,
-  type ReportResult,
-  type ReportScope,
-  type Snapshot,
-  type SortDirection,
-  type SortField,
-} from "@/modules/support/report";
+import { PERIOD_PRESETS, REPORT_IDS, SORT_DIRECTIONS, SORT_FIELDS, buildReportQuery, clampPageSize, runReport } from "@/modules/support/report";
+import type { CurrencySelection, FacetsReportResult, PeriodPreset, PeriodState, ReportId, ReportFacets, ReportPartnerSelection, ReportPeriod, ReportQuery, ReportQueryProblem, ReportSections, ReportResult, ReportScope, Snapshot, SortDirection, SortField } from "@/modules/support/report";
 import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
 import { canEdit, canExport, type AccessDecision, type ResolvedSession, type SessionSource } from "../authorize";
-import {
-  commitmentRowRecordSchema,
-  coverageSchema,
-  giftRowRecordSchema,
-  project,
-  supportProjectionRecordSchema,
-  type CommitmentRowRecord,
-  type Coverage,
-  type FinancialCoverage,
-  type GiftAttribution,
-  type GiftRowRecord,
-  type ReadAction,
-  type ReadEnvelope,
-  type RecordedValueState,
-  type Scope,
-  type SupportGoalRecord,
-  type SupportProjectionRecord,
-  type ValueState,
-} from "../envelope";
+import { commitmentRowRecordSchema, coverageSchema, giftRowRecordSchema, project, supportProjectionRecordSchema } from "../envelope";
+import type { CommitmentRowRecord, Coverage, FinancialCoverage, GiftAttribution, GiftRowRecord, ReadAction, ReadEnvelope, RecordedValueState, Scope, SupportGoalRecord, SupportProjectionRecord, ValueState } from "../envelope";
 import { LOCAL_STORE_SYSTEM, refusedRead, unavailable, type ReadResult, type UnavailableOutcome } from "../outcome";
 import { READ_ATTEMPT_ID, answerOf, cachedDecoder, civilDateOf, countState, deniedRead, openRead, readStoreDocument, recordedStateOf, sourceUnavailableRead, statedProjection } from "./frame";
 const DATE_BASIS = "original-gift-date";
@@ -116,8 +76,7 @@ export type SupportOverviewData = { readonly report: ReportResult; readonly mont
 export type GiftLedgerData = { readonly report: ReportResult; readonly grain: typeof GIFT_ROW_GRAIN; readonly facets: ReportFacets };
 export type CommitmentsData = { readonly commitments: readonly CommitmentFigure[]; readonly total: number; readonly page: { readonly index: number; readonly size: number; readonly totalPages: number }; readonly buckets: readonly RecurringBucketFigure[]; readonly commitmentKinds: readonly CommitmentKindFigure[] };
 export type SupportGoalFigure = { readonly amount: Money; readonly measure: SupportGoalRecord["measure"]; readonly effectiveFrom: string; readonly revision: string };
-/** One currency the subject's financial source states, at the exact precision an amount in it is written: the closed set a goal may be stated in. */
-export type GoalCurrency = { readonly currency: string; readonly exponent: number };
+/** One currency the subject's financial source states, at the exact precision an amount in it is written: the closed set a goal may be stated in. */ export type GoalCurrency = { readonly currency: string; readonly exponent: number };
 /** The goal read: the target, its progress, the currencies the source states for this subject, and the four states that must stay distinguishable. */
 export type GoalData = { readonly goal: SupportGoalFigure | null; readonly progress: GoalProgress; readonly percentage: string | null; readonly report: ReportResult; readonly period: SupportPeriod; readonly measure: typeof GOAL_MEASURE; readonly canEditGoal: boolean; readonly currencies: readonly GoalCurrency[] };
 export type SupportExportData = { readonly csv: string; readonly filename: string; readonly rowCount: number; readonly metadata: readonly SnapshotFact[]; readonly snapshot: Snapshot };
@@ -180,8 +139,7 @@ interface HeldReport {
 }
 const heldReports = new Map<string, HeldReport>();
 let heldReportsWeight = 0;
-/** Every row, series point, currency summary, contributor delta and matrix cell a result retains. */
-function weightOfReport(result: ReportResult): number {
+/** Every row, series point, currency summary, contributor delta and matrix cell a result retains. */ function weightOfReport(result: ReportResult): number {
   const cells = result.matrix === undefined ? 0 : result.matrix.rows.reduce((total, row) => total + row.cells.length, 0);
   const deltas = result.comparison === undefined ? 0 : result.comparison.contributorDeltas.length;
   return result.rows.length + result.series.length + result.summary.length + deltas + cells;
@@ -198,8 +156,7 @@ function holdReport(key: string, result: ReportResult): void {
   heldReports.set(key, { weight, result });
   heldReportsWeight += weight;
 }
-/** The result held for one computation, marked as the most recently read so that the entry which has gone longest without a reader is the one dropped first. */
-function heldReportOf(key: string): ReportResult | undefined {
+/** The result held for one computation, marked as the most recently read so that the entry which has gone longest without a reader is the one dropped first. */ function heldReportOf(key: string): ReportResult | undefined {
   const held = heldReports.get(key);
   if (held === undefined) return undefined;
   heldReports.delete(key);
@@ -207,9 +164,7 @@ function heldReportOf(key: string): ReportResult | undefined {
   return held.result;
 }
 /** The identity of one computation: the snapshot the projection belongs to, the sections the caller asked the engine for and the query exactly as this read built it. A built query states its members in one fixed order, so the same query always serialises to the same text and two different queries never share one. The sections belong in the key because a surface that renders no comparison is a different answer from one that does, and a result that carries the facet values the ledger's filters offer is a different answer again: the ledger asks for its projection without the preceding window and with those values, a report asks for the comparison and no facets, and the same query text states all of them. */
-function computationKeyOf(query: ReportQuery, projection: SupportProjection, sections: ReportSections): string {
-  return `${snapshotTokenOf(projection)}|${sections.comparison === false ? "without-comparison" : "with-comparison"}|${sections.facets === true ? "with-facets" : "without-facets"}|${JSON.stringify(query)}`;
-}
+const computationKeyOf = (query: ReportQuery, projection: SupportProjection, sections: ReportSections): string => `${snapshotTokenOf(projection)}|${sections.comparison === false ? "without-comparison" : "with-comparison"}|${sections.facets === true ? "with-facets" : "without-facets"}|${JSON.stringify(query)}`;
 async function readContext(job: string, source?: SessionSource, permit?: (session: ResolvedSession, scope: Scope) => AccessDecision): Promise<SupportContextOutcome> {
   const opened = await openRead({ job, source, unselectedReason: "not-admitted", sessionFaultReason: "session-unavailable", permit });
   if (!opened.ok) return { ok: false, result: opened.result };
@@ -524,12 +479,13 @@ export async function readGifts(query: SupportQuery = {}, source?: SessionSource
   // The ledger renders no comparison, so it states none: the per-contributor deltas over the whole dataset are most of this envelope and none of what the surface shows. The report reads, which do render it, keep it. It does offer the designations and attributions this result holds, so those are counted with the figures it renders.
   const report = reportOf(JOB_GIFTS, built.query, context, { comparison: false, facets: true });
   if (!report.ok) return { kind: "unavailable", unavailable: report.error };
-  const result = report.value;
-  const data: GiftLedgerData = { report: result, grain: GIFT_ROW_GRAIN, facets: result.facets };
-  const valueStates = recordedStatesOf(result);
+  // The facet projection is stated once, in the member this read's own data declares for it: the report a caller reads here holds the figures, and carrying the same facet values inside it as well would state one list twice in an envelope whose every value-bearing field is already recorded — a second copy of 6,617 attribution values in the published workload, which the page then sends to the browser twice.
+  const { facets, ...figures } = report.value;
+  const data: GiftLedgerData = { report: figures, grain: GIFT_ROW_GRAIN, facets };
+  const valueStates = recordedStatesOf(report.value);
   for (const value of data.facets.designations) valueStates[`facets.designations.${value.designation}.count`] = recordedStateOf(value.valueState);
   for (const value of data.facets.attributions) valueStates[`facets.attributions.${attributionPathOf(value.attribution)}.count`] = recordedStateOf(value.valueState);
-  return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates, actions: ledgerActions(result.snapshot.query, canExport(context.session, context.scope)) });
+  return envelopeOf({ data, context, coverage: financialCoverageOf(context.projection, report.value.snapshot.query), revision: context.revision, valueStates, actions: ledgerActions(report.value.snapshot.query, canExport(context.session, context.scope)) });
 }
 /** States every commitment the source reports, in its bucket, with the dates the source states for it. Answers `envelope`, or the read's own refusal: `denied` when the caller may not read it and `unavailable` when the records cannot be read. */
 export async function readCommitments(query: SupportPageInput = {}, source?: SessionSource): Promise<ReadResult<ReadEnvelope<CommitmentsData>>> {

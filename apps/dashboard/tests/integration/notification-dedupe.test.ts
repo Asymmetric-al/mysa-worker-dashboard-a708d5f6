@@ -1,6 +1,6 @@
 /** Success criterion 11: one notification intent is submitted once, and what happened to it is never guessed. */
 import { Temporal } from "temporal-polyfill";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { isRecord } from "@/lib/guards";
 import { newOperationId } from "@/lib/ids";
 import { SEND_OUTCOME_STATES, dedupeKey } from "@/modules/audience/consent";
@@ -134,205 +134,191 @@ afterAll(async () => {
   for (const sessionId of [PUBLISHER_SESSION_ID, READER_SESSION_ID]) await resetSession(sessionId);
   vi.unstubAllEnvs();
 });
-describe("1. the dedupe identity is exactly four facts", () => {
-  it("returns one key for one publisher, purpose, recipient and intent, and a different key when any one of the four moves", () => {
-    const identity = { publisherId: "publisher-harbour", purpose: UPDATE_EMAIL_PURPOSE, recipientId: RECIPIENT_ID, intentId: SEEDED_INTENT_ID };
-    const key = dedupeKey(identity);
-    expect(dedupeKey({ ...identity })).toBe(key);
-    expect(dedupeKey({ ...identity, publisherId: "publisher-other-ministry" })).not.toBe(key);
-    expect(dedupeKey({ ...identity, purpose: secondPurpose() })).not.toBe(key);
-    expect(dedupeKey({ ...identity, recipientId: FAILED_RECIPIENT_ID })).not.toBe(key);
-    expect(dedupeKey({ ...identity, intentId: "intent-second-publication" })).not.toBe(key);
-    // Two different identities that differ in two facts are still two different keys, so neither fact can be cancelling the other out of the identity.
-    expect(dedupeKey({ ...identity, recipientId: FAILED_RECIPIENT_ID, intentId: "intent-second-publication" })).not.toBe(dedupeKey({ ...identity, recipientId: FAILED_RECIPIENT_ID }));
-  });
+it("1. the dedupe identity is exactly four facts: returns one key for one publisher, purpose, recipient and intent, and a different key when any one of the four moves", () => {
+  const identity = { publisherId: "publisher-harbour", purpose: UPDATE_EMAIL_PURPOSE, recipientId: RECIPIENT_ID, intentId: SEEDED_INTENT_ID };
+  const key = dedupeKey(identity);
+  expect(dedupeKey({ ...identity })).toBe(key);
+  expect(dedupeKey({ ...identity, publisherId: "publisher-other-ministry" })).not.toBe(key);
+  expect(dedupeKey({ ...identity, purpose: secondPurpose() })).not.toBe(key);
+  expect(dedupeKey({ ...identity, recipientId: FAILED_RECIPIENT_ID })).not.toBe(key);
+  expect(dedupeKey({ ...identity, intentId: "intent-second-publication" })).not.toBe(key);
+  // Two different identities that differ in two facts are still two different keys, so neither fact can be cancelling the other out of the identity.
+  expect(dedupeKey({ ...identity, recipientId: FAILED_RECIPIENT_ID, intentId: "intent-second-publication" })).not.toBe(dedupeKey({ ...identity, recipientId: FAILED_RECIPIENT_ID }));
 });
-describe("2. a lost acknowledgement keeps the attempt unknown and recoverable", () => {
-  it("answers unknown with the operation id alone, and every recorded per-recipient state stays in the closed set", async () => {
-    expect((await armLostAcknowledgement()).outcome).toBe("accepted");
-    const attempt = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
-    const outcome = await notify(attempt);
-    // The attempt's identity and nothing else: no success, no failure, no revision and no result is claimed, which is what leaves the caller a lookup rather than a resend.
-    expect([[outcome.outcome, outcome.operationId], Object.keys(outcome).sort()]).toEqual([
-      ["unknown", attempt.operationId],
-      ["operationId", "outcome"],
-    ]);
-    expect(outcome.outcome).not.toBe("accepted");
-    const { state } = await storedDocuments();
-    const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
-    if (intent === undefined) throw new Error("The lost acknowledgement left no intent behind, so the send result it may have written cannot be read.");
-    const sendResult = await sendResultOf(intent.intentId);
-    expect(SEND_OUTCOME_STATES).toEqual(["accepted", "failed", "unknown"]);
-    expect(sendResult.data.rows.length).toBeGreaterThan(0);
-    for (const row of sendResult.data.rows) {
-      expect(SEND_OUTCOME_STATES).toContain(row.state);
-      expect(Object.keys(row).sort()).toEqual(["dedupeKey", "recipientId", "recordedAt", "recovery", "renditionId", "retry", "state"]); // A row records what the local stand-in did with one copy. It carries no delivery or reading receipt, because provider acceptance, delivery and reading are three separate outcomes.
-      expect(row.recovery.intentId).toBe(intent.intentId);
-      expect(row.retry.reason.length).toBeGreaterThan(0);
-    }
-    // The effect was taken for every eligible recipient, and the window is still open — so the absence of a retry below is the rule that accepted work is never sent again, not a closed window.
-    expect([sendResult.data.usefulness.state, sendResult.data.rows.every((row) => row.state === "accepted"), sendResult.data.rows.every((row) => !row.retry.available)]).toEqual(["within-usefulness", true, true]);
-    expect(sendResult.data.counts.accepted + sendResult.data.counts.failed + sendResult.data.counts.unknown).toBe(sendResult.data.rows.length);
-    expect(JSON.stringify(sendResult.data)).not.toMatch(/delivered|delivery|was read|has been read|opened at/iu);
-  });
+it("2. a lost acknowledgement keeps the attempt unknown and recoverable: answers unknown with the operation id alone, and every recorded per-recipient state stays in the closed set", async () => {
+  expect((await armLostAcknowledgement()).outcome).toBe("accepted");
+  const attempt = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
+  const outcome = await notify(attempt);
+  // The attempt's identity and nothing else: no success, no failure, no revision and no result is claimed, which is what leaves the caller a lookup rather than a resend.
+  expect([[outcome.outcome, outcome.operationId], Object.keys(outcome).sort()]).toEqual([
+    ["unknown", attempt.operationId],
+    ["operationId", "outcome"],
+  ]);
+  expect(outcome.outcome).not.toBe("accepted");
+  const { state } = await storedDocuments();
+  const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
+  if (intent === undefined) throw new Error("The lost acknowledgement left no intent behind, so the send result it may have written cannot be read.");
+  const sendResult = await sendResultOf(intent.intentId);
+  expect(SEND_OUTCOME_STATES).toEqual(["accepted", "failed", "unknown"]);
+  expect(sendResult.data.rows.length).toBeGreaterThan(0);
+  for (const row of sendResult.data.rows) {
+    expect(SEND_OUTCOME_STATES).toContain(row.state);
+    expect(Object.keys(row).sort()).toEqual(["dedupeKey", "recipientId", "recordedAt", "recovery", "renditionId", "retry", "state"]); // A row records what the local stand-in did with one copy. It carries no delivery or reading receipt, because provider acceptance, delivery and reading are three separate outcomes.
+    expect(row.recovery.intentId).toBe(intent.intentId);
+    expect(row.retry.reason.length).toBeGreaterThan(0);
+  }
+  // The effect was taken for every eligible recipient, and the window is still open — so the absence of a retry below is the rule that accepted work is never sent again, not a closed window.
+  expect([sendResult.data.usefulness.state, sendResult.data.rows.every((row) => row.state === "accepted"), sendResult.data.rows.every((row) => !row.retry.available)]).toEqual(["within-usefulness", true, true]);
+  expect(sendResult.data.counts.accepted + sendResult.data.counts.failed + sendResult.data.counts.unknown).toBe(sendResult.data.rows.length);
+  expect(JSON.stringify(sendResult.data)).not.toMatch(/delivered|delivery|was read|has been read|opened at/iu);
 });
-describe("3. a replay recovers the stored result with no second effect", () => {
-  it("returns alreadyAccepted for the same operation id, with one ledger record, one send result and one message", async () => {
-    expect((await armLostAcknowledgement()).outcome).toBe("accepted");
-    const attempt = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
-    expect((await notify(attempt)).outcome).toBe("unknown");
-    const replay = await notify(attempt);
-    expect([replay.outcome, replay.operationId]).toEqual(["alreadyAccepted", attempt.operationId]);
-    const intentId = intentIdOfStoredResult(replay, "the replay");
-    const { state, operations } = await storedDocuments();
-    const intents = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
-    expect(intents).toHaveLength(1);
-    expect(intents[0]?.intentId).toBe(intentId);
-    expect(ledgerRecordsFor(operations, attempt.operationId)).toHaveLength(1); // One attempt identity holds one ledger record: a second replay would be answered from it, never appended.
-    const results = sendResultsFor(state, intentId);
-    expect(results).toHaveLength(1);
-    const [result] = results;
-    const copies = result === undefined ? [] : result.recipients.filter((copy) => copy.recipientId === FAILED_RECIPIENT_ID);
-    expect(copies).toHaveLength(1);
-    await mirrorPublisherWorld(FAILED_RECIPIENT_ID);
-    const inbox = await inboxOf(READER_SOURCE);
-    const messages = inbox.data.messages.filter((message) => message.intentId === intentId);
-    expect(messages).toHaveLength(1);
-    expect([messages[0]?.renditionId, inbox.data.intentCount]).toEqual([copies[0]?.renditionId, 2]);
-  });
+it("3. a replay recovers the stored result with no second effect: returns alreadyAccepted for the same operation id, with one ledger record, one send result and one message", async () => {
+  expect((await armLostAcknowledgement()).outcome).toBe("accepted");
+  const attempt = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
+  expect((await notify(attempt)).outcome).toBe("unknown");
+  const replay = await notify(attempt);
+  expect([replay.outcome, replay.operationId]).toEqual(["alreadyAccepted", attempt.operationId]);
+  const intentId = intentIdOfStoredResult(replay, "the replay");
+  const { state, operations } = await storedDocuments();
+  const intents = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
+  expect(intents).toHaveLength(1);
+  expect(intents[0]?.intentId).toBe(intentId);
+  expect(ledgerRecordsFor(operations, attempt.operationId)).toHaveLength(1); // One attempt identity holds one ledger record: a second replay would be answered from it, never appended.
+  const results = sendResultsFor(state, intentId);
+  expect(results).toHaveLength(1);
+  const [result] = results;
+  const copies = result === undefined ? [] : result.recipients.filter((copy) => copy.recipientId === FAILED_RECIPIENT_ID);
+  expect(copies).toHaveLength(1);
+  await mirrorPublisherWorld(FAILED_RECIPIENT_ID);
+  const inbox = await inboxOf(READER_SOURCE);
+  const messages = inbox.data.messages.filter((message) => message.intentId === intentId);
+  expect(messages).toHaveLength(1);
+  expect([messages[0]?.renditionId, inbox.data.intentCount]).toEqual([copies[0]?.renditionId, 2]);
 });
-describe("4. a fresh operation key never sends the same intent twice", () => {
-  it("suppresses a second submission under a new operation id: no second intent, send result or message", async () => {
-    const first = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
-    expect((await notify(first)).outcome).toBe("accepted");
-    const { state: afterFirst } = await storedDocuments();
-    const [intent] = intentsFor(afterFirst, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
-    if (intent === undefined) throw new Error("The first submission recorded no intent, so this case has no notification to attempt again.");
-    const second = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
-    expect(second.operationId).not.toBe(first.operationId);
-    const suppressed = await notify(second);
-    expect(suppressed.outcome).toBe("unchanged");
-    expect(suppressed.outcome).not.toBe("accepted");
-    const { state, operations } = await storedDocuments();
-    expect(intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE)).toHaveLength(1);
-    expect(sendResultsFor(state, intent.intentId)).toHaveLength(1);
-    expect(ledgerRecordsFor(operations, second.operationId)).toHaveLength(0); // Nothing was recorded for the second attempt, so it neither sent nor became recoverable work.
-    await mirrorPublisherWorld(FAILED_RECIPIENT_ID);
-    const messages = (await inboxOf(READER_SOURCE)).data.messages.filter((message) => message.intentId === intent.intentId);
-    expect(messages).toHaveLength(1);
-  });
+it("4. a fresh operation key never sends the same intent twice: suppresses a second submission under a new operation id: no second intent, send result or message", async () => {
+  const first = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
+  expect((await notify(first)).outcome).toBe("accepted");
+  const { state: afterFirst } = await storedDocuments();
+  const [intent] = intentsFor(afterFirst, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
+  if (intent === undefined) throw new Error("The first submission recorded no intent, so this case has no notification to attempt again.");
+  const second = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
+  expect(second.operationId).not.toBe(first.operationId);
+  const suppressed = await notify(second);
+  expect(suppressed.outcome).toBe("unchanged");
+  expect(suppressed.outcome).not.toBe("accepted");
+  const { state, operations } = await storedDocuments();
+  expect(intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE)).toHaveLength(1);
+  expect(sendResultsFor(state, intent.intentId)).toHaveLength(1);
+  expect(ledgerRecordsFor(operations, second.operationId)).toHaveLength(0); // Nothing was recorded for the second attempt, so it neither sent nor became recoverable work.
+  await mirrorPublisherWorld(FAILED_RECIPIENT_ID);
+  const messages = (await inboxOf(READER_SOURCE)).data.messages.filter((message) => message.intentId === intent.intentId);
+  expect(messages).toHaveLength(1);
 });
-describe("5. one recipient receives exactly one copy of one Update", () => {
-  it("gives a recipient eligible for both audiences one message, under the one rendition the accepted intent recorded", async () => {
-    const seeded = await sendResultOf(SEEDED_INTENT_ID);
-    const seededRows = seeded.data.rows.filter((row) => row.recipientId === RECIPIENT_ID);
-    expect(seededRows).toHaveLength(1);
-    const audience = await audienceOf(); // She is eligible for the protected edition of the same Update as well, so nothing but the dedupe identity stands between her and a second copy.
-    expect(audience.data.members.find((row) => row.recipientId === RECIPIENT_ID)?.eligible).toBe(true);
-    const supporter = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: SUPPORTER_ENGLISH_RELEASE });
-    expect((await notify(supporter)).outcome).toBe("accepted");
-    const { state } = await storedDocuments();
-    const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, SUPPORTER_ENGLISH_RELEASE);
-    if (intent === undefined) throw new Error("The protected edition's notice recorded no intent, so its recipients cannot be counted.");
-    const sendResult = await sendResultOf(intent.intentId);
-    expect(sendResult.data.rows.some((row) => row.recipientId === RECIPIENT_ID)).toBe(false);
-    await mirrorPublisherWorld(RECIPIENT_ID);
-    const inbox = await inboxOf(READER_SOURCE);
-    expect(inbox.data.messages).toHaveLength(1);
-    const [message] = inbox.data.messages;
-    if (message === undefined) throw new Error("The recipient's inbox holds no message for the Update she was notified about.");
-    expect([message.intentId, message.releaseId, message.renditionId]).toEqual([SEEDED_INTENT_ID, PUBLIC_ENGLISH_RELEASE, seededRows[0]?.renditionId]);
-    expect(message.simulated).toContain("mail-submission");
-    const preferences = await preferencesOf(READER_SOURCE);
-    expect(preferences.data.pinnedCopies).toHaveLength(1);
-    expect([preferences.data.pinnedCopies[0]?.releaseId, preferences.data.pinnedCopies[0]?.renditionId]).toEqual([PUBLIC_ENGLISH_RELEASE, seededRows[0]?.renditionId]);
-    // The resolver the submission used, offered both editions of the same Update at once, answers with one pin rather than one per audience.
-    const pinned = resolveRendition({ recipient: { recipientId: RECIPIENT_ID, admittedAudiences: ["public", "approved-supporter"], languagePreference: "en" }, candidates: renditionCandidatesOf(state, [PUBLIC_ENGLISH_RELEASE, SUPPORTER_ENGLISH_RELEASE]), siteDefaultLocale: "en" });
-    expect(pinned.status).toBe("pinned");
-    if (pinned.status !== "pinned") throw new Error(`Both editions of one Update resolved to no pin: ${pinned.reason}.`);
-    expect([pinned.rendition.audience, pinned.rendition.releaseId]).toEqual(["approved-supporter", SUPPORTER_ENGLISH_RELEASE]);
-    // The message built from that pin carries exactly that one pin and points at the copy rather than embedding it: a notice carries no protected prose, image, poster or transcript.
-    const notice = buildNotice({ publisher: { displayName: "Harbour Youth" }, purpose: UPDATE_EMAIL_PURPOSE, pinned: pinned.rendition, sender: { name: "Update notices", address: "update-notice@example.invalid" }, link: `/preview/${UPDATE_DOCUMENT_ID}` });
-    expect(notice.pinned).toEqual(pinned.rendition);
-    expect(notice.link).toBe(`/preview/${UPDATE_DOCUMENT_ID}`);
-    expect(notice.htmlBody).not.toMatch(/<(img|video|audio|iframe)\b/iu);
-  });
+it("5. one recipient receives exactly one copy of one Update: gives a recipient eligible for both audiences one message, under the one rendition the accepted intent recorded", async () => {
+  const seeded = await sendResultOf(SEEDED_INTENT_ID);
+  const seededRows = seeded.data.rows.filter((row) => row.recipientId === RECIPIENT_ID);
+  expect(seededRows).toHaveLength(1);
+  const audience = await audienceOf(); // She is eligible for the protected edition of the same Update as well, so nothing but the dedupe identity stands between her and a second copy.
+  expect(audience.data.members.find((row) => row.recipientId === RECIPIENT_ID)?.eligible).toBe(true);
+  const supporter = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: SUPPORTER_ENGLISH_RELEASE });
+  expect((await notify(supporter)).outcome).toBe("accepted");
+  const { state } = await storedDocuments();
+  const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, SUPPORTER_ENGLISH_RELEASE);
+  if (intent === undefined) throw new Error("The protected edition's notice recorded no intent, so its recipients cannot be counted.");
+  const sendResult = await sendResultOf(intent.intentId);
+  expect(sendResult.data.rows.some((row) => row.recipientId === RECIPIENT_ID)).toBe(false);
+  await mirrorPublisherWorld(RECIPIENT_ID);
+  const inbox = await inboxOf(READER_SOURCE);
+  expect(inbox.data.messages).toHaveLength(1);
+  const [message] = inbox.data.messages;
+  if (message === undefined) throw new Error("The recipient's inbox holds no message for the Update she was notified about.");
+  expect([message.intentId, message.releaseId, message.renditionId]).toEqual([SEEDED_INTENT_ID, PUBLIC_ENGLISH_RELEASE, seededRows[0]?.renditionId]);
+  expect(message.simulated).toContain("mail-submission");
+  const preferences = await preferencesOf(READER_SOURCE);
+  expect(preferences.data.pinnedCopies).toHaveLength(1);
+  expect([preferences.data.pinnedCopies[0]?.releaseId, preferences.data.pinnedCopies[0]?.renditionId]).toEqual([PUBLIC_ENGLISH_RELEASE, seededRows[0]?.renditionId]);
+  // The resolver the submission used, offered both editions of the same Update at once, answers with one pin rather than one per audience.
+  const pinned = resolveRendition({ recipient: { recipientId: RECIPIENT_ID, admittedAudiences: ["public", "approved-supporter"], languagePreference: "en" }, candidates: renditionCandidatesOf(state, [PUBLIC_ENGLISH_RELEASE, SUPPORTER_ENGLISH_RELEASE]), siteDefaultLocale: "en" });
+  expect(pinned.status).toBe("pinned");
+  if (pinned.status !== "pinned") throw new Error(`Both editions of one Update resolved to no pin: ${pinned.reason}.`);
+  expect([pinned.rendition.audience, pinned.rendition.releaseId]).toEqual(["approved-supporter", SUPPORTER_ENGLISH_RELEASE]);
+  // The message built from that pin carries exactly that one pin and points at the copy rather than embedding it: a notice carries no protected prose, image, poster or transcript.
+  const notice = buildNotice({ publisher: { displayName: "Harbour Youth" }, purpose: UPDATE_EMAIL_PURPOSE, pinned: pinned.rendition, sender: { name: "Update notices", address: "update-notice@example.invalid" }, link: `/preview/${UPDATE_DOCUMENT_ID}` });
+  expect(notice.pinned).toEqual(pinned.rendition);
+  expect(notice.link).toBe(`/preview/${UPDATE_DOCUMENT_ID}`);
+  expect(notice.htmlBody).not.toMatch(/<(img|video|audio|iframe)\b/iu);
 });
-describe("6. a definite failure comes from real input and retries only while the notice is useful", () => {
-  it("excludes every membership that cannot accept a notice, with its reason, and issues a copy to none of them", async () => {
-    const audience = await audienceOf();
-    const member = (membershipId: string) => audience.data.members.find((row) => row.recipientId === membershipId);
-    expect([member(UNSUBSCRIBED_MEMBERSHIP_ID)?.eligible, member(UNSUBSCRIBED_MEMBERSHIP_ID)?.exclusionReason, member(RESTRICTED_MEMBERSHIP_ID)?.eligible, member(RESTRICTED_MEMBERSHIP_ID)?.exclusionReason]).toEqual([false, "unsubscribed", false, "restricted"]);
-    expect([member(AWAITING_PROOF_MEMBERSHIP_ID)?.exclusionReason, member(SUBSCRIBED_COLUMN_MEMBERSHIP_ID)?.state, member(SUBSCRIBED_COLUMN_MEMBERSHIP_ID)?.exclusionReason]).toEqual(["awaiting-proof", "off", "off"]);
-    for (const value of [audience.data.excludedByReason.unsubscribed, audience.data.counts.eligible]) expect(value).toBeGreaterThan(0);
-    const attempt = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
-    expect((await notify(attempt)).outcome).toBe("accepted");
-    const { state } = await storedDocuments();
-    const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
-    if (intent === undefined) throw new Error("The submission recorded no intent, so the copies it produced cannot be read.");
-    const sendResult = await sendResultOf(intent.intentId);
-    for (const membershipId of [UNSUBSCRIBED_MEMBERSHIP_ID, RESTRICTED_MEMBERSHIP_ID, AWAITING_PROOF_MEMBERSHIP_ID, SUBSCRIBED_COLUMN_MEMBERSHIP_ID]) expect(sendResult.data.rows.some((row) => row.recipientId === membershipId)).toBe(false);
-    const seededFailure = (await sendResultOf(SEEDED_INTENT_ID)).data.rows.find((row) => row.recipientId === FAILED_RECIPIENT_ID);
-    expect(seededFailure?.state).toBe("failed");
-  });
-  it("retries a failed copy only inside 24 elapsed hours from the instant it was intended for, strict at equality", async () => {
-    // The boundary itself, from the one function that computes it: 24 elapsed hours, and a request at exactly the deadline is already too late.
-    expect([USEFULNESS_ENDS.toString(), notificationDeadline({ intendedAt: SEEDED_INTENDED_AT, now: USEFULNESS_ENDS.subtract({ nanoseconds: 1 }) }).status]).toEqual([SEEDED_INTENDED_AT.add({ hours: 24 }).toString(), "within-usefulness"]);
-    expect(notificationDeadline({ intendedAt: SEEDED_INTENDED_AT, now: USEFULNESS_ENDS }).status).toBe("past-usefulness");
-    const expired = await sendResultOf(SEEDED_INTENT_ID);
-    expect(expired.data.usefulness.state).toBe("past-usefulness");
-    const expiredFailure = expired.data.rows.find((row) => row.recipientId === FAILED_RECIPIENT_ID);
-    expect([expiredFailure?.state, expiredFailure?.retry.available]).toEqual(["failed", false]);
-    expect(expiredFailure?.retry.reason).toMatch(/usefulness window has closed/iu);
-    await moveClockTo(USEFULNESS_ENDS.subtract({ hours: 1 }));
-    const open = await sendResultOf(SEEDED_INTENT_ID);
-    expect([open.data.usefulness.state, open.data.usefulness.deadline, open.data.rows.find((row) => row.recipientId === FAILED_RECIPIENT_ID)?.retry.available]).toEqual(["within-usefulness", USEFULNESS_ENDS.toString(), true]);
-    await advanceClockBy(3600);
-    const closed = await sendResultOf(SEEDED_INTENT_ID);
-    expect(closed.data.usefulness.state).toBe("past-usefulness");
-    expect(closed.data.usefulness.remainingMilliseconds).toBeNull();
-    expect(closed.data.rows.find((row) => row.recipientId === FAILED_RECIPIENT_ID)?.retry.available).toBe(false);
-    const revival = await notify(notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_ENGLISH_RELEASE, intendedAt: SEEDED_INTENDED_AT.toString() }));
-    expect(refusedFieldNames(revival, "a notice reviving an expired intent")).toContain("intendedAt");
-    const { state } = await storedDocuments();
-    const intents = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_ENGLISH_RELEASE);
-    expect(intents).toHaveLength(1);
-    expect(intents[0]?.intentId).toBe(SEEDED_INTENT_ID);
-  });
+it("6. a definite failure comes from real input and retries only while the notice is useful: excludes every membership that cannot accept a notice, with its reason, and issues a copy to none of them", async () => {
+  const audience = await audienceOf();
+  const member = (membershipId: string) => audience.data.members.find((row) => row.recipientId === membershipId);
+  expect([member(UNSUBSCRIBED_MEMBERSHIP_ID)?.eligible, member(UNSUBSCRIBED_MEMBERSHIP_ID)?.exclusionReason, member(RESTRICTED_MEMBERSHIP_ID)?.eligible, member(RESTRICTED_MEMBERSHIP_ID)?.exclusionReason]).toEqual([false, "unsubscribed", false, "restricted"]);
+  expect([member(AWAITING_PROOF_MEMBERSHIP_ID)?.exclusionReason, member(SUBSCRIBED_COLUMN_MEMBERSHIP_ID)?.state, member(SUBSCRIBED_COLUMN_MEMBERSHIP_ID)?.exclusionReason]).toEqual(["awaiting-proof", "off", "off"]);
+  for (const value of [audience.data.excludedByReason.unsubscribed, audience.data.counts.eligible]) expect(value).toBeGreaterThan(0);
+  const attempt = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_FRENCH_RELEASE });
+  expect((await notify(attempt)).outcome).toBe("accepted");
+  const { state } = await storedDocuments();
+  const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_FRENCH_RELEASE);
+  if (intent === undefined) throw new Error("The submission recorded no intent, so the copies it produced cannot be read.");
+  const sendResult = await sendResultOf(intent.intentId);
+  for (const membershipId of [UNSUBSCRIBED_MEMBERSHIP_ID, RESTRICTED_MEMBERSHIP_ID, AWAITING_PROOF_MEMBERSHIP_ID, SUBSCRIBED_COLUMN_MEMBERSHIP_ID]) expect(sendResult.data.rows.some((row) => row.recipientId === membershipId)).toBe(false);
+  const seededFailure = (await sendResultOf(SEEDED_INTENT_ID)).data.rows.find((row) => row.recipientId === FAILED_RECIPIENT_ID);
+  expect(seededFailure?.state).toBe("failed");
 });
-describe("7. a second edition accounts for every eligible recipient", () => {
-  it("names each recipient the earlier intent already covered, and issues no second copy", async () => {
-    // The seeded notice of this Update recorded a copy for all four eligible recipients, so the protected edition of the same Update owes a copy only to the one whose copy failed. The others are eligible all the same, and the ceiling the intent is accepted for counts them.
-    const supporter = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: SUPPORTER_ENGLISH_RELEASE });
-    expect((await notify(supporter)).outcome).toBe("accepted");
-    const { state } = await storedDocuments();
-    const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, SUPPORTER_ENGLISH_RELEASE);
-    if (intent === undefined) throw new Error("The protected edition's notice recorded no intent, so what it recorded cannot be accounted for.");
-    const audience = await audienceOf();
-    const eligibleIds = audience.data.members
-      .filter((row) => row.eligible)
-      .map((row) => row.recipientId)
-      .toSorted();
-    const sendResult = await sendResultOf(intent.intentId);
-    const copies = sendResult.data.counts.accepted + sendResult.data.counts.failed + sendResult.data.counts.unknown;
-    const unservedIds = sendResult.data.unserved.map((entry) => entry.recipientId);
-    expect([[sendResult.data.rows.length, sendResult.data.page.total, sendResult.data.ceilingCount, sendResult.data.ceilingCount], [...sendResult.data.rows.map((row) => row.recipientId), ...unservedIds].toSorted()]).toEqual([[copies, copies, eligibleIds.length, copies + sendResult.data.unserved.length], eligibleIds]);
-    expect(sendResult.valueStates.unserved).toBe("value"); // An exclusion is a value the surface can render rather than a missing number, and its reason comes from the closed set the record declares.
-    expect([...NOTIFICATION_UNSERVED_REASONS]).toEqual(["already-covered", "no-eligible-rendition"]);
-    for (const entry of sendResult.data.unserved) expect(NOTIFICATION_UNSERVED_REASONS).toContain(entry.reason);
-    const [recorded] = sendResultsFor(state, intent.intentId); // The stored record states the same account, so the read is publishing what was written rather than reconstructing it.
-    expect(recorded?.unserved.map((entry) => entry.recipientId)).toEqual(unservedIds);
-    const seeded = await sendResultOf(SEEDED_INTENT_ID);
-    for (const entry of sendResult.data.unserved) {
-      expect(entry.reason).toBe("already-covered");
-      if (entry.reason !== "already-covered") throw new Error(`The recipient "${entry.recipientId}" was recorded unserved for ${entry.reason}, which this seeded audience does not produce.`);
-      expect(entry.coveredByIntentId).toBe(SEEDED_INTENT_ID);
-      const earlier = seeded.data.rows.find((row) => row.recipientId === entry.recipientId) ?? throwing(`The recipient "${entry.recipientId}" is named as already covered, and the seeded intent records no copy for them.`);
-      expect([entry.coveredByRenditionId, sendResult.data.rows.some((row) => row.recipientId === entry.recipientId)]).toEqual([earlier.renditionId, false]);
-    }
-    await mirrorPublisherWorld(RECIPIENT_ID);
-    const inbox = await inboxOf(READER_SOURCE);
-    expect(inbox.data.messages).toHaveLength(1);
-    expect(inbox.data.messages[0]?.intentId).toBe(SEEDED_INTENT_ID);
-  });
+it("6. a definite failure comes from real input and retries only while the notice is useful: retries a failed copy only inside 24 elapsed hours from the instant it was intended for, strict at equality", async () => {
+  // The boundary itself, from the one function that computes it: 24 elapsed hours, and a request at exactly the deadline is already too late.
+  expect([USEFULNESS_ENDS.toString(), notificationDeadline({ intendedAt: SEEDED_INTENDED_AT, now: USEFULNESS_ENDS.subtract({ nanoseconds: 1 }) }).status]).toEqual([SEEDED_INTENDED_AT.add({ hours: 24 }).toString(), "within-usefulness"]);
+  expect(notificationDeadline({ intendedAt: SEEDED_INTENDED_AT, now: USEFULNESS_ENDS }).status).toBe("past-usefulness");
+  const expired = await sendResultOf(SEEDED_INTENT_ID);
+  expect(expired.data.usefulness.state).toBe("past-usefulness");
+  const expiredFailure = expired.data.rows.find((row) => row.recipientId === FAILED_RECIPIENT_ID);
+  expect([expiredFailure?.state, expiredFailure?.retry.available]).toEqual(["failed", false]);
+  expect(expiredFailure?.retry.reason).toMatch(/usefulness window has closed/iu);
+  await moveClockTo(USEFULNESS_ENDS.subtract({ hours: 1 }));
+  const open = await sendResultOf(SEEDED_INTENT_ID);
+  expect([open.data.usefulness.state, open.data.usefulness.deadline, open.data.rows.find((row) => row.recipientId === FAILED_RECIPIENT_ID)?.retry.available]).toEqual(["within-usefulness", USEFULNESS_ENDS.toString(), true]);
+  await advanceClockBy(3600);
+  const closed = await sendResultOf(SEEDED_INTENT_ID);
+  expect(closed.data.usefulness.state).toBe("past-usefulness");
+  expect(closed.data.usefulness.remainingMilliseconds).toBeNull();
+  expect(closed.data.rows.find((row) => row.recipientId === FAILED_RECIPIENT_ID)?.retry.available).toBe(false);
+  const revival = await notify(notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: PUBLIC_ENGLISH_RELEASE, intendedAt: SEEDED_INTENDED_AT.toString() }));
+  expect(refusedFieldNames(revival, "a notice reviving an expired intent")).toContain("intendedAt");
+  const { state } = await storedDocuments();
+  const intents = intentsFor(state, UPDATE_DOCUMENT_ID, PUBLIC_ENGLISH_RELEASE);
+  expect(intents).toHaveLength(1);
+  expect(intents[0]?.intentId).toBe(SEEDED_INTENT_ID);
+});
+it("7. a second edition accounts for every eligible recipient: names each recipient the earlier intent already covered, and issues no second copy", async () => {
+  // The seeded notice of this Update recorded a copy for all four eligible recipients, so the protected edition of the same Update owes a copy only to the one whose copy failed. The others are eligible all the same, and the ceiling the intent is accepted for counts them.
+  const supporter = notificationAttempt({ documentId: UPDATE_DOCUMENT_ID, releaseId: SUPPORTER_ENGLISH_RELEASE });
+  expect((await notify(supporter)).outcome).toBe("accepted");
+  const { state } = await storedDocuments();
+  const [intent] = intentsFor(state, UPDATE_DOCUMENT_ID, SUPPORTER_ENGLISH_RELEASE);
+  if (intent === undefined) throw new Error("The protected edition's notice recorded no intent, so what it recorded cannot be accounted for.");
+  const audience = await audienceOf();
+  const eligibleIds = audience.data.members
+    .filter((row) => row.eligible)
+    .map((row) => row.recipientId)
+    .toSorted();
+  const sendResult = await sendResultOf(intent.intentId);
+  const copies = sendResult.data.counts.accepted + sendResult.data.counts.failed + sendResult.data.counts.unknown;
+  const unservedIds = sendResult.data.unserved.map((entry) => entry.recipientId);
+  expect([[sendResult.data.rows.length, sendResult.data.page.total, sendResult.data.ceilingCount, sendResult.data.ceilingCount], [...sendResult.data.rows.map((row) => row.recipientId), ...unservedIds].toSorted()]).toEqual([[copies, copies, eligibleIds.length, copies + sendResult.data.unserved.length], eligibleIds]);
+  expect(sendResult.valueStates.unserved).toBe("value"); // An exclusion is a value the surface can render rather than a missing number, and its reason comes from the closed set the record declares.
+  expect([...NOTIFICATION_UNSERVED_REASONS]).toEqual(["already-covered", "no-eligible-rendition"]);
+  for (const entry of sendResult.data.unserved) expect(NOTIFICATION_UNSERVED_REASONS).toContain(entry.reason);
+  const [recorded] = sendResultsFor(state, intent.intentId); // The stored record states the same account, so the read is publishing what was written rather than reconstructing it.
+  expect(recorded?.unserved.map((entry) => entry.recipientId)).toEqual(unservedIds);
+  const seeded = await sendResultOf(SEEDED_INTENT_ID);
+  for (const entry of sendResult.data.unserved) {
+    expect(entry.reason).toBe("already-covered");
+    if (entry.reason !== "already-covered") throw new Error(`The recipient "${entry.recipientId}" was recorded unserved for ${entry.reason}, which this seeded audience does not produce.`);
+    expect(entry.coveredByIntentId).toBe(SEEDED_INTENT_ID);
+    const earlier = seeded.data.rows.find((row) => row.recipientId === entry.recipientId) ?? throwing(`The recipient "${entry.recipientId}" is named as already covered, and the seeded intent records no copy for them.`);
+    expect([entry.coveredByRenditionId, sendResult.data.rows.some((row) => row.recipientId === entry.recipientId)]).toEqual([earlier.renditionId, false]);
+  }
+  await mirrorPublisherWorld(RECIPIENT_ID);
+  const inbox = await inboxOf(READER_SOURCE);
+  expect(inbox.data.messages).toHaveLength(1);
+  expect(inbox.data.messages[0]?.intentId).toBe(SEEDED_INTENT_ID);
 });

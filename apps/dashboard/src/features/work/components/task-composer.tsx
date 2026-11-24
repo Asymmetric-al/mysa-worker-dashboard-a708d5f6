@@ -25,7 +25,6 @@ type TaskTextKey = "title" | "category" | "dueOn" | "plannedTime" | "timeZone" |
 type TaskFormValues = Readonly<Record<TaskTextKey, string>> & { readonly kind: TaskKind };
 export type TaskComposerInitialValues = Partial<TaskFormValues>;
 type TaskPayload = CreateTaskPayload | EditTaskPayload;
-type AppliedOutcome = Extract<MutationOutcome, { readonly outcome: "accepted" | "alreadyAccepted" }>;
 interface TaskComposerCommonProps {
   readonly scope: Scope;
   readonly expectedRevision: string;
@@ -34,7 +33,7 @@ interface TaskComposerCommonProps {
   readonly defaultTimeZone?: string;
   readonly linkChoices?: TaskLinkChoices | null;
   readonly headingLevel?: 2 | 3;
-  readonly onSaved?: (outcome: AppliedOutcome) => void;
+  readonly onSaved?: (outcome: Extract<MutationOutcome, { readonly outcome: "accepted" | "alreadyAccepted" }>) => void;
   readonly onCheckResult?: () => void;
   readonly onCancel?: () => void;
   readonly onDismiss?: () => void;
@@ -43,9 +42,6 @@ interface TaskComposerCommonProps {
 } /** The composer's contract: a new task needs the collection's revision, an edit needs the record it changes and the private tags that record carries. */
 export type TaskComposerProps = (TaskComposerCommonProps & { readonly mode: "create"; readonly record?: null | undefined }) | (TaskComposerCommonProps & { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] });
 const HEADINGS = { create: "New task", edit: "Edit this task" } as const;
-const TAGS_LABEL = "Private tags";
-const NO_PRIVATE_TAG_LABEL = "No private tag";
-const TAGS_SOURCE_NOTE = `A private tag is set only by the ${BULK_INTENT_LABELS["private-tag"]} bulk action on the Work list, and only you see it. Saving this task changes no tag.`;
 const NO_TAGS: readonly string[] = [];
 const LABELS = { title: "Title", kind: "Kind of work", note: "Note", link: "Linked record", partners: "Partners", initiatives: "Initiatives", noLink: "No link" } as const;
 const DESCRIPTIONS = {
@@ -81,8 +77,7 @@ const TEXT_FIELDS: readonly { readonly name: TaskTextKey; readonly label: string
   { name: FIELD_NAMES.category, label: CATEGORY_LABEL, description: DESCRIPTIONS.category, mark: "optional", type: "text", className: "w-full sm:max-w-72", autoComplete: "off" },
 ];
 const blankToUndefined = (value: string): string | undefined => (value.trim() === "" ? undefined : value);
-/** The same emptiness read the other way: on an edit an emptied member is sent as null, which is the one form the handler reads as "clear this field". */
-const blankToNull = (value: string): string | null => (value.trim() === "" ? null : value);
+/** The same emptiness read the other way: on an edit an emptied member is sent as null, which is the one form the handler reads as "clear this field". */ const blankToNull = (value: string): string | null => (value.trim() === "" ? null : value);
 function admittedLinkOf(record: TaskRecord | null, admitted: ReadonlySet<string>): string {
   if (record === null) return "";
   const candidates: string[] = [];
@@ -102,7 +97,6 @@ function plannedOnDay(value: string, day: string): string {
   const clock = plannedClockOf(value);
   return clock === "" ? value : `${day}${PLANNED_VALUE_SEPARATOR}${clock}`;
 }
-const plannedValueOf = (record: TaskRecord | null): string => (record === null || record.plannedTime === null || record.dueOn === null ? "" : `${record.dueOn}${PLANNED_VALUE_SEPARATOR}${record.plannedTime}`);
 function planMembersOf(values: TaskFormValues): { readonly plannedTime?: string; readonly timeZone?: string } {
   if (values.kind !== "meeting") return {};
   const time = values.plannedTime.trim();
@@ -137,15 +131,14 @@ function defaultsOf(record: TaskRecord | null, link: string, initialValues: Task
     category: stated.category ?? record?.category ?? "",
     dueOn: stated.dueOn ?? record?.dueOn ?? "",
     kind: stated.kind ?? record?.kind ?? "default",
-    plannedTime: stated.plannedTime ?? plannedValueOf(record),
+    plannedTime: stated.plannedTime ?? ((record: TaskRecord | null): string => (record === null || record.plannedTime === null || record.dueOn === null ? "" : `${record.dueOn}${PLANNED_VALUE_SEPARATOR}${record.plannedTime}`))(record),
     timeZone: stated.timeZone ?? record?.timeZone ?? "",
     note: stated.note ?? record?.note ?? "",
     link: stated.link ?? link,
   };
 }
 const HEADING_TAG: Readonly<Record<2 | 3, "h2" | "h3">> = { 2: "h2", 3: "h3" };
-/** The one type scale's heading utility per level, so this composer states the level it lands at with the same measure on every surface. */
-const HEADING_SCALE: Readonly<Record<2 | 3, string>> = { 2: "type-section-title", 3: "type-subsection-title" };
+/** The one type scale's heading utility per level, so this composer states the level it lands at with the same measure on every surface. */ const HEADING_SCALE: Readonly<Record<2 | 3, string>> = { 2: "type-section-title", 3: "type-subsection-title" };
 function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly timeZone: string }): ReactElement | null {
   const day = value.slice(0, 10);
   const clock = plannedClockOf(value);
@@ -167,9 +160,9 @@ function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly 
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/40 p-3">
       <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium">{TAGS_LABEL}</span>
+        <span className="font-medium">{"Private tags"}</span>
         {tags.length === 0 ? (
-          <span className="text-muted-foreground">{NO_PRIVATE_TAG_LABEL}</span>
+          <span className="text-muted-foreground">{"No private tag"}</span>
         ) : (
           tags.map((tag) => (
             <Badge key={tag} variant="outline">
@@ -178,7 +171,7 @@ function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly 
           ))
         )}
       </p>
-      <p className="text-sm text-pretty text-muted-foreground">{TAGS_SOURCE_NOTE}</p>
+      <p className="text-sm text-pretty text-muted-foreground">{`A private tag is set only by the ${BULK_INTENT_LABELS["private-tag"]} bulk action on the Work list, and only you see it. Saving this task changes no tag.`}</p>
     </div>
   );
 }

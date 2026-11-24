@@ -3,8 +3,7 @@ import { AUDIENCE_STATUS, type StatusTone } from "@/components/status-badge";
 import type { ContentKind, VariantAudience } from "@/modules/content/variant";
 export type PublishMode = "publish-only" | "publish-and-notify-now";
 export const UPDATE_KIND_LABELS: Record<ContentKind, string> = { update: "General update", prayer: "Prayer request", story: "Story", milestone: "Milestone" };
-/** Each audience's word and tone come from {@link AUDIENCE_STATUS}, and this record adds only what this feature's own reader needs explained beside them. */
-export const AUDIENCE_LABELS: Record<VariantAudience, { readonly label: string; readonly tone: StatusTone; readonly whoReceives: string }> = {
+/** Each audience's word and tone come from {@link AUDIENCE_STATUS}, and this record adds only what this feature's own reader needs explained beside them. */ export const AUDIENCE_LABELS: Record<VariantAudience, { readonly label: string; readonly tone: StatusTone; readonly whoReceives: string }> = {
   public: { ...AUDIENCE_STATUS.public, whoReceives: "Readers of the public edition of this Update can open this variant." },
   "approved-supporter": { ...AUDIENCE_STATUS["approved-supporter"], whoReceives: "Only supporters this publisher has approved can open this variant." },
 };
@@ -17,7 +16,7 @@ export const PUBLISH_MODE_LABELS: Record<PublishMode, { readonly label: string; 
 };
 export const SUBMISSION_RELEASE_MODE = {
   legend: "How this edition is to be released",
-  description: "Submitting records this choice with the frozen candidate, and the reviewer who answers the candidate releases the " + "edition in the mode chosen here. Submitting itself publishes nothing and notifies nobody: the release this " + "describes happens only once the review is answered.",
+  description: "Submitting records this choice with the frozen candidate, and the reviewer who answers the candidate releases the edition in the mode chosen here. Submitting itself publishes nothing and notifies nobody: the release this describes happens only once the review is answered.",
 } as const;
 export const DRAFT_VS_RELEASED = {
   draftIsNotWhatReadersSee: "A saved draft is not what readers see, and a candidate waiting for review is not a release either.",
@@ -26,7 +25,7 @@ export const DRAFT_VS_RELEASED = {
 } as const;
 export const SIMULATED_EFFECT_BY_TRIGGER: Record<"publish" | "notify", SimulatedEffect> = { publish: "publication-reach", notify: "mail-submission" };
 export const WITHDRAWAL_WORDING = {
-  whatItDoes: "Withdrawal stops this application from serving that edition, so the address no longer shows the " + "content and the discovery index stops listing it. It works even while an unrelated draft of the " + "same Page is invalid, and it contains every locale edition of that Page.",
+  whatItDoes: "Withdrawal stops this application from serving that edition, so the address no longer shows the content and the discovery index stops listing it. It works even while an unrelated draft of the same Page is invalid, and it contains every locale edition of that Page.",
   whatItDoesNotDo:
     "Withdrawal does not recall a notice that has already been submitted, does not remove a copy someone else holds or has already read, does not undo the record that the revision was once released, and cannot reverse a message that has already been accepted. It restores nothing either: restoring an earlier revision creates a new draft.",
 } as const;

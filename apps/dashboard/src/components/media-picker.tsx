@@ -15,18 +15,16 @@ import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
+import { countFormatOf } from "@/lib/count-format";
 import { ADMITTED_IMAGE_FORMATS, ADMITTED_VIDEO_PROFILES, IMAGE_MAX_BYTES, IMAGE_MAX_EDGE_PX, VIDEO_MAX_BYTES, VIDEO_MAX_DURATION_S, VIDEO_MAX_HEIGHT, VIDEO_MAX_WIDTH, mediaStateReason, type MediaPreparationState } from "@/modules/media/profile";
 export type MediaPickerKind = "image" | "video";
 export type MediaProbe = { readonly width?: number; readonly height?: number; readonly durationSeconds?: number };
 export type MediaPlacementDescriptor = { readonly altText: string; readonly caption?: string; readonly credit?: string; readonly transcript?: string; readonly language?: string };
 export type MediaPlacement = MediaPlacementDescriptor & { readonly placementId?: string };
-/** The poster image chosen beside a video: its own file, prepared into a poster rendition when the video is registered. */
-export type MediaPosterInput = { readonly file: File };
-/** The caption track chosen beside a video: the WebVTT file itself, in the language the placement states. */
-export type MediaCaptionInput = { readonly file: File; readonly language: string; readonly label?: string };
+/** The poster image chosen beside a video: its own file, prepared into a poster rendition when the video is registered. */ export type MediaPosterInput = { readonly file: File };
+/** The caption track chosen beside a video: the WebVTT file itself, in the language the placement states. */ export type MediaCaptionInput = { readonly file: File; readonly language: string; readonly label?: string };
 export type MediaRegisterInput = { readonly kind: MediaPickerKind; readonly file: File; readonly placement: MediaPlacementDescriptor; readonly poster?: MediaPosterInput; readonly captions?: MediaCaptionInput };
-/** The outcome every transport answers with, taken from the one receipt that renders it. */
-export type MediaPickerOutcome = OperationResultProps["outcome"];
+/** The outcome every transport answers with, taken from the one receipt that renders it. */ export type MediaPickerOutcome = OperationResultProps["outcome"];
 export type MediaPickerProps = {
   readonly kind: MediaPickerKind;
   readonly open: boolean;
@@ -42,10 +40,7 @@ const MEBIBYTE = 1024 * 1024;
 const IMAGE_LIMITS = Object.freeze({ bytes: IMAGE_MAX_BYTES, edgePx: IMAGE_MAX_EDGE_PX, formats: "JPEG, PNG or a still WebP image" });
 const VIDEO_LIMITS = Object.freeze({ bytes: VIDEO_MAX_BYTES, durationS: VIDEO_MAX_DURATION_S, width: VIDEO_MAX_WIDTH, height: VIDEO_MAX_HEIGHT, formats: "MP4 with H.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio" });
 const ACCEPT_HINT: Readonly<Record<MediaPickerKind, string>> = Object.freeze({ image: ADMITTED_IMAGE_FORMATS.map((format) => `image/${format}`).join(","), video: ADMITTED_VIDEO_PROFILES.map((profile) => `video/${profile.container}`).join(",") });
-const CAPTION_ACCEPT = ".vtt,text/vtt";
-const CAPTION_LANGUAGE_REQUIRED = "A caption track states the language its cues are in, so give the media's language before adding the track.";
 const VIDEO_PROBE_TIMEOUT_MS = 15_000;
-const COUNT_FORMAT = new Intl.NumberFormat("en-US");
 const FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({
   file: "File",
   poster: "Poster image",
@@ -71,7 +66,10 @@ function formatDuration(seconds: number): string {
   const plural = minutes === 1 ? "minute" : "minutes";
   return remainder === 0 ? `${minutes} ${plural}` : `${minutes} ${plural} ${remainder} seconds`;
 }
-const formatPixels = (width: number, height: number): string => `${COUNT_FORMAT.format(width)} × ${COUNT_FORMAT.format(height)} pixels`;
+const formatPixels = (width: number, height: number): string => {
+  const formatCount = countFormatOf(); // A pixel count is a whole number, so it groups in the application's default interface locale.
+  return `${formatCount.format(width)} × ${formatCount.format(height)} pixels`;
+};
 async function probeImage(file: File): Promise<MediaProbe | undefined> {
   if (typeof createImageBitmap !== "function") return undefined;
   let bitmap: ImageBitmap | null = null;
@@ -153,8 +151,7 @@ const PHASE_DESCRIPTION: Readonly<Record<PickerPhase["name"], (kind: MediaPicker
   settled: () => "This is what the attempt answered. The record stays on screen until you close the picker.",
 };
 type FooterAction = { readonly label: string; readonly onClick?: () => void; readonly variant?: "default" | "destructive"; readonly disabled?: boolean; readonly className?: string };
-/** The single image and video picker and placement form. */
-export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, onReplace, onRemove, onSettled, className }: MediaPickerProps): ReactElement {
+/** The single image and video picker and placement form. */ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, onReplace, onRemove, onSettled, className }: MediaPickerProps): ReactElement {
   const instructionsId = useId();
   const limitsId = useId();
   const altTextRef = useRef<HTMLTextAreaElement | null>(null);
@@ -250,7 +247,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     // language is refused here, where the field that states it is on screen, instead of by the service one request later.
     const captionTrack = kind === "video" ? captionFile : null;
     if (captionTrack !== null && composed.language === undefined) {
-      setLocalErrors({ "placement.language": [CAPTION_LANGUAGE_REQUIRED] });
+      setLocalErrors({ "placement.language": ["A caption track states the language its cues are in, so give the media's language before adding the track."] });
       setPhase({ name: "described" });
       languageRef.current?.focus();
       return;
@@ -336,7 +333,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
   function renderLimits(): ReactElement {
     const limits =
       kind === "image"
-        ? [IMAGE_LIMITS.formats, `No more than ${formatBytes(IMAGE_LIMITS.bytes)}.`, `No more than ${COUNT_FORMAT.format(IMAGE_LIMITS.edgePx)} pixels on either side.`]
+        ? [IMAGE_LIMITS.formats, `No more than ${formatBytes(IMAGE_LIMITS.bytes)}.`, `No more than ${countFormatOf().format(IMAGE_LIMITS.edgePx)} pixels on either side.`]
         : [VIDEO_LIMITS.formats, `No more than ${formatBytes(VIDEO_LIMITS.bytes)}.`, `No longer than ${formatDuration(VIDEO_LIMITS.durationS)}.`, `No larger than ${formatPixels(VIDEO_LIMITS.width, VIDEO_LIMITS.height)}.`];
     return (
       <div className="flex flex-col gap-1">
@@ -385,12 +382,12 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
     const limits = kind === "image" ? IMAGE_LIMITS : VIDEO_LIMITS;
     if (file !== null && file.size > limits.bytes) problems.push(`It is ${formatBytes(file.size)}, over the ${formatBytes(limits.bytes)} admitted.`);
     if (kind === "image") {
-      if (probe?.width !== undefined && probe.width > IMAGE_LIMITS.edgePx) problems.push(`It is ${COUNT_FORMAT.format(probe.width)} pixels wide, over the ${COUNT_FORMAT.format(IMAGE_LIMITS.edgePx)} pixels admitted on one side.`);
-      if (probe?.height !== undefined && probe.height > IMAGE_LIMITS.edgePx) problems.push(`It is ${COUNT_FORMAT.format(probe.height)} pixels tall, over the ${COUNT_FORMAT.format(IMAGE_LIMITS.edgePx)} pixels admitted on one side.`);
+      if (probe?.width !== undefined && probe.width > IMAGE_LIMITS.edgePx) problems.push(`It is ${countFormatOf().format(probe.width)} pixels wide, over the ${countFormatOf().format(IMAGE_LIMITS.edgePx)} pixels admitted on one side.`);
+      if (probe?.height !== undefined && probe.height > IMAGE_LIMITS.edgePx) problems.push(`It is ${countFormatOf().format(probe.height)} pixels tall, over the ${countFormatOf().format(IMAGE_LIMITS.edgePx)} pixels admitted on one side.`);
     } else {
       if (probe?.durationSeconds !== undefined && probe.durationSeconds > VIDEO_LIMITS.durationS) problems.push(`It runs ${Math.round(probe.durationSeconds)} seconds (${formatDuration(probe.durationSeconds)}), longer than the ${VIDEO_LIMITS.durationS} seconds admitted.`);
-      if (probe?.width !== undefined && probe.width > VIDEO_LIMITS.width) problems.push(`It displays ${COUNT_FORMAT.format(probe.width)} pixels wide, over the ${COUNT_FORMAT.format(VIDEO_LIMITS.width)} admitted.`);
-      if (probe?.height !== undefined && probe.height > VIDEO_LIMITS.height) problems.push(`It displays ${COUNT_FORMAT.format(probe.height)} pixels tall, over the ${COUNT_FORMAT.format(VIDEO_LIMITS.height)} admitted.`);
+      if (probe?.width !== undefined && probe.width > VIDEO_LIMITS.width) problems.push(`It displays ${countFormatOf().format(probe.width)} pixels wide, over the ${countFormatOf().format(VIDEO_LIMITS.width)} admitted.`);
+      if (probe?.height !== undefined && probe.height > VIDEO_LIMITS.height) problems.push(`It displays ${countFormatOf().format(probe.height)} pixels tall, over the ${countFormatOf().format(VIDEO_LIMITS.height)} admitted.`);
     }
     if (problems.length === 0) return null;
     return (
@@ -515,7 +512,7 @@ export function MediaPicker({ kind, open, onOpenChange, placement, onRegister, o
         </FormField>
         {renderChosenTrack(posterFile, "Poster image")}
         <FormField label="Caption track (WebVTT)" name="captions" optionalHint description="The video's cues as a WebVTT file, served with the video and offered in the player's own caption menu. Its language is the video's own language, stated above." error={errorsFor("captions")}>
-          {({ id, describedBy, invalid }) => <Input id={id} type="file" accept={CAPTION_ACCEPT} aria-describedby={describedBy} aria-invalid={invalid} className="h-auto cursor-pointer py-2" onChange={handleCaptionInputChange} />}
+          {({ id, describedBy, invalid }) => <Input id={id} type="file" accept={".vtt,text/vtt"} aria-describedby={describedBy} aria-invalid={invalid} className="h-auto cursor-pointer py-2" onChange={handleCaptionInputChange} />}
         </FormField>
         {renderChosenTrack(captionFile, "Caption track")}
         {captionFile === null ? null : (

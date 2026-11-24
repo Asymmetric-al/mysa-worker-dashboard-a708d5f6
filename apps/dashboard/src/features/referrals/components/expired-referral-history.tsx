@@ -7,8 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { reads } from "@/modules/data-service";
 import { EXPIRED_HISTORY_COPY, EXPIRY_VS_CLOSURE, FORBIDDEN_FIELDS, LIST_COPY, PRECISION_COPY, STATUS_COPY, WINDOW_COPY, type ReferralStatusWord } from "../copy";
-type ReferralDetailReadResult = Awaited<ReturnType<typeof reads.referrals.readReferral>>;
-type ReferralDetailEnvelope = Extract<ReferralDetailReadResult, { readonly kind: "envelope" }>["envelope"];
+type ReferralDetailEnvelope = Extract<Awaited<ReturnType<typeof reads.referrals.readReferral>>, { readonly kind: "envelope" }>["envelope"];
 type ExpiredHistoryRow = Extract<ReferralDetailEnvelope["data"], { readonly view: "expired-history" }>["referral"];
 const STATUS_TONE: Readonly<Record<ReferralStatusWord, StatusTone>> = { active: "positive", expired: "neutral", "no-deadline": "caution", refused: "caution", withdrawn: "danger", revoked: "danger", erased: "danger", departed: "danger" };
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
@@ -17,7 +16,7 @@ const HEADINGS: Readonly<Record<ExpiredHistoryHeadingLevel, { readonly title: "h
 const HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
 export type ExpiredReferralHistoryProps = { readonly referral: ExpiredHistoryRow | null; readonly status?: ReferralStatusWord; readonly searchEmpty?: boolean; readonly headingLevel?: ExpiredHistoryHeadingLevel; readonly dir?: "ltr" | "rtl"; readonly className?: string };
 const NotRecorded = (): ReactElement => <StatusBadge label={NOT_RECORDED.label} tone={NOT_RECORDED.tone} />;
-const PermittedDate = ({ value }: { readonly value: string | null }): ReactElement => (value === null ? <NotRecorded /> : <bdi className="tabular-figures">{value}</bdi>);
+const PermittedDate = ({ value }: { readonly value: string | null }): ReactElement => <dd className="min-w-0 wrap-anywhere text-muted-foreground">{value === null ? <NotRecorded /> : <bdi className="tabular-figures">{value}</bdi>}</dd>;
 function PermittedFacts({ referral, status }: { readonly referral: ExpiredHistoryRow; readonly status: ReferralStatusWord }): ReactElement {
   const labels = EXPIRED_HISTORY_COPY.fieldLabels;
   const statusCopy = STATUS_COPY[status];
@@ -41,36 +40,28 @@ function PermittedFacts({ referral, status }: { readonly referral: ExpiredHistor
       <dd className="min-w-0">
         <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-start sm:grid-cols-[max-content_minmax(0,1fr)]">
           <dt className="font-medium">{labels.originalIntroductionOn}</dt>
-          <dd className="min-w-0 wrap-anywhere text-muted-foreground">
-            <PermittedDate value={referral.originalIntroductionOn} />
-          </dd>
+          <PermittedDate value={referral.originalIntroductionOn} />
           <dt className="font-medium">{labels.datePrecision}</dt>
           <dd className="min-w-0 wrap-anywhere text-muted-foreground">{PRECISION_COPY[referral.datePrecision].label}</dd>
           <dt className="font-medium">{labels.windowStart}</dt>
-          <dd className="min-w-0 wrap-anywhere text-muted-foreground">
-            <PermittedDate value={referral.windowStart} />
-          </dd>
+          <PermittedDate value={referral.windowStart} />
           <dt className="font-medium">{labels.windowEnd}</dt>
-          <dd className="min-w-0 wrap-anywhere text-muted-foreground">
-            <PermittedDate value={referral.windowEnd} />
-          </dd>
+          <PermittedDate value={referral.windowEnd} />
         </dl>
       </dd>
     </dl>
   );
 }
-function AbsentFacts(): ReactElement {
-  return (
-    <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-start text-sm">
-      {FORBIDDEN_FIELDS.map((absent) => (
-        <div key={absent.field} className="flex min-w-0 flex-col gap-0.5">
-          <dt className="font-medium">{absent.label}</dt>
-          <dd className="min-w-0 text-pretty wrap-anywhere text-muted-foreground">{absent.reason}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
+const AbsentFacts = (): ReactElement => (
+  <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-start text-sm">
+    {FORBIDDEN_FIELDS.map((absent) => (
+      <div key={absent.field} className="flex min-w-0 flex-col gap-0.5">
+        <dt className="font-medium">{absent.label}</dt>
+        <dd className="min-w-0 text-pretty wrap-anywhere text-muted-foreground">{absent.reason}</dd>
+      </div>
+    ))}
+  </dl>
+);
 export default function ExpiredReferralHistory({ referral, status, searchEmpty = false, headingLevel = 2, dir, className }: ExpiredReferralHistoryProps): ReactElement {
   const headings = HEADINGS[headingLevel];
   const TitleTag = headings.title;

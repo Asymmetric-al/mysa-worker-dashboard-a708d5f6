@@ -5,10 +5,10 @@ import { failureFor, failurePlanOfDocument } from "@/modules/dev-runtime/failure
 import type { SessionDocumentKey, SessionDocuments } from "@/modules/store/paths";
 import { transact } from "@/modules/store/repository";
 import { now } from "@/modules/time/clock";
-import { assertScopeUnder, assertScopeUnchangedUnder, outcomeOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type ScopeAuthority, type ScopeDecision, type SessionResolution, type SessionSource } from "./authorize";
+import { assertScopeAdmitted, assertScopeUnchangedUnder, outcomeOfRefusal, recordRefusalOutage, resolveSession, type ResolvedSession, type ScopeAuthority, type ScopeDecision, type SessionResolution, type SessionSource } from "./authorize";
 import { mutationInputSchema, operationRecordSchema, type MutationInput, type OperationRecord, type Scope } from "./envelope";
 import { LOCAL_STORE_SYSTEM, UNIDENTIFIED_ATTEMPT, accepted, alreadyAccepted, conflict, denied, invalid, outcomeFromError, unavailable, unchanged, unknown, type DeniedOutcome, type FieldMessages, type MutationOutcome, type MutationResult, type PerItemResult, type UnavailableOutcome } from "./outcome";
-// The intent digest gained the mutation's name without a format change here: a stored record whose digest was taken without it answers `changed-intent` for the attempt that produced it, which is a refusal a caller can act on, whereas a new format version would make an older ledger unreadable and lose the record of what it already accepted.
+// The mutation's name is part of every intent digest, and that needs no new ledger format: a record stored with a digest taken without the name answers `changed-intent` for the attempt that produced it, a conflict a caller can act on, whereas a version bump would make an older ledger unreadable and lose the record of what it already accepted.
 export const OPERATION_LEDGER_VERSION = 1;
 export type OperationLedger = { readonly version: number; readonly records: Readonly<Record<string, OperationRecord>> };
 export const emptyLedger = (): OperationLedger => ({ version: OPERATION_LEDGER_VERSION, records: {} });
@@ -21,8 +21,7 @@ export class LedgerConflictError extends Error {
     Object.setPrototypeOf(this, LedgerConflictError.prototype);
   }
 }
-/** Refusal raised when a stored ledger document cannot be read as one. */
-export class LedgerUnreadableError extends Error {
+/** Refusal raised when a stored ledger document cannot be read as one. */ export class LedgerUnreadableError extends Error {
   readonly part: string;
   constructor(part: string) {
     super(`The operation ledger cannot be read: ${part}. Nothing was written, and the stored document is reported rather than replaced, because an unreadable ledger cannot prove an attempt has not already been accepted.`);
@@ -41,8 +40,7 @@ function collectEntry(records: Record<string, OperationRecord>, entry: Operation
   if (Object.hasOwn(records, entry.operationId)) throw new LedgerUnreadableError("the document records one operation id twice");
   records[entry.operationId] = entry;
 }
-/** Reads a stored operations document as a ledger, in either arrangement it can be found in. */
-export function readLedger(value: unknown): OperationLedger {
+/** Reads a stored operations document as a ledger, in either arrangement it can be found in. */ export function readLedger(value: unknown): OperationLedger {
   if (value === undefined) return emptyLedger();
   if (!isPlainObject(value)) throw new LedgerUnreadableError("the document is not an object");
   const version: unknown = value.version;
@@ -71,7 +69,7 @@ export function begin(ledger: OperationLedger, operationId: string, intentHash: 
   const stored = lookup(ledger, operationId);
   return stored === undefined ? { state: "fresh" } : stored.intentHash === intentHash ? { state: "replay", record: stored } : { state: "changed-intent", record: stored };
 }
-export function record(ledger: OperationLedger, entry: OperationRecord): OperationLedger {
+/** Records one attempt in the session's operation ledger and returns the ledger, so a replay of the same identity answers the original outcome. */ export function record(ledger: OperationLedger, entry: OperationRecord): OperationLedger {
   if (Object.hasOwn(ledger.records, entry.operationId)) throw new LedgerConflictError(entry.operationId);
   return { version: ledger.version, records: { ...ledger.records, [entry.operationId]: entry } };
 }
@@ -115,8 +113,7 @@ export type ApplyResult<R extends MutationResult> =
   | { readonly changed: true; readonly revision: string; readonly result: R; readonly created?: readonly string[]; readonly changedIds?: readonly string[]; readonly items?: readonly PerItemResult[]; readonly scope?: Scope };
 export interface MutationPlan<P, R extends MutationResult> {
   readonly sessionId: string;
-  /** The session whose documents this change writes, when a seat's records live in the world it was seated in; the attempt still acts only as `sessionId`'s own identity. */
-  readonly recordsSessionId?: string;
+  /** The session whose documents this change writes, when a seat's records live in the world it was seated in; the attempt still acts only as `sessionId`'s own identity. */ readonly recordsSessionId?: string;
   readonly input: MutationInput<P>;
   readonly schema: z.ZodType<P>;
   readonly name: MutationName;
@@ -135,8 +132,7 @@ class MutationRefused extends Error {
     Object.setPrototypeOf(this, MutationRefused.prototype);
   }
 }
-/** The identity an attempt is reported under, read off the request's own `operationId` and never guessed beyond it. */
-export function attemptIdOf(input: unknown): string {
+/** The identity an attempt is reported under, read off the request's own `operationId` and never guessed beyond it. */ export function attemptIdOf(input: unknown): string {
   if (typeof input !== "object" || input === null) return UNIDENTIFIED_ATTEMPT;
   const candidate: unknown = Reflect.get(input, "operationId");
   return typeof candidate === "string" && candidate.length > 0 ? candidate : UNIDENTIFIED_ATTEMPT;
@@ -156,26 +152,16 @@ export async function openMutation(job: MutationName, input: unknown, source?: S
     return { ok: false, outcome: denied({ operationId, reasonCode: "session-unavailable" }) };
   }
 }
-/** Refuses the attempt with the outcome it earned: the runner answers it, so a refusal reached after a record was read keeps nothing its draft holds. */
-export function refuse(outcome: MutationOutcome): never {
+/** Refuses the attempt with the outcome it earned: the runner answers it, so a refusal reached after a record was read keeps nothing its draft holds. */ export function refuse(outcome: MutationOutcome): never {
   throw new MutationRefused(outcome);
 }
-/** Refuses a change to a record the caller does not hold or may not change, disclosing nothing about what exists. */
-export function refuseDenied(operationId: string): never {
-  return refuse(denied({ operationId, reasonCode: "no-permission" }));
-}
+/** Refuses a change to a record the caller does not hold or may not change, disclosing nothing about what exists. */ export const refuseDenied = (operationId: string): never => refuse(denied({ operationId, reasonCode: "no-permission" }));
 /** Refuses a stale attempt, carrying both the current value and the caller's preserved input so a surface can show them side by side. */
-export function refuseConflict(input: { readonly operationId: string; readonly currentRevision: string; readonly current: unknown; readonly preservedInput: unknown }): never {
-  return refuse(conflict({ ...input, reason: "stale-revision" }));
-}
+export const refuseConflict = (input: { readonly operationId: string; readonly currentRevision: string; readonly current: unknown; readonly preservedInput: unknown }): never => refuse(conflict({ ...input, reason: "stale-revision" }));
 /** Refuses a payload the domain re-ran and did not admit, with per-field messages keyed by field path. */
-export function refuseInvalid(operationId: string, fields: FieldMessages | z.ZodError): never {
-  return refuse(invalid({ operationId, fields }));
-}
+export const refuseInvalid = (operationId: string, fields: FieldMessages | z.ZodError): never => refuse(invalid({ operationId, fields }));
 /** Refuses the attempt because the store behind the work could not answer: the source is named and the retry guidance is the caller's. */
-export function refuseUnavailable(input: { readonly operationId: string; readonly reference: string; readonly guidance: string }): never {
-  return refuse(unavailable({ operationId: input.operationId, source: { system: LOCAL_STORE_SYSTEM, reference: input.reference }, guidance: input.guidance }));
-}
+export const refuseUnavailable = (input: { readonly operationId: string; readonly reference: string; readonly guidance: string }): never => refuse(unavailable({ operationId: input.operationId, source: { system: LOCAL_STORE_SYSTEM, reference: input.reference }, guidance: input.guidance }));
 /** The diagnostic scope one attempt is reported under: the selected context of the session that authorised it, never the scope the request claimed, so the line states the authority the attempt actually ran under. A session that has established no selection states that, rather than a context the attempt never held. */
 function sessionScopeOf(session: ResolvedSession): LogScope {
   const selected = session.selected;
@@ -202,7 +188,7 @@ const ABSENT_TARGET: CurrentTarget = { kind: "absent" };
 const LEDGER_UNAVAILABLE_GUIDANCE = "Reload the page to read this session's operation ledger again; if it stays unreadable, reset the development seed, which rebuilds the session documents deterministically.";
 // No named mutation writes the generated workload document: every accepted attempt writes the ledger, the development mutations are the only ones that reach the meta document, and a record change is a wholesale rewrite of the state document.
 const MUTATION_WRITE_SET = ["meta", "operations", "state"] as const satisfies readonly SessionDocumentKey[];
-export async function runMutation<P, R extends MutationResult>(plan: MutationPlan<P, R>): Promise<MutationOutcome> {
+/** Runs one named mutation under its plan: authorises, applies the declared write set and records the ledger entry, answering the closed outcome set with the operation identity every replay returns. */ export async function runMutation<P, R extends MutationResult>(plan: MutationPlan<P, R>): Promise<MutationOutcome> {
   const startedAt = performance.now();
   const operationId = attemptIdOf(plan.input);
   // Every attempt is reported, including one refused before a session was established: until the session resolves, the line states that no authority was established rather than a context the attempt never held.
@@ -224,8 +210,10 @@ export async function runMutation<P, R extends MutationResult>(plan: MutationPla
   // From here on the attempt is reported under the authority it holds, not the scope the request claimed.
   diagnosticScope = sessionScopeOf(session);
   const scopeAuthority = plan.scopeAuthority ?? "membership";
-  const scopeDecision = assertScopeUnder(session, input.scope, scopeAuthority);
+  const scopeDecision = assertScopeAdmitted(session, input.scope, scopeAuthority);
   if (!scopeDecision.ok) return report(denied({ operationId, reasonCode: scopeDecision.denial.reasonCode }));
+  // Every entry this attempt records states the scope the admission established and never the scope the request claimed, so a durable record cannot name a principal the resolver did not admit or a context the caller's own memberships exclude.
+  const attemptScope = scopeDecision.scope;
   const permission = plan.authorize(session);
   if (!permission.ok) return report(denied({ operationId, reasonCode: permission.denial.reasonCode }));
   const intent = intentHash(plan.name, input.scope, input.payload);
@@ -260,15 +248,15 @@ export async function runMutation<P, R extends MutationResult>(plan: MutationPla
         const revision = applied.revision ?? reportedRevision;
         if (applied.result === undefined) return unchanged({ operationId, revision });
         // A no-change answer that states the record it found records the attempt under its own identity in this same transaction, so a caller holding only the identity it minted can name what it found; the entry's outcome is `unchanged`, which is why replaying it answers `unchanged` rather than an acceptance.
-        docs.operations = record(ledger, { operationId, intentHash: intent, scope: input.scope, outcome: "unchanged", result: applied.result, revision, at: now().toString() });
+        docs.operations = record(ledger, { operationId, intentHash: intent, scope: attemptScope, outcome: "unchanged", result: applied.result, revision, at: now().toString() });
         return unchanged({ operationId, revision });
       }
-      const scopeHeld = assertScopeUnchangedUnder(session, input.scope, applied.scope ?? input.scope, scopeAuthority);
+      const scopeHeld = assertScopeUnchangedUnder(session, attemptScope, applied.scope ?? attemptScope, scopeAuthority);
       if (!scopeHeld.ok) throw new MutationRefused(denied({ operationId, reasonCode: scopeHeld.denial.reasonCode }));
       const entry: OperationRecord = {
         operationId,
         intentHash: intent,
-        scope: input.scope,
+        scope: attemptScope,
         outcome: "accepted",
         result: applied.result,
         revision: applied.revision,

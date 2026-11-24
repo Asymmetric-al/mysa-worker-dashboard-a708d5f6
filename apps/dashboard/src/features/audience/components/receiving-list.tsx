@@ -20,9 +20,7 @@ import type { ReadResult } from "@/modules/data-service/outcome";
 import { RECEIVING_LIST_COPY, RECEIVING_POST_COPY, RECEIVING_SIMULATION_EFFECT } from "../copy/receiving";
 import { useReceivingList, type ReceivingListEnvelope, type UseReceivingListParams } from "../hooks/use-audience-reads";
 /** One edition of one Update as the receiving read states it: its identity, its audience, the locale it is read in and the address it opens at. */ export type ReceivingEditionView = ReceivingListEnvelope["data"]["editions"][number];
-type ReceivingPageWindow = ReceivingListEnvelope["data"]["page"];
 type ReceivingListRequest = NonNullable<UseReceivingListParams["params"]>;
-type ContentDirection = ContentLocale["direction"];
 /** The persona whose reading experience this preview shows, as the development runtime named it. It is an identifier and a word, never an inferred audience. */ export type ReceivingPersonaView = { readonly id: string; readonly label: string };
 /** Props of {@link ReceivingList}. */ export interface ReceivingListProps {
   readonly scope: Scope;
@@ -31,14 +29,12 @@ type ContentDirection = ContentLocale["direction"];
   readonly initialEnvelope: ReadResult<ReceivingListEnvelope>;
   readonly persona: ReceivingPersonaView;
   readonly params?: ReceivingListRequest;
-  readonly onDirectionChange?: (direction: ContentDirection) => void;
+  readonly onDirectionChange?: (direction: ContentLocale["direction"]) => void;
   readonly headingLevel?: NoticeHeadingLevel;
   readonly className?: string;
 }
 const ITEM_NOUN_SINGULAR = "edition";
 const FIRST_PAGE = 1;
-const PREVIEWING_AS = "Previewing as";
-const UNTITLED_EDITION = "Untitled Update";
 const REFUSED_DESCRIPTION = "The address asked for something this view does not read, so nothing was read and no list stands in its place. Correct the request and open it again: once it is one this view admits, the read runs unchanged.";
 const NO_EDITIONS: readonly ReceivingEditionView[] = [];
 const NO_REQUEST: ReceivingListRequest = Object.freeze({});
@@ -49,7 +45,7 @@ const NESTED_HEADING: Readonly<Record<NoticeHeadingLevel, NoticeHeadingLevel>> =
 const normaliseTag = (tag: string): string => tag.trim().toLowerCase();
 function titleOf(edition: ReceivingEditionView): string {
   const title = edition.title?.trim() ?? "";
-  return title === "" ? UNTITLED_EDITION : title;
+  return title === "" ? "Untitled Update" : title;
 }
 function localeEditionsOf(editions: readonly ReceivingEditionView[]): readonly LocaleEdition[] {
   const locales = new Map<string, LocaleEdition>();
@@ -75,14 +71,9 @@ function searchFor(request: ReceivingListRequest, next: { readonly locale?: stri
 }
 function Heading({ id, level, children }: { readonly id: string; readonly level: NoticeHeadingLevel; readonly children: ReactNode }): ReactElement {
   const Tag = HEADING_TAG[level];
-  return (
-    <Tag id={id} className={cn(HEADING_SCALE[level], "text-pretty wrap-anywhere")}>
-      {children}
-    </Tag>
-  );
+  return <Tag {...{ id, className: cn(HEADING_SCALE[level], "text-pretty wrap-anywhere") }}>{children}</Tag>;
 }
-type PageWindowLineProps = { readonly page: ReceivingPageWindow; readonly state: ValueState | undefined; readonly locale: string };
-function PageWindowLine({ page, state, locale }: PageWindowLineProps): ReactElement {
+function PageWindowLine({ page, state, locale }: { readonly page: ReceivingListEnvelope["data"]["page"]; readonly state: ValueState | undefined; readonly locale: string }): ReactElement {
   if (state !== undefined && state !== "value") {
     const word = VALUE_STATE_WORDS[state];
     return (
@@ -98,8 +89,7 @@ function PageWindowLine({ page, state, locale }: PageWindowLineProps): ReactElem
   const last = Math.min(page.page * page.pageSize, total);
   return <p className="type-supporting text-pretty wrap-anywhere">{`Showing ${format.format((page.page - FIRST_PAGE) * page.pageSize + 1)}\u2013${format.format(last)} of ${format.format(total)} ${total === 1 ? ITEM_NOUN_SINGULAR : "editions"}`}</p>;
 }
-type EditionRowProps = { readonly edition: ReceivingEditionView; readonly requestedTag: string };
-function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
+function EditionRow({ edition, requestedTag }: { readonly edition: ReceivingEditionView; readonly requestedTag: string }): ReactElement {
   const audience = AUDIENCE_WORDS[edition.audience];
   const servedName = languageNameOf(edition.locale.tag);
   const servedLabel = servedName === "" ? edition.locale.tag : servedName;
@@ -188,13 +178,11 @@ function EditionRow({ edition, requestedTag }: EditionRowProps): ReactElement {
   return (
     <section aria-labelledby={headingId} data-slot="receiving-list" data-persona={persona.id} data-read-state={result.kind} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <header className="flex min-w-0 flex-col gap-3">
-        <Heading id={headingId} level={headingLevel}>
-          {RECEIVING_LIST_COPY.heading}
-        </Heading>
+        <Heading {...{ id: headingId, level: headingLevel }}>{RECEIVING_LIST_COPY.heading}</Heading>
         <p className="type-supporting text-pretty wrap-anywhere">{RECEIVING_LIST_COPY.description}</p>
         <Alert variant="default" role={undefined}>
           <EyeIcon aria-hidden="true" focusable="false" />
-          <AlertTitle className="text-pretty wrap-anywhere">{`${PREVIEWING_AS} ${personaLabel}`}</AlertTitle>
+          <AlertTitle className="text-pretty wrap-anywhere">{`${"Previewing as"} ${personaLabel}`}</AlertTitle>
           <AlertDescription className="text-pretty wrap-anywhere">{RECEIVING_LIST_COPY.recheckStatement}</AlertDescription>
         </Alert>
         <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} />

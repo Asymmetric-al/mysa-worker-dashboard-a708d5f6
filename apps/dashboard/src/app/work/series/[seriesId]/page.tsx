@@ -18,8 +18,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
   unavailable: { title: PAGE_COPY.unavailable.title },
   refused: { title: PAGE_COPY.refused.title, body: PAGE_COPY.refused.body, action: { label: PAGE_COPY.backToLists, href: WORK_HREF } },
 };
-/** One repeating plan: the record body, or the notice its refusal is stated with. */
-export default async function WorkSeriesPage({ params }: { readonly params: Promise<{ readonly seriesId: string }> }): Promise<ReactElement> {
+/** One repeating plan: the record body, or the notice its refusal is stated with. */ export default async function WorkSeriesPage({ params }: { readonly params: Promise<{ readonly seriesId: string }> }): Promise<ReactElement> {
   const { seriesId } = await params;
   const result = await reads.series.readSeries({ seriesId });
   if (result.kind !== "envelope")

@@ -10,8 +10,7 @@ import StateNotice from "@/components/state-notice";
 import StatusBadge from "@/components/status-badge";
 import { cn } from "@/lib/cn";
 import { formatSourceReference, type SourceReference } from "@/lib/ids";
-/** The sections of a record body, in the only order they render. */
-export const RECORD_DETAIL_SECTIONS = ["contactMethods", "restrictions", "relationshipContext", "activity", "privateNotes", "openTasks", "supportHistory"] as const;
+/** The sections of a record body, in the only order they render. */ export const RECORD_DETAIL_SECTIONS = ["contactMethods", "restrictions", "relationshipContext", "activity", "privateNotes", "openTasks", "supportHistory"] as const;
 export type RecordDetailSection = (typeof RECORD_DETAIL_SECTIONS)[number];
 export const RECORD_DETAIL_SECTION_TITLES: Readonly<Record<RecordDetailSection, string>> = {
   contactMethods: "Permitted contact methods",
@@ -29,24 +28,19 @@ const SECTION_DESCRIPTIONS: Readonly<Partial<Record<RecordDetailSection, string>
 };
 /** The audience a private note is shown with, stated once so no two surfaces word it differently and a reader never has to infer from a section heading whether the text beside it is shared. */
 export const PRIVATE_NOTE_AUDIENCE_LABEL = "Private note — only you";
-const UNAVAILABLE_RETRY_LABEL = "Try again";
-const UNAVAILABLE_TITLE = "One source behind this record could not be read";
 const UNAVAILABLE_DESCRIPTION = "The sections that depend on that source are unavailable rather than empty. Everything else on this record still works, and nothing was changed.";
-const SKIP_TO_SECTIONS_LABEL = "Skip to the record's sections";
 const LOADING_SECTION_BLOCKS = 3;
 const LOADING_LINE_WIDTHS = ["w-full", "w-5/6", "w-2/3"] as const;
 export type RecordDetailLayout = "page" | "panel" | "sheet";
 type LayoutChrome = { readonly surface: string; readonly headingLevel: 1 | 2; readonly headingScale: string; readonly sectionScale: string; readonly avatarSize: "default" | "lg"; readonly cardSize: "default" | "sm"; readonly actionBar: string };
-const STATIC_ACTION_BAR = "flex flex-wrap items-center gap-2";
 const STICKY_ACTION_BAR = "sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-border bg-background/95 py-2 backdrop-blur-sm";
 const LAYOUT_CHROME: Readonly<Record<RecordDetailLayout, LayoutChrome>> = {
   // The record's own heading takes the scale of the level it is rendered at, so the same record body states the page title on its own route and a section title inside the side panel and the phone sheet.
-  page: { surface: "flex w-full flex-col gap-4 py-6", headingLevel: 1, headingScale: "type-page-title", sectionScale: "type-section-title", avatarSize: "lg", cardSize: "default", actionBar: STATIC_ACTION_BAR },
+  page: { surface: "flex w-full flex-col gap-4 py-6", headingLevel: 1, headingScale: "type-page-title", sectionScale: "type-section-title", avatarSize: "lg", cardSize: "default", actionBar: "flex flex-wrap items-center gap-2" },
   panel: { surface: "flex w-full flex-col gap-4 py-4", headingLevel: 2, headingScale: "type-section-title", sectionScale: "type-subsection-title", avatarSize: "default", cardSize: "sm", actionBar: STICKY_ACTION_BAR },
   sheet: { surface: "flex w-full flex-col gap-4 py-3", headingLevel: 2, headingScale: "type-section-title", sectionScale: "type-subsection-title", avatarSize: "default", cardSize: "sm", actionBar: STICKY_ACTION_BAR },
 };
-/** Where the worker returns to, and the list context that will still be filtered when they do. */
-export type RecordDetailBreadcrumbEntry = { readonly label: string; readonly href: string };
+/** Where the worker returns to, and the list context that will still be filtered when they do. */ export type RecordDetailBreadcrumbEntry = { readonly label: string; readonly href: string };
 export type RecordDetailIdentity = { readonly displayName: string; readonly secondaryName?: string; readonly kind: string; readonly avatarSrc?: string; readonly reference?: SourceReference };
 export type RecordDetailSectionSlots = { readonly contactMethods?: ReactNode; readonly restrictions?: ReactNode; readonly relationshipContext?: ReactNode; readonly activity?: ReactNode; readonly privateNotes?: ReactNode; readonly openTasks?: ReactNode; readonly supportHistory?: ReactNode };
 export type RecordDetailUnavailable = { readonly source: SourceReference; readonly onRetry?: () => void };
@@ -57,8 +51,7 @@ export type RecordDetailProps = {
   readonly breadcrumb?: readonly RecordDetailBreadcrumbEntry[];
   readonly status?: ReactNode;
   readonly actions?: ReactNode;
-  /** Content that belongs to the record body but to no one section, rendered after the sections region in every layout. */
-  readonly trailing?: ReactNode;
+  /** Content that belongs to the record body but to no one section, rendered after the sections region in every layout. */ readonly trailing?: ReactNode;
   readonly unavailable?: RecordDetailUnavailable;
   readonly isLoading?: boolean;
   readonly className?: string;
@@ -76,8 +69,7 @@ function initialsOf(displayName: string): string {
   return `${initialOf(first)}${last === undefined ? "" : initialOf(last)}`.toUpperCase();
 }
 const toDomId = (generated: string, suffix: string): string => `record-detail-${generated.replace(/[^a-zA-Z0-9_-]/g, "")}-${suffix}`;
-/** The single record detail body described at the top of this file. */
-export function RecordDetail({ layout, identity, sections = {}, breadcrumb, status, actions, trailing, unavailable, isLoading = false, className }: RecordDetailProps) {
+/** The single record detail body described at the top of this file. */ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, status, actions, trailing, unavailable, isLoading = false, className }: RecordDetailProps) {
   const chrome = LAYOUT_CHROME[layout];
   const generatedId = useId();
   const identityHeadingId = toDomId(generatedId, "identity");
@@ -86,14 +78,14 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
   const SectionHeading = chrome.headingLevel === 1 ? "h2" : "h3";
   const noticeHeadingLevel = chrome.headingLevel === 1 ? 2 : 3;
   const presentSections = RECORD_DETAIL_SECTIONS.filter((section) => hasContent(sections[section]));
-  const retry = unavailable !== undefined && unavailable.onRetry !== undefined ? { label: UNAVAILABLE_RETRY_LABEL, onClick: unavailable.onRetry } : undefined;
+  const retry = unavailable !== undefined && unavailable.onRetry !== undefined ? { label: "Try again", onClick: unavailable.onRetry } : undefined;
   const initials = initialsOf(identity.displayName);
   const showsSkipLink = !isLoading && presentSections.length > 0;
   return (
     <article aria-busy={isLoading ? true : undefined} aria-labelledby={identityHeadingId} className={cn(chrome.surface, className)}>
       {showsSkipLink ? (
         <a href={`#${sectionsRegionId}`} className="sr-only rounded-md px-2 py-1 text-sm focus-visible:not-sr-only focus-visible:inline-flex focus-visible:min-h-6 focus-visible:items-center focus-visible:bg-background">
-          {SKIP_TO_SECTIONS_LABEL}
+          {"Skip to the record's sections"}
         </a>
       ) : null}
       {breadcrumb !== undefined && breadcrumb.length > 0 ? (
@@ -113,8 +105,9 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
         </Breadcrumb>
       ) : null}
       <Card size={chrome.cardSize}>
-        <CardHeader>
-          <div className="flex items-start gap-3">
+        {/* The header wraps instead of holding two grid tracks: one record body also renders in the 384 px side panel and at 320 px, so the status column drops below the identity when the two cannot share a line and stays at the inline end when they can. */}
+        <CardHeader className="flex flex-wrap">
+          <div className="flex min-w-0 shrink grow basis-40 items-start gap-3">
             <Avatar size={chrome.avatarSize} className="mt-0.5">
               {identity.avatarSrc !== undefined && identity.avatarSrc.length > 0 ? <AvatarImage src={identity.avatarSrc} alt="" /> : null}
               <AvatarFallback aria-hidden="true">{initials.length > 0 ? initials : "?"}</AvatarFallback>
@@ -135,11 +128,11 @@ export function RecordDetail({ layout, identity, sections = {}, breadcrumb, stat
               ) : null}
             </div>
           </div>
-          {hasContent(status) ? <CardAction>{status}</CardAction> : null}
+          {hasContent(status) ? <CardAction className="ms-auto flex min-w-0 flex-col items-end gap-1">{status}</CardAction> : null}
         </CardHeader>
       </Card>
       {hasContent(actions) ? <div className={chrome.actionBar}>{actions}</div> : null}
-      {unavailable !== undefined ? <StateNotice kind="unavailable" title={UNAVAILABLE_TITLE} description={UNAVAILABLE_DESCRIPTION} source={unavailable.source} retry={retry} headingLevel={noticeHeadingLevel} /> : null}
+      {unavailable !== undefined ? <StateNotice kind="unavailable" title={"One source behind this record could not be read"} description={UNAVAILABLE_DESCRIPTION} source={unavailable.source} retry={retry} headingLevel={noticeHeadingLevel} /> : null}
       {isLoading ? (
         <div aria-hidden="true" className="flex flex-col gap-4">
           {Array.from({ length: LOADING_SECTION_BLOCKS }, (_unused, index) => (

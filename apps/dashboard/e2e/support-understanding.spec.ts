@@ -7,22 +7,12 @@ const STUDENTS_SESSION_ID = "established-worker-students";
 const SUPPORT_HREF = "/support";
 const GIFTS_HREF = "/support/gifts";
 const RECEIVED_REPORT_HREF = "/support/reports/received";
-const COMPARISON_REPORT_HREF = "/support/reports/comparison";
-const WORK_HREF = "/work";
-const WORK_OVERDUE_QUERY = "?list=overdue";
 const LEDGER_YEAR_QUERY = "?period=this-year&page=0&pageSize=200";
-const LEDGER_YEAR_USD_QUERY = `${LEDGER_YEAR_QUERY}&currency=USD`;
-const COMPARISON_ZERO_BASELINE_QUERY = "?from=2026-06-01&to=2026-06-30";
-const STUDENTS_EMPTY_MONTH_QUERY = "?from=2026-11-01&to=2026-11-30&currency=EUR";
-const MEASURE_LABELS = ["Received gifts", "Recurring collection outcomes", "Commitments", "Monthly-equivalent support", "Support goal"] as const;
-const RECURRING_BUCKET_LABELS = ["Received", "Processing", "Upcoming", "Recovery — needs attention", "Not received"] as const;
 const OUTSIDE_PARTITION_LABEL = "Unknown or stale — outside the five outcomes";
 const UNKNOWN_AMOUNT_WORD = "Unknown amount"; // The words the one money formatter and the one status label use for a value that is not a plain number.
 const DEVELOPMENT_DATA_LABEL = "Development data";
 const SPLIT_GIFT_ID = "gift-harbour-0002"; // The seeded gifts this file reads by their own references: opaque strings, never parsed for meaning.
-const SPLIT_ALLOCATION_ROW_ID = "gift-row-harbour-0003";
 const CORRECTED_GIFT_ROW_ID = "gift-row-harbour-0009";
-const REFUND_GIFT_ID = "gift-harbour-0010";
 const HARBOUR_GOAL_INPUT_MINOR = 2_600_000;
 const HARBOUR_GOAL_CURRENT_MINOR = 2_500_000;
 const STUDENTS_GOAL_EFFECTIVE_FROM = "2026-01-01";
@@ -156,7 +146,7 @@ test("the overview states five separate measures, cash first, and never one comb
   await expect(cash, "The overview states received support, then the recurring outcomes that are not cash, then the committed measures and the goal. The order is the claim: cash is what arrived, and every other measure is read beside it rather than added to it").toBeVisible();
   await expect(recurring).toBeVisible();
   expect(await topOf(cash, "The cash region"), "Received cash is stated before the recurring outcomes that are not cash.").toBeLessThan(await topOf(recurring, "The recurring-outcomes heading"));
-  for (const label of [MEASURE_LABELS[0], MEASURE_LABELS[1], MEASURE_LABELS[2], MEASURE_LABELS[4]] as const) await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
+  for (const label of ["Received gifts", "Recurring collection outcomes", "Commitments", "Support goal"] as const) await expect(page.getByRole("heading", { name: label, exact: true })).toBeVisible();
   const monthlyTab = page.getByRole("tab", { name: "Monthly equivalents" });
   await expect(monthlyTab, "The source behind this seed states no monthly equivalent for any of its commitments, so that view states that it has none rather than inventing a figure or folding one into the received total").toBeVisible();
   await monthlyTab.click();
@@ -195,7 +185,7 @@ test("the received report compares equal-elapsed periods and a month with no gif
   for (const text of ["Currency not identified", /Amount — Unknown/u, /No comparison is stated for this currency, because an amount of a currency with no minor-unit exponent cannot be differenced\./u] as const) await expect(page.getByText(text).first()).toBeVisible();
 });
 test("a zero-baseline comparison states its difference and no percentage at all", async ({ page }) => {
-  await page.goto(`${COMPARISON_REPORT_HREF}${COMPARISON_ZERO_BASELINE_QUERY}`);
+  await page.goto(`/support/reports/comparison?from=2026-06-01&to=2026-06-30`);
   await expect(page.getByRole("heading", { name: "Period comparison", level: 1, exact: true })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Amounts in USD", exact: true }), "One currency is stated in this period, one is stated in the earlier period, and the difference is stated as a signed amount").toBeVisible();
@@ -214,10 +204,8 @@ test("every currency is stated on its own and the unidentified amount is never s
   await expect(page.getByText("Whole-result support, by currency")).toBeVisible();
   const figures = await readWholeResult(page);
   // One partition per currency the source reports, and one for the currency it never identified. The order is the summary's own, so the partitions can be compared as a whole rather than searched.
-  expect(
-    figures.map((figure) => figure.currency),
-    "Each currency is its own partition, and the amount whose currency the source never identified is its own partition too.",
-  ).toEqual(["EUR", "JPY", "KWD", "UNKNOWN", "USD"]);
+  const currencies = figures.map((figure) => figure.currency);
+  expect(currencies, "Each currency is its own partition, and the amount whose currency the source never identified is its own partition too.").toEqual(["EUR", "JPY", "KWD", "UNKNOWN", "USD"]);
   const kwd = figureFor(figures, "KWD");
   const jpy = figureFor(figures, "JPY");
   const usdFigure = figureFor(figures, "USD");
@@ -239,7 +227,7 @@ test("every currency is stated on its own and the unidentified amount is never s
   expect(usdFigure.minorUnits, "The USD partition states an amount.").not.toBeNull();
   expect(usdFigure.minorUnits, "The USD subtotal is exactly the sum of the USD rows the same result returns.").toBe(rowTotalOf(rows, "USD"));
   expect(usdFigure.giftCount, "The USD gift count is the number of distinct USD gifts the result holds, which is one per kept row in this fixture.").toBe(rows.filter((row) => row.amount?.currency === "USD").length);
-  await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_USD_QUERY}`);
+  await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}&currency=USD`);
   expect(figureFor(await readWholeResult(page), "USD").minorUnits, "The USD subtotal is the same whether or not the other currencies are in the result.").toBe(usdFigure.minorUnits);
 });
 test("a split gift counts once at its own grain and a refund is explained rather than netted away", async ({ page }) => {
@@ -255,19 +243,17 @@ test("a split gift counts once at its own grain and a refund is explained rather
   const refund = rows.find((row) => row.giftId === "gift-harbour-0010");
   expect(refund?.text, "The refund row names the row it corrects.; The refund is a row of its own, naming the row it corrects, and the original it corrects is still in the result: a correction explains itself instead of replacing what it corrects").toContain(`A refund of ${CORRECTED_GIFT_ROW_ID}`);
   expect(refund?.amount?.minorUnits, "The refund is stated as the negative amount the source recorded.").toBeLessThan(0);
-  expect(
-    rows.some((row) => row.text.includes(CORRECTED_GIFT_ROW_ID)),
-    "The row the refund corrects is still in the result, so the correction did not erase it.",
-  ).toBe(true);
+  const correctedRowKept = rows.some((row) => row.text.includes(CORRECTED_GIFT_ROW_ID));
+  expect(correctedRowKept, "The row the refund corrects is still in the result, so the correction did not erase it.").toBe(true);
   await page.getByRole("link", { name: `Open gift ${SPLIT_GIFT_ID}` }).click();
   await expect(page.getByRole("heading", { name: "Gift record", level: 1 })).toBeVisible();
   await expect(page.getByText(/This row is one authorised allocation of a gift/u)).toBeVisible();
   for (const heading of ["What this row is", "Provenance", "Basis, coverage and as-of"]) await expect(page.getByRole("heading", { name: heading })).toBeVisible();
   await expect(page.getByText("Entered in the source on")).toBeVisible();
   await expect(page.locator('[data-grain="allocation"]')).toBeVisible();
-  await expect(page.locator(`[data-gift-row-id="${SPLIT_ALLOCATION_ROW_ID}"]`), "The record is the allocation row itself, not the gift-grain row the split replaced: the row the gift is counted at is named on the record by its own identifier").toBeVisible();
+  await expect(page.locator(`[data-gift-row-id="gift-row-harbour-0003"]`), "The record is the allocation row itself, not the gift-grain row the split replaced: the row the gift is counted at is named on the record by its own identifier").toBeVisible();
   await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}`);
-  await page.getByRole("link", { name: `Open gift ${REFUND_GIFT_ID}` }).click();
+  await page.getByRole("link", { name: `Open gift gift-harbour-0010` }).click();
   await expect(page.getByRole("heading", { name: "Gift record", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "This row is a correction" })).toBeVisible();
   await expect(page.getByText(/This row records a refund or correction against another row/u)).toBeVisible();
@@ -283,7 +269,7 @@ test("the recurring outcomes stay five and stale evidence stays outside them", a
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/A commitment is not received cash: these rows state the source's own cadence, currency and occurrence state, and none is counted in a received-support figure\./u)).toBeVisible();
   await expect(page.getByText("Commitments are read-only")).toBeVisible();
-  for (const label of RECURRING_BUCKET_LABELS) await expect(page.getByText(`Recurring outcome: ${label}`, { exact: true }).first(), `The ${label} outcome is stated by name.`).toBeVisible();
+  for (const label of ["Received", "Processing", "Upcoming", "Recovery — needs attention", "Not received"] as const) await expect(page.getByText(`Recurring outcome: ${label}`, { exact: true }).first(), `The ${label} outcome is stated by name.`).toBeVisible();
   await expect(page.getByText(OUTSIDE_PARTITION_LABEL).first(), "And the sixth value is not an outcome: it is where evidence that is unknown or stale is kept, so no occurrence is guessed into one of the five").toBeVisible();
   await expect(page.getByText(/it is counted in none of them, is never guessed into one, and is never presented as a sixth outcome\./u).first()).toBeVisible();
   expect(await page.getByText(OUTSIDE_PARTITION_LABEL).count(), "The stale occurrence is stated outside the five outcomes, in the partition and on its row.").toBeGreaterThan(1);
@@ -387,7 +373,7 @@ test("a recorded zero, an unknown amount and an incomplete subtotal are told apa
   await expect(wholeResult.getByText("(incomplete)", { exact: false }).first(), "Coverage of this period is partial, so every subtotal over it is an incomplete subtotal and says so — in the figure and in its accessible name").toBeVisible();
   await expect(wholeResult.getByText(new RegExp("Incomplete subtotal: coverage of this period is partial", "u")).first()).toBeVisible();
   await actAs(page, STUDENTS_SESSION_ID); // A recorded zero is a different value state, and it is stated as one: the students ministry's November holds no gift against complete coverage, and the surface states the zero it recorded rather than an absence, a gap or an unknown amount.
-  await page.goto(`${RECEIVED_REPORT_HREF}${STUDENTS_EMPTY_MONTH_QUERY}`);
+  await page.goto(`${RECEIVED_REPORT_HREF}?from=2026-11-01&to=2026-11-30&currency=EUR`);
   await expect(page.getByRole("heading", { name: "Received support", level: 1, exact: true })).toBeVisible();
   await expect(page.getByText("0.00 EUR", { exact: true }).first()).toBeVisible();
   await expect(page.getByText(new RegExp("Zero: no amount was recorded, so this is a genuine zero rather than an unknown value.".replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u")).first()).toBeVisible();
@@ -409,7 +395,7 @@ test("an unavailable financial source is stated as unavailable while other work 
   expect(await page.getByText(/^Unknown amount$/u).count(), "An outage states the source's unavailability rather than an unknown figure.").toBe(0);
   await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}`);
   await expect(page.getByRole("heading", { name: "The gifts ledger could not be read", level: 1 })).toBeVisible();
-  await page.goto(`${WORK_HREF}${WORK_OVERDUE_QUERY}`); // Work that does not depend on the financial source is unaffected: the same session still reads its own tasks, including the one the seed makes overdue. The five lists are shown one at a time and the address names the one on screen, so the overdue list is opened at its own address, and its own
+  await page.goto("/work?list=overdue"); // Work that does not depend on the financial source is unaffected: the same session still reads its own tasks, including the one the seed makes overdue. The five lists are shown one at a time and the address names the one on screen, so the overdue list is opened at its own address, and its own
   await expect(page.getByRole("heading", { name: "Work", level: 1 })).toBeVisible();
   const overdue = page.getByRole("table", { name: "Overdue tasks" });
   await expect(overdue).toBeVisible();
@@ -426,8 +412,7 @@ test.describe("the goal without the edit capability", () => {
     expect(read.canEditGoal, "The reviewer's session holds no goal-editing capability.").toBe(false);
     expect(read.minorUnits, "The goal is still stated to an identity that may read it.").toBe(HARBOUR_GOAL_CURRENT_MINOR);
     await expect(goal.getByText("25,000.00 USD", { exact: false }).first()).toBeVisible();
-    expect(await goal.getByRole("button", { name: "Change the goal" }).count(), "A session without the capability is offered no way to change the goal.; No control is offered — not a disabled one, and not one hidden by styling").toBe(0);
-    expect(await goal.getByRole("button", { name: "Change the goal" }).count(), "A session without the capability is offered no way to change the goal.").toBe(0);
+    expect(await goal.getByRole("button", { name: "Change the goal" }).count(), "A session without the capability is offered no way to change the goal: no control is offered — not a disabled one, and not one hidden by styling").toBe(0);
     expect(await goal.getByRole("button", { name: "Set a goal" }).count(), "A session without the capability is offered no way to set one either.").toBe(0);
     expect(await goal.getByLabel("Amount").count(), "No amount field is rendered, so nothing invites an edit that would be refused.").toBe(0);
     await expect(goal.getByText(/no edit control is offered and a save would be refused\./u)).toBeVisible();
