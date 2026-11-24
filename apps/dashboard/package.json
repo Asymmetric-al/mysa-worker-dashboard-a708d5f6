@@ -1,0 +1,51 @@
+{
+  "name": "@worker-dashboard/app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --config ../../.oxlintrc.json && bun ../../scripts/check-invariants.ts",
+    "test": "vitest run && playwright test",
+    "lines": "bun ../../scripts/count-lines.ts"
+  },
+  "dependencies": {
+    "@base-ui/react": "1.9.0",
+    "@tanstack/react-form": "1.33.5",
+    "@tanstack/react-query": "5.108.1",
+    "@tanstack/react-table": "9.3.1",
+    "@tiptap/pm": "3.34.0",
+    "@tiptap/react": "3.34.0",
+    "@tiptap/starter-kit": "3.34.0",
+    "@tiptap/static-renderer": "3.34.0",
+    "@ui-sdk/core": "0.1.0-beta.13",
+    "@ui-sdk/react": "0.1.0-beta.13",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "csv-parse": "7.0.3",
+    "file-type": "22.3.0",
+    "lucide-react": "1.77.0",
+    "mediabunny": "1.66.2",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "recharts": "3.11.0",
+    "sharp": "0.35.5",
+    "tailwind-merge": "3.7.1",
+    "temporal-polyfill": "1.0.8",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.65.1",
+    "@tailwindcss/postcss": "4.3.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "postcss": "8.5.33",
+    "shadcn": "4.23.0",
+    "tailwindcss": "4.3.5",
+    "tw-animate-css": "1.4.0",
+    "vitest": "5.1.1"
+  }
+}

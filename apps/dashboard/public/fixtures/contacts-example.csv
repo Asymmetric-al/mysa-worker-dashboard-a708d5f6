@@ -1,0 +1,27 @@
+First name,Last name,Household,Church or organization,Email,Phone,Email,Preferred language,Source ID,Subscribed,Contact restriction,Notes
+Amara,Okonkwo,,,,,,,,,,
+Naomi,Petersen,The Petersen Household,Harbourton Community Church,naomi.petersen@example.org,+44 20 7946 0733,naomi.p@example.net,en,000482,yes,No postal mail,"Met at the regional gathering, introduced by the Voss household"
+Lars,Voss,The Voss Household,,lars.voss@example.org,,,en,,true,,Prefers a call before any visit
+Mireille,Voss,The Voss Household,,mireille.voss@example.org,+33 1 84 80 20 17,,fr-FR,,,,"She said ""call me next spring"""
+ليلى,الحسن,,,layla.al-hassan@example.org,,,ar-LB,,no,,
+陽菜,佐藤,,,hina.sato@example.org,,,ja-JP,,,,
+Ольга,Петрова,,,olga.petrova@example.org,+7 495 123 45 67,,ru-RU,,,,
+José,Müller-Ødegård,,,jose.muller@example.org,,,de-DE,,,,
+,,,,,,,,,,,
+Ruth,Okafor,,,ruth.okafor@example.org,,ruth.okafor@stbrigids.example.net,en,0071,no,,"Church warden's address, shared at the deanery meeting"
+Tomas,Rivera,,,tomas.rivera@example.org,,,es-ES,,,,
+Tomas,Rivera,,,t.rivera@example.net,,,es-ES,,,,
+Nadia,Rahman,,,nadia.rahman@@example,,,en,,,,
+,,,,unattributed.contact@example.org,,,,,,,
+Hilary,Beckett,,,hilary.beckett@example.org,+44 20 7946 0855,,en,,no,Do not contact,Asked not to be contacted; the address stays on record only
+Peter,Vance,,,peter.vance@example.org,+44 20 7946 0844,,en,,,Do not call,
+,,,St Brigid's Community Church,office@stbrigids.example.org,+44 20 7946 0777,,en,,,,Church office address; the warden is recorded separately
+Fiona,Brennan,,St Brigid's Community Church,fiona.brennan@example.org,,,en,,,,"Warden at St Brigid's, recorded apart from the church"
+Ifeoma,Nwosu,,Harbourton Community Church,ifeoma.nwosu@example.org,,,en,21004,yes,,Volunteers with the youth programme
+Theo,Marchetti,,,theo.marchetti@example.org,+44 20 7946 0801,,it-IT,,true,,
+Halima,Yusuf,The Yusuf Household,,halima.yusuf@example.org,+44 20 7946 0812,,en,000113,,,
+Bilal,Yusuf,The Yusuf Household,,bilal.yusuf@example.net,,,en,,,,"Same household as Halima, kept as a separate record"
+Ewan,Mackenzie,,,ewan.mackenzie@example.org,+44 20 7946 0830,,en,,no,,
+Sunil,Deshpande,,,sunil.deshpande@example.org,+44 20 7946 0822,,en,,,,"Prefers email, asked about the Christmas appeal"
+Grace,Abara,,,grace.abara@example.org,,,en,,,,
+Miriam,Salazar,,,miriam.salazar@example.org,,,es-ES,,,,

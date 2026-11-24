@@ -1,0 +1,18 @@
+/** Every parameter a gifts address states, named once so the ledger, its drilldown, the detail route and the way back all read and write the same names. */ export const GIFTS_PARAM = {
+  period: "period",
+  from: "from",
+  to: "to",
+  currency: "currency",
+  amountMin: "amountMin",
+  amountMax: "amountMax",
+  recipient: "recipient",
+  partnerId: "partnerId",
+  designation: "designation",
+  method: "method",
+  search: "search",
+  sortField: "sortField",
+  sortDirection: "sortDirection",
+  page: "page",
+  pageSize: "pageSize",
+  record: "record",
+} as const;

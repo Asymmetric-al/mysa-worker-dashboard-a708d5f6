@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Next.js build output and generated types
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Turborepo cache
+.turbo/
+
+# Playwright output (last-run state, screenshots, traces, HTML report)
+test-results/
+playwright-report/
+
+# Local synthetic store (session state, operation ledger, workload)
+.data/
+
+# Blitzy harness output (screenshots, recordings)
+blitzy/
+
+# Pre-existing untracked inventory document (not part of the delivered repository)
+metering-inventory.md
+
+# Environment files: the repository ships none and needs no secret, so nothing here is negated
+.env
+.env.*

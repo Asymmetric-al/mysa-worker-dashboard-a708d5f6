@@ -1,0 +1,37 @@
+{
+  "name": "mysa-worker-dashboard-a708d5f6",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "fixtures:media": "bun scripts/make-media-fixtures.mjs",
+    "format": "oxfmt .",
+    "lines": "turbo run lines",
+    "lint": "turbo run lint && oxlint --config .oxlintrc.json scripts",
+    "measure:workload": "bun scripts/measure-workload.ts",
+    "reset": "bun scripts/reset.ts",
+    "seed:workload": "bun scripts/generate-workload.ts",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck && tsc --noEmit -p tsconfig.scripts.json"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.5",
+    "@types/node": "26.6.6",
+    "oxfmt": "0.79.0",
+    "oxlint": "1.94.0",
+    "turbo": "2.11.13",
+    "typescript": "7.0.2"
+  },
+  "overrides": {
+    "minimatch": "11.0.9"
+  },
+  "engines": {
+    "node": "26.13.1"
+  },
+  "packageManager": "bun@1.4.5"
+}

@@ -1,0 +1,37 @@
+"use client";
+import { useId, type ReactElement } from "react";
+import ActionReview, { type MutationSubmit } from "@/components/action-review";
+import type { MutationInput } from "@/modules/data-service/envelope";
+import { ACCEPTANCE_NOTICE, ACCEPTANCE_REVIEW_COPY, IMPORT_SIMULATION_EFFECT } from "../copy";
+import type { AcceptImportRowsPayload } from "../schemas/acceptance";
+export type AcceptanceReviewProps = { readonly input: Omit<MutationInput<AcceptImportRowsPayload>, "operationId">; readonly submit: MutationSubmit<AcceptImportRowsPayload>; readonly decidedRowCount: number; readonly onCancel?: () => void };
+export default function AcceptanceReview({ input, submit, decidedRowCount, onCancel }: AcceptanceReviewProps): ReactElement {
+  const noticeHeadingId = useId();
+  return (
+    <div className="flex min-w-0 flex-col gap-6">
+      <section aria-labelledby={noticeHeadingId} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3 text-sm">
+        <p id={noticeHeadingId} className="font-medium">
+          {ACCEPTANCE_REVIEW_COPY.noticeHeading}
+        </p>
+        <p className="text-pretty text-muted-foreground">{ACCEPTANCE_REVIEW_COPY.noticeLead}</p>
+        <ul className="flex min-w-0 flex-col gap-2">
+          {ACCEPTANCE_NOTICE.map((item) => (
+            <li key={item.id} className="flex min-w-0 flex-col gap-0.5">
+              <span className="font-medium">{item.label}</span> <span className="text-pretty text-muted-foreground">{item.statement}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <ActionReview<AcceptImportRowsPayload>
+        title={ACCEPTANCE_REVIEW_COPY.title}
+        description={ACCEPTANCE_REVIEW_COPY.description}
+        confirmLabel={ACCEPTANCE_REVIEW_COPY.confirmLabel}
+        simulationEffect={IMPORT_SIMULATION_EFFECT}
+        selection={{ count: decidedRowCount, noun: ACCEPTANCE_REVIEW_COPY.selectionNoun(decidedRowCount) }}
+        input={input}
+        submit={submit}
+        onCancel={onCancel}
+      />
+    </div>
+  );
+}

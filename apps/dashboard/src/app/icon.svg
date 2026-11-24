@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Worker Dashboard">
+  <!--
+    The application icon, so a browser's request for a site icon is answered instead of 404ing.
+    It states the product's one idea and nothing else: attention being paid, drawn as a ring with a
+    single dot inside it, on the Zinc palette the design system fixes (--primary in the light theme,
+    #18181b / #fafafa). Literal colour values rather than `currentColor` because an icon is fetched
+    on its own, with no page around it to supply a cascade; dark ink on a light ground because a
+    favicon is displayed at 16px where contrast, not detail, is what survives.
+  -->
+  <rect width="32" height="32" rx="7" fill="#fafafa"/>
+  <circle cx="16" cy="16" r="9" fill="none" stroke="#18181b" stroke-width="2.5"/>
+  <circle cx="16" cy="16" r="3" fill="#18181b"/>
+</svg>

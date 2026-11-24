@@ -1,0 +1,11 @@
+import { z } from "zod";
+import { mutationInputSchema, mutations, reads } from "@/modules/data-service";
+import { writeRoute } from "../../handler";
+import { readJudgement, readRoute } from "../../read";
+import { supportQueryFromSearch } from "../query";
+import { routeMethods } from "@/app/api/methods";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+const saveGoalRequestSchema = mutationInputSchema(z.custom<Parameters<typeof mutations.support.saveGoal>[0]["payload"]>());
+const readSupportGoal = readRoute(readJudgement(supportQueryFromSearch), (query) => reads.support.readGoal(query));
+export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readSupportGoal, POST: (request: Request): Promise<Response> => writeRoute(request, saveGoalRequestSchema, mutations.support.saveGoal) });

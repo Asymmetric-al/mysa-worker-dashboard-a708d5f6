@@ -1,0 +1,24 @@
+"use client";
+import { FlaskConicalIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/cn";
+export type DevBannerProps = { scenarioId?: string; className?: string };
+/** The persistent **Development data** label: the single statement that this application shows synthetic development data and simulated external effects, present on every surface — signed in. */ export function DevBanner({ scenarioId, className }: DevBannerProps) {
+  const scenario = scenarioId?.trim() ?? "";
+  return (
+    <div className={cn("flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs", className)}>
+      <Badge variant="secondary">
+        <FlaskConicalIcon aria-hidden="true" data-icon="inline-start" />
+        Development data
+      </Badge>
+      <span className="min-w-0 text-muted-foreground break-words">{"Every record is synthetic and every external effect is simulated; nothing here is a production claim."}</span>
+      {scenario === "" ? null : (
+        <span className="min-w-0 text-muted-foreground">
+          scenario: {/* A scenario identifier is not prose: `<bdi>` isolates it from the surrounding direction and the monospace utility keeps a mixed-direction name or number from reordering the words around it. `break-all` keeps an unusually long identifier inside the line instead of overflowing the viewport. */}
+          <bdi className="mono-identifier break-all">{scenario}</bdi>
+        </span>
+      )}
+    </div>
+  );
+}
+export default DevBanner;

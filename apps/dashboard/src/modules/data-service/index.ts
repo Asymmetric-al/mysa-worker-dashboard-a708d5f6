@@ -1,0 +1,100 @@
+import { readAudience, readDiscoveryIndex, readInbox, readPreferences, readReceivingList, readReceivingPage, readReceivingPost, readSendResult } from "./reads/audience";
+import { readCheckIns, readCoachPortfolio, readCoachSubject, readCoachingOverview, readTargets, readTaskShares } from "./reads/coaching";
+import { findContentDocuments, readCandidate, readDraft, readGivingBinding, readPage, readPageCatalogues, readPageLocales, readPreview, readRelease, readSharePresentation, readVariantOverview } from "./reads/content";
+import { readDevState } from "./reads/dev";
+import { readImportProposal, readImportReceipt } from "./reads/import";
+import { readMediaAsset } from "./reads/media";
+import { readInitiative, readInitiativeResults, readInitiatives, readReferral, readReferrals } from "./reads/outreach";
+import { findPartners, readFacets, readInteractions, readPartner, readPartnerRecord, readPrivatePreparation, readSavedViews } from "./reads/partners";
+import { readAdmissionState, readContextChooser, readHome } from "./reads/shell";
+import { readCommitments, readExport, readGifts, readGoal, readReport, readSupportOverview } from "./reads/support";
+import { listTasks, readAgenda, readSeries } from "./reads/tasks";
+import { confirmMembership, setPreference, signupForPurpose, unsubscribe } from "./mutations/audience";
+import { acceptInvitation, editTarget, endCoaching, endTarget, inviteCoach, leaveCoaching, pauseTarget, revokeGrant, saveCheckIn, saveTarget, setModule, shareCheckIn, shareTaskSummary, stopTaskShare, updateSharedCheckIn, withdrawCheckIn } from "./mutations/coaching";
+import { addSection, applyPreset, approveCandidate, createVariant, duplicateSection, moveSection, publishVariants, registerMediaAsset, rejectCandidate, removePlacement, removeSection, replacePlacement, requestChanges, requestNotification, restoreRevisionAsDraft, saveDraft } from "./mutations/content";
+import { saveSectionFields, setReach, stopShowingPublicly, submitForReview, withdrawLocale, withdrawPage, withdrawUpdate } from "./mutations/content";
+import { advanceClock, resetSeed, selectContext, setClock, setFailurePlan, setScenario } from "./mutations/dev";
+import { acceptImportRows, cancelImport, proposeImport, setRowDecision } from "./mutations/import";
+import { addMembers, closeInitiative, continueReferral, createInitiative, draftRequest, presentRequest, recordIntroduction, recordRequestResponse, removeMember, reopenInitiative, returnMember, setStage } from "./mutations/outreach";
+import { archivePreparation, createPrivatePreparation, deleteView, logInteraction, renameView, restorePreparation, saveContactEdits, savePrivateNote, saveView, setFavourite, setTag } from "./mutations/partners";
+import { saveGoal } from "./mutations/support";
+import { bulkApplyTag, bulkCompleteTasks, bulkCreateTasks, bulkRemoveTag, cancelTask, completeTask, createSeries, createTask, editOccurrence, editTask, editThisAndFuture, pauseSeries, reopenTask, resolveMissedPlan, resumeSeries, skipOccurrence, stopSeries } from "./mutations/tasks";
+export type {
+  CoachingCheckInRecord,
+  CoachingGrantRecord,
+  CoachingTargetRecord,
+  CommitmentRowRecord,
+  ContentDocumentRecord,
+  ContentRevisionRecord,
+  ContentVariantRecord,
+  Coverage,
+  GiftRowRecord,
+  ImportProposalRecord,
+  InitiativeMemberRecord,
+  InitiativeRecord,
+  InteractionRecord,
+  MediaAssetRecord,
+  MediaAssetRenditionRecord,
+  MembershipRecord,
+  MutationInput,
+  NotificationIntentRecord,
+  NotificationSendResultRecord,
+  OperationRecord,
+  PartnerRecord,
+  PrivateNoteRecord,
+  ReadAction,
+  ReadEnvelope,
+  ReferralCycleRecord,
+  ReleaseRecord,
+  RequestRecord,
+  Scope,
+  SupportProjectionRecord,
+  TaskRecord,
+  TaskSeriesRecord,
+  ValueState,
+} from "./envelope";
+export { NOTIFICATION_UNSERVED_REASONS, mutationInputSchema } from "./envelope";
+export { PUBLISH_MODES } from "./mutations/content";
+export { closeInitiativePayloadSchema, draftRequestPayloadSchema, presentRequestPayloadSchema, recordRequestResponsePayloadSchema, reopenInitiativePayloadSchema } from "./mutations/outreach";
+export { archivePreparationInput, deleteViewInput, renameViewInput, restorePreparationInput, saveContactEditsInput, saveViewInput } from "./mutations/partners";
+export type { DenialReason, MutationOutcome, PerItemResult, ReadResult } from "./outcome";
+export { isOutcome, isReadResult, outcomeFromError, refusedRead } from "./outcome";
+export { toResponse } from "./response";
+export const reads = {
+  context: { readAdmissionState, readContextChooser, readHome },
+  partners: { findPartners, readPartner, readFacets, readSavedViews, readPrivatePreparation, readPartnerRecord },
+  interactions: { readInteractions },
+  work: { listTasks, readAgenda },
+  series: { readSeries },
+  import: { readImportProposal, readImportReceipt },
+  outreach: { readInitiatives, readInitiative, readInitiativeResults },
+  referrals: { readReferrals, readReferral },
+  support: { readSupportOverview, readGifts, readCommitments, readGoal, readReport },
+  export: { readExport },
+  updates: { findContentDocuments, readVariantOverview, readDraft, readCandidate, readRelease, readPreview, readSharePresentation },
+  pages: { findContentDocuments, readPageCatalogues, readPage, readPageLocales, readGivingBinding, readPreview },
+  media: { readMediaAsset },
+  audience: { readAudience, readPreferences, readInbox, readReceivingList, readReceivingPost, readDiscoveryIndex, readReceivingPage, readSendResult },
+  coaching: { readCoachingOverview, readTargets, readCheckIns, readTaskShares },
+  coach: { readCoachPortfolio, readCoachSubject },
+  dev: { readDevState },
+};
+export const mutations = {
+  context: { selectContext },
+  partners: { saveView, renameView, deleteView, setTag, setFavourite },
+  partnerPreparation: { createPrivatePreparation, saveContactEdits, archivePreparation, restorePreparation, savePrivateNote },
+  interactions: { logInteraction },
+  work: { createTask, editTask, completeTask, reopenTask, cancelTask, bulkApplyTag, bulkRemoveTag, bulkCreateTasks, bulkCompleteTasks },
+  series: { createSeries, editOccurrence, editThisAndFuture, skipOccurrence, pauseSeries, resumeSeries, stopSeries, resolveMissedPlan },
+  import: { proposeImport, setRowDecision, acceptImportRows, cancelImport },
+  outreach: { createInitiative, addMembers, removeMember, returnMember, setStage, draftRequest, presentRequest, recordRequestResponse, closeInitiative, reopenInitiative },
+  referrals: { recordIntroduction, continueReferral },
+  support: { saveGoal },
+  updates: { createVariant, saveDraft, submitForReview, approveCandidate, requestChanges, rejectCandidate, publishVariants, requestNotification, withdrawUpdate, withdrawLocale, restoreRevisionAsDraft },
+  pages: { createVariant, saveDraft, submitForReview, approveCandidate, requestChanges, publishVariants, withdrawLocale, addSection, moveSection, duplicateSection, removeSection, saveSectionFields, applyPreset, setReach, stopShowingPublicly, withdrawPage },
+  media: { registerMediaAsset, replacePlacement, removePlacement },
+  audience: { signupForPurpose, confirmMembership, setPreference, unsubscribe },
+  coaching: { inviteCoach, revokeGrant, endCoaching, setModule, saveTarget, editTarget, pauseTarget, endTarget, saveCheckIn, shareCheckIn, updateSharedCheckIn, withdrawCheckIn, shareTaskSummary, stopTaskShare },
+  coach: { acceptInvitation, leaveCoaching },
+  dev: { setScenario, setClock, advanceClock, setFailurePlan, resetSeed },
+};

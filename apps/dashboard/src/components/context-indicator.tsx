@@ -1,0 +1,157 @@
+"use client";
+import { CheckIcon, ChevronsUpDownIcon } from "lucide-react";
+import type { ReactElement, ReactNode } from "react";
+import type { ContextSwitchResult, OutcomeSummary } from "@/components/context-switch-guard";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/cn";
+import type { Scope } from "@/modules/data-service/envelope";
+export type AdmittedContext = { readonly organizationId: string; readonly organizationLabel: string; readonly ministryId: string; readonly ministryLabel: string; readonly supportSubjectId?: string };
+export type ContextRequest = { readonly organizationId: string; readonly ministryId: string; readonly supportSubjectId?: string };
+export type ContextIndicatorProps = { readonly scope: Scope; readonly admissions: readonly AdmittedContext[]; readonly onRequestContext: (next: ContextRequest) => void; readonly showSupportSubject?: boolean; readonly lastResult?: ContextSwitchResult | null; readonly className?: string };
+const IDENTIFIER_CLASS = "mono-identifier break-all";
+function labelOrNull(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+const isCurrentContext = (admission: AdmittedContext, scope: Scope): boolean => admission.organizationId === scope.organizationId && admission.ministryId === scope.ministryId;
+const keyOf = (context: { readonly organizationId: string; readonly ministryId: string }): string => `${context.organizationId}::${context.ministryId}`;
+const SupportSubject = ({ reference }: { readonly reference: string }): ReactElement => (
+  <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-muted-foreground">
+    <span className="shrink-0">Support subject</span>
+    <Badge variant="outline" className="h-auto max-w-full min-w-0 shrink py-0 leading-tight">
+      <bdi className={cn(IDENTIFIER_CLASS, "truncate")}>{reference}</bdi>
+    </Badge>
+  </span>
+);
+type ContextNameProps = { readonly organizationLabel: string | null; readonly organizationReference: string; readonly ministryLabel: string | null; readonly ministryReference: string; readonly truncate: boolean; readonly markCurrent?: boolean; readonly srPrefix?: string; readonly supportSubject?: string };
+function ContextName({ organizationLabel, organizationReference, ministryLabel, ministryReference, truncate, markCurrent = false, srPrefix, supportSubject }: ContextNameProps): ReactElement {
+  const line = truncate ? "truncate" : "break-words";
+  // The support subject shares the ministry name's own line box instead of taking a stacked row of its own, so stating it can never add a line to the sticky header on any route or viewport. The chip is kept shorter than that line and every part of it truncates with the name, while the reference stays in the DOM in full.
+  const subject = supportSubject === undefined ? null : <SupportSubject reference={supportSubject} />;
+  return (
+    <span className="flex min-w-0 max-w-full flex-col items-start">
+      {srPrefix === undefined ? null : <span className="sr-only">{srPrefix}</span>}
+      <span className={cn("max-w-full text-xs leading-tight text-muted-foreground", line)}>{organizationLabel === null ? <bdi className={IDENTIFIER_CLASS}>{organizationReference}</bdi> : <bdi>{organizationLabel}</bdi>}</span>
+      <span className="flex min-w-0 max-w-full items-center gap-2">
+        <span className={cn("min-w-0 text-sm leading-tight font-medium", subject === null ? line : "truncate")} aria-current={markCurrent ? "true" : undefined}>
+          {ministryLabel === null ? <bdi className={IDENTIFIER_CLASS}>{ministryReference}</bdi> : <bdi>{ministryLabel}</bdi>}
+        </span>
+        {subject}
+      </span>
+    </span>
+  );
+}
+const SwitchNotice = ({ summary }: { readonly summary: OutcomeSummary }): ReactElement => (
+  <output className="flex min-w-0 max-w-full flex-col gap-0.5 text-xs">
+    <span className="break-words text-foreground">{summary.sentence}</span>
+    {summary.detail === undefined ? null : (
+      <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
+        <span className="shrink-0">{summary.detail.label}</span>
+        <bdi className={cn(IDENTIFIER_CLASS, "truncate")}>{summary.detail.value}</bdi>
+      </span>
+    )}
+  </output>
+);
+const requestFor = (admission: AdmittedContext): ContextRequest => ({ organizationId: admission.organizationId, ministryId: admission.ministryId });
+type ContextChooserProps = { readonly admissions: readonly AdmittedContext[]; readonly current: AdmittedContext | null; readonly scope: Scope; readonly onRequestContext: (next: ContextRequest) => void; readonly supportSubject?: string; readonly children: ReactNode };
+function ContextChooser({ admissions, current, scope, onRequestContext, supportSubject, children }: ContextChooserProps): ReactElement {
+  const currentKey = current === null ? null : keyOf(current);
+  const organizationName = current === null ? null : labelOrNull(current.organizationLabel);
+  const ministryName = current === null ? null : labelOrNull(current.ministryLabel);
+  return (
+    <DropdownMenu>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <DropdownMenuTrigger type="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS, "min-w-0 justify-start gap-2 px-2.5 text-start")}>
+                <span className="sr-only">Active context: </span>
+                {children}
+                <span className="sr-only">. Change context.</span>
+                <ChevronsUpDownIcon aria-hidden="true" className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
+              </DropdownMenuTrigger>
+            }
+          />
+          <TooltipContent className="flex-col items-start gap-1">
+            <span className="flex w-full min-w-0 items-start gap-1">
+              <span className="shrink-0">Ministry</span>
+              <span className="break-words font-medium">{ministryName ?? scope.ministryId}</span>
+            </span>
+            <span className="flex w-full min-w-0 items-start gap-1">
+              <span className="shrink-0">Organization</span>
+              <span className="break-words">{organizationName ?? scope.organizationId}</span>
+            </span>
+            {supportSubject === undefined ? null : ( // The header states the support subject on the ministry's own line, where a narrow viewport truncates it; this tooltip is where the whole reference stays readable, so a truncated chip never hides the scope a financial read ran under.
+              <span className="flex w-full min-w-0 items-start gap-1">
+                <span className="shrink-0">Support subject</span>
+                <bdi className={IDENTIFIER_CLASS}>{supportSubject}</bdi>
+              </span>
+            )}
+            <Separator className="my-0.5" />
+            <span className="flex w-full min-w-0 items-start gap-1">
+              <span className="shrink-0">Ministry reference</span>
+              <bdi className={IDENTIFIER_CLASS}>{scope.ministryId}</bdi>
+            </span>
+            <span className="flex w-full min-w-0 items-start gap-1">
+              <span className="shrink-0">Organization reference</span>
+              <bdi className={IDENTIFIER_CLASS}>{scope.organizationId}</bdi>
+            </span>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-2rem)]">
+        <DropdownMenuLabel>Admitted contexts</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {admissions.map((admission) => {
+          const atCurrent = keyOf(admission) === currentKey;
+          return (
+            <DropdownMenuItem
+              key={keyOf(admission)}
+              aria-current={atCurrent ? "true" : undefined}
+              className="items-start"
+              onClick={() => {
+                if (atCurrent) return;
+                onRequestContext(requestFor(admission));
+              }}
+            >
+              <ContextName organizationLabel={labelOrNull(admission.organizationLabel)} organizationReference={admission.organizationId} ministryLabel={labelOrNull(admission.ministryLabel)} ministryReference={admission.ministryId} truncate />
+              {atCurrent ? (
+                <span className="ms-auto flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+                  <CheckIcon aria-hidden="true" className="size-3.5" />
+                  Current
+                </span>
+              ) : null}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+/** The active context, always stated, and the one place a change of context is asked for. */ export function ContextIndicator({ scope, admissions, onRequestContext, showSupportSubject = false, lastResult = null, className }: ContextIndicatorProps): ReactElement {
+  const current = admissions.find((admission) => isCurrentContext(admission, scope)) ?? null;
+  const canChoose = admissions.length > 1;
+  const organizationLabel = current === null ? null : labelOrNull(current.organizationLabel);
+  const ministryLabel = current === null ? null : labelOrNull(current.ministryLabel);
+  const supportSubjectReference = showSupportSubject ? scope.supportSubjectId : undefined;
+  const nameProps = { organizationLabel, organizationReference: scope.organizationId, ministryLabel, ministryReference: scope.ministryId, truncate: canChoose, supportSubject: supportSubjectReference } as const;
+  const notice = lastResult === null || lastResult.switched ? null : lastResult.summary;
+  return (
+    <div className={cn("flex min-w-0 max-w-full flex-col gap-1", className)}>
+      {canChoose ? (
+        <ContextChooser admissions={admissions} current={current} scope={scope} onRequestContext={onRequestContext} supportSubject={supportSubjectReference}>
+          <ContextName {...nameProps} />
+        </ContextChooser>
+      ) : (
+        <ContextName {...nameProps} markCurrent srPrefix="Active context. " />
+      )}
+      {current === null ? <span className="max-w-full break-words text-xs text-muted-foreground">This context is not among the memberships this session admits, so no names are available for it. The references above identify what was read.</span> : null}
+      {notice === null ? null : <SwitchNotice summary={notice} />}
+    </div>
+  );
+}
+export default ContextIndicator;

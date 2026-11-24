@@ -1,0 +1,377 @@
+/* The only stylesheet here, and the only source of colour, radius, typography, motion and target-size tokens: the shadcn base-maia block on Zinc, with the three pairs Zinc lacks added and every accessibility-floor value placed at the step that meets it, documented where it is declared. */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+/* The design system publishes the data-* state variants and the no-scrollbar, scroll-fade and shimmer utilities here; the generated component source depends on them, so this layer is imported rather than reproduced. */
+@import "shadcn/tailwind.css";
+
+/* Adding the `dark` class to <html> activates the `.dark` block. */
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* System stacks only. No webfont is installed and no font asset may be added; these families must still render Latin, Arabic, Hebrew and other Unicode scripts from fonts the platform provides. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Noto Sans Arabic", "Noto Sans Hebrew", "Apple Color Emoji", "Segoe UI Emoji", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-heading: var(--font-sans);
+}
+
+@theme inline {
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning: var(--warning);
+  --color-positive-foreground: var(--positive-foreground);
+  --color-positive: var(--positive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-highlight: var(--highlight);
+  --color-overlay: var(--overlay);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  /* Radius steps derive from the single --radius value, so no component hard-codes one. */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  /* The 24x24 CSS px floor of WCAG 2.2 Target Size Minimum, as `size-target`, `min-h-target` and the other spacing utilities. */
+  --spacing-target: var(--target-size-min);
+}
+
+:root {
+  color-scheme: light;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.005 285.823);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.141 0.005 285.823);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.141 0.005 285.823);
+  /* The modal and sheet scrim is a token rather than a palette literal, so it follows the theme. It is painted at 80% (`bg-overlay/80`); the light theme takes the same near-black the page's own foreground text uses, and `.dark` states true black. */
+  --overlay: oklch(0.141 0.005 285.823);
+  --primary: oklch(0.21 0.006 285.885);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.967 0.001 286.375);
+  /* The palette's Zinc 500 step measures 4.39:1 on the --muted surface, under the 4.5:1 WCAG AA minimum for body text, so the next darker Zinc step is used: it measures 7.02:1 on --muted and 7.73:1 on the page. */
+  --muted-foreground: oklch(0.442 0.017 285.786);
+  --accent: oklch(0.967 0.001 286.375);
+  --accent-foreground: oklch(0.21 0.006 285.885);
+  /* The interaction-state fill: pressed, highlighted and selected. The quiet surfaces measure 1.10:1 against the page, so a state drawn in one is imperceptible; this pair measures 4.83:1 against the page and its own foreground 4.62:1. */
+  --highlight: oklch(0.552 0.016 285.938);
+  --highlight-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --positive: oklch(0.527 0.154 150.069);
+  --positive-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.555 0.163 48.998);
+  --warning-foreground: oklch(0.985 0 0);
+  --border: oklch(0.92 0.004 286.32);
+  /* --input is the field-boundary token: a text field's only visible boundary is this border, so it has to reach the 3:1 floor of SC 1.4.11, and this step measures 4.83:1 against the page and against a card. --border stays the decorative rule token (table rules, dividers) and is not the field boundary. */
+  --input: oklch(0.552 0.016 285.938);
+  /* The palette's Zinc ring step measures 2.63:1 against the page, under the 3:1 a focus indicator must reach. This step measures 4.83:1, and every component draws it at full strength — no half-strength alpha — at the one declared width. */
+  --ring: oklch(0.552 0.016 285.938);
+  /* One data-series ramp per theme. Each step clears the 3:1 non-text floor against the page (3.30, 5.00, 7.60, 11.60, 17.60:1) and consecutive steps are 1.52:1 apart, so series stay distinguishable while every series is still labelled rather than identified by colour alone. */
+  --chart-1: oklch(0.645 0.008 286);
+  --chart-2: oklch(0.543 0.008 286);
+  --chart-3: oklch(0.445 0.008 286);
+  --chart-4: oklch(0.344 0.008 286);
+  --chart-5: oklch(0.213 0.008 286);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.141 0.005 285.823);
+  --sidebar-primary: oklch(0.21 0.006 285.885);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.967 0.001 286.375);
+  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
+  --sidebar-border: oklch(0.92 0.004 286.32);
+  --sidebar-ring: oklch(0.552 0.016 285.938);
+
+  --target-size-min: 1.5rem;
+  /* One focus-visible width. The design system's components draw a 3px ring, so the declared width matches what they draw and the base focus outline below consumes this value. */
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+  --scroll-pad-block-start: 4rem;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.141 0.005 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.885);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.21 0.006 285.885);
+  --popover-foreground: oklch(0.985 0 0);
+  /* The dark scrim is true black at 80%, so the panel behind it stays the brightest surface on the screen. */
+  --overlay: oklch(0 0 0);
+  --primary: oklch(0.92 0.004 286.32);
+  --primary-foreground: oklch(0.21 0.006 285.885);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.705 0.015 286.067);
+  --accent: oklch(0.274 0.006 286.033);
+  --accent-foreground: oklch(0.985 0 0);
+  /* The same interaction-state fill in the dark theme: a step that clears the 3:1 state floor against the page and a popover rather than repeating the quiet surface, and carries its own foreground text above 7:1. */
+  --highlight: oklch(0.705 0.015 286.067);
+  --highlight-foreground: oklch(0.141 0.005 285.823);
+  --destructive: oklch(0.704 0.191 22.216);
+  /* A dark-theme destructive surface is a light red, so its foreground has to be dark; the palette's near-white would sit at about 2.8:1 on it. */
+  --destructive-foreground: oklch(0.205 0 0);
+  --positive: oklch(0.792 0.209 151.711);
+  --positive-foreground: oklch(0.205 0 0);
+  --warning: oklch(0.828 0.189 84.429);
+  --warning-foreground: oklch(0.205 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(0.552 0.016 285.938);
+  --ring: oklch(0.552 0.016 285.938);
+  /* The same ramp read from the dark end: 3.39/5.21/8.02/12.34/18.99:1 against the page and 3.02/4.65/7.15/11.00/16.93:1 against a card, with 1.54:1 between consecutive steps — the widest separation available while the darkest step still clears 3:1 on a card. */
+  --chart-1: oklch(0.506 0.008 286);
+  --chart-2: oklch(0.609 0.008 286);
+  --chart-3: oklch(0.721 0.008 286);
+  --chart-4: oklch(0.845 0.008 286);
+  --chart-5: oklch(0.984 0.008 286);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.21 0.006 285.885);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.274 0.006 286.033);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.552 0.016 285.938);
+
+  --target-size-min: 1.5rem;
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+  --scroll-pad-block-start: 4rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring;
+    /* Focus Not Obscured (2.4.11): scroll padding is not inherited, so every scroll container carries the offset that clears the sticky shell and sticky table header. On an element that does not scroll the declaration is inert. */
+    scroll-padding-block-start: var(--scroll-pad-block-start);
+  }
+
+  html {
+    @apply font-sans;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  :where([id]) {
+    scroll-margin-block-start: var(--scroll-pad-block-start);
+  }
+
+  /* Focus is always visible. Components may restyle the ring for their own surface; where they set `outline-none` to draw a ring instead, the forced-colors block below restores an outline, and the ring and the outline are drawn from the same token in both themes. */
+  :focus-visible {
+    outline: var(--focus-ring-width) solid var(--ring);
+    outline-offset: var(--focus-ring-offset);
+  }
+}
+
+/* The composed Page and Update markup. The one static renderer emits these semantic classes from fixed maps over the four admitted presentation choices, so this block is the whole of what a section's presentation can style: no value read from a document becomes a class name, a colour or a length, and every
+ * declaration below is a token utility. */
+@layer components {
+  .content-section {
+    @apply flex min-w-0 flex-col gap-4;
+  }
+
+  .content-section-text {
+    @apply min-w-0;
+  }
+
+  .content-section-media {
+    @apply flex min-w-0 flex-col gap-3;
+  }
+
+  .content-section-media img,
+  .content-section-media video {
+    @apply block max-h-96 w-full rounded-lg border border-border;
+  }
+
+  /* A transcript or linked-media alternative stands on its own beside the player rather than inside a sentence, so it carries the 24x24 CSS px target floor in its own box. */
+  .content-section-media a {
+    @apply inline-flex min-h-6 items-center;
+  }
+
+  /* Treatment: an emphasized section reads at a weight above the page's own, and a normal one at the document's weight. */
+  .content-treatment-normal .content-section-text {
+    @apply font-normal;
+  }
+
+  .content-treatment-emphasized .content-section-text {
+    @apply font-semibold;
+  }
+
+  /* Alignment: start is the leading edge of the reading direction, so it stays the start in right-to-left content. */
+  .content-alignment-start .content-section-text {
+    @apply text-start;
+  }
+
+  .content-alignment-center .content-section-text {
+    @apply text-center;
+  }
+
+  /* Image fit: the frame bounds the rendition either way, so cover crops it to the frame and contain shows all of it. */
+  .content-image-fit-cover .content-section-media img,
+  .content-image-fit-cover .content-section-media video {
+    @apply object-cover;
+  }
+
+  .content-image-fit-contain .content-section-media img,
+  .content-image-fit-contain .content-section-media video {
+    @apply bg-muted object-contain;
+  }
+
+  /* Two columns only where the section carries media of its own, and only above the narrow breakpoint: below it the layout is one column with the image above its text, which is what the two-column choice itself promises. */
+  .content-layout-two-column-image-text:has(> .content-section-media) > .content-section-media {
+    @apply order-first;
+  }
+
+  @media (min-width: 48rem) {
+    .content-layout-two-column-image-text:has(> .content-section-media) {
+      @apply grid items-start gap-6;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .content-layout-two-column-image-text:has(> .content-section-media) > .content-section-media {
+      @apply order-none;
+    }
+  }
+}
+
+/* Forced-colors mode replaces every colour, so a component that sets `outline-none` to draw its own ring would leave a focused control with no indicator; this restores the declared-width outline in a system colour, unlayered so it outranks the utility layer. */
+@media (forced-colors: active) {
+  *:focus-visible {
+    outline: var(--focus-ring-width) solid CanvasText;
+    outline-offset: var(--focus-ring-offset);
+  }
+}
+
+/* Amounts align on the decimal so columns of money and counts stay comparable. */
+@utility tabular-figures {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Opaque source references and other identifiers render in the monospace family with uniform digits, and are isolated so a leading zero or a mixed-direction neighbour cannot reorder them. */
+@utility mono-identifier {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+  font-variant-numeric: tabular-nums;
+  unicode-bidi: isolate;
+}
+
+/* Row hover and selection: a 3px bar in the interaction-state fill on the row's start edge, drawn by its first cell, because filling the row would have to invert every descendant's text; `inset-inline-start` keeps the bar on the start edge in right-to-left, and the bar takes no space. */
+@utility row-state-indicator {
+  & > *:first-child {
+    position: relative;
+  }
+
+  & > *:first-child::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 3px;
+    background-color: var(--highlight);
+  }
+}
+
+/* Overlay scrollbars paint nothing until a scroll begins, so a table wider than its region reads as simply cut off at the edge. This utility keeps the region's own horizontal scrollbar painted and reserving its space, drawn from the boundary and quiet-surface tokens, so the columns beyond the edge are discoverable by
+ * a pointer before any scroll. */
+@utility scroll-cue-x {
+  scrollbar-width: thin;
+  scrollbar-color: var(--input) var(--muted);
+
+  /* An engine that supports the standard properties above paints the bar from them; one that does not draws the same bar from the same two tokens through these pseudo-elements. Its height comes from the spacing scale and its rounding from the one declared --radius value, so no length or radius of its own is
+   * introduced. */
+  &::-webkit-scrollbar {
+    height: calc(var(--spacing) * 2.5);
+  }
+
+  &::-webkit-scrollbar-track {
+    background-color: var(--muted);
+    border-radius: var(--radius);
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--input);
+    border-radius: var(--radius);
+  }
+}
+
+/* The one type scale: every heading element and every body paragraph in the product resolves through these utilities, so the same element role measures the same on every screen. A page title is 24/32/600, a section title 18/28/500, a subsection 16/24/500 and a group title 14/20/500, so size falls as the level deepens and weight never rises. Body copy is 14/20/400; supporting copy states the one muted ink, while a record's own values and authored prose keep the body ink. Every value is a system type utility: a component states no font size, weight or leading of its own, except at the few composition points that replace a design-system default with the one body measure (the empty-state description and the field hint, which override the design system's own relaxed and normal leadings where the copy is owned). One documented exception: a surface that labels its own chrome rather than the page's outline — the compact side panel's region title — takes the group-title scale in the muted ink, because a panel header is chrome and not a section of the page. */
+@utility type-page-title {
+  @apply font-heading text-2xl font-semibold;
+}
+
+@utility type-section-title {
+  @apply font-heading text-lg font-medium;
+}
+
+@utility type-subsection-title {
+  @apply font-heading text-base font-medium;
+}
+
+@utility type-group-title {
+  @apply font-heading text-sm font-medium;
+}
+
+@utility type-body {
+  @apply text-sm font-normal;
+}
+
+@utility type-supporting {
+  @apply text-sm font-normal text-muted-foreground;
+}
+
+/* One link treatment: a link inside content is underlined in the ink of the words around it, at one offset, so a destination stays recognisable without relying on colour. A link styled as a control (a button, a pill, a pagination step, a tab) keeps the control's own treatment and states no underline, and an anchor inside authored content keeps the content renderer's own treatment, which is the same underline. */
+@utility inline-link {
+  @apply underline underline-offset-4;
+}
+
+/* Motion collapses rather than disappears: a transition tied to a state change still completes, it simply completes at once. Declared outside a cascade layer so it also settles the animation and transition utilities of the design system. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["tsconfig.base.json", ".oxlintrc.json", ".oxfmtrc.json", "scripts/check-invariants.ts"],
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": [".next/**", "!.next/cache/**", "next-env.d.ts"], "passThroughEnv": ["NEXT_TELEMETRY_DISABLED"] },
+    "dev": { "cache": false, "persistent": true, "passThroughEnv": ["PORT", "NEXT_TELEMETRY_DISABLED"] },
+    "typecheck": { "dependsOn": ["build"], "outputs": [] },
+    "lint": { "dependsOn": ["^build"], "outputs": [] },
+    "test": { "cache": false, "dependsOn": ["^build"], "outputs": ["test-results/**", "playwright-report/**"], "passThroughEnv": ["PORT", "WORKLOAD_MEASUREMENT"] },
+    "lines": { "cache": false, "outputs": [] }
+  }
+}

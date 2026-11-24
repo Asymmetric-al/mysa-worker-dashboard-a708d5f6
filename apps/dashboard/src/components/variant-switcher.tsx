@@ -1,0 +1,137 @@
+"use client";
+import { useId, type ReactNode } from "react";
+import DraftStatus, { LIFECYCLE_STATUS, type ContentLifecycleState, type LifecycleSpec } from "@/components/draft-status";
+import StatusBadge, { AUDIENCE_STATUS, type StatusBadgeSpec } from "@/components/status-badge";
+import { Label } from "@/components/ui/label";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/cn";
+import { languageNameOf } from "@/lib/language-name";
+import type { ContentLocale } from "@/modules/content/locale";
+import { VARIANT_AUDIENCES, variantKeyAllowed, type VariantAudience, type VariantFamily } from "@/modules/content/variant";
+/** The word and tone of each audience a variant may serve, declared once in {@link AUDIENCE_STATUS} and named here for the surfaces that already import it. */ export const AUDIENCE_WORDS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = AUDIENCE_STATUS;
+export type VariantTab = { readonly variantId: string; readonly audience: VariantAudience; readonly locale: ContentLocale; readonly lifecycle: ContentLifecycleState; readonly staleSince?: string };
+export type VariantSwitcherProps = { readonly family: VariantFamily; readonly variants: readonly VariantTab[]; readonly activeVariantId: string; readonly onSelect: (variantId: string) => void; readonly label: string; readonly className?: string };
+function audienceRank(audience: VariantAudience): number {
+  const index = VARIANT_AUDIENCES.indexOf(audience);
+  return index === -1 ? VARIANT_AUDIENCES.length : index;
+}
+function compareLocaleTags(left: string, right: string): number {
+  const a = left.trim().toLowerCase();
+  const b = right.trim().toLowerCase();
+  return a === b ? 0 : a < b ? -1 : 1;
+}
+function compareEditions(left: VariantTab, right: VariantTab): number {
+  const byLocale = compareLocaleTags(left.locale.tag, right.locale.tag);
+  if (byLocale !== 0) return byLocale;
+  const byAudience = audienceRank(left.audience) - audienceRank(right.audience);
+  return byAudience !== 0 ? byAudience : left.variantId === right.variantId ? 0 : left.variantId < right.variantId ? -1 : 1;
+}
+function permittedEditions(family: VariantFamily, variants: readonly VariantTab[]): readonly VariantTab[] {
+  const seen = new Set<string>();
+  const permitted: VariantTab[] = [];
+  for (const variant of variants) {
+    if (!variantKeyAllowed(family, variant.audience)) continue;
+    if (variant.variantId.trim() === "" || seen.has(variant.variantId)) continue;
+    seen.add(variant.variantId);
+    permitted.push(variant);
+  }
+  return permitted.sort(compareEditions);
+}
+function lifecycleWordOf(state: ContentLifecycleState): string {
+  const spec: LifecycleSpec | undefined = LIFECYCLE_STATUS[state];
+  return spec === undefined ? String(state) : spec.label;
+}
+function spokenNameOf(variant: VariantTab): string {
+  const audience = AUDIENCE_WORDS[variant.audience].label;
+  return `${audience}, ${languageNameOf(variant.locale.tag)}, ${lifecycleWordOf(variant.lifecycle)}`;
+}
+/** The one audience-variant and edition selector. */ export function VariantSwitcher({ family, variants, activeVariantId, onSelect, label, className }: VariantSwitcherProps): ReactNode {
+  const labelId = useId();
+  const selectId = useId();
+  const announcementId = useId();
+  const activeId = activeVariantId.trim();
+  const editions = permittedEditions(family, variants);
+  const active = editions.find((edition) => edition.variantId === activeId);
+  const requestSelection = (candidate: string): void => {
+    const chosen = editions.find((edition) => edition.variantId === candidate);
+    if (chosen === undefined || chosen.variantId === activeId) return;
+    onSelect(chosen.variantId);
+  };
+  if (editions.length === 0) {
+    return (
+      <div data-slot="variant-switcher" data-family={family} data-no-editions="true" className={cn("flex min-w-0 flex-col gap-2", className)}>
+        <span className="text-start text-sm leading-none font-medium">{label}</span>
+        <p className="type-supporting text-start text-pretty wrap-anywhere">{"No edition you are permitted to read is listed here."}</p>
+      </div>
+    );
+  }
+  let announcement: ReactNode;
+  if (active === undefined) {
+    announcement = "No edition is selected here.";
+  } else {
+    announcement = (
+      <>
+        {"Showing "}
+        {AUDIENCE_WORDS[active.audience].label}
+        {", "}
+        <bdi lang={active.locale.tag}>{languageNameOf(active.locale.tag)}</bdi>
+        {", "}
+        {lifecycleWordOf(active.lifecycle)}
+        {"."}
+      </>
+    );
+  }
+  return (
+    <div data-slot="variant-switcher" data-family={family} data-active-variant={active === undefined ? undefined : active.variantId} data-active-lifecycle={active === undefined ? undefined : active.lifecycle} className={cn("flex min-w-0 flex-col gap-2", className)}>
+      <div className="hidden min-w-0 flex-col gap-2 sm:flex">
+        <span id={labelId} className="text-start text-sm leading-none font-medium text-pretty wrap-anywhere">
+          {label}
+        </span>
+        <Tabs
+          value={active === undefined ? null : active.variantId}
+          onValueChange={(value: unknown, eventDetails: { reason: string }) => {
+            if (eventDetails.reason !== "none" || typeof value !== "string") return;
+            requestSelection(value);
+          }}
+          className="min-w-0"
+        >
+          <TabsList aria-labelledby={labelId} className="group-data-horizontal/tabs:h-auto max-w-full flex-wrap justify-start">
+            {editions.map((edition) => (
+              <TabsTrigger key={edition.variantId} value={edition.variantId} className="min-w-0 flex-none items-start whitespace-normal">
+                <span className="sr-only">{spokenNameOf(edition)}</span>
+                <span aria-hidden="true" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <StatusBadge label={AUDIENCE_WORDS[edition.audience].label} tone={AUDIENCE_WORDS[edition.audience].tone} />
+                  <bdi lang={edition.locale.tag} className="min-w-0 text-start wrap-anywhere">
+                    {languageNameOf(edition.locale.tag)}
+                  </bdi>
+                  <span className="min-w-0 text-start text-muted-foreground wrap-anywhere">{lifecycleWordOf(edition.lifecycle)}</span>
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+      <div className="flex min-w-0 flex-col gap-2 sm:hidden">
+        <Label htmlFor={selectId}>{label}</Label>
+        <NativeSelect id={selectId} className="w-full max-w-full" value={active === undefined ? "" : active.variantId} aria-describedby={announcementId} onChange={(event) => requestSelection(event.target.value)}>
+          {active === undefined ? (
+            <NativeSelectOption value="" disabled>
+              No edition selected
+            </NativeSelectOption>
+          ) : null}
+          {editions.map((edition) => (
+            <NativeSelectOption key={edition.variantId} value={edition.variantId}>
+              {spokenNameOf(edition)}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </div>
+      <output id={announcementId} htmlFor={selectId} aria-atomic="true" className="text-start text-xs text-muted-foreground text-pretty wrap-anywhere">
+        {announcement}
+      </output>
+      {active === undefined ? null : <DraftStatus state={active.lifecycle} staleSince={active.staleSince} />}
+    </div>
+  );
+}
+export default VariantSwitcher;

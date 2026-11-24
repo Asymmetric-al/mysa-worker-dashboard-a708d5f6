@@ -1,0 +1,186 @@
+import { Temporal } from "temporal-polyfill";
+import { todayInZone, type CivilDate } from "./civil";
+export const REPEAT_PROFILES = ["none", "weekly", "everyNWeeks", "monthlyOnDay", "everyNMonths"] as const;
+export type RepeatProfile = (typeof REPEAT_PROFILES)[number];
+export type SeriesEnd = { kind: "on-date"; on: CivilDate } | { kind: "after-count"; count: number } | { kind: "ongoing-personal-policy" };
+export type SeriesRule = { profile: RepeatProfile; interval: number; dayOfMonth?: number; firstDueOn: CivilDate; planningTimeZone: string; end: SeriesEnd };
+export const SERIES_STATES = ["active", "paused", "stopped"] as const;
+export type SeriesState = (typeof SERIES_STATES)[number];
+const KNOWN_PROFILES: ReadonlySet<string> = new Set<string>(REPEAT_PROFILES);
+const DEFAULT_PREVIEW_COUNT = 3;
+const MIN_PREVIEW_COUNT = 1;
+const MAX_PREVIEW_COUNT = 12;
+const ITERATION_CEILING = 20_000;
+const MIN_STORED_YEAR = 1;
+const MAX_STORED_YEAR = 9999;
+const MISSED_DATES_REVIEW_THRESHOLD = 3;
+const STORED_DATE_FORM = /^\d{4}-\d{2}-\d{2}$/u;
+const isCivilDate = (value: unknown): value is CivilDate => (value instanceof Temporal.PlainDate ? true : typeof value === "object" && value !== null && STORED_DATE_FORM.test(String(value)));
+function isKnownTimeZone(timeZone: unknown): timeZone is string {
+  if (typeof timeZone !== "string" || timeZone.length === 0) return false;
+  try {
+    Temporal.ZonedDateTime.from({ timeZone, year: 2000, month: 1, day: 1 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+const takesDayOfMonth = (profile: RepeatProfile): boolean => profile === "monthlyOnDay" || profile === "everyNMonths";
+const takesInterval = (profile: RepeatProfile): boolean => profile === "everyNWeeks" || profile === "everyNMonths";
+export type MonthDayResolution = { status: "resolved"; date: CivilDate; requestedDay: number; resolvedDay: number; lastDayOfMonthResolved: boolean } | { status: "refused"; reason: "invalid-month" | "invalid-day" };
+/** Resolves a day of a month to a date that exists, disclosing any resolution it had to make. */ export function monthlyOnDay(year: number, month: number, day: number): MonthDayResolution {
+  if (!Number.isInteger(year) || year < MIN_STORED_YEAR || year > MAX_STORED_YEAR) return { status: "refused", reason: "invalid-month" };
+  if (!Number.isInteger(month) || month < 1 || month > 12) return { status: "refused", reason: "invalid-month" };
+  if (!Number.isInteger(day) || day < 1 || day > 31) return { status: "refused", reason: "invalid-day" };
+  const monthOfYear = new Temporal.PlainYearMonth(year, month);
+  const resolvedDay = Math.min(day, monthOfYear.daysInMonth);
+  return { status: "resolved", date: monthOfYear.toPlainDate({ day: resolvedDay }), requestedDay: day, resolvedDay, lastDayOfMonthResolved: resolvedDay !== day };
+}
+export type SeriesRuleValidation = { status: "valid" } | { status: "invalid"; fields: Record<string, string> };
+const PROFILE_REQUIRED_MESSAGE = "Choose a repeat profile: none, weekly, every N weeks, monthly on a day, every N months.";
+const END_REQUIRED_MESSAGE = "Choose an end date or a number of occurrences, or turn on the ongoing series policy.";
+function endFieldMessage(rule: SeriesRule): string | undefined {
+  const end: SeriesEnd | undefined = rule.end;
+  if (end === undefined) return END_REQUIRED_MESSAGE;
+  if (end.kind === "on-date") return !isCivilDate(end.on) ? "Choose the end date." : isCivilDate(rule.firstDueOn) && Temporal.PlainDate.compare(end.on, rule.firstDueOn) < 0 ? "Choose an end date on or after the first due date." : undefined;
+  return end.kind === "after-count" ? (Number.isInteger(end.count) && end.count >= 1 ? undefined : "Choose how many occurrences, as a whole number of at least 1.") : end.kind === "ongoing-personal-policy" ? undefined : END_REQUIRED_MESSAGE;
+}
+const intervalFieldMessage = (profile: RepeatProfile | undefined, interval: number): string | undefined =>
+  profile === undefined || !takesInterval(profile) ? undefined : Number.isInteger(interval) && interval >= 1 ? undefined : profile === "everyNWeeks" ? "Choose how many weeks between occurrences, as a whole number of at least 1." : "Choose how many months between occurrences, as a whole number of at least 1.";
+function dayOfMonthFieldMessage(profile: RepeatProfile | undefined, dayOfMonth: number | undefined): string | undefined {
+  if (profile === undefined) return undefined;
+  if (!takesDayOfMonth(profile)) return dayOfMonth === undefined ? undefined : "A day of the month applies only to the monthly repeat profiles.";
+  return dayOfMonth === undefined ? "Choose the day of the month, from 1 to 31." : !Number.isInteger(dayOfMonth) || dayOfMonth < 1 || dayOfMonth > 31 ? "Choose a day of the month from 1 to 31." : undefined;
+}
+export function validateSeriesRule(rule: SeriesRule): SeriesRuleValidation {
+  const fields: Record<string, string> = {};
+  const profile = KNOWN_PROFILES.has(rule.profile) ? rule.profile : undefined;
+  if (profile === undefined) fields.profile = PROFILE_REQUIRED_MESSAGE;
+  if (!isCivilDate(rule.firstDueOn)) fields.firstDueOn = "Choose the first due date.";
+  if (!isKnownTimeZone(rule.planningTimeZone)) fields.planningTimeZone = "Choose a planning time zone this calendar recognizes.";
+  const messages: Readonly<Record<string, string | undefined>> = { end: endFieldMessage(rule), interval: intervalFieldMessage(profile, rule.interval), dayOfMonth: dayOfMonthFieldMessage(profile, rule.dayOfMonth) };
+  for (const [field, message] of Object.entries(messages)) if (message !== undefined) fields[field] = message;
+  return Object.keys(fields).length === 0 ? { status: "valid" } : { status: "invalid", fields };
+}
+type WalkedOccurrence = { dueOn: CivilDate; resolution?: DisclosedMonthDayResolution };
+type OccurrenceWalk = { status: "walked"; occurrences: WalkedOccurrence[] } | { status: "ceiling-reached" };
+function firstOccurrenceOf(rule: SeriesRule): WalkedOccurrence {
+  const day = rule.dayOfMonth;
+  if (day === undefined || !takesDayOfMonth(rule.profile)) return { dueOn: rule.firstDueOn };
+  const monthOfFirst = rule.firstDueOn.toPlainYearMonth();
+  return !(rule.firstDueOn.day === monthOfFirst.daysInMonth) || day <= monthOfFirst.daysInMonth ? { dueOn: rule.firstDueOn } : { dueOn: rule.firstDueOn, resolution: { dueOn: rule.firstDueOn, requestedDay: day, resolvedDay: rule.firstDueOn.day } };
+}
+function monthlyStepOf(rule: SeriesRule, monthsAfterFirst: number): WalkedOccurrence | undefined {
+  const day = rule.dayOfMonth;
+  if (day === undefined) return undefined;
+  const monthOfYear = rule.firstDueOn.toPlainYearMonth().add({ months: monthsAfterFirst });
+  const resolved = monthlyOnDay(monthOfYear.year, monthOfYear.month, day);
+  if (resolved.status === "refused") return undefined;
+  return !resolved.lastDayOfMonthResolved ? { dueOn: resolved.date } : { dueOn: resolved.date, resolution: { dueOn: resolved.date, requestedDay: resolved.requestedDay, resolvedDay: resolved.resolvedDay } };
+}
+const STEP_OCCURRENCES: Readonly<Record<RepeatProfile, (rule: SeriesRule, step: number) => WalkedOccurrence | undefined>> = {
+  none: () => undefined,
+  weekly: (rule, step) => ({ dueOn: rule.firstDueOn.add({ weeks: step }) }),
+  everyNWeeks: (rule, step) => ({ dueOn: rule.firstDueOn.add({ weeks: step * rule.interval }) }),
+  monthlyOnDay: monthlyStepOf,
+  everyNMonths: (rule, step) => monthlyStepOf(rule, step * rule.interval),
+};
+const occurrenceAtStep = (rule: SeriesRule, step: number): WalkedOccurrence | undefined => (step === 0 ? firstOccurrenceOf(rule) : STEP_OCCURRENCES[rule.profile](rule, step));
+const pastEndOfSeries = (end: SeriesEnd, dueOn: CivilDate, ordinal: number): boolean => (end.kind === "on-date" ? Temporal.PlainDate.compare(dueOn, end.on) > 0 : end.kind === "after-count" ? ordinal > end.count : false);
+function occurrencesAfter(rule: SeriesRule, from: CivilDate, wanted: number): OccurrenceWalk {
+  const collected: WalkedOccurrence[] = [];
+  for (let step = 0; step < ITERATION_CEILING; step += 1) {
+    const occurrence = occurrenceAtStep(rule, step);
+    if (occurrence === undefined) return { status: "walked", occurrences: collected };
+    if (pastEndOfSeries(rule.end, occurrence.dueOn, step + 1)) return { status: "walked", occurrences: collected };
+    if (Temporal.PlainDate.compare(occurrence.dueOn, from) > 0) {
+      collected.push(occurrence);
+      if (collected.length === wanted) return { status: "walked", occurrences: collected };
+    }
+  }
+  return { status: "ceiling-reached" };
+}
+const previewCountOf = (count: number): number => (!Number.isFinite(count) ? DEFAULT_PREVIEW_COUNT : Math.min(MAX_PREVIEW_COUNT, Math.max(MIN_PREVIEW_COUNT, Math.trunc(count))));
+export type DisclosedMonthDayResolution = { dueOn: CivilDate; requestedDay: number; resolvedDay: number };
+export type OccurrencePreview = { status: "preview"; dates: CivilDate[]; monthDayResolutions: DisclosedMonthDayResolution[] } | { status: "refused"; reason: "invalid-rule" | "end-reached" | "unbounded" };
+/** The next due dates strictly after `from` — three by default, clamped to 1-12 — as a preview. */ export function nextOccurrences(rule: SeriesRule, from: CivilDate, count: number = DEFAULT_PREVIEW_COUNT): OccurrencePreview {
+  if (validateSeriesRule(rule).status === "invalid") return { status: "refused", reason: "invalid-rule" };
+  const walk = occurrencesAfter(rule, from, previewCountOf(count));
+  if (walk.status === "ceiling-reached") return { status: "refused", reason: "unbounded" };
+  if (walk.occurrences.length === 0) return { status: "refused", reason: "end-reached" };
+  return { status: "preview", dates: walk.occurrences.map((occurrence) => occurrence.dueOn), monthDayResolutions: walk.occurrences.flatMap((occurrence) => (occurrence.resolution === undefined ? [] : [occurrence.resolution])) };
+}
+/** The resolution the rule itself discloses for one date, read from the step that produces it rather than restated here: an empty list when the step landing on that date discloses none. */ function resolutionOf(rule: SeriesRule, date: CivilDate): DisclosedMonthDayResolution[] {
+  const produced = nextOccurrences(rule, date.subtract({ days: 1 }), 1);
+  if (produced.status !== "preview") return [];
+  const [first] = produced.dates;
+  return first !== undefined && Temporal.PlainDate.compare(first, date) === 0 ? produced.monthDayResolutions : [];
+}
+export type PlanPreviewQuestion = { readonly rule: SeriesRule; readonly today: CivilDate; readonly awaitingAnswer: CivilDate | null; readonly count?: number };
+/** The dates a plan has ahead of it, at most `count` of them: the date the plan is waiting for an answer on — when that date is still ahead of today — followed by the dates the rule produces after it, so a preview never precedes the date the plan is asking about. That date keeps the month-day resolution the rule
+ * discloses for it, and a rule that produces no further date leaves the list holding it alone rather than reporting the plan as ended. */
+export function planPreview(question: PlanPreviewQuestion): OccurrencePreview {
+  const count = previewCountOf(question.count ?? DEFAULT_PREVIEW_COUNT);
+  const awaiting = question.awaitingAnswer;
+  if (awaiting === null || Temporal.PlainDate.compare(awaiting, question.today) <= 0) return nextOccurrences(question.rule, question.today, count);
+  const ahead = nextOccurrences(question.rule, awaiting, Math.max(count - 1, 1));
+  if (ahead.status === "refused") return ahead.reason === "end-reached" ? { status: "preview", dates: [awaiting], monthDayResolutions: resolutionOf(question.rule, awaiting) } : ahead;
+  const walked = ahead.dates.slice(0, count - 1);
+  return { status: "preview", dates: [awaiting, ...walked], monthDayResolutions: [...resolutionOf(question.rule, awaiting), ...(walked.length === ahead.dates.length ? ahead.monthDayResolutions : [])] };
+}
+export type SuccessorRequest = { rule: SeriesRule; occurrence: CivilDate; existingSuccessorDueOn?: CivilDate; state?: SeriesState };
+export type SuccessorAdmission = { status: "admitted"; nextDueOn: CivilDate } | { status: "refused"; reason: "successor-already-admitted" | "series-ended" | "series-stopped" | "series-paused" };
+/** Admits one successor for a completed or skipped occurrence, and never more than one. */ export function admitSuccessor(request: SuccessorRequest): SuccessorAdmission {
+  const state = request.state ?? "active";
+  if (state === "stopped") return { status: "refused", reason: "series-stopped" };
+  if (state === "paused") return { status: "refused", reason: "series-paused" };
+  if (request.existingSuccessorDueOn !== undefined) return { status: "refused", reason: "successor-already-admitted" };
+  const preview = nextOccurrences(request.rule, request.occurrence, 1);
+  if (preview.status === "refused") {
+    if (preview.reason === "end-reached") return { status: "refused", reason: "series-ended" };
+    throw new RangeError(preview.reason === "invalid-rule" ? "A successor needs a rule that passes validateSeriesRule" : "A successor cannot be read: this occurrence lies beyond the rule's readable span");
+  }
+  const [nextDueOn] = preview.dates;
+  return nextDueOn === undefined ? { status: "refused", reason: "series-ended" } : { status: "admitted", nextDueOn };
+}
+export type SeriesOccurrenceState = "open" | "completed" | "reopened" | "skipped" | "cancelled";
+export type SeriesOccurrence = { dueOn: CivilDate; status: SeriesOccurrenceState };
+export type PlanResolutions = readonly ["keep-this-occurrence", "move-next-date-forward", "stop-series"];
+export type PlanReview = { state: "on-track" } | { state: "planNeedsReview"; missedDates: CivilDate[]; resolutions: PlanResolutions };
+export type MissedPlanQuestion = { rule: SeriesRule; occurrences: readonly SeriesOccurrence[]; now: Temporal.Instant; acknowledgedThrough?: CivilDate };
+const PLAN_RESOLUTIONS: PlanResolutions = ["keep-this-occurrence", "move-next-date-forward", "stop-series"];
+const isAwaitingAction = (status: SeriesOccurrenceState): boolean => status === "open" || status === "reopened";
+/** Reviews a series' plan against "today" in the series' own planning zone. A resolution answers the plan as it stood on the civil day it was recorded, so `acknowledgedThrough` drops the dates up to and including that day and only dates strictly after it still count as missed: a date missed later reopens the review
+ * on its own, while a plan never answered counts every missed date. */
+export function missedPlan(question: MissedPlanQuestion): PlanReview {
+  const today = todayInZone(question.rule.planningTimeZone, question.now);
+  if (today.status === "refused") return { state: "on-track" };
+  const acknowledgedThrough = question.acknowledgedThrough;
+  const missedDates = question.occurrences
+    .filter((occurrence) => isAwaitingAction(occurrence.status))
+    .map((occurrence) => occurrence.dueOn)
+    .filter((dueOn) => Temporal.PlainDate.compare(dueOn, today.date) < 0)
+    .filter((dueOn) => acknowledgedThrough === undefined || Temporal.PlainDate.compare(dueOn, acknowledgedThrough) > 0)
+    .toSorted(Temporal.PlainDate.compare);
+  return missedDates.length < MISSED_DATES_REVIEW_THRESHOLD ? { state: "on-track" } : { state: "planNeedsReview", missedDates, resolutions: PLAN_RESOLUTIONS };
+}
+export type SeriesRulePatch = Partial<Omit<SeriesRule, "firstDueOn">>;
+export type RuleRevision = { effectiveFrom: CivilDate; rule: SeriesRule };
+export type ThisAndFutureEdit = { revisions: readonly RuleRevision[]; from: CivilDate; patch: SeriesRulePatch; lastCompletedOn?: CivilDate; stoppedOn?: CivilDate };
+export type RuleRevisionResult = { status: "revisioned"; revision: RuleRevision } | { status: "refused"; reason: "not-prospective" | "stale" };
+function applyPatch(base: SeriesRule, patch: SeriesRulePatch): SeriesRule {
+  const profile = patch.profile ?? base.profile;
+  // A profile that reads no interval stores the neutral 1, as the day of the month below is dropped when the profile reads none: carrying the previous profile's interval forward would store a field the chosen profile never reads.
+  const interval = takesInterval(profile) ? (patch.interval ?? base.interval) : 1;
+  const rule: SeriesRule = { profile, interval, firstDueOn: base.firstDueOn, planningTimeZone: patch.planningTimeZone ?? base.planningTimeZone, end: patch.end ?? base.end };
+  const dayOfMonth = takesDayOfMonth(profile) ? (patch.dayOfMonth ?? base.dayOfMonth) : undefined;
+  if (dayOfMonth !== undefined) rule.dayOfMonth = dayOfMonth;
+  return rule;
+}
+export function applyThisAndFuture(edit: ThisAndFutureEdit): RuleRevisionResult {
+  if (edit.stoppedOn !== undefined) return { status: "refused", reason: "stale" };
+  const latest = edit.revisions.at(-1);
+  if (latest === undefined) return { status: "refused", reason: "not-prospective" };
+  if (edit.lastCompletedOn !== undefined && Temporal.PlainDate.compare(edit.from, edit.lastCompletedOn) <= 0) return { status: "refused", reason: "not-prospective" };
+  return Temporal.PlainDate.compare(edit.from, latest.effectiveFrom) < 0 ? { status: "refused", reason: "not-prospective" } : { status: "revisioned", revision: { effectiveFrom: edit.from, rule: applyPatch(latest.rule, edit.patch) } };
+}
