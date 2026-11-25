@@ -135,14 +135,34 @@ function SidebarTrigger({ className, onClick, ...props }: React.ComponentProps<t
   );
 }
 // The design-system separator widens itself to the whole content box, so the horizontal margins it carries here would land outside that box; the cap subtracts them from the drawn width, which is what keeps the rail's scroll content free of an overflow it hides behind `no-scrollbar`.
+const SidebarHeader = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-header" data-sidebar="header" className={cn("flex flex-col gap-2 p-2.5", className)} {...props} />;
+const SidebarFooter = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-footer" data-sidebar="footer" className={cn("flex flex-col gap-2 p-2.5", className)} {...props} />;
+const SidebarInset = ({ className, ...props }: React.ComponentProps<"div">) => (
+  <div
+    data-slot="sidebar-inset"
+    className={cn(
+      "relative flex min-w-0 flex-1 flex-col bg-background md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ms-0 md:peer-data-[variant=inset]:rounded-2xl md:peer-data-[variant=inset]:border md:peer-data-[variant=inset]:border-border/80 md:peer-data-[variant=inset]:shadow-xs md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 print:m-0 print:rounded-none print:border-0 print:shadow-none",
+      className,
+    )}
+    {...props}
+  />
+);
 const SidebarSeparator = ({ className, ...props }: React.ComponentProps<typeof Separator>) => <Separator data-slot="sidebar-separator" data-sidebar="separator" className={cn("mx-2 w-auto max-w-[calc(100%-1rem)] bg-sidebar-border", className)} {...props} />;
-const SidebarContent = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-content" data-sidebar="content" className={cn("no-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden", className)} {...props} />;
+const SidebarContent = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-content" data-sidebar="content" className={cn("no-scrollbar flex min-h-0 flex-1 flex-col gap-1 overflow-auto group-data-[collapsible=icon]:overflow-hidden", className)} {...props} />;
 const SidebarGroup = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-group" data-sidebar="group" className={cn("relative flex w-full min-w-0 flex-col p-2", className)} {...props} />;
+const SidebarGroupLabel = ({ className, ...props }: React.ComponentProps<"div">) => (
+  <div
+    data-slot="sidebar-group-label"
+    data-sidebar="group-label"
+    className={cn("flex h-7 shrink-0 items-center rounded-md px-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-7 group-data-[collapsible=icon]:opacity-0", className)}
+    {...props}
+  />
+);
 const SidebarGroupContent = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="sidebar-group-content" data-sidebar="group-content" className={cn("w-full text-sm", className)} {...props} />;
-const SidebarMenu = ({ className, ...props }: React.ComponentProps<"ul">) => <ul data-slot="sidebar-menu" data-sidebar="menu" className={cn("flex w-full min-w-0 flex-col gap-1", className)} {...props} />;
+const SidebarMenu = ({ className, ...props }: React.ComponentProps<"ul">) => <ul data-slot="sidebar-menu" data-sidebar="menu" className={cn("flex w-full min-w-0 flex-col gap-0.5", className)} {...props} />;
 const SidebarMenuItem = ({ className, ...props }: React.ComponentProps<"li">) => <li data-slot="sidebar-menu-item" data-sidebar="menu-item" className={cn("group/menu-item relative", className)} {...props} />;
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-lg px-3 py-2 text-start text-sm ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pe-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-sidebar-accent data-active:font-medium data-active:text-sidebar-accent-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full touch-manipulation items-center gap-2.5 overflow-hidden rounded-xl px-2.5 py-2 text-start text-sm text-sidebar-foreground/85 ring-sidebar-ring outline-hidden transition-[width,height,padding,background-color,color] group-has-data-[sidebar=menu-action]/menu-item:pe-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-card data-active:font-medium data-active:text-foreground data-active:shadow-xs data-active:ring-1 data-active:ring-border/80 [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     variants: {
       variant: { default: "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", outline: "bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]" },
@@ -210,4 +230,24 @@ const SidebarMenuSubButton = ({ render, size = "md", isActive = false, className
     render,
     state: { slot: "sidebar-menu-sub-button", sidebar: "menu-sub-button", size, active: isActive },
   });
-export { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarProvider, SidebarSeparator, SidebarTrigger, useSidebar };
+export {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuAction,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarProvider,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+};

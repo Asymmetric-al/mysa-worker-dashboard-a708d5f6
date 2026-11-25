@@ -5,11 +5,16 @@ import SimulationLabel from "@/components/simulation-label";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { SEND_STATUS, statusBadgeProps, VALUE_STATE_WORDS, type SendStatus, type StatusTone } from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Frame, FramePanel } from "@/components/ui/frame";
+import { Kbd } from "@/components/ui/kbd";
+import { ResizableSplitPane } from "@/components/ui/resizable";
 import { INBOX_EMPTY_COPY, INBOX_HEADING, INBOX_SIMULATION_EFFECT, ONE_COPY_STATEMENT } from "@/features/audience/copy/inbox";
 import { cn } from "@/lib/cn";
 import { countFormatOf } from "@/lib/count-format";
 import { FIRST_PAGE, PAGE_SIZE_OPTIONS, offeredPageSize } from "@/lib/page-window";
+import { useShortcut } from "@/lib/ui-sdk";
 import { sameScope, type Scope } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
 import { useInbox, type InboxEnvelope } from "../hooks/use-audience-reads";
@@ -40,6 +45,15 @@ const AUDIENCE_DISPLAY: Readonly<Record<NonNullable<InboxMessage["audience"]>, {
 const NOTICE_BODY_DISPLAY: Readonly<Record<"protected" | "public", { readonly label: string; readonly tone: StatusTone }>> = { protected: { label: "Protected notice", tone: "caution" }, public: { label: "Public notice", tone: "neutral" } };
 const SEND_STATE_ORDER: readonly SendStatus[] = ["accepted", "failed", "unknown"];
 const NOT_RECORDED = statusBadgeProps(VALUE_STATE_WORDS, "unknown");
+function senderInitials(sender: string): string {
+  const words = sender
+    .trim()
+    .split(/\s+/u)
+    .filter((word) => word.length > 0);
+  const first = words[0]?.[0] ?? "";
+  const second = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
+  return `${first}${second}`.toUpperCase() || "?";
+}
 const columnOf = (id: string, header: string, cell: (message: InboxMessage) => ReactNode): RecordListColumnDef<InboxMessage> => ({ id, header, enableSorting: false, cell: (context) => cell(context.row.original) });
 function usableSeed(seed: ReadResult<InboxEnvelope> | undefined, scope: Scope, paging: InboxPaging): ReadResult<InboxEnvelope> | undefined {
   if (seed === undefined) return undefined;
@@ -72,6 +86,18 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
     setSelectedMessageId(null);
     openTriggerRef.current?.focus();
   }, []);
+  const stepMessage = useCallback(
+    (delta: 1 | -1): void => {
+      if (messages.length === 0) return;
+      const currentIndex = selectedMessageId === null ? -1 : messages.findIndex((item) => item.messageId === selectedMessageId);
+      const nextIndex = currentIndex === -1 ? (delta > 0 ? 0 : messages.length - 1) : Math.min(messages.length - 1, Math.max(0, currentIndex + delta));
+      const nextMessage = messages[nextIndex];
+      if (nextMessage !== undefined) setSelectedMessageId(nextMessage.messageId);
+    },
+    [messages, selectedMessageId],
+  );
+  useShortcut("j", () => stepMessage(1));
+  useShortcut("k", () => stepMessage(-1));
   const handleQueryStateChange = useCallback(
     (next: RecordListQueryState): void => {
       setColumnVisibility(next.columnVisibility);
@@ -87,7 +113,14 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
   }, [messages]);
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<InboxMessage>>>(
     () => [
-      columnOf("sender", COLUMNS.sender, (message) => <bdi className="min-w-0 font-medium break-words">{message.sender}</bdi>),
+      columnOf("sender", COLUMNS.sender, (message) => (
+        <span className="flex min-w-0 items-center gap-2">
+          <Avatar size="sm" aria-hidden="true" className="shrink-0 ring-1 ring-border/80">
+            <AvatarFallback className="bg-surface-subtle text-xs font-medium text-foreground">{senderInitials(message.sender)}</AvatarFallback>
+          </Avatar>
+          <bdi className="min-w-0 font-medium break-words">{message.sender}</bdi>
+        </span>
+      )),
       columnOf("subject", COLUMNS.subject, (message) => <bdi className="min-w-0 break-words">{message.subject}</bdi>),
       columnOf("audience", COLUMNS.audience, (message) => (message.audience === null ? <StatusBadge {...NOT_RECORDED} srPrefix={COLUMNS.audience} /> : <StatusBadge {...AUDIENCE_DISPLAY[message.audience]} srPrefix={COLUMNS.audience} />)),
       columnOf("language", COLUMNS.language, (message) => (message.locale === null ? <StatusBadge {...NOT_RECORDED} srPrefix={COLUMNS.language} /> : <bdi>{message.locale.tag}</bdi>)),
@@ -117,10 +150,17 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
       <section id={readerRegionId} ref={readerRef} tabIndex={-1} aria-labelledby={readerHeadingId} data-slot="inbox-reader" className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <h3 {...{ id: readerHeadingId, className: "type-subsection-title text-pretty wrap-anywhere" }}>{"The message as it was produced for this recipient"}</h3>
-          <Button type="button" variant="outline" size="sm" onClick={closeReader} className="max-w-full whitespace-normal">
-            {CLOSE_LABEL}
-            <span className="sr-only"> the message</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true" className="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex">
+              <Kbd>j</Kbd>
+              <span>/</span>
+              <Kbd>k</Kbd>
+            </span>
+            <Button type="button" variant="outline" size="sm" onClick={closeReader} className="max-w-full whitespace-normal">
+              {CLOSE_LABEL}
+              <span className="sr-only"> the message</span>
+            </Button>
+          </div>
         </div>
         {selectedMessage.reading.state === "unavailable" ? (
           <Alert role={undefined} data-slot="inbox-reading-unavailable">
@@ -168,32 +208,47 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
         <StateNotice kind="empty" title={INBOX_EMPTY_COPY.title} description={INBOX_EMPTY_COPY.description} headingLevel={3} />
       ) : data.messages.length === 0 ? (
         <StateNotice kind="empty" title={BEYOND_LAST_PAGE.title} description={beyondLastPageBody} action={beyondLastPageAction} headingLevel={3} />
-      ) : (
+      ) : reader === null ? (
         <>
-          <RecordList label={INBOX_HEADING} columns={columns} rows={data.messages} rowCount={data.page.total} queryState={listState} onQueryStateChange={handleQueryStateChange} getRowId={getRowId} rowActions={rowActions} itemNoun="message" locale={locale} pageSizeOptions={PAGE_SIZE_OPTIONS} />
+          <RecordList label={INBOX_HEADING} columns={columns} rows={data.messages} rowCount={data.page.total} queryState={listState} onQueryStateChange={handleQueryStateChange} getRowId={getRowId} initialPinnedColumns={{ start: ["sender"] }} rowActions={rowActions} itemNoun="message" locale={locale} pageSizeOptions={PAGE_SIZE_OPTIONS} />
           <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{ORDER_NOTE}</p>
-          {reader}
         </>
+      ) : (
+        <ResizableSplitPane
+          defaultRatio={54}
+          minRatio={35}
+          maxRatio={72}
+          handleLabel="Resize inbox list and message reader"
+          start={
+            <div className="flex min-w-0 flex-col gap-3">
+              <RecordList label={INBOX_HEADING} columns={columns} rows={data.messages} rowCount={data.page.total} queryState={listState} onQueryStateChange={handleQueryStateChange} getRowId={getRowId} initialPinnedColumns={{ start: ["sender"] }} rowActions={rowActions} itemNoun="message" locale={locale} pageSizeOptions={PAGE_SIZE_OPTIONS} />
+              <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{ORDER_NOTE}</p>
+            </div>
+          }
+          end={reader}
+        />
       );
     content = (
       <>
-        <div className="flex min-w-0 flex-col gap-2">
-          <p className="text-sm font-medium text-pretty wrap-anywhere">{data.page.total === 1 ? "One message has been produced for this membership." : `${formatCount.format(data.page.total)} messages have been produced for this membership.`}</p>
-          <ul aria-label="Send outcomes recorded in this inbox" className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-            {SEND_STATE_ORDER.map((state) => (
-              <li key={state} className="flex min-w-0 flex-wrap items-center gap-1.5">
-                <StatusBadge {...statusBadgeProps(SEND_STATUS, state)} srPrefix={COLUMNS.sendState} />
-                <span className="tabular-figures text-sm">{formatCount.format(data.sendStates[state])}</span>
-              </li>
-            ))}
-          </ul>
-          <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{HONESTY_NOTE}</p>
-          <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">
-            {`${"Read at"} `}
-            <bdi className="tabular-figures">{envelope.asOf}</bdi>
-            {` — ${"the scenario instant this inbox was evaluated at, so a message recorded after it does not appear here."}`}
-          </p>
-        </div>
+        <Frame spacing="sm">
+          <FramePanel className="flex min-w-0 flex-col gap-3">
+            <p className="text-sm font-medium text-pretty wrap-anywhere">{data.page.total === 1 ? "One message has been produced for this membership." : `${formatCount.format(data.page.total)} messages have been produced for this membership.`}</p>
+            <ul aria-label="Send outcomes recorded in this inbox" className="grid min-w-0 gap-2.5 sm:grid-cols-3">
+              {SEND_STATE_ORDER.map((state) => (
+                <li key={state} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-surface-subtle px-3 py-2.5">
+                  <StatusBadge {...statusBadgeProps(SEND_STATUS, state)} srPrefix={COLUMNS.sendState} />
+                  <span className="tabular-figures text-base font-semibold text-foreground">{formatCount.format(data.sendStates[state])}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{HONESTY_NOTE}</p>
+            <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">
+              {`${"Read at"} `}
+              <bdi className="tabular-figures">{envelope.asOf}</bdi>
+              {` — ${"the scenario instant this inbox was evaluated at, so a message recorded after it does not appear here."}`}
+            </p>
+          </FramePanel>
+        </Frame>
         {envelope.coverage.state === "complete" ? null : <StateNotice kind="partial-coverage" title={STATE_HEADINGS.partialCoverage} coverage={envelope.coverage} headingLevel={3} />}
         {data.unresolvedIntents === 0 ? null : (
           <Alert role={undefined} data-slot="inbox-unresolved-intents">

@@ -9,11 +9,14 @@ import RecordList, { useRecordListWindow, type RecordListColumnDef, type RecordL
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { REACH_STATUS } from "@/components/status-badge";
 import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { SegmentedTabs, type SegmentedOption } from "@/components/ui/segmented-tabs";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { cn } from "@/lib/cn";
 import type { MutationInput, ValueState } from "@/modules/data-service/envelope";
 import { lifecycleFor, rosterOf, type EditionAudience, type RosterDocument, type RosterEdition, type UpdatesRoster } from "../roster";
@@ -225,12 +228,12 @@ type StateNote = { readonly term: string; readonly detail: string };
   return notes;
 }
 /** The sentences the cells no longer carry, stated once under the table: the state word or badge label, then what it permits. */ const StateNotes = ({ notes }: { readonly notes: readonly StateNote[] }): ReactElement => (
-  <div className="flex min-w-0 flex-col gap-1">
+  <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4">
     <p className="text-sm font-medium">{SURFACE_COPY.statesLead}</p>
-    <dl className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+    <dl className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
       {notes.map((note) => (
         <div key={note.term} className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-          <dt className="font-medium">{note.term}</dt>
+          <dt className="font-medium text-foreground">{note.term}</dt>
           <dd className="min-w-0 text-pretty wrap-anywhere">{note.detail}</dd>
         </div>
       ))}
@@ -472,10 +475,16 @@ export type UpdatesListProps = {
   /** The level this surface's own heading occupies, so a page that already states an `h1` keeps one. */ readonly headingLevel?: 1 | 2;
   readonly className?: string;
 };
+type UpdatesViewMode = "table" | "cards";
+const UPDATES_VIEW_OPTIONS: readonly SegmentedOption<UpdatesViewMode>[] = [
+  { value: "table", label: "Table view" },
+  { value: "cards", label: "Cards view" },
+];
 /** The one type scale's heading utility for each level this surface may take, so its own heading measures the same as every other heading at that level. */ const HEADING_SCALE: Readonly<Record<1 | 2, string>> = { 1: "type-page-title", 2: "type-section-title" };
 export default function UpdatesList({ roster, initialResult, headingLevel = 2, className }: UpdatesListProps): ReactElement {
   const headingId = useId();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<UpdatesViewMode>("table");
   // The window the route's read answered with is the window this surface opens on, so the first paint states the rows that answer holds and asks the read for nothing it has not already been asked. The address owns the window from then on, so a reader who opens an Update, reloads or returns reopens the page they left.
   const seededWindow = initialResult !== undefined && initialResult.kind === "envelope" ? initialResult.envelope.data.page : undefined;
   const listWindow = useRecordListWindow({ page: seededWindow?.page ?? FIRST_PAGE, pageSize: pageSizeOf(seededWindow?.pageSize ?? PAGE_SIZE_DEFAULT) });
@@ -536,14 +545,79 @@ export default function UpdatesList({ roster, initialResult, headingLevel = 2, c
     const queryState: RecordListQueryState = { sort: NO_ORDER, page: current.page.page, pageSize: current.page.pageSize, columnVisibility };
     content = (
       <>
-        <RecordList<RosterRow> {...{ label: SURFACE_COPY.tableLabel, columns, rows, rowCount: current.page.total, queryState, onQueryStateChange: handleQueryStateChange, getRowId: (row) => row.key, itemNoun: "editions", pageSizeOptions: PAGE_SIZE_OPTIONS, isLoading: read.isFetching }} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <SegmentedTabs label="Updates display layout" value={viewMode} onValueChange={setViewMode} options={UPDATES_VIEW_OPTIONS} />
+        </div>
+        {viewMode === "cards" && rows.length > 0 ? (
+          <ul data-slot="updates-cards-grid" aria-label={SURFACE_COPY.tableLabel} className="grid min-w-0 gap-3.5 sm:grid-cols-2">
+            {rows.map((row) => (
+              <li key={row.key} className="min-w-0">
+                <SpotlightCard className="h-full rounded-2xl">
+                  <div className="flex h-full min-w-0 flex-col justify-between gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-xs">
+                    <div className="flex min-w-0 flex-col gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <AudienceCell edition={row.edition} />
+                        <LanguageCell edition={row.edition} />
+                      </div>
+                      <UpdateCell row={row} />
+                      <StatusCell edition={row.edition} />
+                    </div>
+                    <div className="flex flex-col gap-2 border-t border-border/70 pt-2.5">
+                      <ReviewCell edition={row.edition} reviewAvailable={reviewAvailable} />
+                      <ReleaseCell edition={row.edition} />
+                    </div>
+                  </div>
+                </SpotlightCard>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <RecordList<RosterRow>
+            label={SURFACE_COPY.tableLabel}
+            columns={columns}
+            rows={rows}
+            rowCount={current.page.total}
+            queryState={queryState}
+            onQueryStateChange={handleQueryStateChange}
+            getRowId={(row) => row.key}
+            rowLabel={(row) => `${row.document.title ?? row.document.documentId} (${row.edition.localeTag})`}
+            initialPinnedColumns={{ start: ["update"] }}
+            renderExpandedRow={(row) => (
+              <div className="grid gap-3 text-xs sm:grid-cols-3">
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-muted-foreground">Document &amp; variant</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <bdi className={IDENTIFIER_CLASS}>{row.document.documentId}</bdi>
+                    <CopyButton value={row.document.documentId} label={`Copy document ID ${row.document.documentId}`} className="h-6 min-h-6 px-2 text-xs" />
+                  </div>
+                  <span className="text-muted-foreground">
+                    Variant <bdi className={IDENTIFIER_CLASS}>{row.edition.variantId}</bdi>
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-muted-foreground">Audience scope</span>
+                  <span className="text-pretty text-foreground">{AUDIENCE_LABELS[row.edition.audience].whoReceives}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-muted-foreground">Language &amp; direction</span>
+                  <span className="text-foreground">
+                    <bdi dir={row.edition.direction}>{endonymOf(row.edition.localeTag)}</bdi> ({row.edition.localeTag}, {row.edition.direction.toUpperCase()})
+                  </span>
+                </div>
+              </div>
+            )}
+            itemNoun="editions"
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            isLoading={read.isFetching}
+          />
+        )}
         {stateNotes.length === 0 ? null : <StateNotes notes={stateNotes} />}
       </>
     );
   }
   return (
     <section data-slot="updates-list" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
           <HeadingTag {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-pretty break-words") }}>{SURFACE_COPY.heading}</HeadingTag>
           <p className={MUTED_PARAGRAPH_CLASS}>{SURFACE_COPY.purpose}</p>

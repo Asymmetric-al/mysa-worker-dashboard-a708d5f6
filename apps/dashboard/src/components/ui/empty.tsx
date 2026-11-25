@@ -1,9 +1,9 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/cn";
-const Empty = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="empty" className={cn("flex w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-lg border-dashed p-12 text-center text-balance", className)} {...props} />;
-const EmptyHeader = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="empty-header" className={cn("flex max-w-sm flex-col items-center gap-2", className)} {...props} />;
-const emptyMediaVariants = cva("mb-2 flex shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg]:shrink-0", {
-  variants: { variant: { default: "bg-transparent", icon: "flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground [&_svg:not([class*='size-'])]:size-6" } },
+const Empty = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="empty" className={cn("flex w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-border bg-surface-subtle p-10 text-center text-balance", className)} {...props} />;
+const EmptyHeader = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="empty-header" className={cn("flex max-w-md flex-col items-center gap-2", className)} {...props} />;
+const emptyMediaVariants = cva("mb-1 flex shrink-0 items-center justify-center [&_svg]:pointer-events-none [&_svg]:shrink-0", {
+  variants: { variant: { default: "bg-transparent", icon: "flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/80 bg-card text-foreground shadow-xs [&_svg:not([class*='size-'])]:size-5" } },
   defaultVariants: { variant: "default" },
 });
 const EmptyMedia = ({ className, variant = "default", ...props }: React.ComponentProps<"div"> & VariantProps<typeof emptyMediaVariants>) => <div data-slot="empty-icon" data-variant={variant} className={cn(emptyMediaVariants({ variant, className }))} {...props} />;

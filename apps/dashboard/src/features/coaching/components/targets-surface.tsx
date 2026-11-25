@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 import { hasSettled } from "@/components/attempt";
 import OperationResult, { focusAnnouncedRegion } from "@/components/operation-result";
 import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
+import { TickMeter } from "@/components/ui/segmented-meter";
 import { cn } from "@/lib/cn";
 import type { reads } from "@/modules/data-service";
 import type { ValueState } from "@/modules/data-service/envelope";
@@ -83,11 +84,11 @@ function targetLinkTextOf(target: WireTarget): string {
   return label === "" ? measure : `${measure} — ${label}`;
 }
 const TargetPicker = ({ targets, selectedIndex }: { readonly targets: readonly WireTarget[]; readonly selectedIndex: number }): ReactElement => (
-  <nav aria-label={COACHING_COPY.targets.heading} className="min-w-0">
+  <nav aria-label={COACHING_COPY.targets.heading} className="min-w-0 rounded-2xl border border-border/80 bg-surface-subtle p-2.5">
     <ul className="flex flex-wrap gap-2">
       {targets.map((target, index) => (
         <li key={target.targetId} className="min-w-0">
-          <Link {...{ href: `/coaching/targets?target=${encodeURIComponent(target.targetId)}`, "aria-current": index === selectedIndex ? "page" : undefined, "data-slot": "button", className: cn(buttonVariants({ variant: index === selectedIndex ? "secondary" : "outline", size: "sm" }), PICKER_CLASS) }}>
+          <Link {...{ href: `/coaching/targets?target=${encodeURIComponent(target.targetId)}`, "aria-current": index === selectedIndex ? "page" : undefined, "data-slot": "button", className: cn(buttonVariants({ variant: index === selectedIndex ? "default" : "outline", size: "sm" }), PICKER_CLASS) }}>
             {targetLinkTextOf(target)}
           </Link>
         </li>
@@ -134,6 +135,19 @@ export default function TargetsSurface({ envelope, locale, selectedTargetId, cla
       <TargetForm key={selected === undefined ? "new-target" : selected.targetId} target={selected === undefined ? null : targetViewOf(selected)} scope={envelope.scope} expectedRevision={selected === undefined ? envelope.revision : selected.revision} locale={locale} onSettled={settleTarget} onCheckResult={reread} />
       {selected === undefined || selectedIndex === -1 ? null : (
         <>
+          {progress !== null && progress.state === "active" && progress.quantity > 0 && progress.recorded[0] !== undefined && (progress.recorded[0].valueState === "value" || progress.recorded[0].valueState === "zero") && progress.recorded[0].value !== null ? (
+            <div data-slot="target-cadence-meter" className="flex flex-col gap-2 rounded-2xl border border-border/80 bg-card p-4 shadow-2xs">
+              <div className="flex flex-wrap items-baseline justify-between gap-2 text-xs">
+                <span className="font-medium text-foreground">Current period cadence</span>
+                <span className="tabular-figures text-muted-foreground">{`${String(progress.recorded[0].value)} of ${String(progress.quantity)} ${MEASURE_COPY[progress.measure].label.toLowerCase()}`}</span>
+              </div>
+              <TickMeter
+                ratio={progress.recorded[0].value / progress.quantity}
+                tone={progress.recorded[0].value >= progress.quantity ? "positive" : "primary"}
+                label={`Current period progress: ${String(progress.recorded[0].value)} of ${String(progress.quantity)}`}
+              />
+            </div>
+          ) : null}
           <TargetHistory versions={versionsViewOf(selected)} closedPeriods={closedPeriodsViewOf(selected)} locale={locale} />
           {progress === null ? null : <TargetProgress progress={progress} comparison={comparisonViewOf(envelope)} locale={locale} />}
         </>

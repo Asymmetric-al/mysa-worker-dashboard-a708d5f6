@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "@/components/ui/combobox";
+import { DataGridFilterChip } from "@/components/ui/data-grid";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
@@ -27,6 +28,8 @@ import type { ValueState } from "@/modules/data-service/envelope";
   readonly onAppliedChange: (next: Record<string, string[]>) => void;
   readonly amountRange?: AmountRangeScope;
   readonly pending?: boolean;
+  /** Optional extra control placed cleanly in the toolbar strip (e.g. ReUI Date Selector). */
+  readonly trailingControls?: ReactNode;
   readonly className?: string;
   /** The interface locale this toolbar formats its counts in, stated by the route that composes it; left off, the application default interface locale applies. */ readonly locale?: string;
 };
@@ -137,7 +140,7 @@ function FacetPopover(props: FacetPopoverProps): ReactNode {
   const { facet, selectedCount, locale, label, description, describedBy, open, onOpenChange, children } = props;
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger render={<Button variant="outline" size="sm" className="max-w-full" aria-label={label} aria-describedby={describedBy} />}>
+      <PopoverTrigger render={<Button variant="outline" size="sm" className={cn("max-w-full", selectedCount > 0 && "border-foreground/30 bg-card text-foreground")} aria-label={label} aria-describedby={describedBy} />}>
         <FacetTriggerContent facet={facet} selectedCount={selectedCount} locale={locale} />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 max-w-[calc(100vw-2rem)]">
@@ -243,17 +246,12 @@ function FacetControl(props: FacetControlProps & { readonly reason: string | nul
 }
 function FilterChip({ chip, onRemove }: { readonly chip: AppliedChip; readonly onRemove: () => void }): ReactNode {
   const text = `${chip.facetLabel}: ${chip.valueLabel}`;
-  return (
-    <Badge render={<button type="button" aria-label={`${TOOLBAR_COPY.removeFilter}: ${text}`} onClick={onRemove} />} variant="secondary" className="h-6 cursor-pointer gap-1.5 ps-2 pe-1.5">
-      <bdi className="max-w-64 truncate">{text}</bdi>
-      <XIcon aria-hidden="true" className="size-3 shrink-0" />
-    </Badge>
-  );
+  return <DataGridFilterChip facetLabel={chip.facetLabel} valueLabel={chip.valueLabel} removeLabel={`${TOOLBAR_COPY.removeFilter}: ${text}`} onRemove={onRemove} />;
 }
 const FACET_LAYER_PREFIX = "facet:";
 type UnavailableFilterNote = { readonly facetId: string; readonly label: string; readonly reason: string; readonly reasonId: string };
 type FacetControlEntry = { readonly facet: FacetSpec; readonly reason: string | null; readonly reasonId: string };
-/** The only filter surface in the application. */ export function QueryToolbar({ label, search, facets, applied, onAppliedChange, amountRange, pending = false, className, locale }: QueryToolbarProps): ReactNode {
+/** The only filter surface in the application. */ export function QueryToolbar({ label, search, facets, applied, onAppliedChange, amountRange, pending = false, trailingControls, className, locale }: QueryToolbarProps): ReactNode {
   const searchFieldId = useId();
   const [openLayer, setOpenLayer] = useState<string | null>(null);
   const [searchState, setSearchState] = useState<{ readonly external: string; readonly text: string }>({ external: search.value, text: search.value });
@@ -318,7 +316,7 @@ type FacetControlEntry = { readonly facet: FacetSpec; readonly reason: string | 
   const facetControls: readonly FacetControlEntry[] = facets.map((facet, index) => ({ facet, reason: reasonFor(facet), reasonId: `${notesBaseId}-filter-${index}` }));
   const unavailableFilters: readonly UnavailableFilterNote[] = facetControls.flatMap(({ facet, reason, reasonId }) => (reason === null ? [] : [{ facetId: facet.id, label: facet.label, reason, reasonId }]));
   return (
-    <section data-slot="query-toolbar" aria-label={label} className={cn("flex flex-col gap-3", className)}>
+    <section data-slot="query-toolbar" aria-label={label} className={cn("flex flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-3 sm:p-3.5", className)}>
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-48 flex-1 basis-56">
           <Label htmlFor={searchFieldId} className="sr-only">
@@ -344,6 +342,7 @@ type FacetControlEntry = { readonly facet: FacetSpec; readonly reason: string | 
           const describedBy = reason === null ? undefined : reasonId;
           return <FacetControl key={facet.id} facet={facet} selected={selectedValues} onSelectionChange={(values) => setFacetValues(facet.id, values)} pending={pending} open={openLayer === layer} onOpenChange={(open) => setOpenLayer(open ? layer : null)} reason={reason} describedBy={describedBy} locale={locale} />;
         })}
+        {trailingControls}
         {chips.length === 0 ? null : (
           <Button variant="ghost" size="sm" onClick={clearAll}>
             {TOOLBAR_COPY.clearAll}
@@ -351,22 +350,27 @@ type FacetControlEntry = { readonly facet: FacetSpec; readonly reason: string | 
         )}
       </div>
       {chips.length > 0 ? (
-        <ul aria-label={TOOLBAR_COPY.activeFilters} className="flex flex-wrap items-center gap-2">
-          {chips.map((chip) => (
-            <li key={chip.kind === "search" ? "search" : `${chip.facetId}\u001f${chip.valueId}`}>
-              <FilterChip
-                chip={chip}
-                onRemove={() => {
-                  if (chip.kind === "search") {
-                    clearSearchText();
-                    return;
-                  }
-                  setFacetValues(chip.facetId, withValueRemoved(appliedValuesOf(applied, chip.facetId), chip.valueId));
-                }}
-              />
-            </li>
-          ))}
-        </ul>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <Badge variant="secondary" className="h-6 tabular-figures text-xs">
+            {`${countFormatOf(locale).format(chips.length)} active`}
+          </Badge>
+          <ul aria-label={TOOLBAR_COPY.activeFilters} className="flex flex-wrap items-center gap-2">
+            {chips.map((chip) => (
+              <li key={chip.kind === "search" ? "search" : `${chip.facetId}\u001f${chip.valueId}`}>
+                <FilterChip
+                  chip={chip}
+                  onRemove={() => {
+                    if (chip.kind === "search") {
+                      clearSearchText();
+                      return;
+                    }
+                    setFacetValues(chip.facetId, withValueRemoved(appliedValuesOf(applied, chip.facetId), chip.valueId));
+                  }}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : facets.length === 0 ? null : (
         <p className="text-xs text-muted-foreground">{TOOLBAR_COPY.noFilterApplied}</p>
       )}

@@ -1,10 +1,13 @@
 "use client";
 import Link from "next/link";
+import { ArrowUpRightIcon } from "lucide-react";
 import { useId, type ReactElement } from "react";
 import SimulationLabel from "@/components/simulation-label";
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { REACH_STATUS, statusBadgeProps, VALUE_STATE_WORDS } from "@/components/status-badge";
+import { AnimatedListItem } from "@/components/ui/animated-list";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { DISCOVERY_INDEX_COPY, RECEIVING_SIMULATION_EFFECT } from "@/features/audience/copy/receiving";
 import { useDiscoveryIndex, type DiscoveryIndexEnvelope } from "@/features/audience/hooks/use-audience-reads";
 import { cn } from "@/lib/cn";
@@ -17,20 +20,34 @@ const HEADING_TAGS: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4
 const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const LISTED_STATUS = statusBadgeProps(REACH_STATUS, "listed");
 const DENIED_DESCRIPTION = "The read was refused before it listed anything, so nothing here states how many editions are listed publicly, what they are called or whether any exists at all.";
-function ListedEditionRow({ edition }: { readonly edition: DiscoveryIndexEnvelope["data"]["entries"][number] }): ReactElement {
+function ListedEditionRow({ edition, index }: { readonly edition: DiscoveryIndexEnvelope["data"]["entries"][number]; readonly index: number }): ReactElement {
   const title = edition.title.trim();
   return (
     <li data-slot="discovery-edition" className="min-w-0">
-      <Link href={edition.href} className="inline-link flex min-h-11 min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 rounded-sm p-2 text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          {title === "" ? null : <bdi className="text-sm font-medium text-pretty wrap-anywhere">{title}</bdi>}
-          <span className="text-xs text-muted-foreground wrap-anywhere">
-            <span className="sr-only">Language: </span>
-            <bdi lang={edition.locale.tag}>{languageNameOf(edition.locale.tag)}</bdi>
-          </span>
-        </span>
-        <StatusBadge label={LISTED_STATUS.label} tone={LISTED_STATUS.tone} srPrefix="Reach" />
-      </Link>
+      <AnimatedListItem index={index} className="h-full">
+        <SpotlightCard className="h-full rounded-2xl">
+          <Link
+            href={edition.href}
+            className="group/edition flex h-full min-h-20 min-w-0 flex-col justify-between gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-start transition-colors hover:border-foreground/30 hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            <div className="flex min-w-0 items-start justify-between gap-2">
+              {title === "" ? (
+                <span className="text-sm font-medium text-muted-foreground">Untitled edition</span>
+              ) : (
+                <bdi className="inline-link text-sm font-medium text-foreground text-pretty wrap-anywhere">{title}</bdi>
+              )}
+              <ArrowUpRightIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground transition-transform group-hover/edition:translate-x-0.5 group-hover/edition:-translate-y-0.5 rtl:-scale-x-100" />
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground wrap-anywhere">
+                <span className="sr-only">Language: </span>
+                <bdi lang={edition.locale.tag}>{languageNameOf(edition.locale.tag)}</bdi>
+              </span>
+              <StatusBadge label={LISTED_STATUS.label} tone={LISTED_STATUS.tone} srPrefix="Reach" />
+            </div>
+          </Link>
+        </SpotlightCard>
+      </AnimatedListItem>
     </li>
   );
 }
@@ -84,10 +101,10 @@ function IndexBody({ result, headingLevel, onRetry }: { readonly result: ReadRes
           </>
         );
       return (
-        <div className="flex min-w-0 flex-col gap-2">
-          <ul className="flex min-w-0 flex-col divide-y divide-border">
-            {entries.map((edition) => (
-              <ListedEditionRow key={edition.href} edition={edition} />
+        <div className="flex min-w-0 flex-col gap-3">
+          <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
+            {entries.map((edition, index) => (
+              <ListedEditionRow key={edition.href} edition={edition} index={index} />
             ))}
           </ul>
           {countStatement}
@@ -108,13 +125,16 @@ function IndexBody({ result, headingLevel, onRetry }: { readonly result: ReadRes
   const Heading = HEADING_TAGS[headingLevel];
   return (
     <section data-slot="discovery-index" aria-labelledby={headingId} className={cn("min-w-0", className)}>
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-balance") }}>{DISCOVERY_INDEX_COPY.heading}</Heading>
-          </CardTitle>
-          <CardDescription className="max-w-prose text-pretty">{DISCOVERY_INDEX_COPY.description}</CardDescription>
-          <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} />
+      <Card className="overflow-hidden">
+        <CardHeader className="relative overflow-hidden bg-surface-subtle/75">
+          <div aria-hidden="true" className="bg-dot-grid bg-dot-grid-fade pointer-events-none absolute inset-0 opacity-70" />
+          <div className="relative flex min-w-0 flex-col gap-1.5">
+            <CardTitle>
+              <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-balance") }}>{DISCOVERY_INDEX_COPY.heading}</Heading>
+            </CardTitle>
+            <CardDescription className="max-w-prose text-pretty">{DISCOVERY_INDEX_COPY.description}</CardDescription>
+            <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} />
+          </div>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-3">
           <IndexBody result={result} headingLevel={headingLevel} onRetry={refresh} />

@@ -45,8 +45,8 @@ function RefusalNotice({ answer, headingLevel, unavailableTitle }: { readonly an
   }
 }
 const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
-  <li data-slot="pages-index-row" data-family={row.family} data-document-id={row.documentId} className={"flex min-w-0 flex-col gap-3 border-b border-border pb-4 last:border-b-0 last:pb-0"}>
-    <div className="flex min-w-0 flex-col gap-1">
+  <li data-slot="pages-index-row" data-family={row.family} data-document-id={row.documentId} className={"flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-xs sm:p-5"}>
+    <div className="flex min-w-0 flex-col gap-1 border-b border-border/70 pb-3">
       <Link href={builderPathOf(row.documentId)} className={cn(PAGE_LINK_CLASS, "font-medium")}>
         <bdi>{row.title}</bdi>
         <ChevronRightIcon aria-hidden="true" className="ms-1 size-4 shrink-0 rtl:-scale-x-100" />
@@ -59,11 +59,11 @@ const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
     {row.editions.length === 0 ? (
       <p className={NOTE_CLASS}>{copy.states.emptyEditions}</p>
     ) : (
-      <ul aria-label={EDITIONS_LABEL} className={"flex min-w-0 flex-col gap-3"}>
+      <ul aria-label={EDITIONS_LABEL} className={"grid min-w-0 gap-2.5 sm:grid-cols-2"}>
         {row.editions.map((edition, position) => {
           const reviewHref = reviewHrefOf(edition);
           return (
-            <li key={`${edition.locale}:${String(position)}`} data-slot="pages-index-edition" data-locale={edition.locale} data-lifecycle={edition.lifecycle} className={"flex min-w-0 flex-col gap-1"}>
+            <li key={`${edition.locale}:${String(position)}`} data-slot="pages-index-edition" data-locale={edition.locale} data-lifecycle={edition.lifecycle} className={"flex min-w-0 flex-col gap-1.5 rounded-xl border border-border/75 bg-surface-subtle p-3"}>
               <div className={"flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"}>
                 <span className={"type-supporting wrap-anywhere"}>
                   {EDITION_LOCALE_LABEL}

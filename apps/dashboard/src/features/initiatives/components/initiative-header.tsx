@@ -64,10 +64,10 @@ const ScopeReference = ({ term, reference }: { readonly term: string; readonly r
 function MembershipCount({ state, count }: { readonly state: MembershipState; readonly count: number }): ReactElement {
   const copy = MEMBERSHIP_STATE_COPY[state];
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-xs text-muted-foreground">{copy.label}</dt>
+    <div className="flex min-w-0 flex-col gap-1 rounded-xl border border-border/80 bg-surface-subtle p-3">
+      <dt className="text-xs font-medium text-muted-foreground">{copy.label}</dt>
       <dd className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-        <span className="tabular-figures text-base font-medium">{count}</span>
+        <span className="tabular-figures text-lg font-semibold tracking-tight text-foreground">{count}</span>
         {count === 0 ? <span className="text-xs text-pretty text-muted-foreground">{copy.emptyNote}</span> : null}
       </dd>
     </div>

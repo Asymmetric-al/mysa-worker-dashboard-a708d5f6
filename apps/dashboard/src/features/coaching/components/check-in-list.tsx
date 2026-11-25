@@ -6,6 +6,7 @@ import SidePanel from "@/components/side-panel";
 import StateNotice from "@/components/state-notice";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
 import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { cn } from "@/lib/cn";
@@ -189,7 +190,46 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
     <StateNotice kind="loading" title={COACHING_COPY.checkIns.heading} headingLevel={NOTICE_HEADING_LEVEL} loadingLines={LOADING_LINES} />
   ) : (
     <>
-      <RecordList label={"Check-in history"} columns={columns} rows={rows} rowCount={page.total} queryState={listedQuery} onQueryStateChange={handleQueryStateChange} getRowId={getRowId} rowActions={rowActions} itemNoun={"check-ins"} pageSizeOptions={PAGE_SIZES} isLoading={read.isFetching} locale={locale} />
+      <RecordList
+        label={"Check-in history"}
+        columns={columns}
+        rows={rows}
+        rowCount={page.total}
+        queryState={listedQuery}
+        onQueryStateChange={handleQueryStateChange}
+        getRowId={getRowId}
+        rowLabel={(row) => `check-in from ${checkInDayLabelOf(row)}`}
+        initialPinnedColumns={{ start: ["date"] }}
+        renderExpandedRow={(row) => (
+          <div className="grid gap-3 text-xs sm:grid-cols-3">
+            <div className="flex flex-col gap-1">
+              <span className="font-medium text-muted-foreground">Check-in record</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <bdi className="mono-identifier text-foreground">{row.checkInId}</bdi>
+                <CopyButton value={row.checkInId} label={`Copy check-in ID ${row.checkInId}`} className="h-6 min-h-6 px-2 text-xs" />
+              </div>
+              {checkInInstantOf(row) === null ? null : (
+                <span className="text-muted-foreground">
+                  Captured <bdi className="mono-identifier">{checkInInstantOf(row)}</bdi>
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="font-medium text-muted-foreground">Sharing summary</span>
+              <span className="text-pretty text-foreground">{sharingStatementOf(row)}</span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="font-medium text-muted-foreground">Privacy guardrail</span>
+              <span className="text-pretty text-muted-foreground">Draft and shared writing stay inside the check-in detail panel and are never previewed in this list.</span>
+            </div>
+          </div>
+        )}
+        rowActions={rowActions}
+        itemNoun={"check-ins"}
+        pageSizeOptions={PAGE_SIZES}
+        isLoading={read.isFetching}
+        locale={locale}
+      />
       <Separator />
       <div className="flex min-w-0 flex-col gap-1">
         <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{"A check-in's writing is not reproduced in this list: a row states the day, the captured question set and whether a revision is shared, and the words themselves are read only in the check-in itself."}</p>

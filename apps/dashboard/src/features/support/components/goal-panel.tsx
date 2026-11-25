@@ -8,7 +8,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { MeterBar } from "@/components/ui/meter-bar";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { RadialGauge } from "@/components/ui/radial-gauge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
@@ -79,7 +81,7 @@ function precisionDescription(currency: string, exponent: number): string {
 }
 const Fact = factFrame({ rowClassName: "flex flex-wrap items-baseline gap-x-1.5", termClassName: "font-medium", valueClassName: "min-w-0 break-words" });
 const GoalFacts = ({ goal, locale, measureLabel, valueState }: { readonly goal: GoalFigure; readonly locale: string; readonly measureLabel: string; readonly valueState: ValueState }): ReactElement => (
-  <dl className="grid gap-2 text-sm">
+  <dl className="grid gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
     <Fact term={FACT_LABELS.amount}>
       <span className="flex flex-wrap items-baseline gap-x-2">
         <AmountValue money={goal.amount} valueState={valueState} locale={locale} emphasis="headline" />
@@ -273,17 +275,31 @@ function GoalForm({ envelope, locale, onClose, onCheckResult }: { readonly envel
           ) : (
             <GoalFacts goal={goal} locale={locale} measureLabel={measureLabel} valueState={goalAmountStateOf(envelope)} />
           )}
-          <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-4">
             <h3 className="type-subsection-title">Progress</h3>
-            {progress.figure === null ? null : (
-              <p className="flex flex-wrap items-baseline gap-x-2">
-                <span title={progress.figure.label}>
-                  <bdi className="tabular-figures text-2xl font-semibold tracking-tight">{progress.figure.text}</bdi>
-                  <span className="sr-only">{`. ${progress.figure.note}`}</span>
-                </span>
-                <span className="text-sm text-muted-foreground">of the goal</span>
-              </p>
-            )}
+            {progress.figure === null
+              ? null
+              : (() => {
+                  const numericMatch = data.percentage === null ? null : /^(\d+(?:\.\d+)?)/.exec(data.percentage.trim());
+                  const parsedPercent = numericMatch === null ? null : Number(numericMatch[1]);
+                  return (
+                    <div className="flex min-w-0 flex-wrap items-center gap-4">
+                      {parsedPercent !== null && Number.isFinite(parsedPercent) ? (
+                        <RadialGauge percentage={parsedPercent} ariaLabel={`Support goal progress: ${progress.figure.text}`} className="size-16" />
+                      ) : null}
+                      <div className="flex min-w-0 flex-1 flex-col gap-2.5">
+                        <p className="flex flex-wrap items-baseline gap-x-2">
+                          <span title={progress.figure.label}>
+                            <bdi className="tabular-figures text-2xl font-semibold tracking-tight">{progress.figure.text}</bdi>
+                            <span className="sr-only">{`. ${progress.figure.note}`}</span>
+                          </span>
+                          <span className="text-sm text-muted-foreground">of the goal</span>
+                        </p>
+                        {parsedPercent !== null && Number.isFinite(parsedPercent) ? <MeterBar label="Support goal progress" value={Math.min(100, Math.max(0, parsedPercent))} valueText={progress.figure.text} tone={parsedPercent >= 100 ? "positive" : "primary"} showHeader={false} /> : null}
+                      </div>
+                    </div>
+                  );
+                })()}
             <p className="type-supporting text-pretty">{progress.sentence}</p>
           </div>
           <SnapshotStatement basis={SUPPORT_BASIS} currencies={[goal === null ? envelope.coverage.currency : goal.amount.currency]} period={{ from: data.period.from, to: data.period.to }} coverage={envelope.coverage} asOf={envelope.asOf} isCurrentPeriod={data.period.state === "in-progress"} locale={locale} />

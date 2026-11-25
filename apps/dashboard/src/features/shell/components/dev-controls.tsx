@@ -76,7 +76,7 @@ function ReadyControls({ devState, transports, onReread, className }: { readonly
   return (
     <div data-slot="dev-controls" data-state="ready" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <DevPanel devState={devState} onSetScenario={transports.onSetScenario} onSetClock={transports.onSetClock} onAdvanceClock={transports.onAdvanceClock} onSetFailurePlan={transports.onSetFailurePlan} reset={transports.reset} />
-      <fieldset data-slot="dev-controls-presets" aria-describedby={presetsHintId} aria-busy={advancing ? true : undefined} className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4">
+      <fieldset data-slot="dev-controls-presets" aria-describedby={presetsHintId} aria-busy={advancing ? true : undefined} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-xs">
         <legend className="px-1 text-sm font-medium">{CLOCK_COPY.presetsLabel}</legend>
         <p {...{ id: presetsHintId, className: "type-supporting text-pretty" }}>{CLOCK_COPY.body}</p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">

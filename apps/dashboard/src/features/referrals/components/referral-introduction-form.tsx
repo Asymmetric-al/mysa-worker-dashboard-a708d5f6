@@ -1,7 +1,7 @@
 "use client";
 import { useForm } from "@tanstack/react-form";
 import { useRouter } from "next/navigation";
-import { useCallback, useId, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
 import ActionReview from "@/components/action-review";
 import { ChoiceGroup } from "@/components/choice-group";
 import FormField, { civilDateConvention, fieldErrorsFromInvalid, FormFieldGroup } from "@/components/form-field";
@@ -82,6 +82,11 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
   const SectionHeading = SECTION_HEADING_TAGS[headingLevel];
   const optionIdPrefix = useId();
   const form = useForm({ defaultValues: INITIAL_VALUES });
+  const dateInputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const preHydrated = dateInputRef.current?.value.trim() ?? "";
+    if (preHydrated !== "" && form.getFieldValue(DATE_FIELD) === "") form.setFieldValue(DATE_FIELD, preHydrated);
+  }, [form]);
   const router = useRouter();
   const [settledOutcome, setSettledOutcome] = useState<MutationOutcome | null>(null);
   const { mutateAsync } = useRecordIntroduction();
@@ -99,7 +104,7 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
   const clearRefusal = useCallback((): void => setSettledOutcome(null), []);
   const enteredAt = recordedAtDisplay?.trim() ?? "";
   return (
-    <section dir={dir} aria-labelledby={headingId} data-slot="referral-introduction-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
+    <section dir={dir} aria-labelledby={headingId} data-slot="referral-introduction-form" className={cn("flex min-w-0 flex-col gap-6 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs sm:p-5", className)}>
       <div className="flex min-w-0 flex-col gap-2">
         <SectionHeading {...{ id: headingId, className: SECTION_HEADING_SCALES[headingLevel] }}>{INTRODUCED_BY_COPY.sectionHeading}</SectionHeading>
         <p className="type-supporting text-pretty">{INTRODUCED_BY_COPY.formHelp}</p>
@@ -119,7 +124,20 @@ export function ReferralIntroductionForm({ scope, partnerId, expectedRevision, s
                         dateField.handleChange(event.currentTarget.value);
                         clearRefusal();
                       };
-                      return <Input id={control.id} type="date" value={dateField.state.value} disabled={!dateIsKnown} aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} aria-required={control.required ? true : undefined} onChange={onDateChange} className="w-full sm:max-w-60" />;
+                      return (
+                        <Input
+                          ref={dateInputRef}
+                          id={control.id}
+                          type="date"
+                          value={dateField.state.value}
+                          disabled={!dateIsKnown}
+                          aria-describedby={control.describedBy}
+                          aria-invalid={control.invalid ? true : undefined}
+                          aria-required={control.required ? true : undefined}
+                          onChange={onDateChange}
+                          className="w-full sm:max-w-60"
+                        />
+                      );
                     }}
                   </form.Field>
                 )}

@@ -3,9 +3,12 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import { StateNotice } from "@/components/state-notice";
+import StatusBadge from "@/components/status-badge";
+import { CalendarGrid, type CalendarEventItem } from "@/components/ui/calendar-grid";
+import { SegmentedTabs, type SegmentedOption } from "@/components/ui/segmented-tabs";
 import type { Scope } from "@/modules/data-service/envelope";
 import { parseCivilDate, serialiseCivilDate } from "@/modules/time/civil";
-import { PLANNED_VERSUS_HELD_NOTE, TASK_LIST_LABELS, UNDATED_LABEL } from "../copy/task-status";
+import { PLANNED_VERSUS_HELD_NOTE, TASK_LIST_LABELS, TASK_STATUS_LABELS, UNDATED_LABEL } from "../copy/task-status";
 import { useAgenda, type AgendaQuery, type AgendaResult } from "../hooks/use-agenda";
 import TaskActions, { TaskActionResult, type TaskActionReceipt } from "./task-actions";
 import { taskListColumns } from "./task-lists";
@@ -81,7 +84,7 @@ function dayCellNode(cell: DayCell | undefined): ReactNode {
   return (
     <h2 className={HEADING_CLASS}>
       <time dateTime={cell.text.machine}>{cell.text.heading}</time>
-      {cell.marker === undefined ? null : <span className={MUTED_CLASS}>{cell.marker}</span>}
+      {cell.marker === undefined ? null : <StatusBadge label={cell.marker} tone={cell.marker === TASK_LIST_LABELS.overdue ? "caution" : "info"} />}
     </h2>
   );
 }
@@ -95,8 +98,15 @@ interface AgendaBodyProps {
   readonly onReceiptChange: (receipt: TaskActionReceipt | null) => void;
   readonly onCheckResult: () => void;
 }
+type AgendaViewMode = "list" | "calendar";
+const AGENDA_VIEW_OPTIONS: readonly SegmentedOption<AgendaViewMode>[] = [
+  { value: "list", label: "List view" },
+  { value: "calendar", label: "Calendar view" },
+];
+
 function AgendaBody({ scope, envelope, partnerLabels, columnVisibility, onQueryStateChange, onEdit, onReceiptChange, onCheckResult }: AgendaBodyProps): ReactElement {
   const { data } = envelope;
+  const [viewMode, setViewMode] = useState<AgendaViewMode>("list");
   const layout = useMemo<AgendaLayout>(() => layoutOf(data.days), [data.days]);
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<AgendaRow>>>(() => {
     const dayColumn: RecordListColumnDef<AgendaRow> = { id: "agenda-day", header: "Day", enableSorting: false, enableHiding: false, cell: (context) => dayCellNode(layout.dayCells.get(context.row.original.taskId)) };
@@ -107,17 +117,46 @@ function AgendaBody({ scope, envelope, partnerLabels, columnVisibility, onQueryS
     }
     return listColumns;
   }, [layout, partnerLabels]);
+  const calendarEvents = useMemo<readonly CalendarEventItem[]>(
+    () =>
+      layout.rows.flatMap((row) => {
+        if (row.dueOn === null) return [];
+        const parsed = parseCivilDate(row.dueOn);
+        const dateIso = parsed.status === "parsed" ? serialiseCivilDate(parsed.date) : row.dueOn;
+        return [
+          {
+            id: row.taskId,
+            dateIso,
+            title: row.title,
+            statusLabel: row.dateRelation === "past" ? TASK_LIST_LABELS.overdue : TASK_STATUS_LABELS[row.status],
+            subtitle: row.plannedTime !== null && row.timeZone !== null ? `${row.plannedTime} (${row.timeZone})` : row.category ?? undefined,
+            overdue: row.dateRelation === "past",
+          },
+        ];
+      }),
+    [layout.rows],
+  );
+  const todayIso = useMemo(() => {
+    const todayRow = layout.rows.find((row) => row.dateRelation === "today" && row.dueOn !== null);
+    if (todayRow === undefined || todayRow.dueOn === null) return undefined;
+    const parsed = parseCivilDate(todayRow.dueOn);
+    return parsed.status === "parsed" ? serialiseCivilDate(parsed.date) : todayRow.dueOn;
+  }, [layout.rows]);
   // This agenda's own notice for a read that holds no dated work is handed to the one table pattern rather than returned in the list's place, so an agenda with no day states its total and its page size as every other list does.
   const emptyState = <StateNotice kind="empty" headingLevel={2} title={EMPTY_COPY.title} description={EMPTY_COPY.body} action={{ label: EMPTY_COPY.action, href: WORK_HREF }} />;
   const queryState: RecordListQueryState = { sort: NO_SORT, page: data.page, pageSize: data.pageSize, columnVisibility };
   const hasPlannedTime = layout.rows.some((row) => row.plannedTime !== null);
   const rowActions = (row: AgendaRow): ReactElement => <TaskActions taskId={row.taskId} title={row.title} status={row.status} revision={row.revision} scope={scope} actions={row.actions} presentation="row" onEdit={onEdit} onReceiptChange={onReceiptChange} onCheckResult={onCheckResult} />;
-  const list = <RecordList label="Dated agenda" columns={columns} rows={layout.rows} rowCount={data.total} getRowId={(row) => row.taskId} rowLabel={(row) => row.title} queryState={queryState} onQueryStateChange={onQueryStateChange} rowActions={rowActions} itemNoun="tasks" emptyState={emptyState} />;
+  const list = <RecordList label="Dated agenda" columns={columns} rows={layout.rows} rowCount={data.total} getRowId={(row) => row.taskId} rowLabel={(row) => row.title} initialPinnedColumns={{ start: ["agenda-day"] }} queryState={queryState} onQueryStateChange={onQueryStateChange} rowActions={rowActions} itemNoun="tasks" emptyState={emptyState} />;
   // An agenda holding no dated work states that notice and the pager in place of the table, and both notes below describe rows to complete, reopen or edit, so they are stated only where the agenda holds one.
   if ((envelope.valueStates["total"] ?? "value") === "zero") return list;
   return (
     <>
-      {list}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SegmentedTabs label="Agenda layout" value={viewMode} onValueChange={setViewMode} options={AGENDA_VIEW_OPTIONS} />
+        <span className="text-xs text-muted-foreground">Read-only calendar inspection — edit dates from the task composer.</span>
+      </div>
+      {viewMode === "calendar" ? <CalendarGrid events={calendarEvents} todayIso={todayIso} label="Dated agenda calendar" emptyDayMessage="No dated open task falls on this calendar day." /> : list}
       {hasPlannedTime ? <p className={QUIET_CLASS}>{PLANNED_VERSUS_HELD_NOTE}</p> : null}
       <p className={QUIET_CLASS}>{"Completing, reopening and cancelling a task happen here exactly as they do on the lists. Editing a task's date, title, category or link opens the composer on the lists, because a date is changed by choosing it there and never by dragging a row onto a day."}</p>
     </>

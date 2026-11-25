@@ -124,10 +124,9 @@ type Routed<P> = P & { readonly operation: string };
 export type SetReachVariables = MutationInput<SetReachPayload>;
 export type StopShowingPayload = SchemaInput<typeof stopShowingPubliclyFormSchema>;
 export type StopShowingVariables = MutationInput<StopShowingPayload>;
-function reReadReach(queryClient: QueryClient, outcome: MutationOutcome, scope: Scope, documentId: string): void {
+async function reReadReach(queryClient: QueryClient, outcome: MutationOutcome, scope: Scope, documentId: string): Promise<void> {
   if (!reReadsAfterOutcome(outcome)) return;
-  void queryClient.invalidateQueries({ queryKey: pageKey(scope, documentId) });
-  void queryClient.invalidateQueries({ queryKey: pagesPrefix(scope) });
+  await Promise.all([queryClient.invalidateQueries({ queryKey: pageKey(scope, documentId) }), queryClient.invalidateQueries({ queryKey: pagesPrefix(scope) })]);
 }
 /** `setReach`: gives every released edition of one page one of the three reach values, and answers with the outcome the service stated — `accepted`, `alreadyAccepted`, `unchanged`, `conflict`, `denied`, `invalid`, `unavailable` or `unknown`. */
 export function useSetPageReach(): UseMutationResult<MutationOutcome, never, SetReachVariables> {
@@ -140,7 +139,7 @@ export function useSetPageReach(): UseMutationResult<MutationOutcome, never, Set
       if (!checked.success) return invalid({ operationId: variables.operationId, fields: checked.error });
       return transport.mutateAsync({ ...checked.data, payload: { operation: "setReach", ...checked.data.payload } });
     },
-    onSuccess: (outcome: MutationOutcome, variables: SetReachVariables): void => reReadReach(queryClient, outcome, variables.scope, variables.payload.documentId),
+    onSuccess: (outcome: MutationOutcome, variables: SetReachVariables): Promise<void> => reReadReach(queryClient, outcome, variables.scope, variables.payload.documentId),
   });
 }
 /** `useStopShowingPagePublicly` posts `stopShowingPublicly`: it contains every language edition of one page at one instant, and answers with the outcome the service stated. */ export function useStopShowingPagePublicly(): UseMutationResult<MutationOutcome, never, StopShowingVariables> {
@@ -155,7 +154,7 @@ export function useSetPageReach(): UseMutationResult<MutationOutcome, never, Set
       if (!checked.success) return invalid({ operationId: variables.operationId, fields: checked.error });
       return transport.mutateAsync({ ...checked.data, payload: { operation: "stopShowingPublicly", ...checked.data.payload } });
     },
-    onSuccess: (outcome: MutationOutcome, variables: StopShowingVariables): void => reReadReach(queryClient, outcome, variables.scope, variables.payload.documentId),
+    onSuccess: (outcome: MutationOutcome, variables: StopShowingVariables): Promise<void> => reReadReach(queryClient, outcome, variables.scope, variables.payload.documentId),
   });
 }
 const WITHDRAW_PATH = "/api/pages/withdraw";

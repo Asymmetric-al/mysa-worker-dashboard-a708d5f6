@@ -19,7 +19,7 @@ export type SectionCardProps = {
   readonly contentClassName?: string;
   readonly cardClassName?: string;
   readonly cardSize?: "default" | "sm";
-  readonly cardVariant?: "default" | "muted";
+  readonly cardVariant?: "default" | "muted" | "soft";
   readonly dataSlot?: string;
   readonly cardData?: Readonly<Record<string, string>>;
   readonly region?: { readonly id: string; readonly className?: string };

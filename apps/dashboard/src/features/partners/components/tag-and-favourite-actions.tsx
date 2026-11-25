@@ -45,7 +45,7 @@ const FILING_COPY = {
   tagLabel: "Tag",
   addLabel: "Add tag",
   removeLabel: "Remove tag",
-  removeTagFromRecord: (tag: string): string => `Remove the tag “${tag}” from this record`,
+  removeTagFromRecord: (tag: string): string => `Remove tag “${tag}” from this record`,
   favouriteLabel: "Favourite",
   favouriteDescription: "The favourite mark is your own: it sorts records for you and changes nothing about who may see the record or how it is supported.",
   favouriteOnLabel: "Mark as favourite",

@@ -1,18 +1,19 @@
 "use client";
-import { createContext, useContext, type ComponentPropsWithoutRef } from "react";
+import { createContext, useContext, type ComponentPropsWithoutRef, type Ref } from "react";
 import { cn } from "@/lib/cn";
 import { isDevelopment } from "@/lib/guards";
 /** Raised in a development build when one `ScrollRegion` is rendered inside another. */ export const SCROLL_REGION_NESTING_ERROR = "ScrollRegion cannot be nested inside another ScrollRegion";
 const DEFAULT_STICKY_OFFSET = "var(--app-shell-sticky-offset, 4rem)";
 const ScrollRegionContext = createContext<string | null>(null);
-export type ScrollRegionProps = Omit<ComponentPropsWithoutRef<"div">, "role" | "aria-label" | "tabIndex"> & { label: string; stickyOffset?: string; maxHeight?: string; focusable?: boolean };
-/** The only horizontal scroll container in the application. */ export function ScrollRegion({ label, children, stickyOffset = DEFAULT_STICKY_OFFSET, maxHeight, focusable = true, className, style, ...rest }: ScrollRegionProps) {
+export type ScrollRegionProps = Omit<ComponentPropsWithoutRef<"div">, "role" | "aria-label" | "tabIndex"> & { label: string; stickyOffset?: string; maxHeight?: string; focusable?: boolean; containerRef?: Ref<HTMLElement> };
+/** The only horizontal scroll container in the application. */ export function ScrollRegion({ label, children, stickyOffset = DEFAULT_STICKY_OFFSET, maxHeight, focusable = true, containerRef, className, style, ...rest }: ScrollRegionProps) {
   const enclosingLabel = useContext(ScrollRegionContext);
   if (isDevelopment() && enclosingLabel !== null) throw new Error(`${SCROLL_REGION_NESTING_ERROR}: "${label}" is rendered inside "${enclosingLabel}". ` + "Keep the outermost region and remove the inner wrapper, so the content has exactly " + "one horizontally scrollable region.");
   return (
     <ScrollRegionContext.Provider value={label}>
       <section
         {...rest}
+        ref={containerRef}
         aria-label={label}
         tabIndex={focusable ? 0 : undefined}
         className={cn("relative overflow-x-auto overscroll-x-contain scroll-px-2 scroll-cue-x", maxHeight === undefined ? null : "overflow-y-auto", focusable ? "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]" : null, className)}

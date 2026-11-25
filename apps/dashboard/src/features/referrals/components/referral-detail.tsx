@@ -46,7 +46,7 @@ const BODY_HEADING_SCALE: Readonly<Record<"h3" | "h4", string>> = { h3: "type-su
 function BodySection({ headingId, level, slot, title, children }: { readonly headingId: string; readonly level: "h3" | "h4"; readonly slot: string; readonly title: string; readonly children: ReactNode }): ReactElement {
   const Heading = level === "h3" ? "h3" : "h4";
   return (
-    <section aria-labelledby={headingId} data-slot={slot} className="flex min-w-0 flex-col gap-2">
+    <section aria-labelledby={headingId} data-slot={slot} className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-4">
       <Heading {...{ id: headingId, className: cn(BODY_HEADING_SCALE[level], "text-pretty wrap-anywhere") }}>{title}</Heading>
       {children}
     </section>

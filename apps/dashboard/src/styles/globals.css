@@ -32,12 +32,19 @@
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  --color-warning-soft: var(--warning-soft);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
+  --color-positive-soft: var(--positive-soft);
   --color-positive-foreground: var(--positive-foreground);
   --color-positive: var(--positive);
+  --color-info-soft: var(--info-soft);
+  --color-info-foreground: var(--info-foreground);
+  --color-info: var(--info);
+  --color-destructive-soft: var(--destructive-soft);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-destructive: var(--destructive);
+  --color-surface-subtle: var(--surface-subtle);
   --color-accent-foreground: var(--accent-foreground);
   --color-highlight-foreground: var(--highlight-foreground);
   --color-highlight: var(--highlight);
@@ -92,10 +99,17 @@
   --highlight-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
+  --destructive-soft: oklch(0.968 0.015 17.38);
   --positive: oklch(0.527 0.154 150.069);
   --positive-foreground: oklch(0.985 0 0);
+  --positive-soft: oklch(0.968 0.018 151.711);
   --warning: oklch(0.555 0.163 48.998);
   --warning-foreground: oklch(0.985 0 0);
+  --warning-soft: oklch(0.974 0.02 79.5);
+  --info: oklch(0.488 0.148 258.338);
+  --info-foreground: oklch(0.985 0 0);
+  --info-soft: oklch(0.968 0.014 256.8);
+  --surface-subtle: oklch(0.98 0.002 286.375);
   --border: oklch(0.92 0.004 286.32);
   /* --input is the field-boundary token: a text field's only visible boundary is this border, so it has to reach the 3:1 floor of SC 1.4.11, and this step measures 4.83:1 against the page and against a card. --border stays the decorative rule token (table rules, dividers) and is not the field boundary. */
   --input: oklch(0.552 0.016 285.938);
@@ -122,6 +136,20 @@
   --focus-ring-width: 3px;
   --focus-ring-offset: 2px;
   --scroll-pad-block-start: 4rem;
+  --scroll-pad-block-end: 0px;
+  --border-hairline: 1px;
+}
+
+@media (min-height: 37.5rem) {
+  :root {
+    --scroll-pad-block-end: 5rem;
+  }
+}
+
+@media only screen and (min-device-pixel-ratio: 2), only screen and (min-resolution: 192dpi) {
+  :root {
+    --border-hairline: 0.5px;
+  }
 }
 
 .dark {
@@ -149,10 +177,17 @@
   --destructive: oklch(0.704 0.191 22.216);
   /* A dark-theme destructive surface is a light red, so its foreground has to be dark; the palette's near-white would sit at about 2.8:1 on it. */
   --destructive-foreground: oklch(0.205 0 0);
+  --destructive-soft: oklch(0.245 0.042 22.216);
   --positive: oklch(0.792 0.209 151.711);
   --positive-foreground: oklch(0.205 0 0);
+  --positive-soft: oklch(0.245 0.04 151.711);
   --warning: oklch(0.828 0.189 84.429);
   --warning-foreground: oklch(0.205 0 0);
+  --warning-soft: oklch(0.255 0.038 78.5);
+  --info: oklch(0.746 0.145 256.8);
+  --info-foreground: oklch(0.18 0.012 260);
+  --info-soft: oklch(0.245 0.035 258.3);
+  --surface-subtle: oklch(0.175 0.005 285.823);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(0.552 0.016 285.938);
   --ring: oklch(0.552 0.016 285.938);
@@ -181,16 +216,17 @@
 @layer base {
   * {
     @apply border-border outline-ring;
-    /* Focus Not Obscured (2.4.11): scroll padding is not inherited, so every scroll container carries the offset that clears the sticky shell and sticky table header. On an element that does not scroll the declaration is inert. */
+    /* Focus Not Obscured (2.4.11): scroll padding is not inherited, so every scroll container carries the offset that clears the sticky shell, sticky table header, and bottom sticky controls. On an element that does not scroll the declaration is inert. */
     scroll-padding-block-start: var(--scroll-pad-block-start);
+    scroll-padding-block-end: var(--scroll-pad-block-end);
   }
 
   html {
-    @apply font-sans;
+    @apply font-sans antialiased;
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground selection:bg-primary selection:text-primary-foreground;
   }
 
   :where([id]) {
@@ -374,4 +410,120 @@
     animation-iteration-count: 1;
     transition-duration: 0.01ms;
   }
+}
+
+/* ReUI Data Grid sticky pinned columns: active from md (48rem) upwards so 320px narrow screens and 200% zoom reflow stay completely unobstructed. Uses logical borders so RTL mirrors automatically. */
+@media (min-width: 48rem) {
+  [data-slot="data-grid-body"] > section {
+    scroll-padding-inline-start: var(--pin-scroll-pad-start, 0.5rem);
+    scroll-padding-inline-end: var(--pin-scroll-pad-end, 0.5rem);
+  }
+
+  [data-slot="data-grid"] [data-pinned="start"] {
+    position: sticky;
+    inset-inline-start: var(--pin-start-offset, 0px);
+    z-index: 12;
+    border-inline-end: 1px solid var(--border);
+  }
+
+  [data-slot="data-grid"] thead [data-pinned="start"] {
+    z-index: 22;
+    background-color: var(--surface-subtle);
+  }
+
+  [data-slot="data-grid"] tbody [data-pinned="start"] {
+    background-color: var(--card);
+  }
+
+  [data-slot="data-grid"] tbody tr:hover [data-pinned="start"],
+  [data-slot="data-grid"] tbody tr[data-state="selected"] [data-pinned="start"] {
+    background-color: var(--muted);
+  }
+
+  [data-slot="data-grid"] [data-pinned="end"] {
+    position: sticky;
+    inset-inline-end: var(--pin-end-offset, 0px);
+    z-index: 12;
+    border-inline-start: 1px solid var(--border);
+  }
+
+  [data-slot="data-grid"] thead [data-pinned="end"] {
+    z-index: 22;
+    background-color: var(--surface-subtle);
+  }
+
+  [data-slot="data-grid"] tbody [data-pinned="end"] {
+    background-color: var(--card);
+  }
+
+  [data-slot="data-grid"] tbody tr:hover [data-pinned="end"],
+  [data-slot="data-grid"] tbody tr[data-state="selected"] [data-pinned="end"] {
+    background-color: var(--muted);
+  }
+}
+
+/* Hover-only zinc sheen inspired by React Bits SpotlightCard, gated strictly to fine pointers and full motion so touch devices and prefers-reduced-motion stay completely static. */
+.spotlight-surface {
+  position: relative;
+  overflow: hidden;
+}
+
+.spotlight-surface::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  border-radius: inherit;
+  transition: opacity 200ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .spotlight-surface::after {
+    background: radial-gradient(
+      280px circle at var(--spotlight-x, 50%) var(--spotlight-y, 50%),
+      color-mix(in oklab, var(--foreground) 6%, transparent),
+      transparent 72%
+    );
+  }
+
+  .spotlight-surface:hover::after {
+    opacity: 1;
+  }
+}
+
+/* Calm editorial typography measure for public Ministry Pages and Updates reading surfaces. */
+.editorial-reading {
+  @apply text-base leading-relaxed text-foreground;
+}
+
+.editorial-reading p + p {
+  @apply mt-4;
+}
+
+/* React Bits DotGrid-inspired CSS-token atmospheric pattern: zero raw colors, zero canvas overhead, automatic dark/light inversion, pointer-events none. */
+.bg-dot-grid {
+  background-image: radial-gradient(color-mix(in oklab, var(--foreground) 11%, transparent) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+.bg-dot-grid-fade {
+  mask-image: radial-gradient(ellipse 85% 95% at 50% 0%, var(--foreground) 35%, transparent 100%);
+}
+
+/* Layered zinc card elevation inspired by Emil Kowalski's multi-step shadow rule, strictly token-derived. */
+.surface-elevated {
+  box-shadow:
+    0 0 0 var(--border-hairline) var(--border),
+    0 1px 2px 0 color-mix(in oklab, var(--foreground) 4%, transparent),
+    0 4px 12px -4px color-mix(in oklab, var(--foreground) 6%, transparent);
+}
+
+/* Logical transform origin for GPU-composited reading progress hairlines. */
+.reading-progress-fill {
+  transform-origin: left center;
+}
+
+[dir="rtl"] .reading-progress-fill {
+  transform-origin: right center;
 }

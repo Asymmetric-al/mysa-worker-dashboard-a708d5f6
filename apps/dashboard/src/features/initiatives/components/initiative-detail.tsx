@@ -5,6 +5,7 @@ import { useCallback, useId, useState, type ReactElement } from "react";
 import { PaginationBar } from "@/components/pagination-bar";
 import RecordDetail from "@/components/record-detail";
 import StateNotice from "@/components/state-notice";
+import { ActivityTimeline, type ActivityTimelineEntry } from "@/components/ui/activity-timeline";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -78,7 +79,7 @@ const WindowPager = ({ window, itemNoun, disabled, onPage, onPageSize }: { reado
   <PaginationBar total={window.total} page={window.page} pageSize={window.pageSize} onPageChange={onPage} onPageSizeChange={onPageSize} itemNoun={itemNoun} disabled={disabled} />
 );
 const OwnedWorkRow = ({ task, valueStates }: { readonly task: InitiativeTaskRow; readonly valueStates: InitiativeEnvelope["valueStates"] }): ReactElement => (
-  <li className="flex min-w-0 flex-col gap-1 border-b border-border pb-2 last:border-b-0 last:pb-0">
+  <li className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-border/80 bg-surface-subtle p-3.5">
     <Link href={WORK_ROUTE} className="block min-w-0 py-0.5 text-sm font-medium text-pretty wrap-anywhere inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
       <bdi>{task.title}</bdi>
       <span className="sr-only">{` — ${WORK_LINK_SUFFIX}`}</span>
@@ -188,10 +189,14 @@ const ResultsPanel = ({ initiativeId, resultsEnvelope }: ResultsPanelProps): Rea
 /** What one history entry recorded, in the closed vocabulary of its kind: a new kind is a compile error rather than a silently worded entry. */ const historySentenceOf = (entry: InitiativeHistoryRow): string => {
   return entry.kind === "member-state" ? `${MEMBERSHIP_CHANGE_LABEL}: ${MEMBERSHIP_STATE_COPY[entry.state].label}` : entry.kind === "request-response" ? `${RESPONSE_RECORDED_LABEL}: ${RESPONSE_KIND_COPY[COPY_KIND_OF_RECORDED_KIND[entry.responseKind]].label}` : assertNever(entry, "Unexpected initiative history entry");
 };
-/** One dated history entry: the instant it was recorded, the sentence that says what happened, and the facts the read states with it. */ const HistoryEntry = ({ entry }: { readonly entry: InitiativeHistoryRow }): ReactElement => (
-  <li className="flex min-w-0 flex-col gap-1 border-b border-border pb-2 last:border-b-0 last:pb-0">
-    <RecordedInstant value={entry.at} className="text-sm" />
-    <p className="type-body text-pretty">{historySentenceOf(entry)}</p>
+/** One dated history entry projected onto the UI SDK ActivityTimeline: the instant it was recorded, the sentence that says what happened, and the facts the read states with it. */
+const historyTimelineEntryOf = (entry: InitiativeHistoryRow, index: number): ActivityTimelineEntry => ({
+  id: `${entry.kind}-${entry.at}-${String(index)}`,
+  title: historySentenceOf(entry),
+  time: entry.at,
+  dateTime: entry.at,
+  tone: entry.kind === "request-response" ? "info" : "neutral",
+  meta: (
     <dl className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
       {entry.kind === "member-state" ? (
         <>
@@ -206,8 +211,8 @@ const ResultsPanel = ({ initiativeId, resultsEnvelope }: ResultsPanelProps): Rea
         </>
       )}
     </dl>
-  </li>
-);
+  ),
+});
 function HistoryPanel({ envelope }: { readonly envelope: InitiativeEnvelope }): ReactElement {
   const { initiative, history } = envelope.data;
   return (
@@ -234,11 +239,7 @@ function HistoryPanel({ envelope }: { readonly envelope: InitiativeEnvelope }): 
       {history.length === 0 ? (
         <StateNotice kind="empty" headingLevel={3} title={"No dated history is recorded"} description={"Nothing is recorded for this initiative with a time attached — no working-list change and no recorded response. Closing or reopening is a state of the initiative itself, and the state above is the current one."} />
       ) : (
-        <ol className="flex min-w-0 flex-col gap-2">
-          {history.map((entry, index) => (
-            <HistoryEntry key={`${entry.kind}-${entry.at}-${index}`} entry={entry} />
-          ))}
-        </ol>
+        <ActivityTimeline label={INITIATIVE_COPY.historyHeading} entries={history.map((entry, index) => historyTimelineEntryOf(entry, index))} />
       )}
     </div>
   );

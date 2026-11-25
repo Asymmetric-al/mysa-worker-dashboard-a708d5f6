@@ -82,14 +82,14 @@ const CountCard = ({ heading, figureLabel, count, state, locale, children }: { r
 const MembershipCounts = ({ view, valueStates, locale, className }: { readonly view: AudienceEnvelope["data"]; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string; readonly className?: string }): ReactElement => (
   <div data-slot="membership-counts" className={cn("grid gap-3 lg:grid-cols-2", className)}>
     <CountCard heading={ELIGIBLE_HEADING} figureLabel={SURFACE_COPY.eligibleFigureLabel} count={view.counts.eligible} state={statedState(valueStates, "counts.eligible")} locale={locale}>
-      <ul className="flex flex-col gap-2.5">
+      <ul className="flex flex-col gap-2">
         {MEMBERSHIP_STATE_ORDER.map((state) => {
           const description = MEMBERSHIP_STATE_DESCRIPTIONS[state];
           return (
-            <li key={state} className="flex flex-col gap-1">
+            <li key={state} className="flex flex-col gap-1 rounded-xl border border-border/70 bg-surface-subtle px-3 py-2">
               <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                 <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, state)} />
-                <span>
+                <span className="font-medium">
                   <CountFigure count={view.memberStates[state]} state={statedState(valueStates, `memberStates.${state}`)} locale={locale} />
                 </span>
                 <span className="text-muted-foreground">{description.eligibleSuffix}</span>
@@ -103,8 +103,8 @@ const MembershipCounts = ({ view, valueStates, locale, className }: { readonly v
     <CountCard heading={EXCLUDED_HEADING} figureLabel={SURFACE_COPY.excludedFigureLabel} count={view.counts.excluded} state={statedState(valueStates, "counts.excluded")} locale={locale}>
       <ul className="flex flex-col gap-2">
         {EXCLUSION_REASON_ORDER.map((reason) => (
-          <li key={reason} className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span>
+          <li key={reason} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-xl border border-border/70 bg-surface-subtle px-3 py-2">
+            <span className="font-medium">
               <CountFigure count={view.excludedByReason[reason]} state={statedState(valueStates, `excludedByReason.${reason}`)} locale={locale} />
             </span>
             <span className="max-w-prose text-pretty text-xs text-muted-foreground">{EXCLUSION_REASON_COPY[reason]}</span>

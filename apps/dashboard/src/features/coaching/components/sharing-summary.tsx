@@ -6,6 +6,7 @@ import { factFrame } from "@/components/fact-list";
 import SimulationLabel from "@/components/simulation-label";
 import StateNotice, { type NoticeHeadingLevel } from "@/components/state-notice";
 import StatusBadge, { COACHING_STATUS, statusBadgeProps, type StatusTone } from "@/components/status-badge";
+import { ActivityTimeline, type ActivityTimelineTone } from "@/components/ui/activity-timeline";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -218,32 +219,36 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
         </Section>
         <Separator />
         <Section id={`${headingId}-outcomes`} title={SECTION_TITLES.outcomes}>
-          <ul className="flex min-w-0 flex-col gap-4">
-            {SHARING_OUTCOME_COPY.map((entry) => {
+          <ActivityTimeline
+            label={SECTION_TITLES.outcomes}
+            entries={SHARING_OUTCOME_COPY.map((entry) => {
               const state = grant.outcomes[OUTCOME_STATE_FIELD[entry.id]];
-              return (
-                <li key={entry.id} className="flex min-w-0 flex-col gap-1.5">
-                  <p className="flex flex-wrap items-baseline gap-2 type-body">
-                    <span className="font-medium">{OUTCOME_STAGE_NAME[entry.id]}</span>
-                    <StatusBadge label={outcomeWord(entry, state)} tone={OUTCOME_TONE[state]} />
-                  </p>
-                  <p className="type-supporting text-pretty">{outcomeSentence(entry, state)}</p>
-                  {entry.id === "delivery" ? <SimulationLabel effect="mail-submission" /> : null}
-                </li>
-              );
+              const timelineTone: ActivityTimelineTone = state === "reached" ? "positive" : state === "unknown" ? "warning" : "neutral";
+              return {
+                id: entry.id,
+                title: OUTCOME_STAGE_NAME[entry.id],
+                badge: <StatusBadge label={outcomeWord(entry, state)} tone={OUTCOME_TONE[state]} />,
+                tone: timelineTone,
+                description: (
+                  <div className="flex flex-col gap-2">
+                    <p className="type-supporting text-pretty">{outcomeSentence(entry, state)}</p>
+                    {entry.id === "delivery" ? <SimulationLabel effect="mail-submission" /> : null}
+                  </div>
+                ),
+              };
             })}
-          </ul>
+          />
         </Section>
         {statesModules ? (
           <>
             <Separator />
             <Section id={`${headingId}-modules`} title={SECTION_TITLES.modules}>
-              <ul className="flex min-w-0 flex-col gap-4">
+              <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
                 {MODULE_KEYS.map((key) => {
                   const readState = modulesByKey.get(key);
                   const word = moduleWordAndTone(readState);
                   return (
-                    <li key={key} className="flex min-w-0 flex-col gap-1.5">
+                    <li key={key} className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-3.5 shadow-xs">
                       <p className="flex flex-wrap items-baseline justify-between gap-2 type-body">
                         <span className="font-medium">
                           <bdi>{MODULE_COPY[key].name}</bdi>

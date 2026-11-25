@@ -1,10 +1,11 @@
 "use client";
-import { CheckIcon, ChevronsUpDownIcon } from "lucide-react";
+import { Building2Icon, CheckIcon, ChevronsUpDownIcon } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import type { ContextSwitchResult, OutcomeSummary } from "@/components/context-switch-guard";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { IconTile } from "@/components/ui/icon-tile";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
@@ -68,7 +69,10 @@ function ContextChooser({ admissions, current, scope, onRequestContext, supportS
         <Tooltip>
           <TooltipTrigger
             render={
-              <DropdownMenuTrigger type="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS, "min-w-0 justify-start gap-2 px-2.5 text-start")}>
+              <DropdownMenuTrigger type="button" className={cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS, "min-w-0 justify-start gap-2.5 rounded-xl border-border/90 bg-card px-2.5 py-1 text-start shadow-xs hover:bg-muted/70")}>
+                <IconTile variant="soft" size="xs" className="hidden sm:inline-flex">
+                  <Building2Icon />
+                </IconTile>
                 <span className="sr-only">Active context: </span>
                 {children}
                 <span className="sr-only">. Change context.</span>

@@ -2,6 +2,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MotionConfig } from "motion/react";
 import AppShell, { type AdmissionState, type AppShellContextSwitch } from "@/components/app-shell";
 import type { AdmittedContext, ContextRequest } from "@/components/context-indicator";
 import { UnsavedWorkProvider, useContextFence, useUnsavedWorkEntry, type ContextSelection } from "@/components/context-switch-guard";
@@ -14,11 +15,13 @@ export type ShellFrameProps = { readonly scope: Scope; readonly admissionState: 
 export function ShellFrame(props: ShellFrameProps): ReactElement {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }));
   return (
-    <QueryClientProvider client={queryClient}>
-      <UnsavedWorkProvider>
-        <ShellSurface {...props} />
-      </UnsavedWorkProvider>
-    </QueryClientProvider>
+    <MotionConfig reducedMotion="user">
+      <QueryClientProvider client={queryClient}>
+        <UnsavedWorkProvider>
+          <ShellSurface {...props} />
+        </UnsavedWorkProvider>
+      </QueryClientProvider>
+    </MotionConfig>
   );
 }
 function ShellSurface({ scope, admissionState, contextAdmissions, contextRevision, developmentRegion, children }: ShellFrameProps): ReactElement {

@@ -1,11 +1,13 @@
 "use client";
-import { useEffect, useId, useRef, useState, type ReactElement } from "react";
-import { Lock } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
+import { BookOpenIcon, FlagIcon, GiftIcon, HeartHandshakeIcon, ImageIcon, Lock, TrendingUpIcon, TypeIcon, VideoIcon, type LucideIcon } from "lucide-react";
 import { attemptForIntent, intentKeyOf, type ReviewedAttempt } from "@/components/attempt";
 import OperationResult from "@/components/operation-result";
 import { Badge } from "@/components/ui/badge";
 import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
+import { IconTile } from "@/components/ui/icon-tile";
 import { cn } from "@/lib/cn";
+import type { Scope } from "@/modules/data-service/envelope";
 import { unknown as unknownOutcome, type MutationOutcome } from "@/modules/data-service/outcome";
 import { copy, type ManagedFieldKey } from "../copy";
 import { useEditionAuthority, usePageReread } from "../hooks/page-reads";
@@ -13,6 +15,16 @@ import { useMovePageSection } from "../hooks/page-mutations";
 import MoveToPosition from "./move-to-position";
 import SectionActions from "./section-actions";
 export type PageSectionType = keyof typeof copy.catalogue.sections;
+const SECTION_TYPE_ICON: Readonly<Record<PageSectionType, LucideIcon>> = {
+  introduction: TypeIcon,
+  story: BookOpenIcon,
+  prayer: HeartHandshakeIcon,
+  milestone: FlagIcon,
+  image: ImageIcon,
+  video: VideoIcon,
+  giving: GiftIcon,
+  progress: TrendingUpIcon,
+};
 export type PageBuilderSection = { readonly sectionId: string; readonly sectionType: PageSectionType; readonly sectionTypeLabel?: string | null; readonly managed: boolean; readonly managedReasonKey?: ManagedFieldKey | null; readonly index?: number };
 const labelOf = (section: PageBuilderSection): string => section.sectionTypeLabel?.trim() || copy.catalogue.sections[section.sectionType].label;
 const positionOf = (section: PageBuilderSection, listIndex: number, count: number): number => (section.index !== undefined && Number.isInteger(section.index) && section.index >= 0 && section.index < count ? section.index : listIndex);
@@ -50,10 +62,21 @@ const MoveControl = ({ direction, sectionLabel, position, controlId, describedBy
   </Button>
 );
 /** Whether the caller withholds every structural change, for a reason of its own. */
-export type SectionOutlineProps = { readonly sections: readonly PageBuilderSection[]; readonly selectedSectionId: string | null; readonly onSelect: (sectionId: string) => void; readonly variantId: string; readonly expectedRevision: string; readonly disabled?: boolean; readonly className?: string };
-/** The ordered outline of one draft edition, with the four structural changes a section can be given. */ export function SectionOutline({ sections, selectedSectionId, onSelect, variantId, expectedRevision, disabled = false, className }: SectionOutlineProps): ReactElement {
+export type SectionOutlineProps = {
+  readonly sections: readonly PageBuilderSection[];
+  readonly selectedSectionId: string | null;
+  readonly onSelect: (sectionId: string) => void;
+  readonly variantId: string;
+  readonly expectedRevision: string;
+  readonly scope?: Scope;
+  readonly documentId?: string;
+  readonly disabled?: boolean;
+  readonly className?: string;
+};
+/** The ordered outline of one draft edition, with the four structural changes a section can be given. */ export function SectionOutline({ sections, selectedSectionId, onSelect, variantId, expectedRevision, scope, documentId, disabled = false, className }: SectionOutlineProps): ReactElement {
   const move = useMovePageSection();
-  const authority = useEditionAuthority(variantId);
+  const provided = useMemo(() => (scope === undefined || documentId === undefined ? undefined : { scope, documentId }), [scope, documentId]);
+  const authority = useEditionAuthority(variantId, provided);
   const rereadPage = usePageReread(authority?.documentId);
   const orderNoteId = useId();
   const reasonIdBase = useId();
@@ -126,10 +149,11 @@ export type SectionOutlineProps = { readonly sections: readonly PageBuilderSecti
       {count === 0 ? (
         <p className={NOTE_CLASS}>{copy.catalogue.noSectionsYet}</p>
       ) : (
-        <ol aria-label={copy.builder.outline} aria-describedby={orderNoteId} className={"flex min-w-0 flex-col gap-2"}>
+        <ol aria-label={copy.builder.outline} aria-describedby={orderNoteId} className="relative flex min-w-0 flex-col gap-2.5 border-s border-border/80 ps-3">
           {sections.map((section, listIndex) => {
             const position = positionOf(section, listIndex, count);
             const label = labelOf(section);
+            const SectionIcon = SECTION_TYPE_ICON[section.sectionType];
             const managed = section.managed === true;
             const selected = section.sectionId === selectedSectionId;
             const upReasonId = `${reasonIdBase}-${String(listIndex)}-up`;
@@ -145,9 +169,25 @@ export type SectionOutlineProps = { readonly sections: readonly PageBuilderSecti
               requestMove(kind, section, position, targetPosition);
             };
             return (
-              <li key={section.sectionId} data-slot="section-outline-row" data-section-id={section.sectionId} data-section-position={String(position)} data-managed={managed ? "true" : "false"} data-selected={selected ? "true" : "false"} className={"flex min-w-0 flex-col gap-2 rounded-lg border border-border p-2"}>
-                <div className={"flex min-w-0 flex-wrap items-center gap-2"}>
-                  <bdi className={"tabular-figures text-sm text-muted-foreground"}>{String(position + 1)}</bdi>
+              <li
+                key={section.sectionId}
+                data-slot="section-outline-row"
+                data-section-id={section.sectionId}
+                data-section-position={String(position)}
+                data-managed={managed ? "true" : "false"}
+                data-selected={selected ? "true" : "false"}
+                className={cn(
+                  "relative flex min-w-0 flex-col gap-2.5 rounded-xl border p-2.5 transition-colors",
+                  selected ? "border-foreground/35 bg-card shadow-xs ring-1 ring-border/80" : "border-border/80 bg-surface-subtle/60 hover:bg-card",
+                )}
+              >
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span aria-hidden="true" className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded-md border text-xs font-medium tabular-figures", selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground")}>
+                    {String(position + 1)}
+                  </span>
+                  <IconTile variant={selected ? "outline" : "soft"} size="xs">
+                    <SectionIcon />
+                  </IconTile>
                   <Button type="button" variant={selected ? "secondary" : "ghost"} size="sm" className={BUTTON_WRAP_CLASS} aria-current={selected ? "true" : undefined} onClick={() => onSelect(section.sectionId)}>
                     <bdi className={"min-w-0 font-medium wrap-anywhere"}>{label}</bdi>
                     <span className="sr-only">{`, ${copy.builder.positionOption(position + 1)}`}</span>

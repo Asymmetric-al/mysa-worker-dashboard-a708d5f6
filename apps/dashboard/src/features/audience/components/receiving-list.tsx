@@ -95,7 +95,7 @@ function EditionRow({ edition, requestedTag }: { readonly edition: ReceivingEdit
   const description = edition.description?.trim() ?? "";
   return (
     <li data-slot="receiving-edition" data-document-id={edition.documentId} data-variant-id={edition.variantId} data-release-id={edition.releaseId} data-audience={edition.audience} data-locale={edition.locale.tag} className="min-w-0">
-      <Card size="sm" className="min-w-0">
+      <Card size="sm" className="min-w-0 transition-colors hover:border-foreground/20">
         <CardHeader className="min-w-0">
           <CardTitle className="min-w-0 text-start text-pretty wrap-anywhere">
             <Link href={edition.href} className="inline-link inline-flex min-h-6 max-w-full items-center break-words text-start hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">

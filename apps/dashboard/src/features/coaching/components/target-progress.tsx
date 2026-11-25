@@ -3,7 +3,7 @@ import { useMemo, type ReactElement } from "react";
 import { ChartFigure, type ChartPoint, type ChartSeries, type ChartTable } from "@/components/chart-figure";
 import { StateNotice } from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
+import { MeterBar } from "@/components/ui/meter-bar";
 import { cn } from "@/lib/cn";
 import type { TargetMeasure, TargetState } from "@/modules/coaching/target";
 import type { Coverage, ValueState } from "@/modules/data-service/envelope";
@@ -94,28 +94,31 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
   );
 }
 const ComparisonRegion = ({ rows }: { readonly rows: ReadonlyArray<NonNullable<TargetProgressProps["comparison"]>[number]> }): ReactElement => (
-  <Panel headingLevel={2} title={COMPARISON_HEADING} description="Each measure is counted on its own from the activity you recorded, so a conversation inside a call is counted as a conversation and the call remains one call." contentClassName="flex min-w-0 flex-col gap-3">
-    <ul aria-label={COMPARISON_HEADING} className="flex min-w-0 flex-col gap-3">
+  <Panel headingLevel={2} title={COMPARISON_HEADING} description="Each measure is counted on its own from the activity you recorded, so a conversation inside a call is counted as a conversation and the call remains one call." contentClassName="flex min-w-0 flex-col gap-4">
+    <ul aria-label={COMPARISON_HEADING} className="grid min-w-0 gap-3 sm:grid-cols-2">
       {rows.map((row, index) => {
         const reading = RECORDED_READING[row.valueState];
+        const meterMax = Math.max(row.target, 1);
         return (
-          <li key={`${row.measure}-${String(index)}`} className="flex min-w-0 flex-col gap-1">
-            {index === 0 ? null : <Separator />}
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <p className="text-sm font-medium">{MEASURE_COPY[row.measure].label}</p>
+          <li key={`${row.measure}-${String(index)}`} className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs">
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-medium text-foreground">{MEASURE_COPY[row.measure].label}</p>
               {reading.word === null ? null : <Badge variant="outline">{reading.word}</Badge>}
             </div>
             <p className="type-body">
               {reading.showsFigure ? (
                 <>
-                  Recorded <bdi className="tabular-figures">{String(row.recorded)}</bdi> against a target of <bdi className="tabular-figures">{String(row.target)}</bdi>.
+                  Recorded <bdi className="tabular-figures font-semibold">{String(row.recorded)}</bdi> against a target of <bdi className="tabular-figures font-semibold">{String(row.target)}</bdi>.
                 </>
               ) : (
                 <>
-                  No count is stated for this measure against a target of <bdi className="tabular-figures">{String(row.target)}</bdi>.
+                  No count is stated for this measure against a target of <bdi className="tabular-figures font-semibold">{String(row.target)}</bdi>.
                 </>
               )}
             </p>
+            {reading.showsFigure && row.target > 0 ? (
+              <MeterBar label={MEASURE_COPY[row.measure].label} min={0} max={meterMax} value={Math.min(meterMax, Math.max(0, row.recorded))} valueText={`${String(row.recorded)} against a target of ${String(row.target)}`} tone={row.recorded >= row.target ? "positive" : "primary"} showHeader={false} />
+            ) : null}
             <p className="type-supporting text-balance">{MEASURE_COPY[row.measure].hint}</p>
             {reading.sentence === null ? null : <p className="type-supporting text-balance">{reading.sentence}</p>}
           </li>

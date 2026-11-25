@@ -1,9 +1,14 @@
 "use client";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactElement, type RefObject } from "react";
+import { AreaChartIcon, BarChart3Icon, LineChartIcon } from "lucide-react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ScrollRegion } from "@/components/scroll-region";
 import { StateNotice } from "@/components/state-notice";
 import { VALUE_STATE_WORDS } from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
+import { Frame, FrameFooter, FrameHeader, FramePanel } from "@/components/ui/frame";
+import { IconTile } from "@/components/ui/icon-tile";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
 import type { Coverage, ValueState } from "@/modules/data-service/envelope";
@@ -35,8 +40,12 @@ type SeriesPaint = (typeof SERIES_PAINTS)[number];
 const SERIES_SWATCH: Readonly<Record<SeriesPaint, string>> = { "var(--chart-1)": "bg-chart-1", "var(--chart-2)": "bg-chart-2", "var(--chart-3)": "bg-chart-3", "var(--chart-4)": "bg-chart-4", "var(--chart-5)": "bg-chart-5" };
 const GRID_PAINT = "var(--border)";
 const AXIS_TEXT = { fill: "var(--muted-foreground)", fontSize: 12 } as const;
-const TOOLTIP_CURSOR = { fill: "var(--muted)" } as const;
-const AREA_FILL_OPACITY = 0.35;
+const TOOLTIP_CURSOR = { fill: "var(--muted)", fillOpacity: 0.55 } as const;
+const CHART_KIND_OPTIONS = [
+  { value: "bar" as const, label: "Bar" },
+  { value: "area" as const, label: "Area" },
+  { value: "line" as const, label: "Line" },
+] as const;
 const DEFAULT_CHART_HEIGHT = 240;
 const INITIAL_PLOT_WIDTH = 640;
 const BUCKET_DATA_KEY = "bucket";
@@ -216,9 +225,9 @@ function CoverageLine({ coverage, partialFigures }: { readonly coverage: Coverag
   );
 }
 const ChartLegend = ({ series }: { readonly series: readonly PlottedSeries[] }): ReactElement => (
-  <ul className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+  <ul className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
     {series.map((member) => (
-      <li key={member.dataKey} className="flex items-center gap-1.5">
+      <li key={member.dataKey} className="inline-flex items-center gap-1.5 rounded-4xl border border-border/80 bg-surface-subtle px-2.5 py-0.5 text-foreground">
         <span aria-hidden="true" className={cn("inline-block size-2 shrink-0 rounded-full", member.swatch)} />
         <bdi>{member.label}</bdi>
       </li>
@@ -235,24 +244,54 @@ function ChartTooltip({ group, active, label }: ChartTooltipProps): ReactElement
   });
   if (entries.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1 rounded-md border border-border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">
-      <bdi className="font-medium">{bucket}</bdi>
+    <div className="flex min-w-44 flex-col gap-1.5 rounded-2xl border border-border/90 bg-popover px-3.5 py-2.5 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/5 dark:ring-foreground/10">
+      <bdi className="border-b border-border/70 pb-1 font-medium">{bucket}</bdi>
       <ul className="flex flex-col gap-1">
         {entries.map(({ member, point }) => (
-          <li key={member.dataKey} className="flex items-center gap-2">
+          <li key={member.dataKey} className="flex items-center gap-2 text-xs">
             <span aria-hidden="true" className={cn("inline-block size-2 shrink-0 rounded-full", member.swatch)} />
             <bdi className="text-muted-foreground">{member.label}</bdi>
-            <bdi className="tabular-figures ms-auto">{point.text}</bdi>
+            <bdi className="tabular-figures ms-auto font-medium text-foreground">{point.text}</bdi>
           </li>
         ))}
       </ul>
     </div>
   );
 }
-function plotMarkOf(kind: ChartKind, member: PlottedSeries, animate: boolean): ReactElement {
-  if (kind === "bar") return <Bar key={member.dataKey} dataKey={member.dataKey} name={member.label} fill={member.paint} isAnimationActive={animate} />;
-  if (kind === "area") return <Area key={member.dataKey} dataKey={member.dataKey} name={member.label} type="linear" stroke={member.paint} fill={member.paint} fillOpacity={AREA_FILL_OPACITY} dot={true} connectNulls={false} isAnimationActive={animate} />;
-  return <Line key={member.dataKey} dataKey={member.dataKey} name={member.label} type="linear" stroke={member.paint} strokeWidth={2} connectNulls={false} isAnimationActive={animate} />;
+function plotMarkOf(kind: ChartKind, member: PlottedSeries, animate: boolean, gradientId: string): ReactElement {
+  if (kind === "bar") return <Bar key={member.dataKey} dataKey={member.dataKey} name={member.label} fill={member.paint} radius={[8, 8, 2, 2]} maxBarSize={42} isAnimationActive={animate} />;
+  if (kind === "area") {
+    return (
+      <Area
+        key={member.dataKey}
+        dataKey={member.dataKey}
+        name={member.label}
+        type="linear"
+        stroke={member.paint}
+        strokeWidth={2.25}
+        fill={`url(#${gradientId})`}
+        fillOpacity={1}
+        dot={{ r: 3.5, strokeWidth: 2, fill: "var(--card)", stroke: member.paint }}
+        activeDot={{ r: 5.5, strokeWidth: 2, fill: member.paint, stroke: "var(--card)" }}
+        connectNulls={false}
+        isAnimationActive={animate}
+      />
+    );
+  }
+  return (
+    <Line
+      key={member.dataKey}
+      dataKey={member.dataKey}
+      name={member.label}
+      type="linear"
+      stroke={member.paint}
+      strokeWidth={2.25}
+      dot={{ r: 3.5, strokeWidth: 2, fill: "var(--card)", stroke: member.paint }}
+      activeDot={{ r: 5.5, strokeWidth: 2, fill: member.paint, stroke: "var(--card)" }}
+      connectNulls={false}
+      isAnimationActive={animate}
+    />
+  );
 }
 function plottedExtent(group: ChartGroup): { readonly largest: number; readonly smallest: number } {
   let largest = 0;
@@ -323,19 +362,33 @@ function useFigureWidth(): { readonly ref: RefObject<HTMLDivElement | null>; rea
 }
 type ChartPlotProps = { readonly group: ChartGroup; readonly kind: ChartKind; readonly locale: string; readonly animate: boolean; readonly axis: CategoryAxisPlan; readonly reference: ChartReference | undefined };
 function ChartPlot({ group, kind, locale, animate, axis, reference }: ChartPlotProps): ReactElement {
+  const plotId = useId().replace(/[^a-zA-Z0-9_-]/gu, "");
   const currency = group.currency;
   const valueTick = currency === undefined ? undefined : (value: number): string => (Number.isFinite(value) && Number.isInteger(value) ? formatMinor({ currency, minorUnits: minorUnitsOf(value) }, "value", locale).text : "");
-  const grid = <CartesianGrid stroke={GRID_PAINT} vertical={false} />;
+  const grid = <CartesianGrid stroke={GRID_PAINT} strokeDasharray="3 3" strokeOpacity={0.65} vertical={false} />;
   const categoryAxis = <XAxis dataKey={BUCKET_DATA_KEY} tick={{ ...AXIS_TEXT, fontSize: axis.tickFontSize }} tickLine={false} axisLine={{ stroke: GRID_PAINT }} interval={0} angle={axis.angle} textAnchor={axis.angle === 0 ? "middle" : "end"} height={axis.height} padding={{ left: axis.inset, right: axis.inset }} />;
   // A stated target gives the value axis a ceiling it reaches and whole ticks it marks the span with; without one the axis states exactly what the figures it draws require, as it always has.
   const ceiling = reference === undefined ? undefined : referenceCeiling(group, reference);
   const valueAxis = <YAxis width="auto" tick={AXIS_TEXT} tickLine={false} axisLine={false} allowDecimals={false} tickFormatter={valueTick} domain={ceiling === undefined ? undefined : [0, ceiling]} ticks={ceiling === undefined ? undefined : wholeTicks(ceiling)} />;
   const tooltip = <Tooltip content={<ChartTooltip group={group} />} cursor={TOOLTIP_CURSOR} filterNull={false} />;
   const referenceMark = reference === undefined ? null : <ReferenceLine y={reference.value} stroke={REFERENCE_PAINT} strokeDasharray={"4 4"} label={{ value: reference.label, position: "insideTopRight", fill: REFERENCE_PAINT, fontSize: REFERENCE_LABEL_FONT_SIZE }} />;
-  const marks = group.series.map((member) => plotMarkOf(kind, member, animate));
+  const gradientIdFor = (dataKey: string): string => `chart-fill-${plotId}-${dataKey}`;
+  const areaDefs =
+    kind === "area" ? (
+      <defs>
+        {group.series.map((member) => (
+          <linearGradient key={member.dataKey} id={gradientIdFor(member.dataKey)} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={member.paint} stopOpacity={0.34} />
+            <stop offset="95%" stopColor={member.paint} stopOpacity={0.03} />
+          </linearGradient>
+        ))}
+      </defs>
+    ) : null;
+  const marks = group.series.map((member) => plotMarkOf(kind, member, animate, gradientIdFor(member.dataKey)));
   const Plot = kind === "bar" ? BarChart : kind === "area" ? AreaChart : LineChart;
   return (
     <Plot data={group.rows} accessibilityLayer={false}>
+      {areaDefs}
       {grid}
       {categoryAxis}
       {valueAxis}
@@ -409,39 +462,82 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
   const baseId = useId();
   const summaryId = `${baseId}-summary`;
   const tableId = `${baseId}-table`;
+  const [kindOverride, setKindOverride] = useState<{ readonly base: ChartKind; readonly chosen: ChartKind } | null>(null);
+  const activeKind: ChartKind = kindOverride?.base === kind ? kindOverride.chosen : kind;
+  const KindIcon = activeKind === "bar" ? BarChart3Icon : activeKind === "area" ? AreaChartIcon : LineChartIcon;
   const reducedMotion = usePrefersReducedMotion();
   const groups = useMemo(() => groupSeries(series, locale), [series, locale]); // The regeneration is the expensive part of this figure — a map per series, every point re-formatted — so it is derived once per (series, locale) pair rather than once per commit of a parent that re-renders.
+  const hasPlottableSeries = groups.some((group) => group.plottable > 0);
   const partialFigures = groups.some((group) => group.series.some((member) => member.incomplete > 0));
   const seriesClauses = groups.flatMap((group, groupIndex) => group.series.map((member, seriesIndex) => ({ member, key: `${member.key}-${String(groupIndex)}-${String(seriesIndex)}`, clauses: summaryClauses(member) })));
   const named = seriesClauses.filter((entry) => entry.clauses.length > 0);
+  const totalPlottedPoints = groups.reduce((sum, group) => sum + group.plottable, 0);
+  const totalGapBuckets = seriesClauses.reduce((sum, entry) => sum + (entry.clauses.find((clause) => clause.key === "gap")?.buckets.length ?? 0), 0);
   return (
-    <figure data-slot="chart-figure" className={cn("flex w-full flex-col gap-4", className)}>
-      <figcaption className="flex flex-col gap-1">
-        <span className="text-base font-medium">{title}</span>
-        <span className="text-sm text-muted-foreground">{units}</span>
-        <CoverageLine coverage={coverage} partialFigures={partialFigures} />
-        <span className="text-sm text-muted-foreground">{asOf}</span>
-      </figcaption>
-      {groups.length === 0 ? (
-        <StateNotice kind="empty" title="This chart has no series" description="No series was supplied, so there is nothing to draw. None is invented in its place, and the summary and the table below state what this figure holds." />
-      ) : (
-        groups.map((group, index) => <ChartGroupFigure key={group.currency ?? `counts-${String(index)}`} group={group} kind={kind} caption={caption} height={height} describedBy={`${summaryId} ${tableId}`} locale={locale} animate={!reducedMotion} reference={reference} />)
-      )}
-      <div id={summaryId} className="flex flex-col gap-2 text-sm">
-        <p>{summary}</p>
-        {named.length === 0 ? null : <p className="text-muted-foreground">{SUMMARY_LEAD}</p>}
-        {named.map((entry) => (
-          <SummaryClauseLine key={entry.key} member={entry.member} clauses={entry.clauses} />
-        ))}
-      </div>
-      <div className="flex flex-col gap-2">
-        <p aria-hidden="true" className="text-sm text-muted-foreground">
-          {table.caption}
-        </p>
-        <ScrollRegion label={`${title}: data table`}>
-          <ChartDataTable table={table} id={tableId} />
-        </ScrollRegion>
-      </div>
+    <figure data-slot="chart-figure" className={cn("flex w-full min-w-0 flex-col gap-4", className)}>
+      <Frame spacing="sm">
+        <FrameHeader className="flex-col items-start gap-2">
+          <figcaption className="flex w-full min-w-0 flex-col gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <IconTile variant="soft" size="sm">
+                  <KindIcon />
+                </IconTile>
+                <span className="font-heading text-base font-medium text-foreground">{title}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">{units}</Badge>
+                {hasPlottableSeries ? <SegmentedTabs label={`Chart view for ${title}`} value={activeKind} onValueChange={(chosen) => setKindOverride({ base: kind, chosen })} options={CHART_KIND_OPTIONS} /> : null}
+              </div>
+            </div>
+            {hasPlottableSeries ? (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <Badge variant="secondary" className="tabular-figures">
+                  {`${String(totalPlottedPoints)} plotted`}
+                </Badge>
+                {totalGapBuckets > 0 ? (
+                  <Badge variant="outline" className="tabular-figures">
+                    {`${String(totalGapBuckets)} unrecorded ${totalGapBuckets === 1 ? "gap" : "gaps"}`}
+                  </Badge>
+                ) : null}
+                {reference !== undefined ? (
+                  <Badge variant="info-light">{reference.label}</Badge>
+                ) : null}
+              </div>
+            ) : null}
+            <CoverageLine coverage={coverage} partialFigures={partialFigures} />
+            <span className="text-xs text-muted-foreground">{asOf}</span>
+          </figcaption>
+        </FrameHeader>
+        <FramePanel className="flex flex-col gap-5">
+          {groups.length === 0 ? (
+            <StateNotice kind="empty" title="This chart has no series" description="No series was supplied, so there is nothing to draw. None is invented in its place, and the summary and the table below state what this figure holds." />
+          ) : (
+            groups.map((group, index) => <ChartGroupFigure key={group.currency ?? `counts-${String(index)}`} group={group} kind={activeKind} caption={caption} height={height} describedBy={`${summaryId} ${tableId}`} locale={locale} animate={!reducedMotion} reference={reference} />)
+          )}
+        </FramePanel>
+        <FrameFooter className="flex-col items-start gap-2">
+          <div id={summaryId} className="flex flex-col gap-1.5 text-sm">
+            <p className="text-foreground">{summary}</p>
+            {named.length === 0 ? null : <p className="text-muted-foreground">{SUMMARY_LEAD}</p>}
+            {named.map((entry) => (
+              <SummaryClauseLine key={entry.key} member={entry.member} clauses={entry.clauses} />
+            ))}
+          </div>
+        </FrameFooter>
+      </Frame>
+      <Frame spacing="flush">
+        <FrameHeader>
+          <p aria-hidden="true" className="text-xs font-medium text-muted-foreground">
+            {table.caption}
+          </p>
+        </FrameHeader>
+        <FramePanel>
+          <ScrollRegion label={`${title}: data table`}>
+            <ChartDataTable table={table} id={tableId} />
+          </ScrollRegion>
+        </FramePanel>
+      </Frame>
     </figure>
   );
 }

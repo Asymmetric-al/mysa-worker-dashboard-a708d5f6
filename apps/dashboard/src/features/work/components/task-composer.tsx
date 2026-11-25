@@ -143,7 +143,7 @@ function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly 
   const clock = plannedClockOf(value);
   if (clock === "" || parseCivilDate(day).status === "refused") return null;
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/40 p-3">
+    <div className="flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border/80 bg-surface-subtle p-3.5">
       <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
         <Badge variant="secondary">{PLANNED_MEETING_LABEL}</Badge>
         <bdi className="mono-identifier">{day}</bdi>
@@ -157,7 +157,7 @@ function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly 
 }
 /** The private tags this task already carries, stated read-only: the composer is not where a tag is set, and a task with no tag says so because that is a fact of its own rather than a gap in the record. */ function PrivateTagsDisclosure({ tags }: { readonly tags: readonly string[] }): ReactElement {
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/40 p-3">
+    <div className="flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border/80 bg-surface-subtle p-3.5">
       <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
         <span className="font-medium">{"Private tags"}</span>
         {tags.length === 0 ? (

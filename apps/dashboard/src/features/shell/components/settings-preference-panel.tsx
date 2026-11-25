@@ -1,21 +1,24 @@
 "use client";
+import { BellRingIcon, FileCheck2Icon, MonitorIcon, MoonIcon, SunIcon } from "lucide-react";
 import { useCallback, useId, useMemo, useState, useSyncExternalStore, type ReactElement } from "react";
 import SectionCard from "@/components/section-card";
+import { IconTile } from "@/components/ui/icon-tile";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/cn";
 import { PUBLISHING_PREFERENCES, VIEWER_APPEARANCES, canResolveTimeZone, useViewerPreferences, type PublishingPreference, type ViewerAppearance } from "./viewer-preferences-provider";
-type ChoiceCopy = { readonly label: string; readonly description: string };
+type ChoiceCopy = { readonly label: string; readonly description: string; readonly icon: ReactElement };
 const APPEARANCE_COPY: Record<ViewerAppearance, ChoiceCopy> = {
-  system: { label: "Match your device", description: "Follows your operating system's light or dark setting while this page is open." },
-  light: { label: "Light", description: "Always shows this application's light colour scheme." },
-  dark: { label: "Dark", description: "Always shows this application's dark colour scheme." },
+  system: { label: "Match your device", description: "Follows your operating system's light or dark setting while this page is open.", icon: <MonitorIcon /> },
+  light: { label: "Light", description: "Always shows this application's light colour scheme.", icon: <SunIcon /> },
+  dark: { label: "Dark", description: "Always shows this application's dark colour scheme.", icon: <MoonIcon /> },
 };
 /** The two release modes a new submission can ask for: each value is the provider's own, so no mode the preference does not hold can be offered. */ const PUBLISHING_COPY: Record<PublishingPreference, ChoiceCopy> = {
-  "publish-only": { label: "Publish only", description: "Releases the exact frozen candidate and submits no notice." },
-  "publish-and-notify": { label: "Publish and notify now", description: "Asks for one simulated notice for each eligible recipient." },
+  "publish-only": { label: "Publish only", description: "Releases the exact frozen candidate and submits no notice.", icon: <FileCheck2Icon /> },
+  "publish-and-notify": { label: "Publish and notify now", description: "Asks for one simulated notice for each eligible recipient.", icon: <BellRingIcon /> },
 };
 const LANGUAGE_SHORTLIST: readonly string[] = ["en-GB", "en-US", "en-AU", "en-CA", "fr-FR", "de-DE", "es-ES", "pt-BR", "ar", "he", "ko-KR", "ja-JP"];
 const TIME_ZONE_SHORTLIST: readonly string[] =
@@ -108,17 +111,23 @@ function ChoiceRadios<Key extends string>({
       <legend {...{ id: legendId, className: "mb-3 text-sm font-medium" }}>{legend}</legend>
       <div className="flex flex-col gap-3">
         <p {...{ id: hintId, className: "type-supporting" }}>{hint}</p>
-        <RadioGroup value={value} onValueChange={onChoose} aria-labelledby={legendId} aria-describedby={hintId}>
+        <RadioGroup value={value} onValueChange={onChoose} aria-labelledby={legendId} aria-describedby={hintId} className={cn("grid gap-2.5", choices.length >= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
           {choices.map((choice) => {
             const entry = copy[choice];
             const choiceId = `${legendId}-${choice}`;
             const descriptionId = `${choiceId}-description`;
+            const selected = value === choice;
             return (
-              <label key={choice} htmlFor={choiceId} className="flex min-h-6 items-start gap-3 py-1">
-                <RadioGroupItem id={choiceId} value={choice} aria-label={entry.label} aria-describedby={descriptionId} className="mt-0.5" />
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="text-sm font-medium">{entry.label}</span>
-                  <span {...{ id: descriptionId, className: "text-sm text-muted-foreground" }}>{entry.description}</span>
+              <label key={choice} htmlFor={choiceId} className={cn("flex min-h-6 cursor-pointer items-start gap-3 rounded-2xl border p-3.5 transition-colors", selected ? "border-primary/60 bg-surface-subtle shadow-xs ring-1 ring-primary/15" : "border-border/80 bg-card hover:border-input/60 hover:bg-muted/30")}>
+                <RadioGroupItem id={choiceId} value={choice} aria-label={entry.label} aria-describedby={descriptionId} className="mt-1" />
+                <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <span className="flex items-center gap-2">
+                    <IconTile variant={selected ? "solid" : "soft"} size="xs">
+                      {entry.icon}
+                    </IconTile>
+                    <span className="text-sm font-medium text-foreground">{entry.label}</span>
+                  </span>
+                  <span {...{ id: descriptionId, className: "text-xs leading-relaxed text-muted-foreground" }}>{entry.description}</span>
                 </span>
               </label>
             );

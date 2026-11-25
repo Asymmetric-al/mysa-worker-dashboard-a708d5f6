@@ -16,6 +16,7 @@
     "measure:workload": "bun scripts/measure-workload.ts",
     "reset": "bun scripts/reset.ts",
     "seed:workload": "bun scripts/generate-workload.ts",
+    "shadcn": "bun run --cwd apps/dashboard shadcn",
     "test": "turbo run test",
     "typecheck": "turbo run typecheck && tsc --noEmit -p tsconfig.scripts.json"
   },

@@ -1,14 +1,17 @@
 "use client";
 import Link from "next/link";
+import { MessageSquareTextIcon } from "lucide-react";
 import type { ReactElement, ReactNode } from "react";
 import { refusalSummary } from "@/components/form-field";
 import RecordDetail, { type RecordDetailBreadcrumbEntry, type RecordDetailIdentity, type RecordDetailLayout, type RecordDetailSectionSlots } from "@/components/record-detail";
 import StateNotice, { type NoticeAction, type NoticeHeadingLevel, type NoticeRetry, type StateNoticeProps } from "@/components/state-notice";
 import StatusBadge, { BUCKET_STATUS, statusBadgeProps, TASK_STATUS, valueStateWord } from "@/components/status-badge";
+import { ActivityTimeline, type ActivityTimelineEntry } from "@/components/ui/activity-timeline";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { CommitmentRowRecord, ContactMethodKind, Coverage, GiftRowRecord, InteractionRecord, PartnerKind, PartnerRecord, PrivateNoteRecord, ReadEnvelope, TaskRecord, ValueState } from "@/modules/data-service/envelope";
@@ -156,17 +159,20 @@ function ContactMethodsBody({ partner }: { readonly partner: PartnerRecord }): R
   const methodLine = (method: PartnerRecord["contactMethods"][number], index: number): ReactElement => {
     const handoff = CONTACT_HANDOFFS[method.kind];
     return (
-      <li key={`${method.kind}-${String(index)}`} className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-muted-foreground">{CONTACT_METHOD_KIND_LABELS[method.kind]}</span>
-        <bdi className="mono-identifier text-sm">{method.value}</bdi>
+      <li key={`${method.kind}-${String(index)}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-border/80 bg-surface-subtle px-3.5 py-2.5">
+        <span className="text-xs font-medium text-muted-foreground">{CONTACT_METHOD_KIND_LABELS[method.kind]}</span>
+        <bdi className="mono-identifier text-sm font-medium">{method.value}</bdi>
         <StatusBadge label={method.permitted ? "Permitted on this record" : "Not permitted on this record"} tone={method.permitted ? "positive" : "muted"} srPrefix={CONTACT_METHOD_KIND_LABELS[method.kind]} />
-        {/* The row keeps the value the record stores and offers the handoff beside it: the link carries that value unchanged, and its hidden half names the value it would open, so the visible word alone never leaves two rows reading the same. */}
-        {handoff === undefined ? null : (
-          <a href={`${handoff.scheme}${method.value}`} data-slot="button" className={CONTACT_HANDOFF_CLASS}>
-            {handoff.label}
-            <span className="sr-only">{`: ${method.value}`}</span>
-          </a>
-        )}
+        {/* The row keeps the value the record stores and offers copy + handoff beside it: the link carries that value unchanged, and its hidden half names the value it would open, so the visible word alone never leaves two rows reading the same. */}
+        <div className="ms-auto flex flex-wrap items-center gap-1.5">
+          <CopyButton value={method.value} label={`Copy ${CONTACT_METHOD_KIND_LABELS[method.kind]} ${method.value}`} />
+          {handoff === undefined ? null : (
+            <a href={`${handoff.scheme}${method.value}`} data-slot="button" className={CONTACT_HANDOFF_CLASS}>
+              {handoff.label}
+              <span className="sr-only">{`: ${method.value}`}</span>
+            </a>
+          )}
+        </div>
       </li>
     );
   };
@@ -229,26 +235,36 @@ function RelationshipBody({ relationships }: { readonly relationships: readonly 
     </div>
   );
 }
-function InteractionItem({ interaction }: { readonly interaction: InteractionRecord }): ReactElement {
+function interactionTimelineEntry(interaction: InteractionRecord): ActivityTimelineEntry {
   const roles = interaction.participants.map((participant) => participant.role).filter((role) => role.length > 0);
-  return (
-    <li className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <bdi className="text-sm font-medium">{interaction.type}</bdi>
-        <span className="text-xs text-muted-foreground">{PRECISION_WORDS[interaction.precision]}</span>
+  const hasDescription = interaction.outcome.length > 0 || interaction.note !== null;
+  const hasMeta = roles.length > 0 || interaction.provenance !== null;
+  return {
+    id: interaction.interactionId,
+    title: <bdi>{interaction.type}</bdi>,
+    time: interaction.occurredOn ?? undefined,
+    dateTime: interaction.occurredOn ?? undefined,
+    badge: <Badge variant="outline">{PRECISION_WORDS[interaction.precision]}</Badge>,
+    tone: "info",
+    icon: <MessageSquareTextIcon />,
+    description: hasDescription ? (
+      <div className="flex flex-col gap-2">
+        {interaction.outcome.length === 0 ? null : <FactLine className="type-supporting" value={<bdi>{interaction.outcome}</bdi>} />}
+        {interaction.note === null ? null : (
+          <div className="flex flex-col gap-1.5 rounded-xl border border-border/80 bg-surface-subtle p-2.5">
+            <StatusBadge label={AUDIENCE_LABEL_COPY[interaction.note.audience].label} tone="muted" srPrefix="Note audience" />
+            <bdi className="whitespace-pre-line text-sm text-foreground">{interaction.note.body}</bdi>
+          </div>
+        )}
       </div>
-      {interaction.occurredOn === null ? null : <FactLine className="type-body" value={<bdi className="mono-identifier">{interaction.occurredOn}</bdi>} />}
-      {interaction.outcome.length === 0 ? null : <FactLine className="type-supporting" value={<bdi>{interaction.outcome}</bdi>} />}
-      {roles.length === 0 ? null : <FactLine className="text-xs text-muted-foreground" label="Participants: " value={<bdi>{roles.join(", ")}</bdi>} />}
-      {interaction.note === null ? null : (
-        <div className="flex flex-col gap-1 rounded-lg border border-border p-2">
-          <StatusBadge label={AUDIENCE_LABEL_COPY[interaction.note.audience].label} tone="muted" srPrefix="Note audience" />
-          <bdi className="whitespace-pre-line text-sm">{interaction.note.body}</bdi>
-        </div>
-      )}
-      {interaction.provenance === null ? null : <FactLine className="text-xs text-muted-foreground" label={`Recorded by the ${interaction.provenance.system} source as `} value={<bdi className="mono-identifier">{interaction.provenance.reference}</bdi>} />}
-    </li>
-  );
+    ) : undefined,
+    meta: hasMeta ? (
+      <>
+        {roles.length === 0 ? null : <FactLine className="text-xs text-muted-foreground" label="Participants: " value={<bdi>{roles.join(", ")}</bdi>} />}
+        {interaction.provenance === null ? null : <FactLine className="text-xs text-muted-foreground" label={`Recorded by the ${interaction.provenance.system} source as `} value={<bdi className="mono-identifier">{interaction.provenance.reference}</bdi>} />}
+      </>
+    ) : undefined,
+  };
 }
 function ActivityBody({ read, headingLevel, composer, links }: { readonly read: PartnerReadResult<readonly InteractionRecord[]>; readonly headingLevel: NoticeHeadingLevel; readonly composer?: ReactNode; readonly links: PartnerDetailLinks }): ReactElement {
   if (read.kind !== "read") return <ReadNotice read={read} surface="interactions" headingLevel={headingLevel} />;
@@ -262,11 +278,7 @@ function ActivityBody({ read, headingLevel, composer, links }: { readonly read: 
         <SectionNotice surface="interactions" state="empty" headingLevel={headingLevel} actionHref={links.logInteraction} />
       ) : (
         <>
-          <ul className="flex flex-col gap-3">
-            {interactions.map((interaction) => (
-              <InteractionItem key={interaction.interactionId} interaction={interaction} />
-            ))}
-          </ul>
+          <ActivityTimeline label="Recorded activity" entries={interactions.map(interactionTimelineEntry)} />
           <p className="text-xs text-muted-foreground">{INTERACTION_COPY.whatDoesNot.body}</p>
         </>
       )}
@@ -319,7 +331,7 @@ function PrivateNotesBody({ read, headingLevel, composer, preparation: preparati
   );
 }
 const TaskItem = ({ task }: { readonly task: TaskRecord }): ReactElement => (
-  <li className="flex flex-col gap-1">
+  <li className="flex flex-col gap-1.5 rounded-xl border border-border/80 bg-surface-subtle px-3.5 py-2.5">
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <bdi className="text-sm font-medium">{task.title}</bdi>
       <StatusBadge {...TASK_STATUS[task.status]} srPrefix="Task status" />

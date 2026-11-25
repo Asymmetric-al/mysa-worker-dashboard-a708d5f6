@@ -20,5 +20,14 @@ function toTaskListSearch(query: TaskListsQuery): string {
 }
 const isTaskListsData = (value: unknown): boolean => isRecord(value) && typeof value.list === "string" && typeof value.displayTimeZone === "string" && typeof value.today === "string" && Array.isArray(value.tasks) && typeof value.total === "number";
 const fetchTaskLists = async (query: TaskListsQuery): Promise<TaskListsResult> => fetchRead<TaskListsEnvelope["data"], TaskListsEnvelope["coverage"]>({ url: `/api/tasks?${toTaskListSearch(query)}`, admits: isTaskListsData });
-/** Reads one of the five task lists for the given scope and query. */ export const useTaskLists = (scope: Scope, query: TaskListsQuery, initialResult?: TaskListsResult): UseQueryResult<TaskListsResult> =>
-  useQuery({ queryKey: [...scopeKey(scope), "tasks", query], queryFn: () => fetchTaskLists(query), initialData: initialResult, refetchOnMount: initialResult === undefined });
+const sameScopeKey = (candidate: readonly unknown[] | undefined, scope: Scope): boolean => {
+  if (candidate === undefined) return false;
+  const expected = scopeKey(scope);
+  return expected.every((part, index) => candidate[index] === part);
+};
+/** Reads one of the five task lists for the given scope and query, keeping the same scope's prior page in view across sort/page/timezone updates so the page does not collapse mid-interaction. */ export const useTaskLists = (
+  scope: Scope,
+  query: TaskListsQuery,
+  initialResult?: TaskListsResult,
+): UseQueryResult<TaskListsResult> =>
+  useQuery({ queryKey: [...scopeKey(scope), "tasks", query], queryFn: () => fetchTaskLists(query), initialData: initialResult, placeholderData: (previous, previousQuery) => (sameScopeKey(previousQuery?.queryKey, scope) ? previous : undefined), refetchOnMount: initialResult === undefined });

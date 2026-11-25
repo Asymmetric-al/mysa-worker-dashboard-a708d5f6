@@ -70,7 +70,7 @@ function feedCanonicalJson(tokens: string[], value: unknown, ancestors: WeakSet<
     await handle.sync();
     await handle.close();
     handle = undefined;
-    await rename(temporary, file);
+    await renameWithRetry(temporary, file);
   } catch (error) {
     await ignoreFailure(handle?.close());
     await ignoreFailure(rm(temporary, { force: true }));
@@ -82,7 +82,7 @@ function feedCanonicalJson(tokens: string[], value: unknown, ancestors: WeakSet<
 /** Reads a document: `undefined` only when the file is absent, and every other fault or corrupt body thrown. */ export async function readJson<T = unknown>(file: string): Promise<T | undefined> {
   let bytes: Buffer;
   try {
-    bytes = await readFile(file);
+    bytes = await readFileWithRetry(file);
   } catch (error) {
     if (isNotFound(error)) return undefined;
     throw error;
@@ -148,3 +148,31 @@ async function syncDirectory(directory: string): Promise<void> {
   } catch {}
 }
 const isNotFound = (error: unknown): boolean => (typeof error !== "object" || error === null || !("code" in error) ? false : error.code === "ENOENT");
+const isTransientLockError = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  return error.code === "EPERM" || error.code === "EBUSY" || error.code === "EACCES";
+};
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+async function renameWithRetry(from: string, to: string): Promise<void> {
+  const maxAttempts = 8;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      if (attempt >= maxAttempts || !isTransientLockError(error)) throw error;
+      await delay(attempt * 15);
+    }
+  }
+}
+async function readFileWithRetry(file: string): Promise<Buffer> {
+  const maxAttempts = 5;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await readFile(file);
+    } catch (error) {
+      if (attempt >= maxAttempts || !isTransientLockError(error)) throw error;
+      await delay(attempt * 15);
+    }
+  }
+}

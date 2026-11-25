@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { PlusIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
@@ -9,9 +10,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { SegmentedTabs, type SegmentedOption } from "@/components/ui/segmented-tabs";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { cn } from "@/lib/cn";
+import { groupTasksByStatus } from "@/lib/task-board";
 import type { Scope, TaskRecord } from "@/modules/data-service/envelope";
 import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT } from "@/modules/support/report";
 import { parseCivilDate, serialiseCivilDate } from "@/modules/time/civil";
@@ -215,6 +218,11 @@ export const taskListColumns = ({ partnerLabels }: TaskListColumnOptions): Reado
   },
   { id: "linked", header: "Linked record", enableSorting: false, cell: (context) => linkedRecordOf(context.row.original, partnerLabels) },
 ];
+type TaskViewMode = "table" | "board";
+const TASK_VIEW_OPTIONS: readonly SegmentedOption<TaskViewMode>[] = [
+  { value: "table", label: "Table view" },
+  { value: "board", label: "Board view" },
+];
 const taskRowId = (row: TaskListRow): string => row.taskId;
 const taskRowLabel = (row: TaskListRow): string => row.title;
 const PAGE_SIZE_OPTIONS: readonly number[] = [PAGE_SIZE_DEFAULT, PAGE_SIZE_CAP];
@@ -239,6 +247,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
   const isNarrow = useIsMobile();
   const switcherId = useId();
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>({});
+  const [viewMode, setViewMode] = useState<TaskViewMode>("table");
   const [selection, setSelection] = useState<SelectionState>(NO_SELECTION);
   const [editor, setEditor] = useState<{ readonly mode: "create" } | { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] } | null>(null);
   // The one receipt a row action publishes, held by the list rather than by the row: completing a task takes its row out of every list that reads only open work, so a result the row owned would leave with it, and a list left empty would state nothing at all about the accepted change.
@@ -306,7 +315,96 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
     const emptyState = <StateNotice kind="empty" headingLevel={3} title={EMPTY_LIST_COPY[query.list].title} description={EMPTY_LIST_COPY[query.list].description} action={{ label: NEW_TASK_LABEL, onClick: openCreate }} />;
     const rowActionsOf = (row: TaskListRow) => <TaskActions taskId={row.taskId} title={row.title} status={row.status} revision={row.revision} scope={scope} actions={row.actions} presentation="row" onEdit={() => openEdit(row)} onReceiptChange={setReceipt} onCheckResult={refreshAll} />;
     const listQuery = { queryState: listState, onQueryStateChange: handleQueryStateChange };
-    return <RecordList {...{ label: `${name} ${TASK_NOUN}`, columns, rows: tasks, rowCount: total, getRowId: taskRowId, rowLabel: taskRowLabel, ...listQuery, selectedIds, onSelectionChange: handleSelectionChange, rowActions: rowActionsOf, itemNoun: TASK_NOUN, pageSizeOptions: PAGE_SIZE_OPTIONS, emptyState }} />;
+    const statusColumns = groupTasksByStatus(tasks);
+    if (viewMode === "board" && tasks.length > 0) {
+      return (
+        <div data-slot="task-status-board" className="flex min-w-0 flex-col gap-3">
+          <p className="text-xs text-muted-foreground">
+            {`Showing ${String(tasks.length)} of ${String(total)} ${TASK_NOUN} on this page grouped by status — use each card's action controls to update status without dragging.`}
+          </p>
+          <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {statusColumns.map((column) => (
+              <section key={column.status} aria-label={`${TASK_STATUS_LABELS[column.status]} tasks`} className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-3">
+                <header className="flex items-center justify-between gap-2 border-b border-border/70 pb-2">
+                  <StatusBadge label={TASK_STATUS_LABELS[column.status]} tone={TASK_STATUS_TONES[column.status]} />
+                  <Badge variant="outline" className="tabular-figures">
+                    {column.items.length}
+                  </Badge>
+                </header>
+                {column.items.length === 0 ? (
+                  <p className="py-4 text-center text-xs text-muted-foreground">No task in this lane on this page.</p>
+                ) : (
+                  <ul className="flex min-w-0 flex-col gap-2">
+                    {column.items.map((row) => (
+                      <li key={row.taskId} className="flex min-w-0 flex-col gap-2 rounded-xl border border-border/80 bg-card p-3 shadow-2xs">
+                        <div className="flex min-w-0 items-start justify-between gap-2">
+                          <bdi className="min-w-0 text-sm font-medium text-pretty wrap-anywhere text-foreground">
+                            {row.title.trim() === "" ? row.taskId : row.title}
+                          </bdi>
+                          {rowActionsOf(row)}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                          <span>{row.dueOn === null ? UNDATED_LABEL : civilDateTextOf(row.dueOn)}</span>
+                          {row.category === null ? null : <Badge variant="outline">{row.category}</Badge>}
+                        </div>
+                        {row.tags.length > 0 ? (
+                          <div className={TAG_CHIP_GROUP_CLASS}>
+                            {row.tags.map((tag) => (
+                              <Badge key={tag} variant="secondary">
+                                <bdi className={TAG_CHIP_TEXT_CLASS}>{tag}</bdi>
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className="text-xs">{linkedRecordOf(row, partnerLabels)}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            ))}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <RecordList<TaskListRow>
+        label={`${name} ${TASK_NOUN}`}
+        columns={columns}
+        rows={tasks}
+        rowCount={total}
+        getRowId={taskRowId}
+        rowLabel={taskRowLabel}
+        initialPinnedColumns={{ start: ["title"] }}
+        renderExpandedRow={(row) => (
+          <div className="grid gap-3 text-xs sm:grid-cols-3">
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <span className="font-medium text-muted-foreground">Task note</span>
+              <p className="text-pretty text-foreground">{row.note === null || row.note.trim() === "" ? "No note recorded for this task." : row.note}</p>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="font-medium text-muted-foreground">Details</span>
+              <span className="text-foreground">
+                ID <bdi className="mono-identifier">{row.taskId}</bdi>
+              </span>
+              {row.plannedTime !== null && row.timeZone !== null ? (
+                <span className="text-muted-foreground">
+                  Planned <bdi className="mono-identifier text-foreground">{row.plannedTime}</bdi> <bdi>{row.timeZone}</bdi>
+                </span>
+              ) : null}
+            </div>
+          </div>
+        )}
+        queryState={listQuery.queryState}
+        onQueryStateChange={listQuery.onQueryStateChange}
+        selectedIds={selectedIds}
+        onSelectionChange={handleSelectionChange}
+        rowActions={rowActionsOf}
+        itemNoun={TASK_NOUN}
+        pageSizeOptions={PAGE_SIZE_OPTIONS}
+        emptyState={emptyState}
+      />
+    );
   }
   const body = listContent();
   const listRegion = isNarrow ? (
@@ -340,8 +438,9 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
   return (
     <div data-slot="work-task-lists" data-list={query.list} className={cn("flex min-w-0 flex-col gap-6", className)}>
       {editor === null ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs">
           <Button type="button" onClick={openCreate}>
+            <PlusIcon aria-hidden="true" data-icon="inline-start" />
             {NEW_TASK_LABEL}
           </Button>
           <p className={cn(QUIET_CLASS, "max-w-prose")}>{"A task needs only a title. Linking a partner or planning a time changes nothing else, and no task here sends a message or creates a stewardship obligation."}</p>
@@ -353,11 +452,14 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
       )}
       {selectedTasks.length === 0 ? null : <BulkActionBar scope={scope} expectedRevision={expectedRevision} selectedTasks={selectedTasks} onClearSelection={clearSelection} onCheckResult={refreshAll} />}
       <div className={SECTION_CLASS}>
-        <div className="flex min-w-0 flex-col gap-2">
-          <h2 className="type-section-title text-pretty">{"Task lists"}</h2>
-          {/* Stated once above the list switcher, so the zone the dates on screen were judged in is read before any list is, and it is the zone the read itself reports having judged them in. */}
-          <p className={cn(QUIET_CLASS, "max-w-prose")}>{`Every due date in these lists is judged in ${judgedZone}, the display time zone this browser chose in Settings, and the lists read in that same zone, so no date here is judged in two; a planned meeting still states the zone it is planned in.`}</p>
-          <p className={cn(QUIET_CLASS, "max-w-prose")}>{BULK_SELECTION_SCOPE_NOTE}</p>
+        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-col gap-2">
+            <h2 className="type-section-title text-pretty">{"Task lists"}</h2>
+            {/* Stated once above the list switcher, so the zone the dates on screen were judged in is read before any list is, and it is the zone the read itself reports having judged them in. */}
+            <p className={cn(QUIET_CLASS, "max-w-prose")}>{`Every due date in these lists is judged in ${judgedZone}, the display time zone this browser chose in Settings, and the lists read in that same zone, so no date here is judged in two; a planned meeting still states the zone it is planned in.`}</p>
+            <p className={cn(QUIET_CLASS, "max-w-prose")}>{BULK_SELECTION_SCOPE_NOTE}</p>
+          </div>
+          <SegmentedTabs label="Task list display layout" value={viewMode} onValueChange={setViewMode} options={TASK_VIEW_OPTIONS} />
         </div>
         {/* Above the list, so the receipt a row action published is read in this list's own context whether or not the row that produced it is still part of the result. */}
         <TaskActionResult receipt={receipt} headingLevel={3} />

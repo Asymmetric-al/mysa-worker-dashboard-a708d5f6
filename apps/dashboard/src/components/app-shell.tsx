@@ -1,13 +1,24 @@
 "use client";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, useTransition, type ReactElement, type ReactNode, type RefObject } from "react";
+import { ChevronDownIcon, ChevronRightIcon, KeyboardIcon, Layers3Icon, SearchIcon, WrenchIcon } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState, useTransition, type ReactElement, type ReactNode, type RefObject } from "react";
+import CommandPalette from "@/components/command-palette";
 import ContextIndicator, { type AdmittedContext, type ContextRequest } from "@/components/context-indicator";
 import ContextSwitchGuard, { type ContextSwitchGuardCopy, type ContextSwitchResult, type UnsavedWorkAnswer } from "@/components/context-switch-guard";
 import DevBanner from "@/components/dev-banner";
+import ShortcutsSheet from "@/components/shortcuts-sheet";
 import { isCurrent, SidebarNav } from "@/components/sidebar-nav";
 import StateNotice, { type StateNoticeProps } from "@/components/state-notice";
-import { Sidebar, SidebarContent, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import { Frame, FrameHeader, FramePanel } from "@/components/ui/frame";
+import { IconTile } from "@/components/ui/icon-tile";
+import { Kbd } from "@/components/ui/kbd";
+import { Separator } from "@/components/ui/separator";
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { cn } from "@/lib/cn";
+import { buildRouteBreadcrumbs } from "@/lib/route-breadcrumbs";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger, useShortcutHint } from "@/lib/ui-sdk";
 import type { Scope, SessionState } from "@/modules/data-service/envelope";
 /** How a session was admitted, which decides whether the shell renders the route or a recovery surface. */ export type AdmissionState = SessionState;
 /** The context switch, so it is available wherever the context indicator is visible. */ export type AppShellContextSwitch = {
@@ -106,6 +117,8 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
   const [pending, setPending] = useState<{ readonly request: ContextRequest; readonly scope: Scope } | null>(null);
   const [switching, setSwitching] = useState(false);
   const [lastSwitch, setLastSwitch] = useState<ContextSwitchResult | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const router = useRouter();
   const [, startRefresh] = useTransition();
   useStickyOffset(headerRef);
@@ -161,24 +174,93 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
   const announcement = pending === null && lastSwitch !== null && lastSwitch.switched ? lastSwitch.announcement : "";
   const recovery = admissionState === "signed-in" ? null : RECOVERY_COPY[admissionState];
   const showsDevelopmentRegion = developmentRegion !== undefined;
+  const sidebarShortcut = useShortcutHint("mod+b");
+  const commandShortcut = useShortcutHint("mod+k");
+  const breadcrumbs = buildRouteBreadcrumbs(currentPath);
   return (
     <>
       <output className="sr-only">{announcement}</output>
-      <Sidebar side={direction === "rtl" ? "right" : "left"} collapsible="icon" className="print:hidden">
+      <Sidebar side={direction === "rtl" ? "right" : "left"} variant="inset" collapsible="icon" className="print:hidden">
+        <SidebarHeader className="border-b border-sidebar-border/70 pb-3">
+          <div className="flex min-w-0 items-center gap-2.5 px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+            <IconTile variant="solid" size="sm">
+              <Layers3Icon />
+            </IconTile>
+            <div className="flex min-w-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
+              <span className="truncate font-heading text-sm font-semibold tracking-tight text-sidebar-foreground">MYSA</span>
+              <span className="truncate text-xs text-muted-foreground">Worker workspace</span>
+            </div>
+          </div>
+        </SidebarHeader>
         <SidebarContent>
           <SidebarNav currentPath={currentPath} onNavigate={closeCompactNav} />
         </SidebarContent>
+        <SidebarFooter className="gap-1.5 border-t border-sidebar-border/70 pt-2.5 group-data-[collapsible=icon]:hidden">
+          <button
+            type="button"
+            onClick={() => setShortcutsOpen(true)}
+            className="flex min-h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-xl border border-sidebar-border/80 bg-card/70 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
+          >
+            <span className="inline-flex items-center gap-1.5 truncate">
+              <KeyboardIcon aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="truncate">Shortcuts</span>
+            </span>
+            <Kbd aria-hidden="true">?</Kbd>
+          </button>
+          <div aria-hidden="true" className="flex items-center justify-between gap-2 rounded-xl border border-sidebar-border/80 bg-card/70 px-2.5 py-1.5 text-xs text-muted-foreground">
+            <span className="truncate">Toggle rail</span>
+            <Kbd>{sidebarShortcut.text}</Kbd>
+          </div>
+        </SidebarFooter>
       </Sidebar>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1.5 border-b border-border bg-background/95 px-3 py-2 backdrop-blur print:hidden">
+      <SidebarInset>
+        <header ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1.5 border-b border-border/80 bg-background/95 px-3 py-2 backdrop-blur-md md:rounded-t-2xl sm:px-5 print:hidden">
           <div className="flex min-w-0 items-center gap-2">
-            <SidebarTrigger />
+            <SidebarTrigger aria-keyshortcuts={sidebarShortcut.ariaKeyshortcuts} />
+            <Separator orientation="vertical" className="h-5" />
             <ContextIndicator scope={scope} admissions={visibleAdmissions} onRequestContext={requestContext} showSupportSubject={showsFinancialFacts(currentPath)} lastResult={pending === null ? lastSwitch : null} className="min-w-0 flex-1" />
+            {breadcrumbs.length > 0 ? (
+              <nav aria-label="Workspace trail" data-slot="shell-breadcrumb" className="hidden min-w-0 items-center gap-1 text-xs text-muted-foreground xl:flex">
+                {breadcrumbs.map((crumb, index) => (
+                  <Fragment key={`${crumb.label}-${String(index)}`}>
+                    {index > 0 ? <ChevronRightIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground/70 rtl:rotate-180" /> : null}
+                    {crumb.href !== undefined ? (
+                      <Link
+                        href={crumb.href}
+                        aria-label={`Return to ${crumb.label}`}
+                        className="inline-flex min-h-6 items-center truncate rounded-md px-1.5 py-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
+                      >
+                        {crumb.label}
+                      </Link>
+                    ) : (
+                      <span aria-current="page" className="truncate px-1 font-medium text-foreground">
+                        {crumb.label}
+                      </span>
+                    )}
+                  </Fragment>
+                ))}
+              </nav>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-slot="command-palette-trigger"
+              aria-keyshortcuts={commandShortcut.ariaKeyshortcuts}
+              onClick={() => setPaletteOpen(true)}
+              className="h-8 min-h-8 shrink-0 gap-2 rounded-4xl px-2.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <SearchIcon aria-hidden="true" className="size-3.5 shrink-0" />
+              <span className="sr-only sm:not-sr-only">Jump to…</span>
+              <Kbd aria-hidden="true" className="hidden sm:inline-flex">
+                {commandShortcut.text}
+              </Kbd>
+            </Button>
           </div>
           <DevBanner scenarioId={devScenarioId} />
         </header>
         <main id={MAIN_CONTENT_ID} tabIndex={-1} className="min-w-0 flex-1">
-          <div className="mx-auto w-full max-w-6xl px-3 py-4 sm:px-4">
+          <div className="mx-auto w-full max-w-6xl px-3 py-5 sm:px-6 sm:py-6">
             {recovery === null ? (
               children
             ) : (
@@ -187,11 +269,31 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
           </div>
         </main>
         {showsDevelopmentRegion ? (
-          <aside aria-label={"Development controls"} className="border-t border-border bg-muted/30 print:hidden">
-            <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-3 py-4">{developmentRegion}</div>
+          <aside aria-label={"Development controls"} className="border-t border-border/80 bg-surface-subtle print:hidden md:rounded-b-2xl">
+            <div className="mx-auto flex w-full max-w-6xl flex-col px-3 py-4 sm:px-6">
+              <Collapsible defaultOpen>
+                <Frame spacing="sm">
+                  <FrameHeader>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <IconTile variant="outline" size="xs">
+                        <WrenchIcon />
+                      </IconTile>
+                      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Development session drawer</span>
+                    </div>
+                    <CollapsibleTrigger className="inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-4xl border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)] [&[data-open]_svg]:rotate-180">
+                      <span>Toggle controls</span>
+                      <ChevronDownIcon aria-hidden="true" className="size-3.5 text-muted-foreground transition-transform" />
+                    </CollapsibleTrigger>
+                  </FrameHeader>
+                  <CollapsiblePanel>
+                    <FramePanel className="flex flex-col gap-4">{developmentRegion}</FramePanel>
+                  </CollapsiblePanel>
+                </Frame>
+              </Collapsible>
+            </div>
           </aside>
         ) : null}
-      </div>
+      </SidebarInset>
       {contextSwitch === undefined ? null : (
         <ContextSwitchGuard
           copy={contextSwitch.copy}
@@ -206,6 +308,8 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
           onSaveAndSwitch={contextSwitch.saveUnsavedWork === undefined ? undefined : saveAndSwitch}
         />
       )}
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onOpenShortcuts={() => setShortcutsOpen(true)} currentPath={currentPath} />
+      <ShortcutsSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </>
   );
 }

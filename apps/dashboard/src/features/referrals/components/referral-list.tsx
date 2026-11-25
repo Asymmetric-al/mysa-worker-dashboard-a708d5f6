@@ -69,13 +69,18 @@ function ExpiredReferralHistorySection({ items, searchEmpty, dir, headingLevel }
   );
 }
 const ViewSwitcher = ({ current, hrefOf }: { readonly current: ReferralView; readonly hrefOf: (view: ReferralView) => string }): ReactElement => (
-  <nav aria-label={LIST_COPY.viewSwitcherLabel} className="min-w-0">
+  <nav aria-label={LIST_COPY.viewSwitcherLabel} className="w-fit max-w-full min-w-0 rounded-4xl border border-border/80 bg-muted/70 p-1">
     <ul className="flex min-w-0 flex-wrap items-center gap-1">
       {REFERRAL_VIEWS.map((view) => {
         const isCurrent = view === current;
         return (
           <li key={view} className="min-w-0">
-            <Link href={hrefOf(view)} aria-current={isCurrent ? "page" : undefined} data-slot="button" className={cn(buttonVariants({ variant: isCurrent ? "secondary" : "ghost", size: "sm" }), "max-w-full whitespace-normal")}>
+            <Link
+              href={hrefOf(view)}
+              aria-current={isCurrent ? "page" : undefined}
+              data-slot="button"
+              className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "max-w-full whitespace-normal", isCurrent ? "bg-card text-foreground shadow-xs ring-1 ring-border/80 hover:bg-card" : "text-muted-foreground hover:text-foreground")}
+            >
               <bdi>{LIST_COPY.views[view].heading}</bdi>
             </Link>
           </li>

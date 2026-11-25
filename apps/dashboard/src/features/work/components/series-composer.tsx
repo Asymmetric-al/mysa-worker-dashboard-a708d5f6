@@ -29,7 +29,7 @@ export interface SeriesComposerProps {
     [router],
   );
   return (
-    <section data-slot="work-series-composer" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-3", className)}>
+    <section data-slot="work-series-composer" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs sm:p-5", className)}>
       <div className="flex min-w-0 flex-col gap-2">
         <h2 id={headingId} className="type-section-title text-pretty">
           {CREATE_PLAN_HEADING}

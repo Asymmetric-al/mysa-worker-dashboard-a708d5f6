@@ -10,6 +10,7 @@ import StateNotice from "@/components/state-notice";
 import StatusBadge from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Frame, FramePanel } from "@/components/ui/frame";
 import { Label } from "@/components/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
@@ -115,37 +116,41 @@ function ComparisonBlock({ comparison, currency, locale, headingId }: { readonly
 const MonthlyTable = ({ months, currency, locale, headingId }: { readonly months: readonly MonthPoint[]; readonly currency: string; readonly locale: string; readonly headingId: string }): ReactElement => (
   <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
     <h3 {...{ id: headingId, className: "type-subsection-title" }}>Each month of the period</h3>
-    <ScrollRegion label={`${REPORT_COPY.received.title} in ${currency}, months of the period, scrollable`}>
-      <Table>
-        <TableCaption className="text-start">
-          {`${REPORT_COPY.received.title} — `}
-          <bdi>{currency}</bdi>
-          {` — one row per month of the period, in the order the months occur, at the authorised-allocation grain; a month the source does not cover is a gap rather than a zero.`}
-        </TableCaption>
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col">Month</TableHead>
-            <TableHead {...{ scope: "col", className: "text-end" }}>Received support</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {months.length === 0 ? (
-            <TableRow>
-              <TableCell {...{ colSpan: 2, className: "whitespace-normal text-muted-foreground" }}>{"No month of this period is stated in this currency — each one is a gap, not a zero"}</TableCell>
-            </TableRow>
-          ) : (
-            months.map((point) => (
-              <TableRow key={civilDateText(point.bucketStart)}>
-                <TableCell className="whitespace-normal">
-                  <bdi>{periodText(point.bucketStart, point.bucketEnd)}</bdi>{" "}
-                </TableCell>
-                <TableCell className="text-end">{point.gap ? <span className="text-muted-foreground">{"No gift recorded — a gap, not a zero"}</span> : <StatedFigure amount={point.value} currency={currency} locale={locale} />}</TableCell>
+    <Frame spacing="flush">
+      <FramePanel>
+        <ScrollRegion label={`${REPORT_COPY.received.title} in ${currency}, months of the period, scrollable`}>
+          <Table>
+            <TableCaption className="px-4 pb-3 text-start">
+              {`${REPORT_COPY.received.title} — `}
+              <bdi>{currency}</bdi>
+              {` — one row per month of the period, in the order the months occur, at the authorised-allocation grain; a month the source does not cover is a gap rather than a zero.`}
+            </TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Month</TableHead>
+                <TableHead {...{ scope: "col", className: "text-end" }}>Received support</TableHead>
               </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </ScrollRegion>
+            </TableHeader>
+            <TableBody>
+              {months.length === 0 ? (
+                <TableRow>
+                  <TableCell {...{ colSpan: 2, className: "whitespace-normal text-muted-foreground" }}>{"No month of this period is stated in this currency — each one is a gap, not a zero"}</TableCell>
+                </TableRow>
+              ) : (
+                months.map((point) => (
+                  <TableRow key={civilDateText(point.bucketStart)}>
+                    <TableCell className="whitespace-normal">
+                      <bdi>{periodText(point.bucketStart, point.bucketEnd)}</bdi>{" "}
+                    </TableCell>
+                    <TableCell className="text-end">{point.gap ? <span className="text-muted-foreground">{"No gift recorded — a gap, not a zero"}</span> : <StatedFigure amount={point.value} currency={currency} locale={locale} />}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </ScrollRegion>
+      </FramePanel>
+    </Frame>
   </section>
 );
 function ReceivedPartition({ summary, months, comparison, period, locale }: { readonly summary: CurrencySummary; readonly months: readonly MonthPoint[]; readonly comparison: ComparisonResult | undefined; readonly period: PeriodState; readonly locale: string }): ReactElement {
@@ -330,39 +335,43 @@ function MatrixCellContent({ cell, attribution, scopeName, locale, drilldownHref
   );
 }
 const WideMatrix = ({ currency, months, rows, locale, drilldownHref }: MatrixCompositionProps): ReactElement => (
-  <ScrollRegion label={`${REPORT_COPY.matrix.title} in ${currency}, scrollable`} className="rounded-lg">
-    <Table>
-      <TableCaption className="text-start">
-        {`${REPORT_COPY.matrix.title} in `}
-        <bdi className="mono-identifier">{currency}</bdi>
-        {` — ${"one row is one partner or support attribution, one column is one month, and every cell states " + "the authorised allocations the source recorded in it"}. ${GAP_SENTENCE}`}
-      </TableCaption>
-      <TableHeader>
-        <TableRow>
-          <TableHead scope="col">Partner or support</TableHead>
-          {months.map((month) => (
-            <TableHead key={month.key} scope="col" className={NUMERIC_CELL_CLASS}>
-              <bdi>{month.shortLabel}</bdi>
-            </TableHead>
-          ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => (
-          <TableRow key={row.key}>
-            <TableHead scope="row" className="h-auto font-normal">
-              <bdi className={row.opaqueReference ? "mono-identifier" : undefined}>{row.label}</bdi>
-            </TableHead>
-            {months.map((month) => (
-              <TableCell key={month.key} className={NUMERIC_CELL_CLASS}>
-                <MatrixCellContent cell={row.cellsByMonth.get(month.key)} attribution={row.attribution} scopeName={`${row.label}, ${month.longLabel}`} locale={locale} drilldownHref={drilldownHref} />
-              </TableCell>
+  <Frame spacing="flush">
+    <FramePanel>
+      <ScrollRegion label={`${REPORT_COPY.matrix.title} in ${currency}, scrollable`}>
+        <Table>
+          <TableCaption className="px-4 pb-3 text-start">
+            {`${REPORT_COPY.matrix.title} in `}
+            <bdi className="mono-identifier">{currency}</bdi>
+            {` — ${"one row is one partner or support attribution, one column is one month, and every cell states " + "the authorised allocations the source recorded in it"}. ${GAP_SENTENCE}`}
+          </TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col">Partner or support</TableHead>
+              {months.map((month) => (
+                <TableHead key={month.key} scope="col" className={NUMERIC_CELL_CLASS}>
+                  <bdi>{month.shortLabel}</bdi>
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((row) => (
+              <TableRow key={row.key}>
+                <TableHead scope="row" className="h-auto font-normal">
+                  <bdi className={row.opaqueReference ? "mono-identifier" : undefined}>{row.label}</bdi>
+                </TableHead>
+                {months.map((month) => (
+                  <TableCell key={month.key} className={NUMERIC_CELL_CLASS}>
+                    <MatrixCellContent cell={row.cellsByMonth.get(month.key)} attribution={row.attribution} scopeName={`${row.label}, ${month.longLabel}`} locale={locale} drilldownHref={drilldownHref} />
+                  </TableCell>
+                ))}
+              </TableRow>
             ))}
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  </ScrollRegion>
+          </TableBody>
+        </Table>
+      </ScrollRegion>
+    </FramePanel>
+  </Frame>
 );
 const PeriodFirstMatrix = ({ currency, months, rows, locale, drilldownHref }: MatrixCompositionProps): ReactElement => (
   <section aria-label={`${REPORT_COPY.matrix.title} in ${currency}, by period`} className="flex min-w-0 flex-col gap-4" data-slot="report-matrix-periods">
@@ -374,14 +383,14 @@ const PeriodFirstMatrix = ({ currency, months, rows, locale, drilldownHref }: Ma
     {months.map((month) => {
       const stated = statedCells(rows, month);
       return (
-        <div key={month.key} className="flex min-w-0 flex-col gap-2">
+        <div key={month.key} className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-card p-4 shadow-2xs">
           <h3 className="type-subsection-title">{month.longLabel}</h3>
           {stated.length === 0 ? (
             <p className={QUIET_TEXT_CLASS}>{"No amount is stated for this month: either the source recorded no gift, or it did not establish " + "the value. Neither is a zero."}</p>
           ) : (
-            <ul className="flex min-w-0 flex-col gap-1">
+            <ul className="flex min-w-0 flex-col gap-1.5 divide-y divide-border/60">
               {stated.map(({ row, cell }) => (
-                <li key={row.key} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <li key={row.key} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1 pt-1.5 first:pt-0">
                   <bdi className={cn("min-w-0 break-words", row.opaqueReference ? "mono-identifier" : undefined)}>{row.label}</bdi>
                   <MatrixCellContent cell={cell} attribution={row.attribution} scopeName={`${row.label}, ${month.longLabel}`} locale={locale} drilldownHref={drilldownHref} />
                 </li>
@@ -503,34 +512,38 @@ function ComparisonPartition({ entry, current, baseline, deltas, counts, reconci
       {contributors.length === 0 ? (
         <p className="type-supporting min-w-0 break-words">{"The report states no contributor change in this currency: a contributor whose amount is the same " + "in both periods is left out of this list rather than shown as a zero."}</p>
       ) : (
-        <ScrollRegion label={`${REPORT_COPY.comparison.title} in ${entry.currency}, contributor changes, scrollable`}>
-          <Table>
-            <TableCaption>
-              {REPORT_COPY.comparison.title}
-              {" — contributor changes in "}
-              <bdi>{entry.currency}</bdi>
-              {", one row per attribution this table states."}
-            </TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">Contributor</TableHead>
-                <TableHead {...{ scope: "col", className: "text-end" }}>Change</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {contributors.map((change) => (
-                <TableRow key={`${change.currency}:${change.partnerId ?? change.attribution?.kind ?? "unresolved"}`}>
-                  <TableHead scope="row" className="whitespace-normal break-words">
-                    <ContributorLabel change={change} />
-                  </TableHead>
-                  <TableCell className="text-end">
-                    <AmountValue money={{ currency: change.currency, minorUnits: change.minorUnits }} valueState={entry.valueState} locale={locale} />{" "}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </ScrollRegion>
+        <Frame spacing="flush">
+          <FramePanel>
+            <ScrollRegion label={`${REPORT_COPY.comparison.title} in ${entry.currency}, contributor changes, scrollable`}>
+              <Table>
+                <TableCaption className="px-4 pb-3 text-start">
+                  {REPORT_COPY.comparison.title}
+                  {" — contributor changes in "}
+                  <bdi>{entry.currency}</bdi>
+                  {", one row per attribution this table states."}
+                </TableCaption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">Contributor</TableHead>
+                    <TableHead {...{ scope: "col", className: "text-end" }}>Change</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {contributors.map((change) => (
+                    <TableRow key={`${change.currency}:${change.partnerId ?? change.attribution?.kind ?? "unresolved"}`}>
+                      <TableHead scope="row" className="whitespace-normal break-words">
+                        <ContributorLabel change={change} />
+                      </TableHead>
+                      <TableCell className="text-end">
+                        <AmountValue money={{ currency: change.currency, minorUnits: change.minorUnits }} valueState={entry.valueState} locale={locale} />{" "}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollRegion>
+          </FramePanel>
+        </Frame>
       )}
       {countedContributors > contributors.length ? <p className="min-w-0 break-words text-sm text-muted-foreground">{notAllListedNote(contributors.length, countedContributors, entry.currency, locale)}</p> : null}
       {reconciles ? <p className="min-w-0 break-words text-sm text-muted-foreground">{"The contributor changes add up exactly to this difference."}</p> : null}

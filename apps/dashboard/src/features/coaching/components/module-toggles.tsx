@@ -217,13 +217,19 @@ export default function ModuleToggles({ grantId, modules, scope, expectedRevisio
   if (!hasClosedModuleSet(modules)) return <StateNotice kind="refused" title="These five modules could not be stated" description={SET_INCOMPLETE_DESCRIPTION} headingLevel={headingLevel} className={className} />;
   const rowHeadingLevel = ROW_HEADING_LEVEL[headingLevel];
   const rows = MODULE_KEYS.map((key) => ({ key, entry: entryFor(modules, key) }));
+  const enabledCount = modules.filter((entry) => entry.enabled).length;
   const stateCopy = gate.stateCopy;
   return (
     <Card data-slot="module-toggles" data-grant-state={grantState} className={cn("min-w-0", className)}>
       <CardHeader>
-        <CardTitle>
-          <CardHeading {...{ id: headingId, className: CARD_HEADING_SCALE[headingLevel] }}>{"Modules you share"}</CardHeading>
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle>
+            <CardHeading {...{ id: headingId, className: CARD_HEADING_SCALE[headingLevel] }}>{"Modules you share"}</CardHeading>
+          </CardTitle>
+          <Badge variant={enabledCount > 0 ? "secondary" : "outline"} className="tabular-figures">
+            {`${String(enabledCount)} of ${String(MODULE_KEYS.length)} shared`}
+          </Badge>
+        </div>
         <CardDescription>
           <p>{COACHING_COPY.sharing.purpose}</p>
           <p>{"Modules start switched off, and each of the five is chosen on its own, so your coach can read only the ones you switch on."}</p>
@@ -248,11 +254,10 @@ export default function ModuleToggles({ grantId, modules, scope, expectedRevisio
             </AlertDescription>
           </Alert>
         )}
-        <ul className="flex min-w-0 flex-col gap-3">
-          {rows.map(({ key, entry }, index) =>
+        <ul className="flex min-w-0 flex-col gap-2.5">
+          {rows.map(({ key, entry }) =>
             entry === undefined ? null : (
-              <li key={key} className="flex min-w-0 flex-col gap-3">
-                {index === 0 ? null : <Separator />}
+              <li key={key} className={cn("flex min-w-0 flex-col gap-3 rounded-2xl border p-3.5 transition-colors", entry.enabled ? "border-foreground/25 bg-card shadow-2xs" : "border-border/80 bg-surface-subtle")}>
                 <ModuleRow entry={entry} grantId={grantId} scope={scope} expectedRevision={expectedRevision} gate={gate} gateId={gate.stateCopy === null ? null : gateId} rowHeadingLevel={rowHeadingLevel} onOutcome={onOutcome} onCheckResult={onCheckResult} />
               </li>
             ),

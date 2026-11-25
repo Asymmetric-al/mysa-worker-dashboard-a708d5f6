@@ -6,6 +6,7 @@ import { refusalSummary } from "@/components/form-field";
 import { RecordList, type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { statusBadgeProps, type StatusBadgeSpec } from "@/components/status-badge";
+import { SegmentedMeter, type MeterSegmentTone } from "@/components/ui/segmented-meter";
 import { cn } from "@/lib/cn";
 import { countFormatOf } from "@/lib/count-format";
 import { assertNever } from "@/lib/result";
@@ -166,6 +167,16 @@ const loadingSurface = (headingId: string, className: string | undefined): React
     <StateNotice kind="loading" title={SURFACE_COPY.readingTitle} description={SURFACE_COPY.readingDescription} loadingLines={7} />
   </Surface>
 );
+const RESPONSE_KIND_TONE: Readonly<Record<RecordedResponseKind, MeterSegmentTone>> = {
+  agreed: "positive",
+  conditional: "info",
+  partial: "info",
+  deferred: "warning",
+  "needs-clarification": "warning",
+  declined: "destructive",
+  unanswered: "muted",
+};
+
 function InitiativeResultsSurface({ initiativeId, queryState: controlledState, initialEnvelope, onQueryStateChange, className }: InitiativeResultsSurfaceProps): ReactElement {
   const headingId = useId();
   const router = useRouter();
@@ -241,8 +252,17 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
       ) : (
         <StateNotice kind="empty" headingLevel={4} title={`${RESULTS_COPY.heading}: ${results.initiative.name}`} description={RESULTS_COPY.noResultsNote} action={{ label: SURFACE_COPY.emptyAction, href: `${initiativeHref(initiativeId)}#requests` }} />
       )}
+      <SegmentedMeter
+        segments={kindRows.map((row) => ({
+          key: row.kind,
+          label: RESPONSE_KIND_COPY[COPY_KIND_OF_RECORDED_KIND[row.kind]].label,
+          count: row.count,
+          tone: RESPONSE_KIND_TONE[row.kind],
+        }))}
+        label="Recorded response kind breakdown"
+      />
       <div className="hidden min-w-0 md:block">
-        <RecordList label={kindsLabel} columns={kindColumns} rows={kindRows} rowCount={kindRows.length} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={responseKindRowId} itemNoun="response kinds" />
+        <RecordList label={kindsLabel} columns={kindColumns} rows={kindRows} rowCount={kindRows.length} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={responseKindRowId} initialPinnedColumns={{ start: ["kind"] }} itemNoun="response kinds" />
       </div>
       <KindList rows={kindRows} valueStates={valueStates} showsShare={showsShare} label={kindsLabel} />
       {termsRows.length === 0 ? null : (
@@ -251,7 +271,7 @@ function InitiativeResultsSurface({ initiativeId, queryState: controlledState, i
             <h4 className="type-group-title">{SURFACE_COPY.termsHeading}</h4>
             <p className="type-supporting text-pretty">{RESPONSE_AGREEMENT_COPY.bindsToTermsVersion}</p>
           </div>
-          <RecordList label={`${RESULTS_COPY.heading} for ${results.initiative.name}: ${SURFACE_COPY.termsHeading}`} columns={termsColumns} rows={termsRows} rowCount={termsRows.length} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={termsVersionRowId} itemNoun="terms versions" />
+          <RecordList label={`${RESULTS_COPY.heading} for ${results.initiative.name}: ${SURFACE_COPY.termsHeading}`} columns={termsColumns} rows={termsRows} rowCount={termsRows.length} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={termsVersionRowId} initialPinnedColumns={{ start: ["termsVersion"] }} itemNoun="terms versions" />
         </div>
       )}
     </Surface>

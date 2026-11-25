@@ -247,7 +247,7 @@ function Heading({ level, id, children }: { readonly level: 1 | 2; readonly id: 
   }
   return (
     <div data-slot="initiative-list" className={cn("flex min-w-0 flex-col gap-4 text-start", className)}>
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-1">
           <Heading {...{ level: headingLevel, id: headingId }}>{INITIATIVE_COPY.listHeading}</Heading>
           <p className="type-supporting text-pretty">{SURFACE_COPY.intro}</p>
