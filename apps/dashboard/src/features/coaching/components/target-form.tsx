@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { SteppedNumberField } from "@/components/ui/number-field";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cn";
@@ -179,25 +180,41 @@ function SelectField<T extends string>({ name, label, description, error, value,
 type InputFieldProps = { readonly name: string; readonly label: string; readonly description: string; readonly error: readonly string[] | undefined; readonly type: "number" | "date" | "text"; readonly className: string; readonly value: string; readonly onChange: (next: string) => void; readonly onBlur: () => void };
 const InputField = ({ name, label, description, error, type, className, value, onChange, onBlur }: InputFieldProps): ReactElement => (
   <FormField name={name} label={label} description={description} error={error} required>
-    {(control) => (
-      <Input
-        id={control.id}
-        name={name}
-        type={type}
-        inputMode={type === "number" ? "numeric" : undefined}
-        min={type === "number" ? 1 : undefined}
-        step={type === "number" ? 1 : undefined}
-        autoComplete={type === "date" ? undefined : "off"}
-        className={className}
-        required={control.required}
-        value={value}
-        aria-describedby={control.describedBy}
-        aria-invalid={control.invalid ? true : undefined}
-        aria-required={control.required ? true : undefined}
-        onChange={(event) => onChange(event.currentTarget.value)}
-        onBlur={onBlur}
-      />
-    )}
+    {(control) =>
+      type === "number" ? (
+        <SteppedNumberField
+          id={control.id}
+          name={name}
+          min={1}
+          step={1}
+          required={control.required}
+          value={value}
+          aria-describedby={control.describedBy}
+          aria-invalid={control.invalid ? true : undefined}
+          aria-required={control.required ? true : undefined}
+          decrementLabel={`Decrease ${label.toLowerCase()}`}
+          incrementLabel={`Increase ${label.toLowerCase()}`}
+          onValueChange={onChange}
+          onBlur={onBlur}
+          className={className}
+        />
+      ) : (
+        <Input
+          id={control.id}
+          name={name}
+          type={type}
+          autoComplete={type === "date" ? undefined : "off"}
+          className={className}
+          required={control.required}
+          value={value}
+          aria-describedby={control.describedBy}
+          aria-invalid={control.invalid ? true : undefined}
+          aria-required={control.required ? true : undefined}
+          onChange={(event) => onChange(event.currentTarget.value)}
+          onBlur={onBlur}
+        />
+      )
+    }
   </FormField>
 );
 const CivilDateText = ({ value }: { readonly value: string | undefined }): ReactElement => ((value ?? "").trim() === "" ? <span className="text-muted-foreground">a day you have not entered yet</span> : <bdi className="wrap-anywhere">{(value ?? "").trim()}</bdi>);

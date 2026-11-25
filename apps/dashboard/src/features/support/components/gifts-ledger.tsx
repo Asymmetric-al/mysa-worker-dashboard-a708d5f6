@@ -4,6 +4,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import StateNotice from "@/components/state-notice";
+import { DateSelector, type DateSelectorValue } from "@/components/ui/date-selector";
+import { Frame, FrameHeader, FramePanel } from "@/components/ui/frame";
 import { refusalSummary } from "@/components/form-field";
 import QueryToolbar, { type FacetSpec, type FacetValueSpec } from "@/components/query-toolbar";
 import { cn } from "@/lib/cn";
@@ -288,28 +290,34 @@ function ValueStateLegend({ states }: { readonly states: readonly ValueState[] }
   );
 }
 const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport["summary"]; readonly locale: string }): ReactElement => (
-  <div data-slot="whole-result-summary" className={cn("flex flex-col gap-1 text-xs", MUTED_TEXT_CLASS)}>
-    <h2 className="type-section-title text-foreground">{"Whole-result support, by currency"}</h2>
-    <p className="type-supporting">{"These figures are the whole result these filters match, not the rows on this page. Each currency is stated on its own: nothing here is added across currencies and no combined total is stated."}</p>
-    {summary.length === 0 ? (
-      <p className="type-supporting">{"This result states no currency, so there is no whole-result figure to state here. That is not a zero."}</p>
-    ) : (
-      <ul className="flex flex-col gap-1">
-        {summary.map((entry) => {
-          const countNote = COUNT_STATE_NOTE[entry.giftCount.valueState];
-          return (
-            <li key={entry.currency} className="flex flex-wrap items-baseline gap-x-1.5">
-              <bdi className="mono-identifier font-medium text-foreground">{entry.currency}</bdi>
-              <span>received</span>
-              <AmountValue money={{ currency: entry.currency, minorUnits: entry.received.minorUnits ?? minorUnitsOf(0) }} valueState={entry.received.valueState} locale={locale} />
-              <span>{`and ${countTextOf(entry.giftCount.count, locale)} ${entry.giftCount.count === 1 ? "gift" : "gifts"}`}</span>
-              {countNote === null ? null : <span>{`(${countNote})`}</span>}
-            </li>
-          );
-        })}
-      </ul>
-    )}
-  </div>
+  <Frame spacing="flush">
+    <div data-slot="whole-result-summary" className={cn("flex min-w-0 flex-col text-xs", MUTED_TEXT_CLASS)}>
+      <FrameHeader className="flex-col items-start gap-0.5 py-2.5">
+        <h2 className="type-section-title text-foreground">{"Whole-result support, by currency"}</h2>
+        <p className="type-supporting">{"These figures are the whole result these filters match, not the rows on this page. Each currency is stated on its own: nothing here is added across currencies and no combined total is stated."}</p>
+      </FrameHeader>
+      <FramePanel className="bg-surface-subtle p-2.5">
+        {summary.length === 0 ? (
+          <p className="type-supporting">{"This result states no currency, so there is no whole-result figure to state here. That is not a zero."}</p>
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {summary.map((entry) => {
+              const countNote = COUNT_STATE_NOTE[entry.giftCount.valueState];
+              return (
+                <li key={entry.currency} className="flex flex-wrap items-baseline gap-x-1.5 rounded-xl border border-border/80 bg-card px-3 py-2 text-sm shadow-2xs">
+                  <bdi className="mono-identifier font-semibold text-foreground">{entry.currency}</bdi>
+                  <span>received</span>
+                  <AmountValue money={{ currency: entry.currency, minorUnits: entry.received.minorUnits ?? minorUnitsOf(0) }} valueState={entry.received.valueState} locale={locale} />
+                  <span>{`and ${countTextOf(entry.giftCount.count, locale)} ${entry.giftCount.count === 1 ? "gift" : "gifts"}`}</span>
+                  {countNote === null ? null : <span>{`(${countNote})`}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </FramePanel>
+    </div>
+  </Frame>
 );
 /** The `/support/gifts` surface: one whole-query ledger over the bounded filter set, with the query kept in the URL. */ export function GiftsLedger({ scope, locale, dir, initialEnvelope, initialQuery, className }: GiftsLedgerProps): ReactElement {
   const router = useRouter();
@@ -350,6 +358,10 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
   const narrowedBeyondDefault = activeFilters > PERIOD_FILTER_COUNT;
   const handleSearchChange = useCallback((value: string): void => commit(patchGiftsQuery(latestQuery.current, { search: value === "" ? null : value, page: FIRST_PAGE })), [commit]);
   const handleAppliedChange = useCallback((next: Readonly<Record<string, readonly string[]>>): void => commit(queryFromApplied(latestQuery.current, next)), [commit]);
+  const handlePeriodSelectorChange = useCallback(
+    (next: DateSelectorValue): void => commit(patchGiftsQuery(latestQuery.current, { period: next.kind === "custom" ? { kind: "custom", from: next.from, to: next.to } : { kind: "preset", preset: next.preset }, page: FIRST_PAGE })),
+    [commit],
+  );
   const handleClearFilters = useCallback((): void => commit(patchGiftsQuery(latestQuery.current, { period: { kind: "preset", preset: GIFTS_DEFAULT_PERIOD_PRESET }, currency: { kind: "all" }, recipient: { kind: "any" }, designation: null, method: null, search: null, sort: null, page: FIRST_PAGE })), [commit]);
   const handleQueryStateChange = useCallback(
     (next: RecordListQueryState): void => {
@@ -410,14 +422,74 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
         <SnapshotStatement basis={snapshot.basis} currencies={snapshot.currencies} period={{ from: civilDateText(snapshot.period.from), to: civilDateText(snapshot.period.to) }} coverage={read.envelope.coverage} asOf={read.envelope.asOf} isCurrentPeriod={snapshot.period.state === "in-progress"} locale={locale} />
         <WholeResultSummary summary={ledger.summary} locale={locale} />
         <ValueStateLegend states={legendStatesOf(read.envelope.valueStates)} />
-        <RecordList {...filtersApplied} label="Received gifts" columns={columns} rows={ledger.rows} rowCount={ledger.total} queryState={listState} onQueryStateChange={handleQueryStateChange} getRowId={giftRowIdOf} itemNoun="gifts" locale={locale} pageSizeOptions={PAGE_SIZE_OPTIONS} emptyState={GIFTS_EMPTY_STATE} />
+        <RecordList
+          {...filtersApplied}
+          label="Received gifts"
+          columns={columns}
+          rows={ledger.rows}
+          rowCount={ledger.total}
+          queryState={listState}
+          onQueryStateChange={handleQueryStateChange}
+          getRowId={giftRowIdOf}
+          rowLabel={(row) => row.giftId}
+          initialPinnedColumns={{ start: ["gift"] }}
+          renderExpandedRow={(row) => (
+            <div className="grid gap-3 text-xs sm:grid-cols-3">
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium text-muted-foreground">Gift &amp; allocation grain</span>
+                <span className="text-foreground">
+                  <GrainCell row={row} />
+                </span>
+                {row.allocationId === undefined ? null : (
+                  <span className="text-muted-foreground">
+                    Allocation <bdi className="mono-identifier text-foreground">{row.allocationId}</bdi>
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <span className="font-medium text-muted-foreground">Attribution &amp; designation</span>
+                <span className="text-foreground">
+                  <AttributionCell attribution={row.attribution} />
+                </span>
+                <span className="text-muted-foreground">{row.designation ?? "No designation stated"}</span>
+              </div>
+              <div className="flex flex-col items-start justify-between gap-2">
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-medium text-muted-foreground">Gift date</span>
+                  <span className="text-foreground">
+                    <GiftDateCell row={row} />
+                  </span>
+                </div>
+                <Link href={`/support/gifts/${encodeURIComponent(row.giftId)}?${toGiftsParams(query).toString()}`} className="inline-link inline-flex min-h-6 items-center font-medium text-foreground">
+                  Open full gift record
+                </Link>
+              </div>
+            </div>
+          )}
+          itemNoun="gifts"
+          locale={locale}
+          pageSizeOptions={PAGE_SIZE_OPTIONS}
+          emptyState={GIFTS_EMPTY_STATE}
+        />
       </>
     );
   }
   const searchFacet = { value: query.search ?? "", onChange: handleSearchChange, placeholder: "Search this ledger" };
+  const dateSelectorValue: DateSelectorValue = query.period.kind === "custom" ? { kind: "custom", from: query.period.from, to: query.period.to } : { kind: "preset", preset: query.period.preset };
+  const anchorDate = report === undefined ? undefined : civilDateText(report.snapshot.period.from);
   return (
-    <div data-slot="gifts-ledger" dir={dir} className={cn("flex flex-col gap-4", className)}>
-      <QueryToolbar label="Gift filters" search={searchFacet} facets={facets} applied={applied} onAppliedChange={handleAppliedChange} amountRange={{ facetId: FACETS.amountRange, currencyFacetId: FACETS.currency }} pending={gifts.isFetching} locale={locale} />
+    <div data-slot="gifts-ledger" dir={dir} className={cn("flex flex-col gap-3", className)}>
+      <QueryToolbar
+        label="Gift filters"
+        search={searchFacet}
+        facets={facets}
+        applied={applied}
+        onAppliedChange={handleAppliedChange}
+        amountRange={{ facetId: FACETS.amountRange, currencyFacetId: FACETS.currency }}
+        pending={gifts.isFetching}
+        locale={locale}
+        trailingControls={<DateSelector value={dateSelectorValue} presets={PERIOD_PRESET_VALUES} onChange={handlePeriodSelectorChange} anchorDate={anchorDate} locale={locale} triggerLabel="Custom date range" />}
+      />
       {/* Where the whole query leaves the application: the report states this same filter set with its CSV download and its printed page, so the query a worker investigated here is the query those artifacts carry. */}
       <p data-slot="gifts-export-href" className={cn("type-supporting max-w-prose text-balance md:text-pretty")}>
         {"The received-support report states this same filter set with the CSV download and the printed page, so opening it carries the query you investigated rather than the page on screen. "}

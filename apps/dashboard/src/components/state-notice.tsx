@@ -4,7 +4,9 @@ import { CircleAlertIcon, CloudOffIcon, LanguagesIcon, ShieldAlertIcon, SquarePe
 import { useRef, useState, type ReactElement, type ReactNode } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button, buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { EmptyIllustration, type EmptyIllustrationVariant } from "@/components/ui/empty-illustration";
+import { Frame, FramePanel } from "@/components/ui/frame";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/cn";
@@ -32,8 +34,17 @@ export type StateNoticeProps = {
   readonly reasonCode?: DenialReason;
   readonly headingLevel?: NoticeHeadingLevel;
   readonly loadingLines?: number;
+  readonly illustration?: EmptyIllustrationVariant;
   readonly className?: string;
 };
+
+function inferEmptyIllustration(title: string): EmptyIllustrationVariant {
+  const lower = title.toLowerCase();
+  if (lower.includes("filter") || lower.includes("match") || lower.includes("search")) return "filter";
+  if (lower.includes("gift") || lower.includes("ledger") || lower.includes("commitment") || lower.includes("support")) return "ledger";
+  if (lower.includes("edition") || lower.includes("page") || lower.includes("draft") || lower.includes("update") || lower.includes("section")) return "document";
+  return "inbox";
+}
 const LOADING_LINE_WIDTHS = ["w-full", "w-2/3", "w-4/5", "w-1/2"] as const;
 const MAX_LOADING_LINES = 12;
 const DEFAULT_LOADING_LINES = 3;
@@ -195,7 +206,7 @@ function renderAlertContent(input: AlertContentInput): { readonly icon: ReactEle
   }
 }
 /** The one empty, busy, unavailable, unknown, denied, refused, partial-coverage or language-unavailable surface in the application. */
-export function StateNotice({ kind, title, description, action, source, retry, operationId, coverage, reasonCode, headingLevel = 3, loadingLines = DEFAULT_LOADING_LINES, className }: StateNoticeProps): ReactElement {
+export function StateNotice({ kind, title, description, action, source, retry, operationId, coverage, reasonCode, headingLevel = 3, loadingLines = DEFAULT_LOADING_LINES, illustration, className }: StateNoticeProps): ReactElement {
   const regionRef = useRef<HTMLDivElement | null>(null);
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
@@ -226,8 +237,11 @@ export function StateNotice({ kind, title, description, action, source, retry, o
     return (
       // `jsx-a11y/prefer-tag-over-role` is suppressed for this region and only this region: the frame is the design-system `Empty` element, whose tag this component does not own, and the tag the rule prefers (`output`) admits only phrasing content, which the notice's heading and description are not.
       // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
-      <Empty ref={regionRef} role="status" aria-busy={busy} tabIndex={-1} className={cn("border border-dashed border-border p-6 sm:p-12", className)}>
+      <Empty ref={regionRef} role="status" aria-busy={busy} tabIndex={-1} className={cn("p-6 sm:p-10", className)}>
         <EmptyHeader>
+          <EmptyMedia variant="default">
+            <EmptyIllustration variant={illustration ?? inferEmptyIllustration(title)} />
+          </EmptyMedia>
           <EmptyTitle>
             <NoticeHeading level={headingLevel}>{title}</NoticeHeading>
           </EmptyTitle>
@@ -244,32 +258,35 @@ export function StateNotice({ kind, title, description, action, source, retry, o
   }
   if (kind === "loading") {
     return (
-      <div ref={regionRef} aria-busy={true} tabIndex={-1} className={cn("flex w-full flex-col gap-3 rounded-lg border border-dashed border-border p-6", className)}>
-        <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-          <Spinner />
-          <span>{title}</span>
-        </p>
-        {description === undefined ? null : <p className="type-supporting">{description}</p>}
-        <div aria-hidden="true" className="flex flex-col gap-2">
-          {Array.from({ length: Math.min(Math.max(Math.trunc(loadingLines), 1), MAX_LOADING_LINES) }, (_, line) => (
-            <Skeleton key={line} className={cn("h-4 rounded-md", LOADING_LINE_WIDTHS[line % LOADING_LINE_WIDTHS.length])} />
-          ))}
-        </div>
-      </div>
+      <Frame spacing="sm" className={className}>
+        <FramePanel ref={regionRef} aria-busy={true} tabIndex={-1} className="flex w-full flex-col gap-3">
+          <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+            <Spinner />
+            <span>{title}</span>
+          </p>
+          {description === undefined ? null : <p className="type-supporting">{description}</p>}
+          <div aria-hidden="true" className="flex flex-col gap-2">
+            {Array.from({ length: Math.min(Math.max(Math.trunc(loadingLines), 1), MAX_LOADING_LINES) }, (_, line) => (
+              <Skeleton key={line} className={cn("h-4 rounded-md", LOADING_LINE_WIDTHS[line % LOADING_LINE_WIDTHS.length])} />
+            ))}
+          </div>
+        </FramePanel>
+      </Frame>
     );
   }
   const { icon, body } = renderAlertContent({ kind, description, source, retry, operationId, coverage, reasonCode });
+  const alertVariant = kind === "unavailable" || kind === "denied" ? "destructive" : kind === "partial-coverage" || kind === "unknown" ? "warning" : "info";
   const actionButton = action === undefined ? null : <NoticeButton key="action" action={action} variant="default" size="sm" pending={pending} onRun={runAction} />;
   const buttons = [actionButton, retry === undefined ? null : <NoticeButton key="retry" action={retry} variant="outline" size="sm" pending={pending} onRun={runRetry} />].filter((button) => button !== null);
   return (
-    <Alert ref={regionRef} role={kind === "unavailable" ? "alert" : "status"} aria-busy={busy} tabIndex={-1} className={className}>
+    <Alert ref={regionRef} variant={alertVariant} role={kind === "unavailable" ? "alert" : "status"} aria-busy={busy} tabIndex={-1} className={className}>
       {icon}
       <AlertTitle>
         <NoticeHeading level={headingLevel}>{title}</NoticeHeading>
       </AlertTitle>
       <AlertDescription>
         {body}
-        {buttons.length === 0 ? null : <div className="flex flex-wrap items-center gap-2">{buttons}</div>}
+        {buttons.length === 0 ? null : <div className="mt-2 flex flex-wrap items-center gap-2">{buttons}</div>}
       </AlertDescription>
     </Alert>
   );

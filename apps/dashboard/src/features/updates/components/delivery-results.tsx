@@ -9,6 +9,8 @@ import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { SEND_STATUS, statusBadgeProps, VALUE_STATE_WORDS, type StatusBadgeSpec } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-button";
+import { SegmentedMeter } from "@/components/ui/segmented-meter";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { countFormatOf } from "@/lib/count-format";
@@ -244,37 +246,45 @@ const RemainingFigure = ({ remaining, valueState, locale }: { readonly remaining
   return <StatusBadge {...statusBadgeProps(VALUE_STATE_WORDS, valueState === "withheld" || valueState === "unavailable" ? valueState : "unknown")} />;
 };
 const OUTCOME_ORDER: readonly SendOutcome[] = ["accepted", "failed", "unknown"];
-const OutcomeCounts = ({ counts, valueStates, locale }: { readonly counts: SendResultData["counts"]; readonly valueStates: ValueStates; readonly locale: string }): ReactElement => (
-  <div data-slot="delivery-counts" className="flex min-w-0 flex-col gap-2">
-    <p className="text-sm font-medium text-pretty">{COUNTS.title}</p>
-    <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
-      {OUTCOME_ORDER.map((outcome) => (
-        <div key={outcome} className="flex min-w-0 flex-col gap-1">
-          <dt>
-            <StatusBadge {...SEND_STATUS[outcome]} />
-          </dt>
-          <dd className="min-w-0 text-sm">
-            <CountFigure count={counts[outcome]} valueState={stateOf(valueStates, `counts.${outcome}`)} locale={locale} />
-          </dd>
-        </div>
-      ))}
-    </dl>
-    <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{COUNTS.intro}</p>
-  </div>
-);
+const OutcomeCounts = ({ counts, valueStates, locale }: { readonly counts: SendResultData["counts"]; readonly valueStates: ValueStates; readonly locale: string }): ReactElement => {
+  const segments = [
+    { key: "accepted", label: SEND_STATUS.accepted.label, count: counts.accepted, tone: "info" as const },
+    { key: "failed", label: SEND_STATUS.failed.label, count: counts.failed, tone: "destructive" as const },
+    { key: "unknown", label: SEND_STATUS.unknown.label, count: counts.unknown, tone: "warning" as const },
+  ];
+  return (
+    <div data-slot="delivery-counts" className="flex min-w-0 flex-col gap-2.5">
+      <p className="text-sm font-medium text-pretty">{COUNTS.title}</p>
+      <SegmentedMeter segments={segments} label="Recorded send outcomes distribution" />
+      <dl className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-3">
+        {OUTCOME_ORDER.map((outcome) => (
+          <div key={outcome} className="flex min-w-0 flex-col gap-1.5 rounded-xl border border-border/80 bg-surface-subtle p-3">
+            <dt>
+              <StatusBadge {...SEND_STATUS[outcome]} />
+            </dt>
+            <dd className="min-w-0 text-base font-semibold">
+              <CountFigure count={counts[outcome]} valueState={stateOf(valueStates, `counts.${outcome}`)} locale={locale} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">{COUNTS.intro}</p>
+    </div>
+  );
+};
 const usefulnessRowsOf = (usefulness: Usefulness, valueStates: ValueStates, locale: string): readonly { readonly label: string; readonly figure: ReactNode }[] => [
   { label: USEFULNESS_COPY.stateLabel, figure: <StatusBadge {...USEFULNESS_STATE[usefulness.state]} /> },
   { label: USEFULNESS_COPY.deadlineLabel, figure: <InstantFigure instant={usefulness.deadline} /> },
   { label: USEFULNESS_COPY.remainingLabel, figure: <RemainingFigure remaining={usefulness.remainingMilliseconds} valueState={stateOf(valueStates, "usefulness.remainingMilliseconds")} locale={locale} /> },
 ];
 const UsefulnessBlock = ({ usefulness, valueStates, locale }: { readonly usefulness: Usefulness; readonly valueStates: ValueStates; readonly locale: string }): ReactElement => (
-  <div data-slot="delivery-usefulness" className="flex min-w-0 flex-col gap-2">
+  <div data-slot="delivery-usefulness" className="flex min-w-0 flex-col gap-2.5">
     <p className="text-sm font-medium text-pretty">{USEFULNESS_COPY.title}</p>
-    <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
+    <dl className="grid min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-3">
       {usefulnessRowsOf(usefulness, valueStates, locale).map((row) => (
-        <Fact key={row.label} label={row.label}>
-          {row.figure}
-        </Fact>
+        <div key={row.label} className="rounded-xl border border-border/80 bg-surface-subtle p-3">
+          <Fact label={row.label}>{row.figure}</Fact>
+        </div>
       ))}
     </dl>
     {[USEFULNESS_COPY.statement, SURFACE.noClockNote].map((note) => (
@@ -309,8 +319,24 @@ const NamedReference = ({ name, reference }: { readonly name: string; readonly r
 function DeliverySummary({ envelope, locale }: { readonly envelope: Extract<SendResultReadResult, { readonly kind: "envelope" }>["envelope"]; readonly locale: string }): ReactElement {
   const { data, valueStates, coverage, asOf, source, revision } = envelope;
   const facts: ReadonlyArray<{ readonly label: string; readonly value: () => ReactNode }> = [
-    { label: SUMMARY.noticeLabel, value: () => <ReferenceFigure reference={data.intentId} /> },
-    { label: SUMMARY.releaseLabel, value: () => <ReferenceFigure reference={data.releaseId} /> },
+    {
+      label: SUMMARY.noticeLabel,
+      value: () => (
+        <span className="inline-flex flex-wrap items-center gap-1">
+          <ReferenceFigure reference={data.intentId} />
+          <CopyButton value={data.intentId} label="Copy notice identifier" />
+        </span>
+      ),
+    },
+    {
+      label: SUMMARY.releaseLabel,
+      value: () => (
+        <span className="inline-flex flex-wrap items-center gap-1">
+          <ReferenceFigure reference={data.releaseId} />
+          <CopyButton value={data.releaseId} label="Copy release identifier" />
+        </span>
+      ),
+    },
     { label: SUMMARY.publisherLabel, value: () => <ReferenceFigure reference={data.publisherId} /> },
     { label: SUMMARY.purposeLabel, value: () => <NamedReference name={PURPOSE_LABELS[data.purpose]} reference={data.purpose} /> },
     { label: SUMMARY.intendedLabel, value: () => <InstantFigure instant={data.intendedAt} /> },
@@ -631,7 +657,7 @@ export default function DeliveryResults({ scope, locale, intentId: statedIntentI
       <>
         {/* One composition of this answer at every width: the shared record list, whose own labelled, focusable scroll region carries the table on a narrow screen, so a reader meets each recipient's row exactly once instead of through a second rendering beside it (WCAG 1.3.1, 1.4.10). Only that region may scroll
          * sideways; the page itself never does. */}
-        <RecordList label={tableLabel} columns={columns} rows={rows} rowCount={data.page.total} queryState={listQueryState} onQueryStateChange={commitQuery} getRowId={(row) => row.recipientId} itemNoun="recipients" pageSizeOptions={PAGE_SIZES} locale={locale} />
+        <RecordList label={tableLabel} columns={columns} rows={rows} rowCount={data.page.total} queryState={listQueryState} onQueryStateChange={commitQuery} getRowId={(row) => row.recipientId} initialPinnedColumns={{ start: ["recipient"] }} itemNoun="recipients" pageSizeOptions={PAGE_SIZES} locale={locale} />
         <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
           <p className="text-pretty wrap-anywhere">{SURFACE.recipientHelp}</p>
           <p className="text-pretty wrap-anywhere">{SURFACE.pinnedHelp}</p>

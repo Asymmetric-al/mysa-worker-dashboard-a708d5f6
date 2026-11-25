@@ -2,8 +2,19 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/cn";
 const alertVariants = cva(
-  "group/alert relative grid w-full gap-0.5 rounded-lg border px-4 py-3 text-start text-sm wrap-anywhere has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pe-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-2.5 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
-  { variants: { variant: { default: "bg-card text-card-foreground", destructive: "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 *:[svg]:text-current" } }, defaultVariants: { variant: "default" } },
+  "group/alert relative grid w-full gap-1 rounded-2xl border px-4 py-3.5 text-start text-sm shadow-xs wrap-anywhere has-data-[slot=alert-action]:relative has-data-[slot=alert-action]:pe-18 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-3 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
+  {
+    variants: {
+      variant: {
+        default: "border-border bg-card text-card-foreground",
+        destructive: "border-destructive/35 bg-destructive-soft text-foreground *:data-[slot=alert-description]:text-foreground/85 *:[svg]:text-destructive",
+        warning: "border-warning/40 bg-warning-soft text-foreground *:data-[slot=alert-description]:text-foreground/85 *:[svg]:text-warning",
+        info: "border-info/35 bg-info-soft text-foreground *:data-[slot=alert-description]:text-foreground/85 *:[svg]:text-info",
+        positive: "border-positive/35 bg-positive-soft text-foreground *:data-[slot=alert-description]:text-foreground/85 *:[svg]:text-positive",
+      },
+    },
+    defaultVariants: { variant: "default" },
+  },
 );
 const Alert = ({ className, variant, ...props }: React.ComponentProps<"div"> & VariantProps<typeof alertVariants>) => <div data-slot="alert" role="alert" className={cn(alertVariants({ variant }), className)} {...props} />;
 const AlertTitle = ({ className, ...props }: React.ComponentProps<"div">) => <div data-slot="alert-title" className={cn("font-medium group-has-[>svg]/alert:col-start-2 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground", className)} {...props} />;

@@ -7,9 +7,11 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DirectionProvider } from "@/components/ui/direction";
+import { ReadingProgressBar } from "@/components/ui/reading-progress";
 import { Separator } from "@/components/ui/separator";
 import { VideoPlayer, type VideoPlayerCaption } from "@/components/video-player";
 import { cn } from "@/lib/cn";
+import { estimateReadingMinutes } from "@/lib/editorial-metrics";
 import { languageNameOf } from "@/lib/language-name";
 import type { ContentLocale } from "@/modules/content/locale";
 import type { ReleaseReach } from "@/modules/content/variant";
@@ -89,51 +91,62 @@ function ServedEdition({ data, served, onRetry }: { readonly data: ReadingData; 
   const requestedTag = data.requestedLocale.trim();
   const reachSpec = reach === null ? undefined : statusBadgeProps(REACH_STATUS, reach);
   const lang = languageTag.length === 0 ? undefined : languageTag;
+  const readingMinutes = estimateReadingMinutes(html);
   return (
-    <Card data-slot="public-reading-view-edition" data-reach={reach ?? "unstated"} className="min-w-0">
-      <CardHeader>
-        <div className="flex min-w-0 flex-col gap-2">
-          {title.length === 0 ? null : (
-            <CardTitle>
-              <h2 className="type-section-title text-pretty wrap-anywhere">
-                <bdi>{title}</bdi>
-              </h2>
-            </CardTitle>
-          )}
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {reachSpec === undefined ? null : <StatusBadge label={reachSpec.label} tone={reachSpec.tone} srPrefix={FIELD_LABELS.reach} />}
-            {languageTag.length === 0 ? null : (
-              <Badge variant="outline">
-                <span className="sr-only">{`${FIELD_LABELS.language}: `}</span>
-                <bdi lang={lang}>{languageLabelOf(languageTag)}</bdi>
-              </Badge>
+    <article className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-3">
+      <ReadingProgressBar />
+      <Card data-slot="public-reading-view-edition" data-reach={reach ?? "unstated"} className="min-w-0 overflow-hidden shadow-xs">
+        <CardHeader className="relative gap-3 overflow-hidden bg-surface-subtle/80 px-5 py-6 sm:px-8 sm:py-7">
+          <div aria-hidden="true" className="bg-dot-grid bg-dot-grid-fade pointer-events-none absolute inset-0 opacity-70" />
+          <div className="relative flex min-w-0 flex-col gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {reachSpec === undefined ? null : <StatusBadge label={reachSpec.label} tone={reachSpec.tone} srPrefix={FIELD_LABELS.reach} />}
+              {languageTag.length === 0 ? null : (
+                <Badge variant="outline">
+                  <span className="sr-only">{`${FIELD_LABELS.language}: `}</span>
+                  <bdi lang={lang}>{languageLabelOf(languageTag)}</bdi>
+                </Badge>
+              )}
+              {readingMinutes === null ? null : (
+                <Badge variant="secondary" data-slot="reading-time-badge" className="tabular-figures">
+                  {`${String(readingMinutes)} min read`}
+                </Badge>
+              )}
+            </div>
+            {title.length === 0 ? null : (
+              <CardTitle>
+                <h2 className="type-page-title text-pretty wrap-anywhere">
+                  <bdi>{title}</bdi>
+                </h2>
+              </CardTitle>
             )}
+            {description.length === 0 ? null : <CardDescription className="max-w-prose text-sm leading-relaxed break-words">{description}</CardDescription>}
           </div>
-          {description.length === 0 ? null : <CardDescription className="break-words">{description}</CardDescription>}
-        </div>
-      </CardHeader>
-      <Separator />
-      <CardContent className="flex min-w-0 flex-col gap-6">
-        {reach === null ? null : <p className={NOTE_CLASS}>{REACH_COPY[reach].description}</p>}
-        {data.fallbackOccurred && requestedTag.length > 0 && languageTag.length > 0 && requestedTag !== languageTag ? (
-          <p className={NOTE_CLASS}>
-            <bdi>{RECEIVING_POST_COPY.languageFallbackStatement(languageLabelOf(requestedTag), languageLabelOf(languageTag))}</bdi>
-          </p>
-        ) : null}
-        <DirectionProvider direction={served.direction}>
-          <div dir={served.direction} lang={lang} data-slot="public-reading-view-content" className="min-w-0">
-            <ServerHtml html={html} direction={served.direction} lang={lang} />
+        </CardHeader>
+        <Separator />
+        <CardContent className="flex min-w-0 flex-col gap-6 px-5 py-6 sm:px-8 sm:py-8">
+          {reach === null ? null : <p className={NOTE_CLASS}>{REACH_COPY[reach].description}</p>}
+          {data.fallbackOccurred && requestedTag.length > 0 && languageTag.length > 0 && requestedTag !== languageTag ? (
+            <p className={NOTE_CLASS}>
+              <bdi>{RECEIVING_POST_COPY.languageFallbackStatement(languageLabelOf(requestedTag), languageLabelOf(languageTag))}</bdi>
+            </p>
+          ) : null}
+          <DirectionProvider direction={served.direction}>
+            <div dir={served.direction} lang={lang} data-slot="public-reading-view-content" className="editorial-reading min-w-0">
+              <ServerHtml html={html} direction={served.direction} lang={lang} />
+            </div>
+          </DirectionProvider>
+          <EditionMedia renditions={data.renditions} html={html} title={title} direction={served.direction} languageTag={languageTag} onRetry={onRetry} />
+          {data.giving === null ? null : <GivePlacement giving={data.giving} />}
+          <Separator />
+          <div data-slot="public-reading-view-footer" className="flex min-w-0 flex-col gap-2">
+            <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} />
+            <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.recheckStatement}</p>
+            <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.inertStatement}</p>
           </div>
-        </DirectionProvider>
-        <EditionMedia renditions={data.renditions} html={html} title={title} direction={served.direction} languageTag={languageTag} onRetry={onRetry} />
-        {data.giving === null ? null : <GivePlacement giving={data.giving} />}
-        <div data-slot="public-reading-view-footer" className="flex min-w-0 flex-col gap-2">
-          <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} />
-          <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.recheckStatement}</p>
-          <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.inertStatement}</p>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </article>
   );
 }
 function readingOf(result: ReadResult<ReceivingPageEnvelope>, onRetry: () => void): ReactElement {

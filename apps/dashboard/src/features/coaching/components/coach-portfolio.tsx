@@ -151,7 +151,9 @@ export default function CoachPortfolio({ initialQuery, scope, locale, onOpen }: 
   return (
     <section aria-labelledby={headingId} dir={directionOfLocale(locale)} className="min-w-0">
       <Panel titleId={headingId} headingLevel={2} title={heading} description={COACHING_COPY.coachPortfolio.purpose} cardClassName="min-w-0" titleClassName="text-pretty" contentClassName="flex min-w-0 flex-col gap-4">
-        <p className="max-w-prose type-supporting text-pretty">{"This view is read-only: a coach can read what the worker switched on, and cannot edit, assign, remind, complete, reopen, export or impersonate anything. Stopping a share never recalls what was already read."}</p>
+        <p className="max-w-prose rounded-xl border border-border/80 bg-surface-subtle px-3.5 py-2.5 type-supporting text-pretty">
+          {"This view is read-only: a coach can read what the worker switched on, and cannot edit, assign, remind, complete, reopen, export or impersonate anything. Stopping a share never recalls what was already read."}
+        </p>
         <Separator />
         {content}
       </Panel>

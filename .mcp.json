@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "shadcn": { "command": "bun", "args": ["scripts/shadcn-mcp.ts"] },
+    "reactbits-pro": { "type": "http", "url": "https://mcp.reactbits.dev/mcp", "headers": { "Authorization": "Bearer ${REACTBITS_LICENSE_KEY}" } },
+    "reui": { "type": "http", "url": "https://mcp.reui.io", "headers": { "Authorization": "Bearer ${REUI_LICENSE_KEY}", "X-Reui-Style": "base-maia" } },
+    "shadcn-space": { "type": "http", "url": "https://mcp.shadcnspace.com/mcp" },
+    "shadcn-studio": { "command": "bun", "args": ["scripts/shadcn-studio-mcp.ts"] },
+    "shadcnuikit": { "type": "http", "url": "https://shadcnuikit.com/api/mcp", "headers": { "Authorization": "Bearer ${SHADCNUIKIT_API_KEY}" } },
+    "motion": { "type": "http", "url": "https://mcp.motion.dev" },
+    "next-devtools": { "command": "bunx", "args": ["next-devtools-mcp@0.4.0"] }
+  }
+}

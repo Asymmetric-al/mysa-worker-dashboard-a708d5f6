@@ -283,9 +283,9 @@ function RowMaterialDisclosure({ rowNumber, branch, review }: { readonly rowNumb
   const duplicateLooking = review === null ? null : review.duplicateLooking;
   const reuseOffered = review !== null && review.suggestions.length > 0;
   return (
-    <details className="min-w-0">
-      <summary className="min-h-target text-sm font-medium text-pretty">{REVIEW_DUPLICATE_COPY.summaryLabel(rowNumber)}</summary>
-      <div className="flex min-w-0 flex-col gap-3 pt-2">
+    <details className="min-w-0 rounded-xl border border-border/80 bg-surface-subtle px-3 py-2">
+      <summary className="min-h-target cursor-pointer text-sm font-medium text-pretty">{REVIEW_DUPLICATE_COPY.summaryLabel(rowNumber)}</summary>
+      <div className="flex min-w-0 flex-col gap-3 pt-2.5">
         {review === null
           ? null
           : ROW_MATERIAL.map(({ label, body: Body }) => (

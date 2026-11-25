@@ -133,7 +133,7 @@ function PlacementRow({ placement, onManage }: { readonly placement: PlacementVi
       ? [...withCredit, { label: PLACEMENT_LABELS.poster, value: purposes.includes("poster") ? PRESENT : ABSENT }, { label: PLACEMENT_LABELS.captions, value: placement.captionTracks.length > 0 ? PRESENT : ABSENT }, { label: PLACEMENT_LABELS.transcript, value: purposes.includes("transcript") ? PRESENT : ABSENT }]
       : withCredit;
   return (
-    <li data-slot="placement-row" data-kind={placement.kind} data-state={placement.state} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3">
+    <li data-slot="placement-row" data-kind={placement.kind} data-state={placement.state} className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-3.5">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-sm font-medium">{KIND_WORDS[placement.kind]}</span>
         <span className="min-w-0 type-supporting wrap-anywhere">
@@ -324,9 +324,9 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
       <CardContent className="flex min-w-0 flex-col gap-4">
         <FormFieldGroup legend={PANE_LABELS.group} name="editor-pane" hideLegend className="md:hidden">
           {() => (
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <Button {...{ type: "button", size: "sm", variant: pane === "write" ? "default" : "outline", "aria-pressed": pane === "write", onClick: () => setPane("write") }}>{PANE_LABELS.write}</Button>
-              <Button {...{ type: "button", size: "sm", variant: pane === "media" ? "default" : "outline", "aria-pressed": pane === "media", onClick: () => setPane("media") }}>{PANE_LABELS.media}</Button>
+            <div className="inline-flex min-w-0 flex-wrap items-center gap-1 rounded-4xl border border-border/80 bg-muted/70 p-1">
+              <Button {...{ type: "button", size: "sm", variant: pane === "write" ? "default" : "ghost", "aria-pressed": pane === "write", onClick: () => setPane("write") }}>{PANE_LABELS.write}</Button>
+              <Button {...{ type: "button", size: "sm", variant: pane === "media" ? "default" : "ghost", "aria-pressed": pane === "media", onClick: () => setPane("media") }}>{PANE_LABELS.media}</Button>
             </div>
           )}
         </FormFieldGroup>

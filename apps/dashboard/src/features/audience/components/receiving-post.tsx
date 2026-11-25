@@ -4,13 +4,16 @@ import { useId, type ReactElement } from "react";
 import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice, type NoticeHeadingLevel, type StateNoticeProps } from "@/components/state-notice";
 import StatusBadge, { type StatusBadgeSpec } from "@/components/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { DirectionProvider } from "@/components/ui/direction";
+import { ReadingProgressBar } from "@/components/ui/reading-progress";
 import VideoPlayer from "@/components/video-player";
 import { PREFERENCES_ENTRY_COPY } from "@/features/audience/copy/preferences";
 import { RECEIVING_POST_COPY, RECEIVING_SIMULATION_EFFECT } from "@/features/audience/copy/receiving";
 import { useReceivingPost, type ReceivingPostEnvelope } from "@/features/audience/hooks/use-audience-reads";
 import { cn } from "@/lib/cn";
+import { estimateReadingMinutes } from "@/lib/editorial-metrics";
 import type { PreviewDenialReason } from "@/modules/content/preview";
 import type { Scope } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
@@ -125,20 +128,28 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: { readon
   // A group is stated here when this reading cannot play it: its playback rendition is absent, or the source that rendition points at could not be read.
   const unplayableVideos = groupRenditions(data.renditions).filter((group) => (group.playback === undefined ? group.poster !== undefined || group.captions.length > 0 : group.state === "unavailable"));
   const Heading = HEADING_TAGS[headingLevel];
+  const readingMinutes = estimateReadingMinutes(data.html ?? "");
   return (
     <DirectionProvider direction={direction}>
-      <article data-slot="receiving-post" data-fallback={fallback ? "true" : "false"} aria-labelledby={titleId} className="flex min-w-0 flex-col gap-4 text-start">
-        <header className="flex min-w-0 flex-col gap-2">
-          <Heading {...{ id: titleId, dir: direction, className: cn(HEADING_SCALE[headingLevel], "break-words text-balance") }}>{(data.title ?? "").trim().length === 0 ? LABELS.headingFallback : (data.title ?? "").trim()}</Heading>
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <article data-slot="receiving-post" data-fallback={fallback ? "true" : "false"} aria-labelledby={titleId} className="mx-auto flex w-full max-w-3xl min-w-0 flex-col gap-5 text-start">
+        <ReadingProgressBar />
+        <header className="relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-2xl border border-border/80 bg-surface-subtle p-5 sm:p-6">
+          <div aria-hidden="true" className="bg-dot-grid bg-dot-grid-fade pointer-events-none absolute inset-0 opacity-70" />
+          <div className="relative flex min-w-0 flex-wrap items-center gap-2">
             {audience === undefined ? null : <StatusBadge label={audience.label} tone={audience.tone} srPrefix={LABELS.audience} />}
             {servedTag.length === 0 ? null : <StatusBadge label={servedTag} srPrefix={LABELS.servedLanguage} />}
             {fallback ? <StatusBadge label={requested} tone="muted" srPrefix={LABELS.requestedLanguage} /> : null}
+            {readingMinutes === null ? null : (
+              <Badge variant="secondary" data-slot="reading-time-badge" className="tabular-figures">
+                {`${String(readingMinutes)} min read`}
+              </Badge>
+            )}
           </div>
-          <dl className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <Heading {...{ id: titleId, dir: direction, className: cn("relative", HEADING_SCALE[headingLevel], "break-words text-balance") }}>{(data.title ?? "").trim().length === 0 ? LABELS.headingFallback : (data.title ?? "").trim()}</Heading>
+          <dl className="relative flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-muted-foreground">
             {[{ label: LABELS.readingAs, value: persona }, ...(publishedAt.length === 0 ? [] : [{ label: LABELS.released, value: publishedAt }]), { label: LABELS.asOf, value: asOf }].map((pair) => (
               <div key={pair.label} className="flex items-baseline gap-1.5">
-                <dt>{pair.label}</dt>
+                <dt className="font-medium text-foreground/80">{pair.label}</dt>
                 <dd>
                   <bdi>{pair.value}</bdi>
                 </dd>
@@ -146,8 +157,8 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: { readon
             ))}
           </dl>
         </header>
-        <Card className="min-w-0">
-          <CardContent>
+        <Card className="min-w-0 shadow-xs">
+          <CardContent className="editorial-reading px-5 py-6 sm:px-8 sm:py-7">
             <ServerHtml html={data.html ?? ""} direction={direction} lang={servedTag.length === 0 ? undefined : servedTag} />
           </CardContent>
         </Card>
@@ -157,7 +168,7 @@ function RenderedPost({ data, asOf, persona, headingLevel, onRefresh }: { readon
           const captions = unreadable ? undefined : group.captions.map((track) => ({ src: track.path, srcLang: servedTag.length === 0 ? LABELS.undeterminedLanguage : servedTag, label: LABELS.captions }));
           return <VideoPlayer key={group.assetId} title={LABELS.videoTitle} poster={unreadable ? undefined : group.poster?.path} captions={captions} state="unavailable" direction={direction} onRetry={onRefresh} />;
         })}
-        <footer className="flex min-w-0 flex-col gap-2">
+        <footer className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle/60 p-4">
           {fallback ? <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.languageFallbackStatement(requested, servedTag)}</p> : null}
           <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.recheckStatement}</p>
           <p className={NOTE_CLASS}>{RECEIVING_POST_COPY.inertStatement}</p>

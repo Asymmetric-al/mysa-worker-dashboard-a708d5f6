@@ -4,6 +4,7 @@ import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice, type NoticeAction, type NoticeRetry } from "@/components/state-notice";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent } from "@/components/ui/card";
+import { ViewportPreviewStage } from "@/components/ui/viewport-preview-bar";
 import { cn } from "@/lib/cn";
 import type { SourceReference } from "@/lib/ids";
 import type { PreviewDenialReason } from "@/modules/content/preview";
@@ -93,18 +94,31 @@ function UnreadyMediaNotes({ placements, retry }: { readonly placements: readonl
     </section>
   );
 }
-const AuthorisedPreview = ({ preview, layout, givingBinding, retry }: { readonly preview: PagePreviewAuthorisedView; readonly layout: PagePreviewFrameProps["layout"]; readonly givingBinding: GivingBindingView | undefined; readonly retry: PagePreviewRetry | undefined }): ReactElement => (
-  <>
-    <EditionIdentity preview={preview} layout={layout} />
-    <Alert role={undefined} data-slot="page-preview-inert">
-      <AlertDescription>{copy.preview.inertBanner}</AlertDescription>
-    </Alert>
-    <RenderedContent html={preview.html} direction={preview.direction} lang={preview.servedLocale} slot="page-preview-content" className={RENDERED_PROSE} />
-    <UnreadyMediaNotes placements={preview.unreadyMedia} retry={retry} />
-    {givingBinding === undefined ? null : <GivingDesignation binding={givingBinding} layout="inline" />}
-    <p className={NOTE_CLASS}>{copy.preview.recheckedOnOpen}</p>
-  </>
-);
+const AuthorisedPreview = ({ preview, layout, givingBinding, retry }: { readonly preview: PagePreviewAuthorisedView; readonly layout: PagePreviewFrameProps["layout"]; readonly givingBinding: GivingBindingView | undefined; readonly retry: PagePreviewRetry | undefined }): ReactElement => {
+  const renderedBody = (
+    <div className="flex min-w-0 flex-col gap-4">
+      <RenderedContent html={preview.html} direction={preview.direction} lang={preview.servedLocale} slot="page-preview-content" className={RENDERED_PROSE} />
+      <UnreadyMediaNotes placements={preview.unreadyMedia} retry={retry} />
+      {givingBinding === undefined ? null : <GivingDesignation binding={givingBinding} layout="inline" />}
+    </div>
+  );
+  return (
+    <>
+      <EditionIdentity preview={preview} layout={layout} />
+      <Alert role={undefined} data-slot="page-preview-inert">
+        <AlertDescription>{copy.preview.inertBanner}</AlertDescription>
+      </Alert>
+      {layout === "builder" ? (
+        <ViewportPreviewStage revisionId={preview.revisionId} localeLabel={preview.servedLocale}>
+          {renderedBody}
+        </ViewportPreviewStage>
+      ) : (
+        renderedBody
+      )}
+      <p className={NOTE_CLASS}>{copy.preview.recheckedOnOpen}</p>
+    </>
+  );
+};
 function previewBody(preview: PagePreviewView, layout: PagePreviewFrameProps["layout"], givingBinding: GivingBindingView | undefined, retry: PagePreviewRetry | undefined): ReactElement {
   switch (preview.status) {
     case "authorised":

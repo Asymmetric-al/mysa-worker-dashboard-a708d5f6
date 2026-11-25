@@ -8,6 +8,7 @@ import { StateNotice, type StateNoticeProps } from "@/components/state-notice";
 import StatusBadge, { valueStateWord } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { useIsMobile } from "@/components/ui/use-mobile";
 import { cn } from "@/lib/cn";
 import type { ContactMethodKind, PartnerKind, ReadEnvelope, RecordAudience, Scope, ValueState } from "@/modules/data-service/envelope";
@@ -287,6 +288,41 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
             rowCount={total}
             getRowId={(row) => row.partner.partnerId}
             rowLabel={nameOf}
+            initialPinnedColumns={{ start: ["displayName"] }}
+            renderExpandedRow={(row) => (
+              <div className="grid gap-3 text-xs sm:grid-cols-3">
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-muted-foreground">Record &amp; contact channels</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <bdi className="mono-identifier text-foreground">{row.partner.partnerId}</bdi>
+                    <CopyButton value={row.partner.partnerId} label={`Copy partner ID for ${nameOf(row)}`} className="h-6 min-h-6 px-2 text-xs" />
+                  </div>
+                  <span className="text-muted-foreground">
+                    {row.contactMethodKinds.length === 0
+                      ? "No permitted contact method"
+                      : `Permitted: ${row.contactMethodKinds.map((kind) => CONTACT_METHOD_LABELS[kind]).join(", ")}`}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium text-muted-foreground">Relationship &amp; follow-up</span>
+                  <span className="text-foreground">
+                    {row.partner.stage === null || row.partner.stage.trim() === "" ? "No stage recorded" : <bdi>{row.partner.stage}</bdi>}
+                    {` · ${String(row.initiativeIds.length)} ${row.initiativeIds.length === 1 ? "initiative" : "initiatives"}`}
+                  </span>
+                  <span className="tabular-figures text-muted-foreground">
+                    {`${String(row.openTaskCount)} open · ${String(row.overdueTaskCount)} overdue · ${String(row.undatedTaskCount)} undated`}
+                  </span>
+                </div>
+                <div className="flex flex-col items-start justify-between gap-2 sm:items-end">
+                  <span className="text-muted-foreground">
+                    {row.lastActivityOn === null ? "No activity recorded" : `Last activity: ${row.lastActivityOn}`}
+                  </span>
+                  <Link href={partnerHref(row.partner.partnerId)} className="inline-link font-medium text-foreground">
+                    Open full partner record
+                  </Link>
+                </div>
+              </div>
+            )}
             queryState={queryState}
             onQueryStateChange={changeQueryState}
             rowActions={(row) => (
@@ -318,7 +354,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
     <div data-slot="partner-roster" dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-3">
         <PartnerFacets label={ROSTER_LABEL} facetsEnvelope={facetsEnvelope} search={{ value: roster.query.search, onChange: changeSearch, placeholder: "Search the whole roster" }} applied={roster.query.facets} onAppliedChange={changeApplied} pending={busy} />
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/80 bg-surface-subtle px-3.5 py-2.5">
           <SavedViewBar scope={scope} admittedColumnKeys={PARTNER_COLUMN_KEYS} initialResult={initialResult} />
           <ColumnChooser value={roster.query.columnVisibility} onValueChange={changeColumns} envelope={envelope} />
         </div>

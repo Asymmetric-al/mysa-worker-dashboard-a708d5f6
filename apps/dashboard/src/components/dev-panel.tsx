@@ -250,68 +250,70 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
           <OperationResult outcome={result.outcome} heading={receiptHeading ?? undefined} headingLevel={3} onRetrySameWork={result !== null && mayReplay(result.outcome) ? retryLastAttempt : undefined} />
         </div>
       )}
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>
-            <h3 className="type-subsection-title">Scenario</h3>
-          </CardTitle>
-          <CardDescription>The seeded world this session runs in. A scenario decides which source is unavailable, so a demonstration proves something; switching it loads a different world and changes no record on its own.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-4">
-          <div className="flex min-w-0 flex-col gap-1 text-pretty">
-            <p className="type-body">
-              Running now: <span className="font-medium">{scenario.label}</span> <bdi className="mono-identifier wrap-anywhere text-muted-foreground">{scenario.id}</bdi>
-            </p>
-            <p className="type-supporting">{scenario.description}</p>
-          </div>
-          <div className="flex min-w-0 flex-col gap-2">
-            <Label htmlFor={scenarioSelectId}>Switch to</Label>
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <NativeSelect id={scenarioSelectId} className="w-full sm:w-72" value={chosenScenarioId} aria-describedby={scenarioHintId} disabled={busy} onChange={(event) => setScenarioChoice(event.currentTarget.value)}>
-                {devState.scenarios.map((choice) => (
-                  <NativeSelectOption key={choice.id} value={choice.id}>
-                    {choice.label}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-              <Button type="button" variant="secondary" disabled={busy || !scenarioChangePending} onClick={switchScenario}>
-                Switch scenario
-              </Button>
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <Card className="min-w-0">
+          <CardHeader className="border-b border-border/70">
+            <CardTitle>
+              <h3 className="type-subsection-title">Scenario</h3>
+            </CardTitle>
+            <CardDescription>The seeded world this session runs in. A scenario decides which source is unavailable, so a demonstration proves something; switching it loads a different world and changes no record on its own.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex min-w-0 flex-col gap-4">
+            <div className="flex min-w-0 flex-col gap-1 text-pretty">
+              <p className="type-body">
+                Running now: <span className="font-medium">{scenario.label}</span> <bdi className="mono-identifier wrap-anywhere text-muted-foreground">{scenario.id}</bdi>
+              </p>
+              <p className="type-supporting">{scenario.description}</p>
             </div>
-            <p id={scenarioHintId} className="type-supporting text-pretty">
-              {chosenScenario !== undefined && scenarioChangePending ? `This session runs ${scenario.label} now. Switching loads ${chosenScenario.label}: ${chosenScenario.description}` : "Choosing a scenario changes nothing until you switch to it."}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>
-            <h3 className="type-subsection-title">Clock</h3>
-          </CardTitle>
-          <CardDescription>The scenario instant every boundary is measured against. It is an offset from one fixed seed instant rather than a second clock, and the only ways to move it are on this panel.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-4">
-          <dl className="flex min-w-0 flex-col gap-3 text-sm">
-            <ClockFact term="Scenario instant">
-              {derivedWords === null ? null : `${derivedWords}. `}
-              <bdi className="mono-identifier wrap-anywhere">{clock.derivedInstant}</bdi>
-            </ClockFact>
-            <ClockFact term="Seed instant">
-              {seedWords === null ? null : `${seedWords}. `}
-              <bdi className="mono-identifier wrap-anywhere">{clock.seedInstant}</bdi>
-            </ClockFact>
-            <ClockFact term="Offset from the seed instant">
-              {describeOffset(clock.offsetMilliseconds)} <bdi className="mono-identifier tabular-figures text-muted-foreground">({String(clock.offsetMilliseconds)} ms)</bdi>
-            </ClockFact>
-          </dl>
-          <p className="type-supporting text-pretty">{CLOCK_BOUNDARY_SENTENCE}</p>
-          <p className="type-supporting text-pretty">{CLOCK_IMMEDIATE_SENTENCE}</p>
-          <Separator />
-          <ClockField legend="Set the offset from the seed instant" field="Offset" idBase={`${idPrefix}-offset`} value={offsetValue} unit={offsetUnit} error={offsetError} hint={OFFSET_HINT} action="Set the clock offset" onChange={setOffsetValue} onUnit={setOffsetUnit} onAction={applyClockOffset} disabled={busy} />
-          <ClockField legend="Advance the clock" field="Advance by" idBase={`${idPrefix}-advance`} minimum={1} value={advanceValue} unit={advanceUnit} error={advanceError} hint={ADVANCE_HINT} action="Advance the clock" onChange={setAdvanceValue} onUnit={setAdvanceUnit} onAction={advanceClock} disabled={busy} />
-        </CardContent>
-      </Card>
+            <div className="flex min-w-0 flex-col gap-2">
+              <Label htmlFor={scenarioSelectId}>Switch to</Label>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <NativeSelect id={scenarioSelectId} className="w-full sm:w-72" value={chosenScenarioId} aria-describedby={scenarioHintId} disabled={busy} onChange={(event) => setScenarioChoice(event.currentTarget.value)}>
+                  {devState.scenarios.map((choice) => (
+                    <NativeSelectOption key={choice.id} value={choice.id}>
+                      {choice.label}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+                <Button type="button" variant="secondary" disabled={busy || !scenarioChangePending} onClick={switchScenario}>
+                  Switch scenario
+                </Button>
+              </div>
+              <p id={scenarioHintId} className="type-supporting text-pretty">
+                {chosenScenario !== undefined && scenarioChangePending ? `This session runs ${scenario.label} now. Switching loads ${chosenScenario.label}: ${chosenScenario.description}` : "Choosing a scenario changes nothing until you switch to it."}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="min-w-0">
+          <CardHeader className="border-b border-border/70">
+            <CardTitle>
+              <h3 className="type-subsection-title">Clock</h3>
+            </CardTitle>
+            <CardDescription>The scenario instant every boundary is measured against. It is an offset from one fixed seed instant rather than a second clock, and the only ways to move it are on this panel.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex min-w-0 flex-col gap-4">
+            <dl className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/80 bg-surface-subtle p-3.5 text-sm">
+              <ClockFact term="Scenario instant">
+                {derivedWords === null ? null : `${derivedWords}. `}
+                <bdi className="mono-identifier wrap-anywhere">{clock.derivedInstant}</bdi>
+              </ClockFact>
+              <ClockFact term="Seed instant">
+                {seedWords === null ? null : `${seedWords}. `}
+                <bdi className="mono-identifier wrap-anywhere">{clock.seedInstant}</bdi>
+              </ClockFact>
+              <ClockFact term="Offset from the seed instant">
+                {describeOffset(clock.offsetMilliseconds)} <bdi className="mono-identifier tabular-figures text-muted-foreground">({String(clock.offsetMilliseconds)} ms)</bdi>
+              </ClockFact>
+            </dl>
+            <p className="type-supporting text-pretty">{CLOCK_BOUNDARY_SENTENCE}</p>
+            <p className="type-supporting text-pretty">{CLOCK_IMMEDIATE_SENTENCE}</p>
+            <Separator />
+            <ClockField legend="Set the offset from the seed instant" field="Offset" idBase={`${idPrefix}-offset`} value={offsetValue} unit={offsetUnit} error={offsetError} hint={OFFSET_HINT} action="Set the clock offset" onChange={setOffsetValue} onUnit={setOffsetUnit} onAction={applyClockOffset} disabled={busy} />
+            <ClockField legend="Advance the clock" field="Advance by" idBase={`${idPrefix}-advance`} minimum={1} value={advanceValue} unit={advanceUnit} error={advanceError} hint={ADVANCE_HINT} action="Advance the clock" onChange={setAdvanceValue} onUnit={setAdvanceUnit} onAction={advanceClock} disabled={busy} />
+          </CardContent>
+        </Card>
+      </div>
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>

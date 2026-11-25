@@ -5,6 +5,7 @@ import { ScrollRegion } from "@/components/scroll-region";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { COACHING_STATUS, statusBadgeProps, VALUE_STATE_WORDS, valueStateWord, type StatusTone } from "@/components/status-badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Frame, FramePanel } from "@/components/ui/frame";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -62,9 +63,9 @@ type CoachSubjectDetailProps = {
 };
 const SHARE_STATE_TONE: Readonly<Record<TaskShareSummaryState, StatusTone>> = { shared: "positive", "needs-review": "caution", removed: "neutral", unavailable: "danger" };
 const CheckInList = ({ checkIns }: { readonly checkIns: readonly SharedCheckIn[] }): ReactElement => (
-  <ul className="flex min-w-0 flex-col gap-4">
+  <ul className="flex min-w-0 flex-col gap-3">
     {checkIns.map((checkIn) => (
-      <li key={checkIn.checkInId} className="flex min-w-0 flex-col gap-2">
+      <li key={checkIn.checkInId} className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4">
         <p className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 type-body">
           <span className="font-medium">{"Shared on"}</span>
           <bdi className="mono-identifier">{checkIn.sharedAt}</bdi>
@@ -96,13 +97,13 @@ function DueDateText({ share }: { readonly share: SharedTaskSummary }): ReactEle
   );
 }
 const TaskShareList = ({ shares }: { readonly shares: readonly SharedTaskSummary[] }): ReactElement => (
-  <ul className="flex min-w-0 flex-col gap-4">
+  <ul className="flex min-w-0 flex-col gap-3">
     {shares.map((share) => {
       const stateCopy = COACH_SHARE_STATE_COPY[share.state];
       const description = share.state === "shared" ? share.reviewedDescription : null;
       const status = share.status.trim();
       return (
-        <li key={share.shareId} className="flex min-w-0 flex-col gap-2">
+        <li key={share.shareId} className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4">
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 type-body">
             <StatusBadge label={stateCopy.label} tone={SHARE_STATE_TONE[share.state]} srPrefix="Summary" />
             <span className="flex min-w-0 items-baseline gap-x-1.5">
@@ -183,29 +184,33 @@ function SupportGoalFigure({ goal, locale }: { readonly goal: GoalFigure; readon
       </p>
       <div className="flex min-w-0 flex-col gap-2">
         <p {...{ "aria-hidden": "true", className: "text-sm text-muted-foreground" }}>{GOAL_TABLE_CAPTION}</p>
-        <ScrollRegion label={`${MODULE_COPY["support-goal"].name}: data table`}>
-          <Table>
-            <TableCaption className="sr-only">{GOAL_TABLE_CAPTION}</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">{GOAL_COLUMN_LABEL.amount}</TableHead>
-                <TableHead scope="col">{GOAL_COLUMN_LABEL.measure}</TableHead>
-                <TableHead scope="col">{GOAL_COLUMN_LABEL.effectiveFrom}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow>
-                <TableCell className="tabular-figures">
-                  <bdi>{formatting.text}</bdi>
-                </TableCell>
-                <TableCell>{measure}</TableCell>
-                <TableCell>
-                  <bdi className={ISO_TEXT_CLASS}>{effectiveFrom}</bdi>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </ScrollRegion>
+        <Frame spacing="flush">
+          <FramePanel>
+            <ScrollRegion label={`${MODULE_COPY["support-goal"].name}: data table`}>
+              <Table>
+                <TableCaption className="sr-only">{GOAL_TABLE_CAPTION}</TableCaption>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead scope="col">{GOAL_COLUMN_LABEL.amount}</TableHead>
+                    <TableHead scope="col">{GOAL_COLUMN_LABEL.measure}</TableHead>
+                    <TableHead scope="col">{GOAL_COLUMN_LABEL.effectiveFrom}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow>
+                    <TableCell className="tabular-figures">
+                      <bdi>{formatting.text}</bdi>
+                    </TableCell>
+                    <TableCell>{measure}</TableCell>
+                    <TableCell>
+                      <bdi className={ISO_TEXT_CLASS}>{effectiveFrom}</bdi>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </ScrollRegion>
+          </FramePanel>
+        </Frame>
       </div>
     </figure>
   );
@@ -280,37 +285,41 @@ function SupportResultsFigure({ body, locale }: { readonly body: SupportResultsB
           <p className="text-sm text-pretty">{`This figure states ${summary} for the reviewed range, one row per currency the read reports, and never a per-record amount behind them.`}</p>
           <div className="flex min-w-0 flex-col gap-2">
             <p {...{ "aria-hidden": "true", className: "text-sm text-muted-foreground" }}>{RECEIVED_TABLE_CAPTION}</p>
-            <ScrollRegion label={`${MODULE_COPY["support-results"].name}: data table`}>
-              <Table>
-                <TableCaption className="sr-only">{RECEIVED_TABLE_CAPTION}</TableCaption>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">{RECEIVED_COLUMN_LABEL.currency}</TableHead>
-                    <TableHead scope="col">{RECEIVED_COLUMN_LABEL.received}</TableHead>
-                    <TableHead scope="col">{RECEIVED_COLUMN_LABEL.period}</TableHead>
-                    <TableHead scope="col">{RECEIVED_COLUMN_LABEL.valueState}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {figures.map((figure) => (
-                    <TableRow key={figure.currency}>
-                      <TableCell>
-                        <bdi className="mono-identifier">{figure.currency}</bdi>
-                      </TableCell>
-                      <TableCell className="tabular-figures">
-                        <bdi>{figure.text}</bdi>
-                        {figure.accessibleLabel === figure.text ? null : <span className="sr-only">{figure.accessibleLabel}</span>}
-                      </TableCell>
-                      <TableCell>
-                        <bdi className={ISO_TEXT_CLASS}>{figure.period}</bdi>
-                        {figure.running ? ` (${RUNNING_PERIOD_WORD})` : null}
-                      </TableCell>
-                      <TableCell>{RECEIVED_STATE_LABEL[figure.state]}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollRegion>
+            <Frame spacing="flush">
+              <FramePanel>
+                <ScrollRegion label={`${MODULE_COPY["support-results"].name}: data table`}>
+                  <Table>
+                    <TableCaption className="sr-only">{RECEIVED_TABLE_CAPTION}</TableCaption>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead scope="col">{RECEIVED_COLUMN_LABEL.currency}</TableHead>
+                        <TableHead scope="col">{RECEIVED_COLUMN_LABEL.received}</TableHead>
+                        <TableHead scope="col">{RECEIVED_COLUMN_LABEL.period}</TableHead>
+                        <TableHead scope="col">{RECEIVED_COLUMN_LABEL.valueState}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {figures.map((figure) => (
+                        <TableRow key={figure.currency}>
+                          <TableCell>
+                            <bdi className="mono-identifier">{figure.currency}</bdi>
+                          </TableCell>
+                          <TableCell className="tabular-figures">
+                            <bdi>{figure.text}</bdi>
+                            {figure.accessibleLabel === figure.text ? null : <span className="sr-only">{figure.accessibleLabel}</span>}
+                          </TableCell>
+                          <TableCell>
+                            <bdi className={ISO_TEXT_CLASS}>{figure.period}</bdi>
+                            {figure.running ? ` (${RUNNING_PERIOD_WORD})` : null}
+                          </TableCell>
+                          <TableCell>{RECEIVED_STATE_LABEL[figure.state]}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollRegion>
+              </FramePanel>
+            </Frame>
           </div>
         </>
       )}

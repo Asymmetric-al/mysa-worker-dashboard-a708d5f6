@@ -90,20 +90,20 @@ function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; reado
     <div className="flex min-w-0 flex-col gap-6">
       <p className="type-supporting text-pretty">{RESULTS_COPY.lead}</p>
       {recovered ? (
-        <div className="flex min-w-0 flex-col gap-1 text-sm">
-          <p className="font-medium">{JOURNEY_COPY.reload.completedHeading}</p> <p className="type-supporting text-pretty">{JOURNEY_COPY.reload.completedStatement}</p>
+        <div className="flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
+          <p className="font-medium text-foreground">{JOURNEY_COPY.reload.completedHeading}</p> <p className="type-supporting text-pretty">{JOURNEY_COPY.reload.completedStatement}</p>
         </div>
       ) : null}
       <SimulationLabel effect={IMPORT_SIMULATION_EFFECT} context="block" />
       {/* The identity and its address come before the counts: recovering a lost acknowledgement starts from the one identity the result was read back by. */}
-      <div className="flex min-w-0 flex-col gap-1 text-sm">
-        <p className="font-medium">{RESULTS_COPY.operationHeading}</p>
-        <dl className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
+        <p className="font-medium text-foreground">{RESULTS_COPY.operationHeading}</p>
+        <dl className="flex min-w-0 flex-col gap-1.5">
           <FactRow label={RESULTS_COPY.operationLabels.identity} value={results.importOperationId} mono />
           <FactRow label={RESULTS_COPY.operationLabels.receiptAddress} value={receiptHref} mono />
         </dl>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <Link className="inline-flex min-h-6 items-center inline-link" href={receiptHref}>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
+          <Link className="inline-flex min-h-6 items-center font-medium text-primary inline-link" href={receiptHref}>
             {RESULTS_COPY.receiptLinkLabel}
           </Link>
           <Button type="button" variant="outline" size="sm" className={BUTTON_WRAP_CLASS} onClick={copyReceiptAddress}>
@@ -115,29 +115,31 @@ function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; reado
           {receiptAnnouncement}
         </output>
       </div>
-      <div className="flex min-w-0 flex-col gap-1 text-sm">
-        <p className="font-medium">{RESULTS_COPY.fileHeading}</p>
-        <dl className="flex min-w-0 flex-col gap-1">
-          <FactRow label={RESULTS_COPY.fileLabels.name} value={results.file.name} />
-          <FactRow label={RESULTS_COPY.fileLabels.size} value={chosenFileSize(results.file.bytes)} />
-          <FactRow label={RESULTS_COPY.fileLabels.rows} value={String(results.file.rowCount)} />
-          <FactRow label={RESULTS_COPY.fileLabels.columns} value={String(results.file.columnCount)} />
-        </dl>
-      </div>
-      <div className="flex min-w-0 flex-col gap-1 text-sm">
-        <p className="font-medium">{RESULTS_COPY.summaryHeading}</p>
-        <dl className="flex min-w-0 flex-col gap-1">
-          <FactRow label={RESULTS_COPY.summaryLabels.rowCount} value={String(results.summary.rowCount)} />
-          <FactRow label={RESULTS_COPY.summaryLabels.create} value={String(results.summary.create)} />
-          <FactRow label={RESULTS_COPY.summaryLabels.reuse} value={String(results.summary.reuse)} />
-          <FactRow label={RESULTS_COPY.summaryLabels.skip} value={String(results.summary.skip)} />
-          <FactRow label={RESULTS_COPY.summaryLabels.unresolved} value={String(results.summary.unresolved)} />
-        </dl>
+      <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-card p-4 text-sm shadow-2xs">
+          <p className="font-medium text-foreground">{RESULTS_COPY.fileHeading}</p>
+          <dl className="flex min-w-0 flex-col gap-1.5">
+            <FactRow label={RESULTS_COPY.fileLabels.name} value={results.file.name} />
+            <FactRow label={RESULTS_COPY.fileLabels.size} value={chosenFileSize(results.file.bytes)} />
+            <FactRow label={RESULTS_COPY.fileLabels.rows} value={String(results.file.rowCount)} />
+            <FactRow label={RESULTS_COPY.fileLabels.columns} value={String(results.file.columnCount)} />
+          </dl>
+        </div>
+        <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-card p-4 text-sm shadow-2xs">
+          <p className="font-medium text-foreground">{RESULTS_COPY.summaryHeading}</p>
+          <dl className="flex min-w-0 flex-col gap-1.5">
+            <FactRow label={RESULTS_COPY.summaryLabels.rowCount} value={String(results.summary.rowCount)} />
+            <FactRow label={RESULTS_COPY.summaryLabels.create} value={String(results.summary.create)} />
+            <FactRow label={RESULTS_COPY.summaryLabels.reuse} value={String(results.summary.reuse)} />
+            <FactRow label={RESULTS_COPY.summaryLabels.skip} value={String(results.summary.skip)} />
+            <FactRow label={RESULTS_COPY.summaryLabels.unresolved} value={String(results.summary.unresolved)} />
+          </dl>
+        </div>
       </div>
       {stateCounts === null ? null : (
-        <div className="flex min-w-0 flex-col gap-1 text-sm">
-          <p className="font-medium">{RESULTS_COPY.stateCountsHeading}</p>
-          <dl className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
+          <p className="font-medium text-foreground">{RESULTS_COPY.stateCountsHeading}</p>
+          <dl className="grid min-w-0 gap-2 sm:grid-cols-2">
             {IMPORT_ROW_RESULT_STATES.map((state) => (
               <FactRow key={state} label={RESULT_STATE_HEADINGS[state]} value={String(stateCounts[state])} />
             ))}
@@ -146,9 +148,9 @@ function RowRoute({ row, onCorrection }: { readonly row: ImportResultsRow; reado
       )}
       {/* The stop the receipt records, stated as the read reports it: the address that reads an import back is where a worker finds out that a stop reached only the rows acceptance had not applied. */}
       {cancellation === null ? null : (
-        <div className="flex min-w-0 flex-col gap-1 text-sm">
-          <p className="font-medium">{RESULTS_COPY.cancellationHeading}</p>
-          <dl className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
+          <p className="font-medium text-foreground">{RESULTS_COPY.cancellationHeading}</p>
+          <dl className="flex min-w-0 flex-col gap-1.5">
             <FactRow label={RESULTS_COPY.cancellationLabels.cancelledAt} value={cancellation.cancelledAt} mono />
             <FactRow label={RESULTS_COPY.cancellationLabels.acceptedRowsRetained} value={String(cancellation.acceptedRowsRetained)} />
             <FactRow label={RESULTS_COPY.cancellationLabels.stoppedRows} value={String(cancellation.stoppedRows)} />

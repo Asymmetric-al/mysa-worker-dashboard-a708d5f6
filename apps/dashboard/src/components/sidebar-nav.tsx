@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useId, useState, type MouseEvent } from "react";
 import { ChevronDownIcon, CircleHelpIcon, CompassIcon, HandCoinsIcon, HomeIcon, LayoutTemplateIcon, ListChecksIcon, MegaphoneIcon, SettingsIcon, UsersIcon, type LucideIcon } from "lucide-react";
-import { SidebarGroup, SidebarGroupContent, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarSeparator } from "@/components/ui/sidebar";
+import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarSeparator } from "@/components/ui/sidebar";
 import { cn } from "@/lib/cn";
 /** A sub-surface of a section: a page that belongs to a destination rather than being one. */ export type NavSubItem = { readonly href: string; readonly label: string };
 export type NavSection = "primary" | "secondary";
@@ -73,6 +73,7 @@ export type SidebarNavProps = { readonly items?: readonly NavItem[]; readonly cu
   return (
     <nav aria-label="Primary" className={cn("flex min-w-0 flex-col", className)}>
       <SidebarGroup>
+        <SidebarGroupLabel>Workspace</SidebarGroupLabel>
         <SidebarGroupContent>
           <SidebarMenu>
             {primaryItems.map((item) => (
@@ -85,6 +86,7 @@ export type SidebarNavProps = { readonly items?: readonly NavItem[]; readonly cu
         <>
           <SidebarSeparator />
           <SidebarGroup>
+            <SidebarGroupLabel>System</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {secondaryItems.map((item) => (

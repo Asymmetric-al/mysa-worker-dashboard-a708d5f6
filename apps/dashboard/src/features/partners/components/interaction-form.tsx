@@ -284,7 +284,7 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                   <h3 className="type-subsection-title text-pretty">Who took part</h3>
                   <p className="type-supporting text-pretty">The contact this interaction is recorded against always takes part. Anyone else is chosen from the records this context can read, so a participant names a record rather than a typed name.</p>
                 </div>
-                <FormFieldGroup legend={SUBJECT_LEGEND} name="participants.0" error={interactionErrors?.byField["participants.0"]} className="rounded-xl border border-border p-4">
+                <FormFieldGroup legend={SUBJECT_LEGEND} name="participants.0" error={interactionErrors?.byField["participants.0"]} className="rounded-2xl border border-border/80 bg-surface-subtle p-4">
                   {() => (
                     <div className="flex min-w-0 flex-col gap-3">
                       <p className="flex min-w-0 flex-col gap-1 type-body">
@@ -319,7 +319,7 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                       const number = index + 2;
                       return (
                         <li key={reference} className="min-w-0">
-                          <FormFieldGroup legend={`Participant ${String(number)}`} name={path} error={interactionErrors?.byField[path]} className="rounded-xl border border-border p-4">
+                          <FormFieldGroup legend={`Participant ${String(number)}`} name={path} error={interactionErrors?.byField[path]} className="rounded-2xl border border-border/80 bg-surface-subtle p-4">
                             {() => (
                               <div className="flex min-w-0 flex-col gap-3">
                                 <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">

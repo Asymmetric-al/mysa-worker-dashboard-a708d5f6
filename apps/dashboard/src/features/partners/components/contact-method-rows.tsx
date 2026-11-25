@@ -5,6 +5,8 @@ import StatusBadge from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { MailIcon, MapPinIcon, PhoneIcon } from "lucide-react";
 import { controlAria } from "./bound-fields";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { CONTACT_METHOD_KINDS, type ContactMethodKind } from "@/modules/data-service/envelope";
@@ -64,8 +66,32 @@ function ContactMethodRowField({ index, row, errors, valueDescription, showPermi
               </NativeSelect>
             )}
           </FormField>
-          <FormField name={`${rowPath}.value`} label="Value" description={valueDescription} error={messageFor("value")} required>
-            {(control) => <Input id={control.id} type="text" inputMode={CONTACT_KIND_INPUT_MODES[row.kind]} value={row.value} autoComplete="off" spellCheck={false} {...controlAria(control)} onChange={(event) => onChange({ ...row, value: event.currentTarget.value })} className="w-full" />}
+          <FormField name={`${rowPath}.value`} label="Value" description={row.kind === "phone" ? `${valueDescription} Include country dial code (e.g. +1, +44, +27) when calling internationally.` : valueDescription} error={messageFor("value")} required>
+            {(control) =>
+              row.kind === "phone" ? (
+                <InputGroup>
+                  <InputGroupAddon align="inline-start" aria-hidden="true" className="gap-1.5 text-xs text-muted-foreground">
+                    <PhoneIcon className="size-3.5" />
+                    <span className="mono-identifier">Intl</span>
+                  </InputGroupAddon>
+                  <InputGroupInput id={control.id} type="tel" inputMode="tel" placeholder="+1 555 010 0199" value={row.value} autoComplete="off" spellCheck={false} {...controlAria(control)} onChange={(event) => onChange({ ...row, value: event.currentTarget.value })} />
+                </InputGroup>
+              ) : row.kind === "email" ? (
+                <InputGroup>
+                  <InputGroupAddon align="inline-start" aria-hidden="true">
+                    <MailIcon className="size-3.5 text-muted-foreground" />
+                  </InputGroupAddon>
+                  <InputGroupInput id={control.id} type="text" inputMode="email" placeholder="name@example.org" value={row.value} autoComplete="off" spellCheck={false} {...controlAria(control)} onChange={(event) => onChange({ ...row, value: event.currentTarget.value })} />
+                </InputGroup>
+              ) : (
+                <InputGroup>
+                  <InputGroupAddon align="inline-start" aria-hidden="true">
+                    <MapPinIcon className="size-3.5 text-muted-foreground" />
+                  </InputGroupAddon>
+                  <Input id={control.id} type="text" inputMode={CONTACT_KIND_INPUT_MODES[row.kind]} value={row.value} autoComplete="off" spellCheck={false} {...controlAria(control)} onChange={(event) => onChange({ ...row, value: event.currentTarget.value })} className="w-full border-0 bg-transparent shadow-none focus-visible:ring-0" />
+                </InputGroup>
+              )
+            }
           </FormField>
           <FormField name={`${rowPath}.permitted`} label={PERMITTED_LABEL} description="Whether this detail may be used to reach the person. It is a fact about contactability only: it is not communication consent and not a reader grant." error={messageFor("permitted")}>
             {(control) => (

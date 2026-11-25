@@ -2,7 +2,6 @@
 import { useId, type ReactElement } from "react";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge, { type StatusTone } from "@/components/status-badge";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { formatSourceReference, type SourceReference } from "@/lib/ids";
 import type { TargetMeasure } from "@/modules/coaching/target";
@@ -76,12 +75,11 @@ export default function TargetHistory({ versions, closedPeriods, locale, unavail
         {versionsNewestFirst.length === 0 ? (
           <NoRowsNotice source={unreadableSource} emptyTitle="No version recorded yet" emptyDescription="A target records its first version on the date it is set, and every later change to the quantity, the measure or the calendar start records another one from the date it takes effect." />
         ) : (
-          <ul aria-labelledby={versionsHeadingId} className="flex min-w-0 flex-col gap-4">
-            {versionsNewestFirst.map((version, index) => {
+          <ul aria-labelledby={versionsHeadingId} className="flex min-w-0 flex-col gap-2.5">
+            {versionsNewestFirst.map((version) => {
               const stateCopy = VERSION_STATE_COPY[version.state];
               return (
-                <li key={version.revisionId} className="flex min-w-0 flex-col gap-2">
-                  {index === 0 ? null : <Separator />}
+                <li key={version.revisionId} className="flex min-w-0 flex-col gap-2 rounded-xl border border-border/80 bg-surface-subtle p-3.5">
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="text-sm font-medium">
                       <VersionDates version={version} />
@@ -102,13 +100,12 @@ export default function TargetHistory({ versions, closedPeriods, locale, unavail
         {closedPeriods.length === 0 ? (
           <NoRowsNotice source={unreadableSource} emptyTitle="No closed period yet" emptyDescription="Periods of this target are still running, so none has closed and none has a settled figure. A closed period appears here with the version it was measured against once its calendar completes." />
         ) : (
-          <ul aria-labelledby={periodsHeadingId} className="flex min-w-0 flex-col gap-4">
-            {closedPeriods.map((period, index) => {
+          <ul aria-labelledby={periodsHeadingId} className="flex min-w-0 flex-col gap-2.5">
+            {closedPeriods.map((period) => {
               const stateCopy = CLOSED_PERIOD_COPY[period.state];
               const measuredAgainst = versions.find((version) => version.revisionId === period.measuredAgainstRevisionId);
               return (
-                <li key={`${serialiseCivilDate(period.periodStart)}/${serialiseCivilDate(period.periodEnd)}`} className="flex min-w-0 flex-col gap-2">
-                  {index === 0 ? null : <Separator />}
+                <li key={`${serialiseCivilDate(period.periodStart)}/${serialiseCivilDate(period.periodEnd)}`} className="flex min-w-0 flex-col gap-2 rounded-xl border border-border/80 bg-surface-subtle p-3.5">
                   <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                     <p className="text-sm font-medium">
                       <CivilDateText value={period.periodStart} /> to <CivilDateText value={period.periodEnd} />

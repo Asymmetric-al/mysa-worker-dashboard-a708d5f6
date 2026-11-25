@@ -97,17 +97,20 @@ export default function PreferenceControl({ scope, membershipId, publisherId, pu
                 <Fact term={CONTROL_COPY.publisherTerm} value={<bdi className="mono-identifier min-w-0 wrap-anywhere">{publisherId}</bdi>} />
                 <Fact term={CONTROL_COPY.purposeTerm} value={purposeLabelOf(purpose)} />
               </dl>
-              <div className="flex min-w-0 flex-wrap items-center gap-3">
-                <Switch id={`${group.legendId}-switch`} checked={selection === "immediate"} disabled={disabled || pending} aria-labelledby={group.legendId} aria-describedby={describedBy === "" ? undefined : describedBy} onCheckedChange={(checked) => void choose(checked ? "immediate" : "off")} />
-                <span className="text-sm font-medium text-foreground">{PREFERENCE_CHOICE_COPY[selection].label}</span>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/80 bg-card px-3.5 py-3 shadow-2xs">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Switch id={`${group.legendId}-switch`} checked={selection === "immediate"} disabled={disabled || pending} aria-labelledby={group.legendId} aria-describedby={describedBy === "" ? undefined : describedBy} onCheckedChange={(checked) => void choose(checked ? "immediate" : "off")} />
+                  <span className="text-sm font-medium text-foreground">{PREFERENCE_CHOICE_COPY[selection].label}</span>
+                </div>
+                <span className="rounded-4xl border border-border/80 bg-surface-subtle px-2.5 py-0.5 text-xs text-muted-foreground">{selection === "immediate" ? "Notifications on" : "Notifications off"}</span>
               </div>
               <p {...{ "data-slot": "preference-announcement", "aria-live": "polite", className: "sr-only" }}>{PREFERENCE_CHOICE_COPY[selection].announcement}</p>
-              <ul id={choicesId} className="flex min-w-0 flex-col gap-2 text-sm">
+              <ul id={choicesId} className="grid min-w-0 gap-2 text-sm sm:grid-cols-2">
                 {CHOICE_ORDER.map((choice) => {
                   const wording = PREFERENCE_CHOICE_COPY[choice];
                   const active = choice === selection;
                   return (
-                    <li key={choice} data-choice={choice} data-selected={active ? "true" : "false"} className="flex min-w-0 flex-col gap-0.5">
+                    <li key={choice} data-choice={choice} data-selected={active ? "true" : "false"} className={cn("flex min-w-0 flex-col gap-1 rounded-xl border p-3 transition-colors", active ? "border-foreground/30 bg-card shadow-2xs" : "border-border/70 bg-surface-subtle")}>
                       <p className="flex min-w-0 flex-wrap items-baseline gap-2">
                         <span className={cn("font-medium", active ? "text-foreground" : "text-muted-foreground")}>{wording.label}</span>
                         {active ? <span className="text-xs text-muted-foreground">{CONTROL_COPY.selectedMarker}</span> : null}

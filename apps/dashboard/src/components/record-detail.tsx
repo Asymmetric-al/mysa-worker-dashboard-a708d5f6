@@ -4,6 +4,8 @@ import { Fragment, useId, type ReactNode } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-button";
+import { ScrollspyNav } from "@/components/ui/scrollspy-nav";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import StateNotice from "@/components/state-notice";
@@ -102,27 +104,30 @@ const toDomId = (generated: string, suffix: string): string => `record-detail-${
           </BreadcrumbList>
         </Breadcrumb>
       ) : null}
-      <Card size={chrome.cardSize}>
+      <Card size={chrome.cardSize} className="bg-surface-subtle">
         {/* The header wraps instead of holding two grid tracks: one record body also renders in the 384 px side panel and at 320 px, so the status column drops below the identity when the two cannot share a line and stays at the inline end when they can. */}
         <CardHeader className="flex flex-wrap">
-          <div className="flex min-w-0 shrink grow basis-40 items-start gap-3">
-            <Avatar size={chrome.avatarSize} className="mt-0.5">
+          <div className="flex min-w-0 shrink grow basis-40 items-start gap-3.5">
+            <Avatar size={chrome.avatarSize} className="mt-0.5 ring-2 ring-border">
               {identity.avatarSrc !== undefined && identity.avatarSrc.length > 0 ? <AvatarImage src={identity.avatarSrc} alt="" /> : null}
-              <AvatarFallback aria-hidden="true">{initials.length > 0 ? initials : "?"}</AvatarFallback>
+              <AvatarFallback aria-hidden="true" className="bg-card font-medium text-foreground">
+                {initials.length > 0 ? initials : "?"}
+              </AvatarFallback>
             </Avatar>
             <div className="flex min-w-0 flex-col gap-1">
               <CardTitle>
-                <IdentityHeading id={identityHeadingId} className={cn(chrome.headingScale, "text-balance")}>
+                <IdentityHeading id={identityHeadingId} className={cn(chrome.headingScale, "text-balance tracking-tight")}>
                   <bdi>{identity.displayName}</bdi>
                 </IdentityHeading>
               </CardTitle>
               {identity.secondaryName !== undefined && identity.secondaryName.length > 0 ? <bdi className="text-sm text-muted-foreground">{identity.secondaryName}</bdi> : null}
               <CardDescription>{identity.kind}</CardDescription>
               {identity.reference !== undefined ? (
-                <p className="text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                   <span className="sr-only">Source reference: </span>
                   <bdi className="mono-identifier">{formatSourceReference(identity.reference)}</bdi>
-                </p>
+                  <CopyButton value={identity.reference.reference} label={`Copy source reference for ${identity.displayName}`} className="h-6 min-h-6 px-2 text-xs" />
+                </div>
               ) : null}
             </div>
           </div>
@@ -146,16 +151,26 @@ const toDomId = (generated: string, suffix: string): string => `record-detail-${
           ))}
         </div>
       ) : (
-        <div id={sectionsRegionId} tabIndex={-1} className="flex flex-col gap-4">
-          {presentSections.map((section, index) => {
-            const headingId = `${sectionsRegionId}-${section}`;
-            const description = SECTION_DESCRIPTIONS[section];
-            return (
-              <Fragment key={section}>
-                {index > 0 ? <Separator /> : null}
-                <section aria-labelledby={headingId} className="flex flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <SectionHeading id={headingId} className={chrome.sectionScale}>
+        <>
+          {layout === "page" && presentSections.length >= 3 ? (
+            <ScrollspyNav
+              label="Jump to record sections"
+              orientation="horizontal"
+              sections={presentSections.map((section) => ({
+                id: `${sectionsRegionId}-${section}`,
+                label: RECORD_DETAIL_SECTION_TITLES[section],
+              }))}
+              className="hidden sm:flex"
+            />
+          ) : null}
+          <div id={sectionsRegionId} tabIndex={-1} className="flex flex-col gap-4">
+            {presentSections.map((section) => {
+              const headingId = `${sectionsRegionId}-${section}`;
+              const description = SECTION_DESCRIPTIONS[section];
+              return (
+                <section key={section} id={headingId} aria-labelledby={`${headingId}-title`} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-xs sm:p-5">
+                  <div className="flex flex-wrap items-center gap-2 border-b border-border/60 pb-2.5">
+                    <SectionHeading id={`${headingId}-title`} className={chrome.sectionScale}>
                       {RECORD_DETAIL_SECTION_TITLES[section]}
                     </SectionHeading>
                     {section === "privateNotes" ? <StatusBadge label={PRIVATE_NOTE_AUDIENCE_LABEL} tone="muted" /> : null}
@@ -163,10 +178,10 @@ const toDomId = (generated: string, suffix: string): string => `record-detail-${
                   {description === undefined ? null : <p className="type-supporting">{description}</p>}
                   {sections[section]}
                 </section>
-              </Fragment>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        </>
       )}
       {hasContent(trailing) ? (
         // After the sections region and inside the same surface: content that belongs to the record body but to no one section, so it appears in each of the three layouts without a second detail body.

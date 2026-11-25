@@ -66,7 +66,7 @@ function readInstant(instant: string, timeZone: string, locale: string): { reado
 const isReadAnswer = (value: SourceStatusRead): value is ReadResult<ReadEnvelope<unknown>> => "kind" in value;
 const Fact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-1", termClassName: "text-sm font-medium text-muted-foreground", valueClassName: "flex min-w-0 flex-col gap-1 text-sm text-pretty" });
 const FactGroup = ({ heading, children }: { readonly heading: string; readonly children: ReactNode }): ReactElement => (
-  <div className="flex min-w-0 flex-col gap-3">
+  <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-4">
     <h3 className="type-subsection-title text-pretty">{heading}</h3>
     {children}
   </div>

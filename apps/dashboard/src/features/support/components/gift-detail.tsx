@@ -1,5 +1,5 @@
 "use client";
-import { ArrowLeftIcon } from "lucide-react";
+import { ArrowLeftIcon, ReceiptTextIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useId, useMemo, useState, type ChangeEvent, type ReactElement, type ReactNode } from "react";
@@ -11,6 +11,8 @@ import StateNotice from "@/components/state-notice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-button";
+import { IconTile } from "@/components/ui/icon-tile";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/cn";
@@ -172,8 +174,11 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
   const submit: MutationSubmit<FollowUpTaskInput> = (request) => followUp.mutateAsync({ scope: request.scope, expectedRevision: request.expectedRevision, payload: request.payload });
   return (
     <Frame dir={dir} className={className} returnHref={returnHref}>
-      <header className="flex min-w-0 flex-col gap-3">
+      <header className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-5">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <IconTile variant="soft" size="sm">
+            <ReceiptTextIcon />
+          </IconTile>
           <Badge variant="secondary">{GRAIN_WORD[grain]}</Badge>
           <Badge variant="outline">{VALUE_STATE_WORD[amountState]}</Badge>
           {row.refundOf === undefined ? null : <Badge variant="outline">Correction</Badge>}
@@ -186,7 +191,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
       </header>
       <Card className="min-w-0">
         <CardContent>
-          <dl className="flex min-w-0 flex-col gap-3 divide-y divide-border">
+          <dl className="flex min-w-0 flex-col gap-3 divide-y divide-border/70 [&>div]:pt-3 [&>div:first-child]:pt-0">
             <Fact term="Original gift date">
               {originalDate === undefined ? (
                 "The source did not establish when this gift was given, so no date stands in its place."
@@ -264,11 +269,20 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
         <p className="type-supporting">The record this row came from, as one opaque reference. It is printed exactly as the source gave it: it is never linked, never parsed, and never compared with another reference to decide what it means.</p>
         <dl className="flex min-w-0 flex-col gap-2">
           {[
-            { label: "Source system", value: row.provenance.system },
-            { label: "Source reference", value: row.provenance.reference },
-            { label: "One reference", value: formatSourceReference(row.provenance) },
+            { label: "Source system", value: row.provenance.system, copy: false },
+            { label: "Source reference", value: row.provenance.reference, copy: true },
+            { label: "One reference", value: formatSourceReference(row.provenance), copy: true },
           ].map((fact) => (
-            <Fact key={fact.label} term={fact.label} value={<bdi className="mono-identifier">{fact.value}</bdi>} />
+            <Fact
+              key={fact.label}
+              term={fact.label}
+              value={
+                <span className="inline-flex flex-wrap items-center gap-1">
+                  <bdi className="mono-identifier">{fact.value}</bdi>
+                  {fact.copy ? <CopyButton value={fact.value} label={`Copy ${fact.label.toLowerCase()}`} /> : null}
+                </span>
+              }
+            />
           ))}
         </dl>
       </SectionCard>

@@ -1,8 +1,55 @@
 "use client";
-/** The one adapter between the application and the pinned UI SDK's behaviours. */ import { bindLayer, createRovingFocus, createTypeahead, isComposing, isTypeaheadKey, keepFocus, type LayerDismissReason, type RovingFocus, type RovingOrientation, type Store } from "@ui-sdk/core";
+/** The one adapter between the application and the pinned UI SDK's behaviours and primitives. */
+import { bindLayer, createRovingFocus, createTypeahead, isComposing, isTypeaheadKey, keepFocus, type LayerDismissReason, type RovingFocus, type RovingOrientation, type Store } from "@ui-sdk/core";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "@ui-sdk/react/collapsible";
+import { Meter, MeterIndicator, MeterLabel, MeterTrack, MeterValue } from "@ui-sdk/react/meter";
+import { Pagination, PaginationEllipsis, PaginationFirst, PaginationItem, PaginationLast, PaginationLink, PaginationList, PaginationNext, PaginationPrevious, paginationRange } from "@ui-sdk/react/pagination";
 import { mergeProps } from "@ui-sdk/react/primitive";
+import { SegmentedControl, SegmentedControlIndicator, SegmentedControlItem } from "@ui-sdk/react/segmented-control";
+import { useShortcut, useShortcutHint } from "@ui-sdk/react/shortcuts";
+import { Timeline, TimelineConnector, TimelineDescription, TimelineItem, TimelineMarker, TimelineTime, TimelineTitle } from "@ui-sdk/react/timeline";
+import { Toolbar, ToolbarButton, ToolbarGroup, ToolbarInput, ToolbarLink, ToolbarSeparator } from "@ui-sdk/react/toolbar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, RefObject } from "react";
+
+export {
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+  Meter,
+  MeterIndicator,
+  MeterLabel,
+  MeterTrack,
+  MeterValue,
+  Pagination,
+  PaginationEllipsis,
+  PaginationFirst,
+  PaginationItem,
+  PaginationLast,
+  PaginationLink,
+  PaginationList,
+  PaginationNext,
+  PaginationPrevious,
+  paginationRange,
+  SegmentedControl,
+  SegmentedControlIndicator,
+  SegmentedControlItem,
+  Timeline,
+  TimelineConnector,
+  TimelineDescription,
+  TimelineItem,
+  TimelineMarker,
+  TimelineTime,
+  TimelineTitle,
+  Toolbar,
+  ToolbarButton,
+  ToolbarGroup,
+  ToolbarInput,
+  ToolbarLink,
+  ToolbarSeparator,
+  useShortcut,
+  useShortcutHint,
+};
 /** Why a dismissable layer or a modal asked to close: Escape, a pointer press outside it and outside its trigger, or the window losing focus. */ export type DismissReason = "escape-key" | "outside-press" | "window-blur";
 function toDismissReason(reason: LayerDismissReason): DismissReason {
   switch (reason) {

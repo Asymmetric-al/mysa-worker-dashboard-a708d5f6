@@ -171,10 +171,10 @@ function OverviewCard({ row, valueStates, locale }: { readonly row: CommitmentRo
 const FIXED_TOTAL_DESCRIPTION = "These are the four amounts the source states for this fixed total, each shown as its own fact: this page does not subtract one from another, does not state a fifth figure and does not present a share of the total.";
 const FixedTotalCard = ({ commitmentId, fixedTotal, valueStates, locale }: { readonly commitmentId: string; readonly fixedTotal: FixedTotalFigure; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string }): ReactElement => (
   <SectionCard headingId="commitment-fixed-total-heading" region={{ id: "commitment-fixed-total-heading", className: "min-w-0" }} title="Fixed total progress" description={FIXED_TOTAL_DESCRIPTION}>
-    <dl className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+    <dl className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
       {FIXED_TOTAL_FIELDS.map(({ field, label }) => (
-        <div key={field} className="flex min-w-0 flex-col gap-1">
-          <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
+        <div key={field} className="flex min-w-0 flex-col gap-1 rounded-xl border border-border/80 bg-surface-subtle p-3.5">
+          <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
           <dd className="min-w-0">
             <AmountValue money={fixedTotal[field]} valueState={valueStateAt(valueStates, fixedTotalStatePath(commitmentId, field))} locale={locale} />
           </dd>
@@ -186,11 +186,11 @@ const FixedTotalCard = ({ commitmentId, fixedTotal, valueStates, locale }: { rea
 const OutcomeHistoryCard = ({ buckets, total, current, locale }: { readonly buckets: readonly CommitmentsEnvelope["data"]["buckets"][number][]; readonly total: number; readonly current: RecurringBucket; readonly locale: string }): ReactElement => (
   <SectionCard headingId="commitment-outcome-heading" region={{ id: "commitment-outcome-heading", className: "min-w-0" }} title="Outcome history" description={OUTCOME_LEAD} contentClassName="flex min-w-0 flex-col gap-3">
     <p className="type-supporting">{`The read states ${commitmentCountText(total, locale)} in this context.`}</p>
-    <ul className="flex min-w-0 flex-col gap-2">
+    <ul className="flex min-w-0 flex-col gap-2.5">
       {buckets.map((figure) => {
         const isCurrent = figure.bucket === current;
         return (
-          <li key={figure.bucket} data-outcome={figure.bucket} className={cn("flex min-w-0 flex-col gap-1.5 rounded-lg border border-border p-3", figure.bucket === OUTSIDE_PARTITION && "bg-muted/40", isCurrent && "ring-1 ring-ring")}>
+          <li key={figure.bucket} data-outcome={figure.bucket} className={cn("flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border/80 bg-card p-3.5 shadow-2xs", figure.bucket === OUTSIDE_PARTITION && "bg-surface-subtle", isCurrent && "ring-1 ring-ring")}>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <StatusBadge {...statusBadgeProps(BUCKET_STATUS, figure.bucket)} srPrefix="Outcome" className={WRAPPING_BADGE_CLASS} />
               <CountFigure count={figure.count} valueState={figure.valueState} locale={locale} />

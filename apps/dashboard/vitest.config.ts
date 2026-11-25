@@ -9,7 +9,7 @@ import { defineConfig } from "vitest/config";
     // Every suite writes through that store one atomic temp-file-then-rename at a time, and each write waits for
     testTimeout: 30_000, // the file and its directory to reach the disk, so a single test can legitimately spend seconds inside it while the machine is busy. The runner's 5 s default therefore expired on a test whose work had not failed.
     hookTimeout: 120_000, // The hooks that reset the whole store lay every seeded session and every media byte down again, so they do that same fsync-heavy work and must not expire only because the machine is busy. The runner's 10 s default is far below what one of those resets can cost while the machine is loaded.
-    include: ["tests/domain/**/*.test.ts", "tests/integration/**/*.test.ts"],
+    include: ["tests/domain/**/*.test.ts", "tests/integration/**/*.test.ts", "tests/ui/**/*.test.ts"],
     exclude: ["e2e/**", "node_modules/**", ".next/**"], // `e2e/` is excluded because Playwright owns it; the other two are build and dependency output.
   },
 });

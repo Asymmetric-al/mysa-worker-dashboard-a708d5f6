@@ -23,9 +23,9 @@ const COUNT_ROWS: readonly { readonly kind: ImportDecisionKind; readonly label: 
   { kind: "unresolved", label: RESULTS_COPY.summaryLabels.unresolved },
 ];
 const CountFact = ({ label, value }: { readonly label: string; readonly value: number }): ReactElement => (
-  <div className="flex min-w-0 flex-col gap-0.5">
-    <dt className="min-w-0 text-pretty text-muted-foreground">{label}</dt>
-    <dd className="tabular-figures font-medium text-foreground">
+  <div className="flex min-w-0 flex-col gap-1 rounded-xl border border-border/80 bg-card px-3.5 py-2.5 shadow-2xs">
+    <dt className="min-w-0 text-xs text-pretty text-muted-foreground">{label}</dt>
+    <dd className="tabular-figures text-lg font-semibold tracking-tight text-foreground">
       <bdi>{String(value)}</bdi>
     </dd>
   </div>
@@ -37,16 +37,16 @@ export type StepAcceptanceProps = { readonly summary: ImportProposalSummaryView;
   const countsHeadingId = useId();
   return (
     <div data-slot="step-acceptance" className="flex min-w-0 flex-col gap-6">
-      <section aria-labelledby={summaryHeadingId} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3 text-sm">
+      <section aria-labelledby={summaryHeadingId} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm sm:p-5">
         <h3 id={summaryHeadingId} className="type-subsection-title">
           {SUMMARY_COPY.heading}
         </h3>
         <p className="type-supporting text-pretty">{SUMMARY_COPY.lead}</p>
-        <section aria-labelledby={countsHeadingId} className="flex min-w-0 flex-col gap-2">
+        <section aria-labelledby={countsHeadingId} className="flex min-w-0 flex-col gap-3">
           <h4 id={countsHeadingId} className="type-group-title">
             {SUMMARY_COPY.countsHeading}
           </h4>
-          <dl className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <dl className="grid min-w-0 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {COUNT_ROWS.map((row) => (
               <CountFact key={row.kind} label={row.label} value={summary[row.kind]} />
             ))}

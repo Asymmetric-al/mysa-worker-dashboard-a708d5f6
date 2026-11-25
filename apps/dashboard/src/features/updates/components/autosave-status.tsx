@@ -4,6 +4,7 @@ import { fieldErrorsFromInvalid } from "@/components/form-field";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { StatusMark, type StatusMarkState } from "@/components/ui/status-mark";
 import { cn } from "@/lib/cn";
 import { assertNever } from "@/lib/result";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
@@ -156,6 +157,16 @@ function DiscardLocalRecoveryControl({ onDiscard }: { readonly onDiscard: () => 
   );
 }
 export type AutosaveStatusProps = { readonly recovery: DraftRecovery; readonly acknowledgedAsOf?: string | null; readonly onCheckResult?: () => void; readonly className?: string };
+const MARK_STATE: Readonly<Record<AutosaveState, StatusMarkState>> = {
+  idle: "idle",
+  unsaved: "idle",
+  saving: "saving",
+  saved: "saved",
+  "failed-local-kept": "error",
+  conflict: "conflict",
+  unknown: "conflict",
+};
+
 /** The durable status of one autosave. */ export function AutosaveStatus({ recovery, acknowledgedAsOf = null, onCheckResult, className }: AutosaveStatusProps): ReactElement {
   const detailsId = useId();
   const regionRef = useRef<HTMLOutputElement | null>(null);
@@ -178,7 +189,8 @@ export type AutosaveStatusProps = { readonly recovery: DraftRecovery; readonly a
   return (
     <div data-slot="autosave-status" data-autosave-state={state} className={cn("flex min-w-0 flex-col gap-2 text-start", className)}>
       {/* `<output>` carries the `status` role natively, so the polite live region is a semantic element rather than a role placed on a `div`. */}
-      <output ref={regionRef} aria-live="polite" aria-atomic="true" aria-describedby={detailsId} tabIndex={-1} data-slot="autosave-status-region" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border bg-card px-3 py-2">
+      <output ref={regionRef} aria-live="polite" aria-atomic="true" aria-describedby={detailsId} tabIndex={-1} data-slot="autosave-status-region" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-border/80 bg-card px-3 py-2 shadow-2xs">
+        <StatusMark state={MARK_STATE[state]} />
         <Badge variant={wording.badge}>{wording.word}</Badge>
         <span className="min-w-0 text-sm text-pretty wrap-anywhere">{wording.statement}</span>
       </output>

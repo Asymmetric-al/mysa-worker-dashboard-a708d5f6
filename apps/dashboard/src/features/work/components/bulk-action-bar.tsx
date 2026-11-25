@@ -7,6 +7,7 @@ import { FactList, type FactSpec } from "@/components/fact-list";
 import { civilDateConvention, fieldMessagesOf } from "@/components/form-field";
 import { OperationResult, focusAnnouncedRegion, OUTCOME_HEADINGS, PerItemResults } from "@/components/operation-result";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import SectionCard from "@/components/section-card";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -330,10 +331,19 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
     </div>
   ));
   if (!rowsSelected && settledOutcome === null) return null;
+  const stickyDockClass = rowsSelected && !panelOpen ? "lg:sticky lg:top-[calc(var(--app-shell-sticky-offset,4rem)+0.5rem)] lg:z-15" : "";
   return (
-    <section data-slot="bulk-action-bar" aria-busy={pending ? true : undefined} aria-labelledby={rowsSelected ? regionTitleId : undefined} className={className === undefined ? SECTION_CLASS : `${SECTION_CLASS} ${className}`}>
+    <section data-slot="bulk-action-bar" aria-busy={pending ? true : undefined} aria-labelledby={rowsSelected ? regionTitleId : undefined} className={[SECTION_CLASS, stickyDockClass, className ?? ""].filter(Boolean).join(" ")}>
       {rowsSelected ? (
-        <SectionCard title="Bulk actions" headingId={regionTitleId} cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
+        <SectionCard
+          title="Bulk actions"
+          headingId={regionTitleId}
+          action={<Badge variant="secondary" className="tabular-figures">{`${String(selectedTasks.length)} selected`}</Badge>}
+          cardVariant="soft"
+          cardClassName="min-w-0 bg-card/95 backdrop-blur-md surface-elevated ring-primary/25"
+          headerClassName="border-b border-border/70"
+          contentClassName="flex min-w-0 flex-col gap-3"
+        >
           <p aria-live="polite" className="type-body text-pretty">
             {BULK_SELECTION_COUNT_TEMPLATE.replace("{count}", String(selectedTasks.length))}
           </p>

@@ -162,7 +162,7 @@ function AdditionalNameField({ index, row, errors, onChange, onRemove }: Additio
   const number = index + 1;
   const rowPath = `${ADDITIONAL_NAMES_FIELD}.${String(index)}`;
   return (
-    <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-border p-4">
+    <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-4">
       <FormField name={rowPath} label={`Additional name ${String(number)}`} error={errors?.byField[rowPath]}>
         {(control) => <Input id={control.id} type="text" value={row.value} autoComplete="off" aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => onChange({ ...row, value: event.currentTarget.value })} className="w-full" />}
       </FormField>
@@ -197,7 +197,7 @@ function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: Con
     <section data-slot="partner-edit-conflict" data-reason={outcome.reason} aria-labelledby={titleId} className="flex min-w-0 flex-col gap-3">
       <h3 {...{ id: titleId, className: "type-subsection-title sr-only" as const }}>{FORM_OUTCOME_COPY.conflict.title}</h3>
       <OperationResult outcome={outcome} headingLevel={4} fieldLabels={fieldLabels} />
-      <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
+      <div className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
         <p className="type-group-title">What to do with your input</p>
         <p className="type-supporting text-pretty">{CONFLICT_CHOICE_BODY}</p>
         <div className="flex flex-wrap items-center gap-2">
@@ -209,7 +209,7 @@ function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: Con
   );
 }
 const AcceptedNote = ({ partnerRef, revision }: { readonly partnerRef: string; readonly revision: string }): ReactElement => (
-  <div data-slot="partner-edit-accepted" className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
+  <div data-slot="partner-edit-accepted" className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
     <p className="type-group-title">This record now stands at the revision below</p>
     <p className="type-supporting text-pretty">The change was applied once, and this receipt stays on the page as the record of it.</p>
     <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">

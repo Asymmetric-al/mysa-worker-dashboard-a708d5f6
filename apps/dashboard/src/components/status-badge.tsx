@@ -11,13 +11,13 @@ import type { ValueState } from "@/modules/data-service/envelope";
 import { BUCKET_LABELS, type RecurringBucket } from "@/modules/support/buckets";
 /** The semantic tone of a label, and the only vocabulary with which a caller says how a state should read. */ export type StatusTone = "neutral" | "info" | "positive" | "caution" | "danger" | "muted";
 export type StatusBadgeSpec = { readonly label: string; readonly tone: StatusTone };
-const TONE_APPEARANCE: Readonly<Record<StatusTone, { readonly variant: NonNullable<ComponentProps<typeof Badge>["variant"]>; readonly className?: string }>> = {
-  neutral: { variant: "secondary" },
-  info: { variant: "default" },
-  positive: { variant: "secondary", className: "bg-positive text-positive-foreground" },
-  caution: { variant: "secondary", className: "bg-warning text-warning-foreground" },
-  danger: { variant: "secondary", className: "bg-destructive text-destructive-foreground" },
-  muted: { variant: "outline" },
+const TONE_APPEARANCE: Readonly<Record<StatusTone, { readonly variant: NonNullable<ComponentProps<typeof Badge>["variant"]>; readonly dotClass?: string; readonly className?: string }>> = {
+  neutral: { variant: "secondary", dotClass: "bg-muted-foreground" },
+  info: { variant: "info-light", dotClass: "bg-info" },
+  positive: { variant: "positive-light", dotClass: "bg-positive" },
+  caution: { variant: "warning-light", dotClass: "bg-warning" },
+  danger: { variant: "destructive-light", dotClass: "bg-destructive" },
+  muted: { variant: "outline", dotClass: "bg-muted-foreground/70" },
 };
 /** The word and tone of each audience an edition may serve, exhaustive over the content module's closed union so a third audience is a compile error rather than an unlabelled chip. The Updates list, the variant cards, the review panel and the preview read this one record, so one audience is never stated two ways. */
 export const AUDIENCE_STATUS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
@@ -68,6 +68,7 @@ export type StatusBadgeProps = { label: string; tone?: StatusTone; valueState?: 
   const appearance = TONE_APPEARANCE[word === undefined ? tone : word.tone];
   return (
     <Badge variant={appearance.variant} className={cn(appearance.className, className)}>
+      {appearance.dotClass === undefined ? null : <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", appearance.dotClass)} />}
       {srPrefix === undefined || srPrefix.trim().length === 0 ? null : <span className="sr-only">{`${srPrefix.trim()}: `}</span>}
       {word === undefined ? text : `${text} — ${word.label}`}
     </Badge>

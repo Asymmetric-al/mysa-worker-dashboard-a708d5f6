@@ -133,13 +133,13 @@ export function FamilyCatalogue({ family, catalogue, scope, document: pageDocume
           {catalogue.sections.length === 0 ? (
             <p className="type-supporting text-pretty">{"This family's catalogue listed no section types, so there is nothing to compose here. No type is invented in their place."}</p>
           ) : (
-            <ul className="flex min-w-0 flex-col gap-4">
+            <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
               {catalogue.sections.map((entry) => {
                 const entryCopy = copy.catalogue.sections[entry.key];
                 const selectId = `${entryIdPrefix}-${entry.key}`;
                 const seat = seatOf(seats[entry.key], positions);
                 return (
-                  <li key={entry.key} data-section-type={entry.key} data-managed={entry.managed ? "true" : undefined} className="flex min-w-0 flex-col gap-2 border-b border-border pb-4 last:border-b-0 last:pb-0">
+                  <li key={entry.key} data-section-type={entry.key} data-managed={entry.managed ? "true" : undefined} className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <h3 className="type-subsection-title wrap-anywhere">
                         <bdi>{entryCopy.label}</bdi>

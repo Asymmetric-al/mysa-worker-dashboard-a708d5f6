@@ -12,7 +12,7 @@ import { cn } from "@/lib/cn";
 } as const satisfies Record<SimulatedEffect, string>);
 export type SimulationLabelContext = "inline" | "block";
 export type SimulationLabelProps = Omit<ComponentPropsWithoutRef<"div">, "children" | "style" | "role" | "hidden" | "aria-hidden" | "aria-live" | "aria-atomic" | "dangerouslySetInnerHTML"> & { effect: SimulatedEffect; context?: SimulationLabelContext };
-const INLINE_SURFACE = "flex w-fit max-w-full items-start gap-2 rounded-md border border-border bg-background px-2.5 " + "py-1.5 type-supporting text-start text-pretty wrap-anywhere";
+const INLINE_SURFACE = "flex w-fit max-w-full items-start gap-2 rounded-xl border border-border/80 bg-surface-subtle px-3 " + "py-1.5 type-supporting text-start text-pretty wrap-anywhere";
 function labelFor(effect: SimulatedEffect): string {
   if (!Object.hasOwn(SIMULATION_LABELS, effect)) throw new Error(`SimulationLabel received an effect it has no sentence for: "${String(effect)}". ` + "Every simulated boundary must state what did not happen, so add the effect to " + "SIMULATION_LABELS instead of passing a value the interface cannot label.");
   return SIMULATION_LABELS[effect];

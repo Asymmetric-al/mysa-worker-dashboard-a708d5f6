@@ -177,16 +177,16 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
   };
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1 text-sm">
-        <p>
-          <bdi>{name}</bdi> · <bdi>{String(rowCount)}</bdi> rows · <bdi>{String(columnCount)}</bdi> columns
+      <div className="flex flex-col gap-1.5 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
+        <p className="font-medium text-foreground">
+          <bdi>{name}</bdi> · <bdi className="tabular-figures">{String(rowCount)}</bdi> rows · <bdi className="tabular-figures">{String(columnCount)}</bdi> columns
         </p>
         <p className="text-muted-foreground">{MAPPING_COPY.lead}</p>
       </div>
       {fieldErrors === null || fieldErrors.count === 0 ? null : <FormErrorSummary errors={fieldErrors} labels={MAPPING_COPY.summaryLabels} title={MAPPING_COPY.errorsTitle} description={MAPPING_COPY.errorsLead} />}
       {refusals.length === 0 ? null : (
-        <div className="flex flex-col gap-1 rounded-lg border border-border p-3 text-sm">
-          <p className="font-medium">{MAPPING_COPY.refusalTitle}</p>
+        <div className="flex flex-col gap-1.5 rounded-2xl border border-destructive/30 bg-destructive-soft/40 p-4 text-sm">
+          <p className="font-medium text-foreground">{MAPPING_COPY.refusalTitle}</p>
           <p className="text-muted-foreground">{MAPPING_COPY.refusalLead}</p>
           {unattributedRefusals.length === 0 ? null : (
             <ul className="flex list-disc flex-col gap-1 ps-4 text-muted-foreground">

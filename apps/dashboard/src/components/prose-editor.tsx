@@ -3,18 +3,20 @@ import { useEffect, useId, useRef, useState, type ChangeEvent, type FocusEvent, 
 import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import { EditorContent, useEditor, useEditorState, type Editor, type JSONContent } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
-import { Bold, CircleAlert, Code, Heading2, Heading3, Heading4, ImagePlus, Italic, Link2, List, ListOrdered, Redo2, SquareCode, Strikethrough, TextQuote, Underline, Undo2, Unlink, Video, X } from "lucide-react";
+import { Bold, CircleAlert, Code, Heading2, Heading3, Heading4, ImagePlus, Italic, KeyboardIcon, Link2, List, ListOrdered, Redo2, SquareCode, Strikethrough, TextQuote, Underline, Undo2, Unlink, Video, X } from "lucide-react";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DirectionProvider } from "@/components/ui/direction";
+import { Frame, FrameFooter, FrameHeader, FramePanel } from "@/components/ui/frame";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { Toggle } from "@/components/ui/toggle";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Popover, PopoverContent, PopoverDescription, PopoverHeader, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
+import { toggleVariants } from "@/components/ui/toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { Toolbar, ToolbarButton, ToolbarGroup, ToolbarSeparator } from "@/lib/ui-sdk";
 import { ADMITTED_HEADING_LEVELS, CONTENT_PROFILE_VERSION, admittedPasteDecision, parseDocument, type ContentBlockNode, type ContentDirection, type ContentDocumentJson, type ContentSection, type PasteDecision } from "@/modules/content/document";
 const PREVIEW_LIMIT = 600;
 const PASTE_NOTICE = "Images and video are added with the toolbar buttons, so they are prepared, placed and saved with the content. Nothing was inserted here.";
@@ -41,7 +43,6 @@ type PendingPaste = { readonly json: unknown; readonly text: string; readonly pr
 const toEditorContent = (nodes: readonly ContentBlockNode[]): JSONContent[] => JSON.parse(JSON.stringify(nodes)) as JSONContent[];
 /** The document as the editor holds it now. The service validates it through the content profile on save, so this reports the authored document and passes no judgement on it. */
 const buildDocument = (editor: Editor, direction: ContentDirection, sections: readonly ContentSection[]): ContentDocumentJson => ({ type: "doc", profileVersion: CONTENT_PROFILE_VERSION, direction, content: (editor.getJSON().content ?? []) as readonly ContentBlockNode[], sections });
-const headingLevelOf = (value: string): (typeof ADMITTED_HEADING_LEVELS)[number] | undefined => ADMITTED_HEADING_LEVELS.find((level) => level === Number(value));
 function textOfJson(value: unknown): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return value.map((entry) => textOfJson(entry)).join("");
@@ -62,7 +63,11 @@ const plainTextBlocks = (text: string): JSONContent[] =>
     .map((line) => (line === "" ? { type: "paragraph" } : { type: "paragraph", content: [{ type: "text", text: line }] }));
 type ToolbarControlProps = { readonly label: string; readonly icon: ReactNode; readonly onSelect: () => void; readonly pressed?: boolean; readonly disabled?: boolean };
 function ToolbarControl({ label, icon, onSelect, pressed, disabled }: ToolbarControlProps) {
-  const control = pressed === undefined ? <Button {...{ type: "button", variant: "ghost", size: "icon-sm", "aria-label": label, disabled, onClick: onSelect }}>{icon}</Button> : <Toggle {...{ type: "button", size: "sm", "aria-label": label, pressed, disabled, onPressedChange: onSelect }}>{icon}</Toggle>;
+  const control = (
+    <ToolbarButton type="button" disabled={disabled} focusableWhenDisabled={false} aria-label={label} aria-pressed={pressed} onClick={onSelect} className={pressed === undefined ? buttonVariants({ variant: "ghost", size: "icon-sm" }) : cn(toggleVariants({ size: "sm" }), "min-w-8 px-0")}>
+      {icon}
+    </ToolbarButton>
+  );
   return (
     <Tooltip>
       <TooltipTrigger render={control} />
@@ -90,55 +95,45 @@ function EditorToolbar({ editor, onOpenLink, onRequestMedia }: EditorToolbarProp
       canRedo: current.can().redo(),
     }),
   });
-  const chooseHeading = (next: readonly string[]): void => {
-    const level = headingLevelOf(next[0] ?? "");
-    if (level === undefined) editor.chain().focus().setParagraph().run();
+  const toggleHeading = (level: (typeof ADMITTED_HEADING_LEVELS)[number]): void => {
+    if (active.heading === level) editor.chain().focus().setParagraph().run();
     else editor.chain().focus().setHeading({ level }).run();
   };
   return (
-    <fieldset aria-label="Text formatting" className="flex min-w-0 flex-wrap items-center gap-1 border-0 p-0">
-      <ToolbarControl label="Bold" icon={<Bold aria-hidden="true" />} pressed={active.bold} onSelect={() => editor.chain().focus().toggleBold().run()} />
-      <ToolbarControl label="Italic" icon={<Italic aria-hidden="true" />} pressed={active.italic} onSelect={() => editor.chain().focus().toggleItalic().run()} />
-      <ToolbarControl label="Underline" icon={<Underline aria-hidden="true" />} pressed={active.underline} onSelect={() => editor.chain().focus().toggleUnderline().run()} />
-      <ToolbarControl label="Strikethrough" icon={<Strikethrough aria-hidden="true" />} pressed={active.strike} onSelect={() => editor.chain().focus().toggleStrike().run()} />
-      <ToolbarControl label="Code" icon={<Code aria-hidden="true" />} pressed={active.code} onSelect={() => editor.chain().focus().toggleCode().run()} />
-      <Separator orientation="vertical" className="mx-0.5 h-6 self-center" />
-      <ToggleGroup {...{ multiple: false, value: active.heading === null ? [] : [String(active.heading)], onValueChange: chooseHeading, size: "sm", "aria-label": "Heading level" }}>
-        {ADMITTED_HEADING_LEVELS.map((level) => {
-          const { label, Icon } = HEADING_PRESENTATION[level];
-          return (
-            <Tooltip key={level}>
-              <TooltipTrigger
-                render={
-                  <ToggleGroupItem type="button" value={String(level)} aria-label={label}>
-                    <Icon aria-hidden="true" />
-                  </ToggleGroupItem>
-                }
-              />
-              <TooltipContent>{label}</TooltipContent>
-            </Tooltip>
-          );
-        })}
-      </ToggleGroup>
-      <Separator orientation="vertical" className="mx-0.5 h-6 self-center" />
-      <ToolbarControl label="Bulleted list" icon={<List aria-hidden="true" />} pressed={active.bulletList} onSelect={() => editor.chain().focus().toggleBulletList().run()} />
-      <ToolbarControl label="Numbered list" icon={<ListOrdered aria-hidden="true" />} pressed={active.orderedList} onSelect={() => editor.chain().focus().toggleOrderedList().run()} />
-      <ToolbarControl label="Quotation" icon={<TextQuote aria-hidden="true" />} pressed={active.blockquote} onSelect={() => editor.chain().focus().toggleBlockquote().run()} />
-      <ToolbarControl label="Code block" icon={<SquareCode aria-hidden="true" />} pressed={active.codeBlock} onSelect={() => editor.chain().focus().toggleCodeBlock().run()} />
-      <Separator orientation="vertical" className="mx-0.5 h-6 self-center" />
-      <ToolbarControl label="Link" icon={<Link2 aria-hidden="true" />} onSelect={onOpenLink} />
-      <ToolbarControl label="Remove link" icon={<Unlink aria-hidden="true" />} disabled={!active.link} onSelect={() => editor.chain().focus().extendMarkRange("link").unsetLink().run()} />
-      {onRequestMedia === undefined ? null : (
-        <>
-          <Separator orientation="vertical" className="mx-0.5 h-6 self-center" />
-          <ToolbarControl label="Insert image" icon={<ImagePlus aria-hidden="true" />} onSelect={onRequestMedia} />
-          <ToolbarControl label="Insert video" icon={<Video aria-hidden="true" />} onSelect={onRequestMedia} />
-        </>
-      )}
-      <Separator orientation="vertical" className="mx-0.5 h-6 self-center" />
-      <ToolbarControl label="Undo" icon={<Undo2 aria-hidden="true" />} disabled={!active.canUndo} onSelect={() => editor.chain().focus().undo().run()} />
-      <ToolbarControl label="Redo" icon={<Redo2 aria-hidden="true" />} disabled={!active.canRedo} onSelect={() => editor.chain().focus().redo().run()} />
-    </fieldset>
+    <Toolbar aria-label="Editor formatting" className="flex min-w-0 flex-wrap items-center gap-1">
+      <ToolbarGroup aria-label="Text formatting" className="flex min-w-0 flex-wrap items-center gap-1">
+        <ToolbarControl label="Bold" icon={<Bold aria-hidden="true" />} pressed={active.bold} onSelect={() => editor.chain().focus().toggleBold().run()} />
+        <ToolbarControl label="Italic" icon={<Italic aria-hidden="true" />} pressed={active.italic} onSelect={() => editor.chain().focus().toggleItalic().run()} />
+        <ToolbarControl label="Underline" icon={<Underline aria-hidden="true" />} pressed={active.underline} onSelect={() => editor.chain().focus().toggleUnderline().run()} />
+        <ToolbarControl label="Strikethrough" icon={<Strikethrough aria-hidden="true" />} pressed={active.strike} onSelect={() => editor.chain().focus().toggleStrike().run()} />
+        <ToolbarControl label="Code" icon={<Code aria-hidden="true" />} pressed={active.code} onSelect={() => editor.chain().focus().toggleCode().run()} />
+        <ToolbarSeparator className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+        <ToolbarGroup aria-label="Heading level" className="flex items-center gap-0.5">
+          {ADMITTED_HEADING_LEVELS.map((level) => {
+            const { label, Icon } = HEADING_PRESENTATION[level];
+            return <ToolbarControl key={level} label={label} icon={<Icon aria-hidden="true" />} pressed={active.heading === level} onSelect={() => toggleHeading(level)} />;
+          })}
+        </ToolbarGroup>
+        <ToolbarSeparator className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+        <ToolbarControl label="Bulleted list" icon={<List aria-hidden="true" />} pressed={active.bulletList} onSelect={() => editor.chain().focus().toggleBulletList().run()} />
+        <ToolbarControl label="Numbered list" icon={<ListOrdered aria-hidden="true" />} pressed={active.orderedList} onSelect={() => editor.chain().focus().toggleOrderedList().run()} />
+        <ToolbarControl label="Quotation" icon={<TextQuote aria-hidden="true" />} pressed={active.blockquote} onSelect={() => editor.chain().focus().toggleBlockquote().run()} />
+        <ToolbarControl label="Code block" icon={<SquareCode aria-hidden="true" />} pressed={active.codeBlock} onSelect={() => editor.chain().focus().toggleCodeBlock().run()} />
+        <ToolbarSeparator className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+        <ToolbarControl label="Link" icon={<Link2 aria-hidden="true" />} onSelect={onOpenLink} />
+        <ToolbarControl label="Remove link" icon={<Unlink aria-hidden="true" />} disabled={!active.link} onSelect={() => editor.chain().focus().extendMarkRange("link").unsetLink().run()} />
+        {onRequestMedia === undefined ? null : (
+          <>
+            <ToolbarSeparator className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+            <ToolbarControl label="Insert image" icon={<ImagePlus aria-hidden="true" />} onSelect={onRequestMedia} />
+            <ToolbarControl label="Insert video" icon={<Video aria-hidden="true" />} onSelect={onRequestMedia} />
+          </>
+        )}
+        <ToolbarSeparator className="mx-0.5 h-5 w-px shrink-0 bg-border" />
+        <ToolbarControl label="Undo" icon={<Undo2 aria-hidden="true" />} disabled={!active.canUndo} onSelect={() => editor.chain().focus().undo().run()} />
+        <ToolbarControl label="Redo" icon={<Redo2 aria-hidden="true" />} disabled={!active.canRedo} onSelect={() => editor.chain().focus().redo().run()} />
+      </ToolbarGroup>
+    </Toolbar>
   );
 }
 type EditorDialogProps = { readonly open: boolean; readonly onClose: () => void; readonly title: string; readonly description: string; readonly initialFocus: () => HTMLElement | null; readonly footer: ReactNode; readonly children: ReactNode };
@@ -237,6 +232,58 @@ function LinkDestinationDialog({ open, href, error, onHrefChange, onApply, onCan
     </EditorDialog>
   );
 }
+const EDITOR_SHORTCUT_ROWS: readonly { readonly label: string; readonly keys: string }[] = [
+  { label: "Bold", keys: "Ctrl/⌘ B" },
+  { label: "Italic", keys: "Ctrl/⌘ I" },
+  { label: "Underline", keys: "Ctrl/⌘ U" },
+  { label: "Undo", keys: "Ctrl/⌘ Z" },
+  { label: "Redo", keys: "Ctrl/⌘ Shift Z" },
+];
+
+function EditorStatusFooter({ editor }: { readonly editor: Editor }) {
+  const stats = useEditorState({
+    editor,
+    selector: ({ editor: current }) => {
+      const plain = current.getText({ blockSeparator: " " }).trim();
+      const words = plain === "" ? 0 : plain.split(/\s+/u).length;
+      const chars = plain.length;
+      const readingMinutes = words === 0 ? 0 : Math.max(1, Math.ceil(words / 200));
+      return { words, chars, readingMinutes };
+    },
+  });
+  return (
+    <FrameFooter data-slot="prose-editor-footer" className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-figures">
+        <span>{`${String(stats.words)} ${stats.words === 1 ? "word" : "words"}`}</span>
+        <span>{`${String(stats.chars)} ${stats.chars === 1 ? "character" : "characters"}`}</span>
+        {stats.readingMinutes > 0 ? <span>{`~${String(stats.readingMinutes)} min read`}</span> : null}
+      </div>
+      <Popover>
+        <PopoverTrigger render={<Button type="button" variant="ghost" size="sm" className="h-7 min-h-7 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground" />}>
+          <KeyboardIcon aria-hidden="true" className="size-3.5" />
+          <span>Formatting shortcuts</span>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-64 gap-2.5 p-3">
+          <PopoverHeader>
+            <PopoverTitle className="text-sm">Editor shortcuts</PopoverTitle>
+            <PopoverDescription className="text-xs">Standard rich-text formatting bindings.</PopoverDescription>
+          </PopoverHeader>
+          <dl className="flex flex-col gap-1.5 text-xs">
+            {EDITOR_SHORTCUT_ROWS.map((row) => (
+              <div key={row.label} className="flex items-center justify-between gap-2">
+                <dt className="text-foreground">{row.label}</dt>
+                <dd>
+                  <Kbd>{row.keys}</Kbd>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </PopoverContent>
+      </Popover>
+    </FrameFooter>
+  );
+}
+
 /** The single editing surface for Update prose and Page section prose. It edits the document and reports every change through `onChange`; the surface that owns the draft owns the autosave, its save state and its recovery, so exactly one place states whether this text is saved. */
 export function ProseEditor({ initialDocument, direction, label, onChange, onRequestMedia, readOnly = false }: ProseEditorProps) {
   const labelId = useId();
@@ -355,14 +402,25 @@ export function ProseEditor({ initialDocument, direction, label, onChange, onReq
         <span id={labelId} className="sr-only">
           {label}
         </span>
-        {readOnly || editor === null ? null : (
-          <TooltipProvider>
-            <EditorToolbar editor={editor} onOpenLink={openLinkDialog} onRequestMedia={onRequestMedia} />
-          </TooltipProvider>
+        {readOnly ? (
+          <div className="min-h-40 min-w-0 rounded-xl border border-transparent bg-transparent">
+            <EditorContent editor={editor} />
+          </div>
+        ) : (
+          <Frame spacing="flush">
+            {editor === null ? null : (
+              <FrameHeader className="px-2.5 py-2">
+                <TooltipProvider delay={250}>
+                  <EditorToolbar editor={editor} onOpenLink={openLinkDialog} onRequestMedia={onRequestMedia} />
+                </TooltipProvider>
+              </FrameHeader>
+            )}
+            <FramePanel className={cn("min-h-40 min-w-0 border-input/70 bg-card motion-safe:transition-colors", "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring")}>
+              <EditorContent editor={editor} />
+            </FramePanel>
+            {editor === null ? null : <EditorStatusFooter editor={editor} />}
+          </Frame>
         )}
-        <div className={cn("min-h-40 min-w-0 rounded-lg border border-input bg-input/30 motion-safe:transition-colors", "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring", readOnly && "border-transparent bg-transparent")}>
-          <EditorContent editor={editor} />
-        </div>
         {contentIssue === null ? null : (
           <NoticeAlert {...{ variant: "destructive", icon: true, title: "Some content could not be read", dismissLabel: "Dismiss the content message", onDismiss: () => setContentIssue(null) }}>
             <p>{contentIssue}</p>

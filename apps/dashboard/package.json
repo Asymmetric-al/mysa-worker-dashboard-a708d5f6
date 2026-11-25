@@ -7,6 +7,7 @@
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --config ../../.oxlintrc.json && bun ../../scripts/check-invariants.ts",
+    "shadcn": "shadcn",
     "test": "vitest run && playwright test",
     "lines": "bun ../../scripts/count-lines.ts"
   },
@@ -15,6 +16,7 @@
     "@tanstack/react-form": "1.33.5",
     "@tanstack/react-query": "5.108.1",
     "@tanstack/react-table": "9.3.1",
+    "@tanstack/react-virtual": "^3.14.28",
     "@tiptap/pm": "3.34.0",
     "@tiptap/react": "3.34.0",
     "@tiptap/starter-kit": "3.34.0",
@@ -27,6 +29,7 @@
     "file-type": "22.3.0",
     "lucide-react": "1.77.0",
     "mediabunny": "1.66.2",
+    "motion": "14.6.0",
     "next": "16.4.6",
     "react": "19.3.1",
     "react-dom": "19.3.1",

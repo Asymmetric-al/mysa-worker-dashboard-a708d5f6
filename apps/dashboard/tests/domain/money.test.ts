@@ -1,4 +1,5 @@
 /** Proves the money module's exact-integer contract at the currency boundary: an amount whose currency has no exponent is refused by every operation the module header names — negation included. */ import { readFileSync, readdirSync } from "node:fs";
+import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { ValueState } from "@/modules/data-service/envelope";
@@ -250,7 +251,7 @@ describe("the financial modules' source", () => {
   }
   it("keeps floating-point parsing and rounding out of every money, report and export path", () => {
     const files = sourceFiles();
-    const names = files.map((file) => fileURLToPath(file).split("/").pop() ?? "");
+    const names = files.map((file) => basename(fileURLToPath(file)));
     for (const required of REQUIRED_FILES) expect(names).toContain(required); // A base URL that resolved to the wrong directory would make this scan pass vacuously, so the files it means to read are named before any of them is read.
     const offenders = files.flatMap((file) => {
       const path = fileURLToPath(file);

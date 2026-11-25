@@ -1,12 +1,16 @@
 "use client";
 import Link from "next/link";
+import { ChevronRightIcon, FileSpreadsheetIcon } from "lucide-react";
 import { useMemo, type ReactElement, type ReactNode } from "react";
 import ChartFigure, { type ChartPoint, type ChartSeries, type ChartTable } from "@/components/chart-figure";
 import { refusalSummary } from "@/components/form-field";
 import SectionCard from "@/components/section-card";
 import StateNotice from "@/components/state-notice";
-import { buttonVariants } from "@/components/ui/button";
+import { IconTile } from "@/components/ui/icon-tile";
+import { MiniSparkline, type SparklinePoint } from "@/components/ui/mini-sparkline";
+import { SegmentedMeter, type MeterSegmentTone } from "@/components/ui/segmented-meter";
 import { Separator } from "@/components/ui/separator";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/cn";
 import type { CoverageState, ReadEnvelope, Scope, ValueState } from "@/modules/data-service/envelope";
@@ -95,9 +99,9 @@ function isOverviewEnvelope(value: unknown): value is SupportOverviewEnvelope {
   return data !== null && typeof data === "object" && "report" in data && "monthlyEquivalent" in data && "buckets" in data && "commitmentKinds" in data;
 }
 const CountRow = ({ label, count, state }: { readonly label: string; readonly count: number; readonly state: ValueState }): ReactElement => (
-  <div className="flex flex-wrap items-baseline gap-x-2">
-    <dt className="text-muted-foreground">{label}</dt>
-    <dd className="flex flex-wrap items-baseline gap-x-1 font-medium">
+  <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 rounded-xl border border-border/80 bg-surface-subtle px-3 py-2">
+    <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+    <dd className="flex flex-wrap items-baseline gap-x-1 text-base font-semibold text-foreground">
       <bdi className="tabular-figures">{count}</bdi>
       {COUNT_STATE_NOTE[state] === null ? null : <span className="text-xs font-normal text-muted-foreground">{COUNT_STATE_NOTE[state]}</span>}
     </dd>
@@ -117,8 +121,8 @@ const MeasureSection = ({ title, description, period, coverage, children }: { re
 function CashCounts({ envelope, entry }: { readonly envelope: SupportOverviewEnvelope; readonly entry: CurrencySummaryView }): ReactElement {
   const path = `summary.${entry.currency}`;
   return (
-    <div className="flex flex-col gap-1">
-      <dl className="flex flex-wrap gap-x-4 gap-y-1">
+    <div className="flex flex-col gap-2">
+      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         <CountRow label="Gifts" count={entry.giftCount.count} state={stateOf(envelope, `${path}.giftCount`, entry.giftCount.valueState)} />
         <CountRow label="Allocations" count={entry.allocationCount.count} state={stateOf(envelope, `${path}.allocationCount`, entry.allocationCount.valueState)} />
         <CountRow label="Donors" count={entry.donorCount.count} state={stateOf(envelope, `${path}.donorCount`, entry.donorCount.valueState)} />
@@ -127,6 +131,22 @@ function CashCounts({ envelope, entry }: { readonly envelope: SupportOverviewEnv
     </div>
   );
 }
+function sparklinePointsForCurrency(series: readonly RecurringPointView[], currency: string, locale: string): readonly SparklinePoint[] {
+  return series
+    .filter((point) => point.currency === currency)
+    .map((point) => {
+      const label = monthText(point.bucketStart);
+      if (point.gap || point.value.minorUnits === null) {
+        return { label, value: null, formatted: GAP_CELL_WORD };
+      }
+      return {
+        label,
+        value: Number(point.value.minorUnits),
+        formatted: formatMinor(moneyOf(currency, point.value), point.value.valueState, locale).text,
+      };
+    });
+}
+
 function CashSummary({ envelope, locale }: { readonly envelope: SupportOverviewEnvelope; readonly locale: string }): ReactElement {
   const report = envelope.data.report;
   if (report.summary.length === 0) return <StateNotice kind="empty" title={EMPTY_STATES.gifts.title} description={EMPTY_STATES.gifts.body} action={EMPTY_STATES.gifts.action} />;
@@ -137,24 +157,46 @@ function CashSummary({ envelope, locale }: { readonly envelope: SupportOverviewE
       {report.summary.map((entry) => {
         const money = moneyOf(entry.currency, entry.received);
         const valueState = stateOf(envelope, `summary.${entry.currency}.received`, entry.received.valueState);
-        const detail = <CashCounts envelope={envelope} entry={entry} />;
+        const sparkData = sparklinePointsForCurrency(report.series, entry.currency, locale);
+        const detail = (
+          <div className="flex flex-col gap-3">
+            {sparkData.length >= 2 ? <MiniSparkline data={sparkData} label={`${entry.currency} monthly received trend`} /> : null}
+            <CashCounts envelope={envelope} entry={entry} />
+          </div>
+        );
         return <MeasureCard key={entry.currency} measure="received-gifts" money={money} valueState={valueState} unit={RECEIVED_CASH_UNIT} period={period} coverage={envelope.coverage} asOf={report.snapshot.asOf} isCurrentPeriod={isCurrentPeriod} locale={locale} emphasis="primary" detail={detail} />;
       })}
     </div>
   );
 }
 const RECURRING_OUTCOMES_DESCRIPTION = "These are not received cash. Each occurrence the source reports sits in one of the five outcomes and is counted at its own state, so a collection in flight is not cash, an absent receipt is not donor debt, and no outcome here is added to an amount.";
-const RecurringOutcomes = ({ envelope }: { readonly envelope: SupportOverviewEnvelope }): ReactElement => (
-  <SectionCard title={MEASURE_LABELS["recurring-collection-outcomes"]} headingLevel={3} description={RECURRING_OUTCOMES_DESCRIPTION} contentClassName="flex flex-col gap-3">
-    <PeriodNote period={periodOf(envelope.data.report)} coverage={envelope.coverage.state} />
-    <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-      {envelope.data.buckets.map((bucket) => (
-        <CountRow key={bucket.bucket} label={bucket.label} count={bucket.count} state={stateOf(envelope, `buckets.${bucket.bucket}.count`, bucket.valueState)} />
-      ))}
-    </dl>
-    <p className="text-xs text-muted-foreground">{BUCKET_MEANING["outside-partition"]}</p>
-  </SectionCard>
-);
+const RECURRING_BUCKET_TONE: Readonly<Record<string, MeterSegmentTone>> = {
+  succeeded: "positive",
+  "in-flight": "info",
+  "failed-retrying": "warning",
+  "failed-stopped": "destructive",
+  "skipped-or-paused": "muted",
+};
+const RecurringOutcomes = ({ envelope }: { readonly envelope: SupportOverviewEnvelope }): ReactElement => {
+  const segments = envelope.data.buckets.map((bucket) => ({
+    key: bucket.bucket,
+    label: bucket.label,
+    count: bucket.count,
+    tone: RECURRING_BUCKET_TONE[bucket.bucket] ?? "muted",
+  }));
+  return (
+    <SectionCard title={MEASURE_LABELS["recurring-collection-outcomes"]} headingLevel={3} description={RECURRING_OUTCOMES_DESCRIPTION} contentClassName="flex flex-col gap-3">
+      <PeriodNote period={periodOf(envelope.data.report)} coverage={envelope.coverage.state} />
+      <SegmentedMeter segments={segments} label="Recurring collection outcomes distribution" />
+      <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {envelope.data.buckets.map((bucket) => (
+          <CountRow key={bucket.bucket} label={bucket.label} count={bucket.count} state={stateOf(envelope, `buckets.${bucket.bucket}.count`, bucket.valueState)} />
+        ))}
+      </dl>
+      <p className="text-xs text-muted-foreground">{BUCKET_MEANING["outside-partition"]}</p>
+    </SectionCard>
+  );
+};
 const CommitmentKinds = ({ envelope, period }: { readonly envelope: SupportOverviewEnvelope; readonly period: PeriodText }): ReactElement => (
   <MeasureSection title={MEASURE_LABELS.commitments} description="Commitments are facts the source reports and this application never writes. Each is counted in its own kind and in its own outcome bucket, and no commitment is counted as cash." period={period} coverage={envelope.coverage.state}>
     <dl className="grid gap-2 sm:grid-cols-3">
@@ -218,15 +260,26 @@ function MonthlyHistory({ report, locale }: { readonly report: SupportOverviewRe
   return <ChartFigure title="Received support by month" summary={summary} caption="Monthly received support, one plot per currency." kind="bar" series={series} units={units} coverage={report.snapshot.coverage} asOf={asOf} table={chartTable(partitions, locale)} locale={locale} />;
 }
 function Destinations(): ReactElement {
-  const linkClass = buttonVariants({ variant: "outline", size: "sm" });
   const links = [{ href: "/support/gifts", label: "Read the whole gifts ledger" }, { href: "/support/commitments", label: "Read the commitments" }, ...REPORT_ORDER.map((id) => ({ href: reportHref(id), label: REPORT_CATALOG[id].title }))];
   return (
     <section aria-label="Destinations" className="flex flex-col gap-3">
       <h3 className="type-subsection-title">Read the whole ledger, the commitments and the four reports</h3>
-      <ul className="flex flex-wrap gap-2">
+      <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {links.map((link) => (
           <li key={link.href}>
-            <Link {...{ href: link.href, "data-slot": "button", className: linkClass }}>{link.label}</Link>
+            <SpotlightCard className="rounded-2xl">
+              <Link
+                href={link.href}
+                data-slot="button"
+                className="group/dest flex min-h-12 w-full items-center gap-3 rounded-2xl border border-border/80 bg-card px-3.5 py-2.5 text-sm font-medium text-foreground shadow-xs transition-colors hover:border-input/60 hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
+              >
+                <IconTile variant="soft" size="sm">
+                  <FileSpreadsheetIcon />
+                </IconTile>
+                <span className="min-w-0 flex-1 text-pretty">{link.label}</span>
+                <ChevronRightIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground transition-transform group-hover/dest:translate-x-0.5 rtl:-scale-x-100" />
+              </Link>
+            </SpotlightCard>
           </li>
         ))}
       </ul>

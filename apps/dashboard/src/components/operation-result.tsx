@@ -1,9 +1,11 @@
 "use client";
 import { useId, useRef, type ReactElement, type ReactNode } from "react";
+import { AlertCircleIcon, CheckCircle2Icon, CloudOffIcon, InfoIcon, ShieldAlertIcon, TriangleAlertIcon } from "lucide-react";
 import { fieldErrorsFromInvalid, FormErrorSummary } from "@/components/form-field";
 import StatusBadge, { type StatusBadgeSpec } from "@/components/status-badge";
 import { Button, BUTTON_WRAP_CLASS } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { IconTile, type IconTileProps } from "@/components/ui/icon-tile";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { isRecord } from "@/lib/guards";
@@ -70,10 +72,10 @@ function ReceiptFacts({ revision, revisionLabel = "Revision", created, changed }
   const hasRevision = revision.trim() !== "";
   if (!hasRevision && !hasFacts({ revision, created, changed })) return null;
   return (
-    <dl className="flex min-w-0 flex-col gap-2 text-sm">
+    <dl className="flex min-w-0 flex-col gap-2 rounded-xl border border-border/80 bg-surface-subtle p-3.5 text-sm">
       {hasRevision ? (
         <div className="flex min-w-0 flex-col gap-1">
-          <dt className="text-muted-foreground">{revisionLabel}</dt>
+          <dt className="text-xs font-medium text-muted-foreground">{revisionLabel}</dt>
           <dd className="min-w-0 wrap-anywhere">
             <Identifier value={revision} />
           </dd>
@@ -493,10 +495,25 @@ export type OperationResultProps = {
   if (outcome.outcome === "invalid") return <InvalidReceipt outcome={outcome} title={title} headingLevel={headingLevel} fieldLabels={fieldLabels} className={className} />;
   const { summary, details } = receiptBody(outcome, { run, onCheckResult, onRetrySameWork, onReapply, perItemColumns, renderItemAction, fieldLabels });
   const Heading = RECEIPT_HEADING_TAG[headingLevel];
+  const outcomeIcon: { readonly variant: IconTileProps["variant"]; readonly icon: ReactElement } =
+    outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted"
+      ? { variant: "positive", icon: <CheckCircle2Icon /> }
+      : outcome.outcome === "unchanged"
+        ? { variant: "soft", icon: <InfoIcon /> }
+        : outcome.outcome === "conflict" || outcome.outcome === "unknown"
+          ? { variant: "warning", icon: <TriangleAlertIcon /> }
+          : outcome.outcome === "denied"
+            ? { variant: "destructive", icon: <ShieldAlertIcon /> }
+            : outcome.outcome === "unavailable"
+              ? { variant: "destructive", icon: <CloudOffIcon /> }
+              : { variant: "destructive", icon: <AlertCircleIcon /> };
   return (
     <Card data-slot="operation-result" data-outcome={outcome.outcome} className={cn("min-w-0", className)}>
-      <CardHeader>
-        <CardTitle>
+      <CardHeader className="border-b border-border/70">
+        <CardTitle className="flex items-center gap-2.5">
+          <IconTile variant={outcomeIcon.variant} size="sm">
+            {outcomeIcon.icon}
+          </IconTile>
           <Heading id={titleId} className={RECEIPT_HEADING_SCALE[RECEIPT_HEADING_TAG[headingLevel]]}>
             {title}
           </Heading>

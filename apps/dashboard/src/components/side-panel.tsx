@@ -118,8 +118,8 @@ export function SidePanel(props: SidePanelProps) {
   }
   if (!open) return null;
   return (
-    <aside ref={panelRef} data-slot="side-panel" data-side-panel="desktop" aria-labelledby={titleId} className={cn("flex w-full min-w-0 shrink-0 flex-col border-s border-border bg-card text-card-foreground lg:sticky lg:top-0 lg:max-h-dvh lg:w-96 lg:self-start", className)}>
-      <div className={"flex items-start justify-between gap-2 border-b border-border px-4 py-3"}>
+    <aside ref={panelRef} data-slot="side-panel" data-side-panel="desktop" aria-labelledby={titleId} className={cn("flex w-full min-w-0 shrink-0 flex-col rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm lg:sticky lg:top-0 lg:max-h-dvh lg:w-96 lg:self-start", className)}>
+      <div className={"flex items-start justify-between gap-2 rounded-t-2xl border-b border-border/80 bg-surface-subtle px-4 py-3"}>
         <h2 id={titleId} ref={headingRef} tabIndex={-1} className={"min-w-0 break-words type-group-title text-muted-foreground"}>
           {title}
         </h2>

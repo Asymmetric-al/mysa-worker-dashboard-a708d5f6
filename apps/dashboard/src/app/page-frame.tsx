@@ -22,8 +22,8 @@ export function ReadNotices({ failure, copy, className }: { readonly failure: Re
 export const PageColumn = ({ children, gap = 6 }: { readonly children: ReactNode; readonly gap?: 4 | 6 }): ReactElement => <div className={gap === 4 ? "flex min-w-0 flex-col gap-4 text-start" : "flex min-w-0 flex-col gap-6 text-start"}>{children}</div>;
 export type PageHeadingContent = { readonly title: string; readonly paragraphs?: readonly string[] };
 /** The heading block a page opens with: the one `h1` of the route and the sentences that state what the surface holds. */ export const PageHeading = ({ title, paragraphs }: PageHeadingContent): ReactElement => (
-  <div className="flex min-w-0 flex-col gap-2">
-    <h1 className="type-page-title text-pretty wrap-anywhere">{title}</h1>
+  <div className="flex min-w-0 flex-col gap-2 border-b border-border/70 pb-4">
+    <h1 className="type-page-title text-balance wrap-anywhere tracking-tight">{title}</h1>
     {(paragraphs ?? []).map((paragraph) => (
       <p key={paragraph} className="type-supporting max-w-prose text-pretty">
         {paragraph}
@@ -34,9 +34,11 @@ export type PageHeadingContent = { readonly title: string; readonly paragraphs?:
 /** The frame a route surface opens with: the section that names itself by the route's one `h1`, that heading, and the column the surface lays out in. A surface whose reading direction is the content's own states it here, so the whole frame — not only its text — reads in that direction. */
 export const PageSurface = ({ headingId, title, dir, children }: { readonly headingId: string; readonly title: string; readonly dir?: string; readonly children: ReactNode }): ReactElement => (
   <section aria-labelledby={headingId} {...(dir === undefined ? {} : { dir })} className="flex min-w-0 flex-col gap-6 text-start">
-    <h1 id={headingId} className="type-page-title text-pretty wrap-anywhere">
-      {title}
-    </h1>
+    <div className="border-b border-border/70 pb-4">
+      <h1 id={headingId} className="type-page-title text-balance wrap-anywhere tracking-tight">
+        {title}
+      </h1>
+    </div>
     {children}
   </section>
 );

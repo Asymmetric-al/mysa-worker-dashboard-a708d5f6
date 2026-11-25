@@ -6,6 +6,7 @@ import SimulationLabel, { type SimulatedEffect } from "@/components/simulation-l
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Frame, FramePanel } from "@/components/ui/frame";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import type { MutationInput } from "@/modules/data-service/envelope";
@@ -83,83 +84,87 @@ export function ActionReview<P = unknown>({ title, description, consequence, con
   const Heading = STEP_HEADING_TAG[headingLevel];
   return (
     <section aria-labelledby={titleId} aria-busy={pending ? true : undefined} data-slot="action-review" data-state={state} data-operation-id={operationId ?? undefined} className={cn("flex min-w-0 flex-col gap-4", className)}>
-      <Card className="min-w-0">
-        <CardHeader>
-          <CardTitle>
-            <Heading id={titleId} className={STEP_HEADING_SCALE[STEP_HEADING_TAG[headingLevel]]}>
-              {title}
-            </Heading>
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex min-w-0 flex-col gap-4">
-          {description === undefined ? null : <div className="min-w-0 text-sm text-pretty text-muted-foreground">{description}</div>}
-          {selection === undefined ? null : <SelectionSummary selection={selection} />}
-          {children === undefined ? null : (
-            <div data-slot="action-review-choice" className="flex min-w-0 flex-col gap-3">
-              {children}
-            </div>
-          )}
-          <p className="text-sm text-pretty text-muted-foreground">{CONTAINMENT_SENTENCE}</p>
-          {simulationEffect === undefined ? null : <SimulationLabel effect={simulationEffect} />}
-          <Separator />
-          {settled ? (
-            <p className="text-sm text-pretty text-muted-foreground">{SETTLED_SENTENCE}</p>
-          ) : (
-            <>
-              {nothingSelected ? (
-                <p id={emptySelectionId} className="text-sm text-pretty text-muted-foreground">
-                  {NOTHING_SELECTED_SENTENCE}
-                </p>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-2">
-                {consequential ? (
-                  <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                    <AlertDialogTrigger render={<Button type="button" variant="destructive" disabled={confirmUnavailable} aria-describedby={describedByEmptySelection} />}>{confirmText}</AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>{confirmLabel}</AlertDialogTitle>
-                        <AlertDialogDescription className="flex flex-col gap-2">
-                          <span className="font-medium text-foreground">{title}</span>
-                          <span>{"It takes effect as soon as you confirm it."}</span>
-                          {selection === undefined ? null : (
-                            <span>
-                              It applies to <bdi className={COUNT_CLASS}>{String(selection.count)}</bdi> selected {selection.noun}
-                              {(selection.excluded ?? 0) <= 0 ? null : (
-                                <>
-                                  ; <bdi className={COUNT_CLASS}>{String(selection.excluded ?? 0)}</bdi> excluded {selection.noun} are left unchanged
-                                </>
+      <Frame spacing="flush">
+        <FramePanel>
+          <Card className="min-w-0 rounded-none border-0 shadow-none ring-0">
+            <CardHeader className="border-b border-border/70">
+              <CardTitle>
+                <Heading id={titleId} className={STEP_HEADING_SCALE[STEP_HEADING_TAG[headingLevel]]}>
+                  {title}
+                </Heading>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex min-w-0 flex-col gap-4">
+              {description === undefined ? null : <div className="min-w-0 text-sm text-pretty text-muted-foreground">{description}</div>}
+              {selection === undefined ? null : <SelectionSummary selection={selection} />}
+              {children === undefined ? null : (
+                <div data-slot="action-review-choice" className="flex min-w-0 flex-col gap-3">
+                  {children}
+                </div>
+              )}
+              <p className="text-sm text-pretty text-muted-foreground">{CONTAINMENT_SENTENCE}</p>
+              {simulationEffect === undefined ? null : <SimulationLabel effect={simulationEffect} />}
+              <Separator />
+              {settled ? (
+                <p className="text-sm text-pretty text-muted-foreground">{SETTLED_SENTENCE}</p>
+              ) : (
+                <>
+                  {nothingSelected ? (
+                    <p id={emptySelectionId} className="text-sm text-pretty text-muted-foreground">
+                      {NOTHING_SELECTED_SENTENCE}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {consequential ? (
+                      <AlertDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                        <AlertDialogTrigger render={<Button type="button" variant="destructive" disabled={confirmUnavailable} aria-describedby={describedByEmptySelection} />}>{confirmText}</AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{confirmLabel}</AlertDialogTitle>
+                            <AlertDialogDescription className="flex flex-col gap-2">
+                              <span className="font-medium text-foreground">{title}</span>
+                              <span>{"It takes effect as soon as you confirm it."}</span>
+                              {selection === undefined ? null : (
+                                <span>
+                                  It applies to <bdi className={COUNT_CLASS}>{String(selection.count)}</bdi> selected {selection.noun}
+                                  {(selection.excluded ?? 0) <= 0 ? null : (
+                                    <>
+                                      ; <bdi className={COUNT_CLASS}>{String(selection.excluded ?? 0)}</bdi> excluded {selection.noun} are left unchanged
+                                    </>
+                                  )}
+                                  .
+                                </span>
                               )}
-                              .
-                            </span>
-                          )}
-                          <span>{CONTAINMENT_SENTENCE}</span>
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      {consequence === undefined ? null : <div className="min-w-0 text-sm text-pretty">{consequence}</div>}
-                      {simulationEffect === undefined ? null : <SimulationLabel effect={simulationEffect} context="block" />}
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
-                        <AlertDialogAction confirmVariant="destructive" onClick={confirm}>
-                          {confirmLabel}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                ) : (
-                  <Button type="button" disabled={confirmUnavailable} aria-describedby={describedByEmptySelection} onClick={confirm}>
-                    {confirmText}
-                  </Button>
-                )}
-                {onCancel === undefined ? null : (
-                  <Button type="button" variant="outline" disabled={pending} onClick={onCancel}>
-                    {cancelLabel}
-                  </Button>
-                )}
-              </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+                              <span>{CONTAINMENT_SENTENCE}</span>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          {consequence === undefined ? null : <div className="min-w-0 text-sm text-pretty">{consequence}</div>}
+                          {simulationEffect === undefined ? null : <SimulationLabel effect={simulationEffect} context="block" />}
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{cancelLabel}</AlertDialogCancel>
+                            <AlertDialogAction confirmVariant="destructive" onClick={confirm}>
+                              {confirmLabel}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    ) : (
+                      <Button type="button" disabled={confirmUnavailable} aria-describedby={describedByEmptySelection} onClick={confirm}>
+                        {confirmText}
+                      </Button>
+                    )}
+                    {onCancel === undefined ? null : (
+                      <Button type="button" variant="outline" disabled={pending} onClick={onCancel}>
+                        {cancelLabel}
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </FramePanel>
+      </Frame>
       {current === null ? null : (
         <div ref={resultRef} tabIndex={-1} data-slot="action-review-result" data-outcome={current.outcome} className="flex min-w-0 flex-col gap-3">
           {simulationEffect === undefined ? null : <SimulationLabel effect={simulationEffect} context="block" />}

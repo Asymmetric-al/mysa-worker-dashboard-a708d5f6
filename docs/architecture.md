@@ -12,7 +12,7 @@ It holds five records:
 - the future-connection seam map, one entry per later owner (section 7);
 - the media fixtures' provenance and licence, and the measurement method with its results (sections 8 and 9).
 
-Everything else about the build lives in [`../README.md`](../README.md): commands and pinned versions, the dependency-to-job table, the seeded personas and session states, the development runtime, the simulated-effect labels, the divergences record, the known limitations and the named assumptions. Those two files are the only documentation deliverables.
+Everything else about the build lives in [`../README.md`](../README.md): commands and pinned versions, the dependency-to-job table, the seeded personas and session states, the development runtime, the simulated-effect labels, the divergences record, the known limitations and the named assumptions. The UI component system, ReUI Data Grid architecture, and accessibility/motion invariants for the dashboard interface are documented in [`./ui-system-guide.md`](./ui-system-guide.md).
 
 The application is one Next.js 16 App Router package in a Bun workspace, with one typed in-process data service over a file-backed synthetic store. No external service is integrated in this build. Every external effect is simulated and labelled at the point the user triggers it.
 

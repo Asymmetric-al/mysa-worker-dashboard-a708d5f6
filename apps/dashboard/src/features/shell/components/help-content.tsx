@@ -1,14 +1,21 @@
 "use client";
 import Link from "next/link";
-import type { ReactElement, ReactNode } from "react";
+import { SearchIcon, XIcon } from "lucide-react";
+import { useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { PRIMARY_NAV } from "@/components/sidebar-nav";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants, BUTTON_WRAP_CLASS } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/components/ui/input-group";
+import { Label } from "@/components/ui/label";
 import SectionCard from "@/components/section-card";
+import StateNotice from "@/components/state-notice";
 import { Separator } from "@/components/ui/separator";
+import { normaliseSearchQuery } from "@/lib/command-search";
 import { cn } from "@/lib/cn";
 import { CHOOSER_COPY, CONTEXT_SWITCH_COPY, LATE_RESULT_DISCARDED } from "../copy/context-switch";
 import { RESET_COPY } from "../copy/dev-labels";
 import { NO_ACCESS_RECOVERY, SESSION_STATE_COPY } from "../copy/session-states";
+
 const SECTION_IDS = { session: "help-getting-in", context: "help-context", settings: "help-settings", development: "help-development-data", destinations: "help-destinations" } as const;
 const NON_ADMITTED_STATES = ["unavailable", "denied", "expired", "no-access"] as const satisfies readonly (keyof typeof SESSION_STATE_COPY)[];
 type SessionStateSection = { readonly key: (typeof NON_ADMITTED_STATES)[number]; readonly title: string; readonly body: string; readonly steps: readonly string[] };
@@ -62,88 +69,214 @@ const DESTINATION_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "/coaching": "Your own preparation, targets and check-ins, and the modules you share with a coach for a stated time. A coach reads only what has been shared, and only until that sharing ends.",
 };
 const DESTINATIONS: readonly { readonly href: string; readonly label: string; readonly description: string }[] = PRIMARY_NAV.filter((item) => (item.section ?? "primary") === "primary").map((item) => ({ href: item.href, label: item.label, description: DESTINATION_DESCRIPTIONS[item.href] ?? "" }));
+
+const SECTION_SEARCH_INDEX: Readonly<Record<keyof typeof SECTION_IDS, string>> = {
+  session: [
+    "Getting in and session states",
+    SESSION_INTRO,
+    ...SESSION_STATE_SECTIONS.flatMap((entry) => [entry.title, entry.body, ...entry.steps]),
+  ].join(" ").toLowerCase(),
+  context: [
+    "Choosing and switching context",
+    CHOOSER_COPY.body,
+    CHOOSER_COPY.oneMinistryNote,
+    CONTEXT_SWITCH_COPY.title,
+    CONTEXT_SWITCH_COPY.body,
+    ...SWITCH_CHOICES.flatMap((choice) => [choice.label, choice.note]),
+    CONTEXT_SWITCH_COPY.conflictNote,
+    LATE_RESULT_DISCARDED,
+  ].join(" ").toLowerCase(),
+  settings: [
+    "Settings and its preferences",
+    SETTINGS_INTRO,
+    ...SETTING_FACTS.flatMap((fact) => [fact.heading, fact.body]),
+  ].join(" ").toLowerCase(),
+  development: [
+    "The synthetic dataset and where each effect is labelled",
+    DEVELOPMENT_INTRO,
+    DEVELOPMENT_LABEL_POINTER,
+    ...SIMULATED_BOUNDARIES.flatMap((boundary) => [boundary.name, boundary.where]),
+  ].join(" ").toLowerCase(),
+  destinations: [
+    "Where each job begins",
+    ...DESTINATIONS.flatMap((destination) => [destination.label, destination.description]),
+  ].join(" ").toLowerCase(),
+};
+
+const QUICK_JUMP: readonly { readonly key: keyof typeof SECTION_IDS; readonly label: string }[] = [
+  { key: "session", label: "Session states" },
+  { key: "context", label: "Context switching" },
+  { key: "settings", label: "Settings" },
+  { key: "development", label: "Synthetic dataset" },
+  { key: "destinations", label: "Destinations" },
+];
+
 const HelpSection = ({ id, title, description, contentClass, children }: { readonly id: string; readonly title: string; readonly description: string; readonly contentClass: string; readonly children: ReactNode }): ReactElement => (
   <SectionCard {...{ title, headingLevel: 3, headingId: id, description, contentClassName: contentClass, region: { id, className: "min-w-0" } }}>{children}</SectionCard>
 );
+
 export type HelpContentProps = { readonly className?: string };
-export const HelpContent = ({ className }: HelpContentProps): ReactElement => (
-  <div className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
-    <HelpSection id={SECTION_IDS.session} title="Getting in and session states" description={SESSION_INTRO} contentClass="flex min-w-0 flex-col gap-5">
-      {SESSION_STATE_SECTIONS.map((state, index) => (
-        <div key={state.key} className="flex min-w-0 flex-col gap-2">
-          {index === 0 ? null : <Separator />}
-          <h4 className="type-group-title">{state.title}</h4>
-          <p className="type-supporting text-pretty wrap-anywhere">{state.body}</p>
-          {state.steps.length === 0 ? null : (
-            <>
-              <p className="text-sm font-medium">What you can do</p>
-              <ol className="flex list-decimal flex-col gap-1.5 ps-5 type-supporting text-pretty wrap-anywhere">
-                {state.steps.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-            </>
-          )}
-        </div>
-      ))}
-    </HelpSection>
-    <HelpSection id={SECTION_IDS.context} title="Choosing and switching context" description={CHOOSER_COPY.body} contentClass="flex min-w-0 flex-col gap-4">
-      <p className="type-supporting text-pretty wrap-anywhere">{CHOOSER_COPY.oneMinistryNote}</p>
-      <Separator />
-      <h4 className="type-group-title">{CONTEXT_SWITCH_COPY.title}</h4>
-      <p className="type-supporting text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.body}</p>
-      <dl className="flex min-w-0 flex-col gap-3">
-        {SWITCH_CHOICES.map((choice) => (
-          <div key={choice.label} className="flex min-w-0 flex-col gap-1">
-            <dt className="text-sm font-medium">{choice.label}</dt>
-            <dd className="type-supporting text-pretty wrap-anywhere">{choice.note}</dd>
+
+/** Searchable Help & FAQ surface inspired by Shadcn Space `accordion-11` while keeping every reference section visible by default. */
+export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
+  const searchId = useId();
+  const [filterText, setFilterText] = useState("");
+  const normalised = normaliseSearchQuery(filterText);
+
+  const visibleKeys = useMemo(() => {
+    const allKeys = Object.keys(SECTION_IDS) as (keyof typeof SECTION_IDS)[];
+    if (normalised === "") return new Set(allKeys);
+    const tokens = normalised.split(" ");
+    return new Set(allKeys.filter((key) => tokens.every((token) => SECTION_SEARCH_INDEX[key].includes(token))));
+  }, [normalised]);
+
+  return (
+    <div className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
+      <section aria-label="Filter help topics" data-slot="help-search-bar" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-surface-subtle p-3.5 sm:p-4">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="min-w-48 flex-1">
+            <Label htmlFor={searchId} className="sr-only">
+              Search help topics
+            </Label>
+            <InputGroup>
+              <InputGroupAddon align="inline-start">
+                <SearchIcon aria-hidden="true" />
+              </InputGroupAddon>
+              <InputGroupInput
+                id={searchId}
+                type="search"
+                value={filterText}
+                placeholder="Filter help topics (e.g. session, time zone, simulated, reset)…"
+                autoComplete="off"
+                onChange={(event) => setFilterText(event.target.value)}
+              />
+              {filterText.length === 0 ? null : (
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton size="icon-xs" variant="ghost" aria-label="Clear help search" onClick={() => setFilterText("")}>
+                    <XIcon aria-hidden="true" />
+                  </InputGroupButton>
+                </InputGroupAddon>
+              )}
+            </InputGroup>
           </div>
-        ))}
-      </dl>
-      <p className="type-supporting text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.conflictNote}</p>
-      <p className="type-supporting text-pretty wrap-anywhere">{LATE_RESULT_DISCARDED}</p>
-    </HelpSection>
-    <HelpSection id={SECTION_IDS.settings} title="Settings and its preferences" description={SETTINGS_INTRO} contentClass="flex min-w-0 flex-col gap-4">
-      {SETTING_FACTS.map((fact, index) => (
-        <div key={fact.heading} className="flex min-w-0 flex-col gap-2">
-          {index === 0 ? null : <Separator />}
-          <h4 className="type-group-title">{fact.heading}</h4>
-          <p className="type-supporting text-pretty wrap-anywhere">{fact.body}</p>
+          <Badge variant="secondary" className="tabular-figures">
+            {`${String(visibleKeys.size)} of ${String(QUICK_JUMP.length)} topics`}
+          </Badge>
         </div>
-      ))}
-    </HelpSection>
-    <HelpSection id={SECTION_IDS.development} title="The synthetic dataset and where each effect is labelled" description={DEVELOPMENT_INTRO} contentClass="flex min-w-0 flex-col gap-4">
-      <p className="type-supporting text-pretty wrap-anywhere">{DEVELOPMENT_LABEL_POINTER}</p>
-      <Separator />
-      <h4 className="type-group-title">Where an effect is labelled</h4>
-      <p className="type-supporting text-pretty wrap-anywhere">{"Five effects would leave this application in production, and none of them does. Each is labelled where it is triggered — beside the control that triggers it, and again on the result that follows — and each label states what did not happen."}</p>
-      <dl className="flex min-w-0 flex-col gap-3">
-        {SIMULATED_BOUNDARIES.map((boundary) => (
-          <div key={boundary.name} className="flex min-w-0 flex-col gap-1">
-            <dt className="text-sm font-medium">{boundary.name}</dt>
-            <dd className="type-supporting text-pretty wrap-anywhere">{boundary.where}</dd>
-          </div>
-        ))}
-      </dl>
-      <Separator />
-      <p className="type-supporting text-pretty wrap-anywhere">{"An accepted notification is not a message that was delivered or read, a release is not a delivery, a completed task proves nothing about contact, and a commitment is not received money. Each surface states which of those it is reporting."}</p>
-    </HelpSection>
-    <HelpSection id={SECTION_IDS.destinations} title="Where each job begins" description="Each retained workflow begins at one of these destinations, and each destination is the shell's own entry for it, listed in the navigation's order." contentClass="flex min-w-0 flex-col gap-4">
-      <nav aria-label="Workflow destinations" className="min-w-0">
-        <ul className="flex min-w-0 flex-col gap-4">
-          {DESTINATIONS.map((destination) => (
-            <li key={destination.href} className="flex min-w-0 flex-col gap-2">
-              <h4 className="type-group-title flex min-w-0 flex-wrap items-center">
-                <Link {...{ href: destination.href, "data-slot": "button", className: cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS) }}>{destination.label}</Link>
-              </h4>
-              {destination.description === "" ? null : <p className="type-supporting text-pretty wrap-anywhere">{destination.description}</p>}
-            </li>
+        <nav aria-label="Jump to help section" className="flex flex-wrap items-center gap-1.5">
+          {QUICK_JUMP.filter((item) => visibleKeys.has(item.key)).map((item) => (
+            <a
+              key={item.key}
+              href={`#${SECTION_IDS[item.key]}`}
+              className="inline-flex min-h-7 items-center rounded-4xl border border-border/80 bg-card px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
+            >
+              {item.label}
+            </a>
           ))}
-        </ul>
-      </nav>
-      <Separator />
-      <p className="type-supporting text-pretty wrap-anywhere">Settings and Help sit together at the foot of the same rail, below its rule, and keep that position on every screen. A destination that has sub-surfaces shows them beneath it in the rail.</p>
-    </HelpSection>
-  </div>
-);
+        </nav>
+      </section>
+
+      {visibleKeys.size === 0 ? (
+        <StateNotice
+          kind="empty"
+          headingLevel={3}
+          title="No help topic matches that search"
+          description="Try a broader term such as session, context, settings, or dataset, or clear the search to read all five reference sections."
+          action={{ label: "Clear search", onClick: () => setFilterText("") }}
+        />
+      ) : null}
+
+      {visibleKeys.has("session") ? (
+        <HelpSection id={SECTION_IDS.session} title="Getting in and session states" description={SESSION_INTRO} contentClass="flex min-w-0 flex-col gap-5">
+          {SESSION_STATE_SECTIONS.map((state, index) => (
+            <div key={state.key} className="flex min-w-0 flex-col gap-2">
+              {index === 0 ? null : <Separator />}
+              <h4 className="type-group-title">{state.title}</h4>
+              <p className="type-supporting text-pretty wrap-anywhere">{state.body}</p>
+              {state.steps.length === 0 ? null : (
+                <>
+                  <p className="text-sm font-medium">What you can do</p>
+                  <ol className="flex list-decimal flex-col gap-1.5 ps-5 type-supporting text-pretty wrap-anywhere">
+                    {state.steps.map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                  </ol>
+                </>
+              )}
+            </div>
+          ))}
+        </HelpSection>
+      ) : null}
+
+      {visibleKeys.has("context") ? (
+        <HelpSection id={SECTION_IDS.context} title="Choosing and switching context" description={CHOOSER_COPY.body} contentClass="flex min-w-0 flex-col gap-4">
+          <p className="type-supporting text-pretty wrap-anywhere">{CHOOSER_COPY.oneMinistryNote}</p>
+          <Separator />
+          <h4 className="type-group-title">{CONTEXT_SWITCH_COPY.title}</h4>
+          <p className="type-supporting text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.body}</p>
+          <dl className="flex min-w-0 flex-col gap-3">
+            {SWITCH_CHOICES.map((choice) => (
+              <div key={choice.label} className="flex min-w-0 flex-col gap-1">
+                <dt className="text-sm font-medium">{choice.label}</dt>
+                <dd className="type-supporting text-pretty wrap-anywhere">{choice.note}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="type-supporting text-pretty wrap-anywhere">{CONTEXT_SWITCH_COPY.conflictNote}</p>
+          <p className="type-supporting text-pretty wrap-anywhere">{LATE_RESULT_DISCARDED}</p>
+        </HelpSection>
+      ) : null}
+
+      {visibleKeys.has("settings") ? (
+        <HelpSection id={SECTION_IDS.settings} title="Settings and its preferences" description={SETTINGS_INTRO} contentClass="flex min-w-0 flex-col gap-4">
+          {SETTING_FACTS.map((fact, index) => (
+            <div key={fact.heading} className="flex min-w-0 flex-col gap-2">
+              {index === 0 ? null : <Separator />}
+              <h4 className="type-group-title">{fact.heading}</h4>
+              <p className="type-supporting text-pretty wrap-anywhere">{fact.body}</p>
+            </div>
+          ))}
+        </HelpSection>
+      ) : null}
+
+      {visibleKeys.has("development") ? (
+        <HelpSection id={SECTION_IDS.development} title="The synthetic dataset and where each effect is labelled" description={DEVELOPMENT_INTRO} contentClass="flex min-w-0 flex-col gap-4">
+          <p className="type-supporting text-pretty wrap-anywhere">{DEVELOPMENT_LABEL_POINTER}</p>
+          <Separator />
+          <h4 className="type-group-title">Where an effect is labelled</h4>
+          <p className="type-supporting text-pretty wrap-anywhere">{"Five effects would leave this application in production, and none of them does. Each is labelled where it is triggered — beside the control that triggers it, and again on the result that follows — and each label states what did not happen."}</p>
+          <dl className="flex min-w-0 flex-col gap-3">
+            {SIMULATED_BOUNDARIES.map((boundary) => (
+              <div key={boundary.name} className="flex min-w-0 flex-col gap-1">
+                <dt className="text-sm font-medium">{boundary.name}</dt>
+                <dd className="type-supporting text-pretty wrap-anywhere">{boundary.where}</dd>
+              </div>
+            ))}
+          </dl>
+          <Separator />
+          <p className="type-supporting text-pretty wrap-anywhere">{"An accepted notification is not a message that was delivered or read, a release is not a delivery, a completed task proves nothing about contact, and a commitment is not received money. Each surface states which of those it is reporting."}</p>
+        </HelpSection>
+      ) : null}
+
+      {visibleKeys.has("destinations") ? (
+        <HelpSection id={SECTION_IDS.destinations} title="Where each job begins" description="Each retained workflow begins at one of these destinations, and each destination is the shell's own entry for it, listed in the navigation's order." contentClass="flex min-w-0 flex-col gap-4">
+          <nav aria-label="Workflow destinations" className="min-w-0">
+            <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
+              {DESTINATIONS.map((destination) => (
+                <li key={destination.href} className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs">
+                  <h4 className="type-group-title flex min-w-0 flex-wrap items-center">
+                    <Link {...{ href: destination.href, "data-slot": "button", className: cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS) }}>{destination.label}</Link>
+                  </h4>
+                  {destination.description === "" ? null : <p className="type-supporting text-pretty wrap-anywhere">{destination.description}</p>}
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <Separator />
+          <p className="type-supporting text-pretty wrap-anywhere">Settings and Help sit together at the foot of the same rail, below its rule, and keep that position on every screen. A destination that has sub-surfaces shows them beneath it in the rail.</p>
+        </HelpSection>
+      ) : null}
+    </div>
+  );
+};
 export default HelpContent;
