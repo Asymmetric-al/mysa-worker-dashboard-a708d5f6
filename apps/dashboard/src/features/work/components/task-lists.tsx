@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { PlusIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useId, useMemo, useState, type ReactElement, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import RecordList, { type RecordListColumnDef, type RecordListQueryState } from "@/components/record-list";
 import { StateNotice } from "@/components/state-notice";
 import StatusBadge from "@/components/status-badge";
@@ -18,7 +18,6 @@ import { groupTasksByStatus } from "@/lib/task-board";
 import type { Scope, TaskRecord } from "@/modules/data-service/envelope";
 import { PAGE_SIZE_CAP, PAGE_SIZE_DEFAULT } from "@/modules/support/report";
 import { parseCivilDate, serialiseCivilDate } from "@/modules/time/civil";
-import { BULK_SELECTION_SCOPE_NOTE } from "../copy/bulk-actions";
 import { CATEGORY_LABEL, CATEGORY_STATE_LABELS, DUE_DATE_LABEL, PLANNED_MEETING_LABEL, PLANNED_VERSUS_HELD_NOTE, TASK_KIND_LABELS, TASK_LIST_KEYS, TASK_LIST_LABELS, TASK_STATUS_LABELS, UNDATED_LABEL, type TaskListKey } from "../copy/task-status";
 import { useTaskLists, type TaskListsQuery, type TaskListsResult } from "../hooks/use-task-lists";
 import BulkActionBar, { type BulkSelectionRow } from "./bulk-action-bar";
@@ -49,13 +48,13 @@ const SECTION_CLASS = "flex min-w-0 flex-col gap-3";
 const QUIET_CLASS = "type-supporting text-pretty";
 const LIST_BODY_CLASS = "flex min-w-0 flex-col gap-3";
 const EMPTY_LIST_COPY: Readonly<Record<TaskListKey, { readonly title: string; readonly description: string }>> = {
-  today: { title: "Nothing is due today", description: "No open task in this context is dated today. Later work is read in Upcoming, work with no date in Undated, and a task that passed its date without an answer in Overdue." },
-  upcoming: { title: "Nothing is dated ahead", description: "Every open task in this context is dated today or earlier. Work with no date is read in Undated rather than listed here." },
-  overdue: { title: "Nothing is past its date", description: "No open task in this context has passed its date, so no task is waiting on an answer here." },
-  all: { title: "This context holds no task", description: "No task exists in this context yet — open, completed, reopened or cancelled — so there is nothing to complete, reopen, edit or cancel." },
-  undated: { title: "No task is undated", description: "Every task in this context states a due date, so the work that has no date is a list of its own and holds nothing." },
+  today: { title: "All caught up for today", description: "Nothing is due today. Check Upcoming for what’s ahead or Overdue for anything past due." },
+  upcoming: { title: "Nothing scheduled ahead", description: "No open tasks are dated after today. Tasks without a due date live in Undated." },
+  overdue: { title: "Nothing overdue", description: "You’re caught up — no open tasks are past their due date." },
+  all: { title: "No tasks yet", description: "Create your first task to track calls, emails, thank-yous, or partner follow-ups." },
+  undated: { title: "No undated tasks", description: "All of your tasks have due dates right now." },
 };
-const LIST_DENIED_DESCRIPTION = "This session may not read this list in the context it is working in, so no row and no count is stated here. Another context, if this session holds one, can be chosen from the shell.";
+const LIST_DENIED_DESCRIPTION = "Your current session doesn’t have access to this task list. If you belong to another ministry, switch to it from the header.";
 const NO_IDS: readonly string[] = [];
 const overLists = <T,>(valueOf: (list: TaskListKey) => T): Readonly<Record<TaskListKey, T>> => Object.fromEntries(TASK_LIST_KEYS.map((list) => [list, valueOf(list)])) as Readonly<Record<TaskListKey, T>>;
 const listNameOf = (stated: string | null): TaskListKey => TASK_LIST_KEYS.find((list) => list === stated) ?? "all";
@@ -139,7 +138,7 @@ function linkedRecordOf(row: TaskListRow, partnerLabels: Readonly<Record<string,
     return (
       <span className={MUTED_TEXT_CLASS}>
         <span aria-hidden="true">{"—"}</span>
-        <span className="sr-only">{"No linked record"}</span>
+        <span className="sr-only">{"Not linked"}</span>
       </span>
     );
   }
@@ -184,7 +183,7 @@ export const taskListColumns = ({ partnerLabels }: TaskListColumnOptions): Reado
       const { tags } = context.row.original;
       // A private tag is stated only to the principal who applied it, and the read has already kept the ones this session may see; no tag is a fact of its own, never an empty cell.
       return tags.length === 0 ? (
-        <span className={MUTED_TEXT_CLASS}>{"No private tag"}</span>
+        <span className={MUTED_TEXT_CLASS}>{"None"}</span>
       ) : (
         <span className={TAG_CHIP_GROUP_CLASS}>
           {tags.map((tag) => (
@@ -198,7 +197,7 @@ export const taskListColumns = ({ partnerLabels }: TaskListColumnOptions): Reado
   },
   {
     id: "kind",
-    header: "Kind",
+    header: "Type",
     enableSorting: false,
     cell: (context) => {
       const { kind, plannedTime, timeZone } = context.row.original;
@@ -216,7 +215,7 @@ export const taskListColumns = ({ partnerLabels }: TaskListColumnOptions): Reado
       );
     },
   },
-  { id: "linked", header: "Linked record", enableSorting: false, cell: (context) => linkedRecordOf(context.row.original, partnerLabels) },
+  { id: "linked", header: "Linked to", enableSorting: false, cell: (context) => linkedRecordOf(context.row.original, partnerLabels) },
 ];
 type TaskViewMode = "table" | "board";
 const TASK_VIEW_OPTIONS: readonly SegmentedOption<TaskViewMode>[] = [
@@ -249,7 +248,8 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
   const [columnVisibility, setColumnVisibility] = useState<RecordListQueryState["columnVisibility"]>({});
   const [viewMode, setViewMode] = useState<TaskViewMode>("table");
   const [selection, setSelection] = useState<SelectionState>(NO_SELECTION);
-  const [editor, setEditor] = useState<{ readonly mode: "create" } | { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] } | null>(null);
+  const [editor, setEditor] = useState<{ readonly mode: "create"; readonly session: number } | { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[]; readonly session: number } | null>(null);
+  const editorSessionRef = useRef(0);
   // The one receipt a row action publishes, held by the list rather than by the row: completing a task takes its row out of every list that reads only open work, so a result the row owned would leave with it, and a list left empty would state nothing at all about the accepted change.
   const [receipt, setReceipt] = useState<TaskActionReceipt | null>(null);
   const query = ((parameters: SearchParameters): ListQueryState => ({ list: listNameOf(parameters.get(PARAM.list)), sort: sortInstructionsOf(parameters.getAll(PARAM.sort)), page: wholeNumberOf(parameters.get(PARAM.page)) ?? FIRST_PAGE, pageSize: pageSizeOf(parameters.get(PARAM.pageSize)) }))(searchParameters);
@@ -293,23 +293,28 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
   };
   const handleSelectionChange = (ids: readonly string[]): void => setSelection({ signature, ids });
   const clearSelection = (): void => setSelection({ signature, ids: NO_IDS });
-  const openCreate = (): void => setEditor({ mode: "create" });
+  const openCreate = (): void => {
+    editorSessionRef.current += 1;
+    setEditor({ mode: "create", session: editorSessionRef.current });
+  };
   const openEdit = (row: TaskListRow): void => {
     const record = editableTaskRecord(row, scope);
-    if (record !== null) setEditor({ mode: "edit", record, tags: row.tags });
+    if (record === null) return;
+    editorSessionRef.current += 1;
+    setEditor({ mode: "edit", record, tags: row.tags, session: editorSessionRef.current });
   };
   const closeEditor = (): void => setEditor(null);
   function listContent(): ReactNode {
     const name = TASK_LIST_LABELS[query.list];
-    const retry = { label: "Try this list again", onClick: () => void active.refetch() };
+    const retry = { label: "Try again", onClick: () => void active.refetch() };
     if (reading === undefined) {
-      if (active.isError) return <StateNotice kind="unavailable" headingLevel={3} title={`The ${name} list could not be read`} description="This page's request for the list did not answer, so nothing is shown in its place. Retry the list, and reset the development data if it keeps failing." retry={retry} />;
-      return <StateNotice kind="loading" headingLevel={3} title={`Reading the ${name} list`} loadingLines={4} />;
+      if (active.isError) return <StateNotice kind="unavailable" headingLevel={3} title={`Couldn’t load ${name.toLowerCase()} tasks`} description="We couldn’t reach the task list right now. Try again in a moment." retry={retry} />;
+      return <StateNotice kind="loading" headingLevel={3} title={`Loading ${name.toLowerCase()} tasks…`} loadingLines={4} />;
     }
-    if (reading.kind === "denied") return <StateNotice kind="denied" headingLevel={3} title={`The ${name} list is not available in this context`} description={LIST_DENIED_DESCRIPTION} reasonCode={reading.denied.reasonCode} />;
-    if (reading.kind === "unavailable") return <StateNotice kind="unavailable" headingLevel={3} title={`The ${name} list could not be read`} description={reading.unavailable.guidance} source={reading.unavailable.source} retry={retry} />;
+    if (reading.kind === "denied") return <StateNotice kind="denied" headingLevel={3} title={`${name} tasks aren’t available`} description={LIST_DENIED_DESCRIPTION} reasonCode={reading.denied.reasonCode} />;
+    if (reading.kind === "unavailable") return <StateNotice kind="unavailable" headingLevel={3} title={`Couldn’t load ${name.toLowerCase()} tasks`} description={reading.unavailable.guidance} source={reading.unavailable.source} retry={retry} />;
     if (reading.kind === "refused")
-      return <StateNotice kind="refused" headingLevel={3} title={`The request for the ${name} list was refused`} description="This surface states only the list, the display time zone and a page size the read admits, so a request it refuses is answered here in its own words. The source behind it did not fail." />;
+      return <StateNotice kind="refused" headingLevel={3} title={`Couldn’t load ${name.toLowerCase()} tasks`} description="Adjust the view parameters and try again." />;
     const { tasks, total } = reading.envelope.data;
     // This list's own notice for a result holding no task is handed to the one table pattern rather than returned in the list's place, so a list that holds nothing still states its total and its page size as every list holding rows does.
     const emptyState = <StateNotice kind="empty" headingLevel={3} title={EMPTY_LIST_COPY[query.list].title} description={EMPTY_LIST_COPY[query.list].description} action={{ label: NEW_TASK_LABEL, onClick: openCreate }} />;
@@ -320,9 +325,9 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
       return (
         <div data-slot="task-status-board" className="flex min-w-0 flex-col gap-3">
           <p className="text-xs text-muted-foreground">
-            {`Showing ${String(tasks.length)} of ${String(total)} ${TASK_NOUN} on this page grouped by status — use each card's action controls to update status without dragging.`}
+            {`Showing ${String(tasks.length)} of ${String(total)} ${TASK_NOUN} grouped by status — use each card’s menu to complete, reopen, edit, or cancel.`}
           </p>
-          <div className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid min-w-0 gap-3 @2xl/main:grid-cols-2 @5xl/main:grid-cols-4">
             {statusColumns.map((column) => (
               <section key={column.status} aria-label={`${TASK_STATUS_LABELS[column.status]} tasks`} className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-3">
                 <header className="flex items-center justify-between gap-2 border-b border-border/70 pb-2">
@@ -332,7 +337,7 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
                   </Badge>
                 </header>
                 {column.items.length === 0 ? (
-                  <p className="py-4 text-center text-xs text-muted-foreground">No task in this lane on this page.</p>
+                  <p className="py-4 text-center text-xs text-muted-foreground">No tasks here.</p>
                 ) : (
                   <ul className="flex min-w-0 flex-col gap-2">
                     {column.items.map((row) => (
@@ -443,21 +448,19 @@ export default function TaskLists({ scope, expectedRevision, lists, displayTimeZ
             <PlusIcon aria-hidden="true" data-icon="inline-start" />
             {NEW_TASK_LABEL}
           </Button>
-          <p className={cn(QUIET_CLASS, "max-w-prose")}>{"A task needs only a title. Linking a partner or planning a time changes nothing else, and no task here sends a message or creates a stewardship obligation."}</p>
+          <p className={cn(QUIET_CLASS, "max-w-prose")}>{"Only a title is required — due date, linked partner, and notes are optional."}</p>
         </div>
       ) : editor.mode === "create" ? (
-        <TaskComposer mode="create" scope={scope} expectedRevision={expectedRevision} initialValues={initialValues} timeZoneChoices={timeZoneChoices} defaultTimeZone={displayTimeZone} linkChoices={linkChoices} headingLevel={2} onCancel={closeEditor} onDismiss={closeEditor} />
+        <TaskComposer key={`create-${String(editor.session)}`} mode="create" scope={scope} expectedRevision={expectedRevision} initialValues={initialValues} timeZoneChoices={timeZoneChoices} defaultTimeZone={displayTimeZone} linkChoices={linkChoices} headingLevel={2} onCancel={closeEditor} onDismiss={closeEditor} />
       ) : (
-        <TaskComposer mode="edit" record={editor.record} tags={editor.tags} scope={scope} expectedRevision={editor.record.revision} timeZoneChoices={timeZoneChoices} defaultTimeZone={displayTimeZone} linkChoices={linkChoices} headingLevel={2} onCancel={closeEditor} onDismiss={closeEditor} />
+        <TaskComposer key={`edit-${editor.record.taskId}-${String(editor.session)}`} mode="edit" record={editor.record} tags={editor.tags} scope={scope} expectedRevision={editor.record.revision} timeZoneChoices={timeZoneChoices} defaultTimeZone={displayTimeZone} linkChoices={linkChoices} headingLevel={2} onCancel={closeEditor} onDismiss={closeEditor} />
       )}
       {selectedTasks.length === 0 ? null : <BulkActionBar scope={scope} expectedRevision={expectedRevision} selectedTasks={selectedTasks} onClearSelection={clearSelection} onCheckResult={refreshAll} />}
       <div className={SECTION_CLASS}>
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-2">
-            <h2 className="type-section-title text-pretty">{"Task lists"}</h2>
-            {/* Stated once above the list switcher, so the zone the dates on screen were judged in is read before any list is, and it is the zone the read itself reports having judged them in. */}
-            <p className={cn(QUIET_CLASS, "max-w-prose")}>{`Every due date in these lists is judged in ${judgedZone}, the display time zone this browser chose in Settings, and the lists read in that same zone, so no date here is judged in two; a planned meeting still states the zone it is planned in.`}</p>
-            <p className={cn(QUIET_CLASS, "max-w-prose")}>{BULK_SELECTION_SCOPE_NOTE}</p>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <h2 className="type-section-title text-pretty">{"Your tasks"}</h2>
+            <p className={cn(QUIET_CLASS, "max-w-prose")}>{`Dates are grouped using your display time zone (${judgedZone}). Scheduled meetings keep their own time zone.`}</p>
           </div>
           <SegmentedTabs label="Task list display layout" value={viewMode} onValueChange={setViewMode} options={TASK_VIEW_OPTIONS} />
         </div>

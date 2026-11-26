@@ -11,11 +11,11 @@ import { controlAria } from "./bound-fields";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { CONTACT_METHOD_KINDS, type ContactMethodKind } from "@/modules/data-service/envelope";
 export type ContactMethodRow = { readonly rowKey: string; kind: ContactMethodKind; value: string; permitted: boolean };
-export const CONTACT_METHOD_ROW_PREFIX = "Contact method";
+export const CONTACT_METHOD_ROW_PREFIX = "Contact detail";
 export const CONTACT_METHODS_FIELD = "contactMethods";
-export const CONTACT_KIND_LABEL = "Kind";
+export const CONTACT_KIND_LABEL = "Type";
 export const PERMITTED_LABEL = "Permitted for contact";
-const PERMITTED_FACT: Readonly<Record<"on" | "off", string>> = { on: PERMITTED_LABEL, off: "Not permitted for contact" };
+const PERMITTED_FACT: Readonly<Record<"on" | "off", string>> = { on: PERMITTED_LABEL, off: "Not permitted" };
 const CONTACT_KIND_LABELS: Readonly<Record<ContactMethodKind, string>> = { email: "Email address", phone: "Phone number", postal: "Postal address" };
 const CONTACT_KIND_INPUT_MODES: Readonly<Record<ContactMethodKind, "email" | "tel" | "text">> = { email: "email", phone: "tel", postal: "text" };
 export const CONTACT_KIND_DEFAULT: ContactMethodKind = CONTACT_METHOD_KINDS[0] ?? "email";
@@ -46,7 +46,7 @@ function ContactMethodRowField({ index, row, errors, valueDescription, showPermi
               <StatusBadge label={row.permitted ? PERMITTED_FACT.on : PERMITTED_FACT.off} tone={row.permitted ? "info" : "neutral"} srPrefix={legend} />
             </div>
           ) : null}
-          <FormField name={`${rowPath}.kind`} label={CONTACT_KIND_LABEL} description="What sort of detail this is: an email address, a phone number or a postal address." error={messageFor("kind")} required>
+          <FormField name={`${rowPath}.kind`} label={CONTACT_KIND_LABEL} description="Choose email, phone, or postal address." error={messageFor("kind")} required>
             {(control) => (
               <NativeSelect
                 id={control.id}
@@ -93,7 +93,7 @@ function ContactMethodRowField({ index, row, errors, valueDescription, showPermi
               )
             }
           </FormField>
-          <FormField name={`${rowPath}.permitted`} label={PERMITTED_LABEL} description="Whether this detail may be used to reach the person. It is a fact about contactability only: it is not communication consent and not a reader grant." error={messageFor("permitted")}>
+          <FormField name={`${rowPath}.permitted`} label={PERMITTED_LABEL} description="Check if you’re allowed to use this detail to reach them (tracked separately from email update consent)." error={messageFor("permitted")}>
             {(control) => (
               <div className="flex min-h-target min-w-0 items-center">
                 <Checkbox id={control.id} checked={row.permitted} aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onCheckedChange={(checked) => onChange({ ...row, permitted: checked })} />
@@ -141,7 +141,7 @@ export interface ContactMethodListProps {
       </ul>
     )}
     <div className="flex min-w-0 flex-col gap-1">
-      <Button {...{ type: "button", variant: "outline", className: "min-h-target w-fit max-w-full whitespace-normal", onClick: onAdd }}>Add a contact method</Button>
+      <Button {...{ type: "button", variant: "outline", className: "min-h-target w-fit max-w-full whitespace-normal", onClick: onAdd }}>Add contact detail</Button>
       <p className="text-xs text-pretty text-muted-foreground">{addNote}</p>
     </div>
   </div>

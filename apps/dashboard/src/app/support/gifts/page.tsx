@@ -18,15 +18,15 @@ const PAGE_SIZE_CAP = 200;
 const PAGE_COPY = {
   title: "Received gifts",
   denied: {
-    title: "The gifts ledger is not available in this context",
-    body: "This session may not read received support in the context it is working in, so no row, count, " + "total or coverage is stated here — a refusal is not an empty ledger. Another context, if this " + "session holds one, can be chosen from the shell.",
+    title: "Gifts aren’t available in this ministry context",
+    body: "Your current session doesn’t have permission to view received gifts here. Switch ministry context from the sidebar if you have access to another one.",
   },
-  unavailable: { title: "The gifts ledger could not be read" },
-  refused: { title: "The gifts ledger's request was refused" },
-  retry: "Try this read again",
-  overview: "Read the support overview",
-  firstPage: "Read the first page",
-  lastPage: "Read the last page",
+  unavailable: { title: "Couldn’t load Gifts" },
+  refused: { title: "Some gift filters aren’t valid" },
+  retry: "Try again",
+  overview: "Back to Support",
+  firstPage: "Go to first page",
+  lastPage: "Go to last page",
 } as const;
 type Problem = { readonly field: string; readonly message: string };
 /** The problems a grammar refusal states, keyed by the field path its own issues carry, so a value the grammar cannot read is named by the parameter it was stated in. */
@@ -51,10 +51,10 @@ function absentPageOf(statedIndex: number | undefined, page: PageWindow | undefi
   return statedIndex >= page.totalPages ? { stated: statedIndex, totalPages: page.totalPages } : undefined;
 }
 /** What the notice states for a page the result does not hold, and the page that does exist for it to open. */ function absentPageNoticeOf(absent: AbsentPage, stated: SearchParams): { readonly description: string; readonly label: string; readonly href: string } {
-  if (absent.totalPages === 0) return { description: `page: The address states page ${absent.stated}, and the filters it states match no row at all, so this result holds no page ${absent.stated}: an empty result is read on the first page.`, label: PAGE_COPY.firstPage, href: hrefOfPage(stated, FIRST_PAGE) };
+  if (absent.totalPages === 0) return { description: `Page ${absent.stated} isn’t available because no gifts match these filters. Open the first page to review or clear filters.`, label: PAGE_COPY.firstPage, href: hrefOfPage(stated, FIRST_PAGE) };
   const pages = absent.totalPages === 1 ? "page" : "pages";
   return {
-    description: `page: The address states page ${absent.stated}, and this result holds ${absent.totalPages} ${pages}, numbered from 0 to ${absent.totalPages - 1}. No other page is served in its place, because a page that is not the one asked for would be read as the one asked for.`,
+    description: `Page ${absent.stated} is past the end of this result (${absent.totalPages} ${pages}, numbered 0 to ${absent.totalPages - 1}).`,
     label: PAGE_COPY.lastPage,
     href: hrefOfPage(stated, absent.totalPages - 1),
   };

@@ -27,50 +27,50 @@ const LIFECYCLE_OF: Readonly<Record<InvitationState, GrantLifecycleState>> = { d
 const OUTCOME_TONE: Readonly<Record<SharingOutcome, StatusTone>> = { reached: "positive", "not-reached": "muted", unknown: "caution" };
 const OUTCOME_STATE_SENTENCE: Readonly<Record<SharingOutcomeId, Readonly<Record<SharingOutcome, string>>>> = {
   delivery: {
-    reached: "The invitation is recorded here and names the recipient, the organization, the ministry, the modules and the duration.",
-    "not-reached": "No invitation is recorded, so there is nothing here for you to accept.",
-    unknown: "Whether the invitation was recorded cannot be confirmed from here, so this page claims neither.",
+    reached: "The invitation is recorded with the recipient, organization, ministry, modules, and duration.",
+    "not-reached": "No invitation is recorded for you to accept.",
+    unknown: "Couldn’t confirm whether an invitation was recorded.",
   },
-  "identity-verification": { reached: "The account you are acting in was verified as the named recipient's.", "not-reached": "The account you are acting in has not been verified as the named recipient's, so accepting would open nothing.", unknown: "Whether this account was verified cannot be confirmed from here." },
+  "identity-verification": { reached: "Your account has been verified as the invited coach.", "not-reached": "Your account hasn’t been verified as the invited coach yet.", unknown: "Couldn’t confirm account verification." },
   "deliberate-acceptance": {
-    reached: "Your decision is recorded. Nothing is readable to you until access is live.",
-    "not-reached": "No acceptance is recorded: opening this page, or following the link that brought you here, accepts nothing.",
-    unknown: "An acceptance may or may not have been recorded, and this page does not say which.",
+    reached: "Your acceptance is recorded. Nothing becomes visible until access is active.",
+    "not-reached": "Not accepted yet. Viewing this page doesn’t accept the invitation automatically.",
+    unknown: "Couldn’t confirm whether acceptance was recorded.",
   },
-  "active-access": { reached: "You can read the modules the worker switched on, inside the dates the invitation names.", "not-reached": "Nothing is readable yet, and accepting on its own switches no module on.", unknown: "Whether access is live cannot be confirmed from here." },
+  "active-access": { reached: "You can view the modules the missionary turned on within the agreed dates.", "not-reached": "Nothing is visible yet — accepting alone doesn’t turn on any modules.", unknown: "Couldn’t confirm whether access is active." },
 };
 const SURFACE_COPY = {
   heading: "Your coaching invitation",
-  purpose: "This invitation names you, the organization, the ministry, the modules and the duration. Reading it, or following the link that brought you here, shares nothing: where the invitation actually stands is stated below, one outcome at a time.",
-  factTerms: { recipient: "Named recipient", organization: "Organization", ministry: "Ministry", duration: "Duration", grant: "Invitation" },
-  notAcceptedSentence: "You have not accepted yet. Your own decision is what moves this invitation on, and it shares nothing by itself.",
-  modulesHeading: "Modules this invitation names",
-  noModulesSentence: "This invitation names no module, so nothing would be readable even after you accept it.",
-  modulesNote: "Modules start switched off. Acceptance on its own makes nothing readable: only the modules the worker switches on can be read, and only inside the dates named.",
-  deliberateTitle: "Accepting is your own decision",
-  deliberateBody: "Accepting belongs to the named recipient and is a deliberate act, not a side effect of opening this page. No permission follows from an email address that matches, from a link that opens, from an existing relationship or from a job title.",
-  readOnlySentence: "Your access is read-only: nothing on this page changes the worker's own work.",
-  acceptTitle: "Accept this coaching invitation",
-  acceptDescription: "Accepting records your decision as the named recipient. It shares nothing on its own, and it sends no message.",
-  acceptConsequence: "Access begins only when the grant is active, and only for the modules the worker switches on, inside the dates the invitation names.",
-  acceptContainment: "Nothing else changes: your acceptance alters no worker record and opens no module by itself.",
-  accessNotYetSentence: "Access does not begin with this acceptance: it begins only when the grant is active, and only for the modules the worker switches on.",
-  acceptLabel: "Accept this invitation",
+  purpose: "Review the organization, ministry, modules, and duration below. Opening this page doesn’t accept or share anything automatically.",
+  factTerms: { recipient: "Invited coach", organization: "Organization", ministry: "Ministry", duration: "Duration", grant: "Invitation ID" },
+  notAcceptedSentence: "Not accepted yet. Accepting confirms your participation but doesn’t share any data on its own.",
+  modulesHeading: "Included modules",
+  noModulesSentence: "No modules are listed on this invitation.",
+  modulesNote: "All modules start off. Only the modules the missionary turns on become visible within the agreed dates.",
+  deliberateTitle: "Accepting is your choice",
+  deliberateBody: "Only the invited account can accept this invitation — viewing this page or sharing an email address never grants access automatically.",
+  readOnlySentence: "Coach access is read-only and never alters the missionary’s records.",
+  acceptTitle: "Accept coaching invitation",
+  acceptDescription: "Records your acceptance as the invited coach. Doesn’t share data or send messages on its own.",
+  acceptConsequence: "Read-only access starts once the grant is active, limited to the modules the missionary turns on and the agreed dates.",
+  acceptContainment: "Nothing in the missionary’s workspace changes when you accept.",
+  accessNotYetSentence: "Access isn’t live yet — it starts once the grant is active and the missionary turns on modules.",
+  acceptLabel: "Accept invitation",
   cancelLabel: "Cancel",
 } as const;
 const NOTICE_COPY: Readonly<Record<Exclude<InvitationState, "delivered">, NoticeCopy>> = {
-  "already-accepted": { title: "You have already accepted this invitation", description: "Your decision is recorded, so there is nothing left to accept here. Access begins only when the grant is active, and only for the modules the worker switches on; opening this page again accepts nothing further." },
-  superseded: { title: "A newer invitation replaced this one", description: "It was replaced before it was accepted, so it cannot be accepted now and nothing was shared under it. Open the newest invitation the worker sent you, because nothing here can bring this one back." },
-  expired: { title: "This invitation reached its agreed end", description: "The dates this invitation named have passed, so it can no longer be accepted and nothing is readable under it. A new invitation from the worker is what begins a relationship." },
-  revoked: { title: "This invitation was revoked", description: "The worker revoked this grant, so it can no longer be accepted and no further read is allowed under it. Revoking stops access; it does not take back what was read before, and only a new invitation begins again." },
+  "already-accepted": { title: "Invitation already accepted", description: "Your acceptance is already recorded. Read-only access applies once the grant is active and modules are turned on." },
+  superseded: { title: "Replaced by a newer invitation", description: "This invitation was replaced before acceptance. Open the newest invitation from the missionary instead." },
+  expired: { title: "Invitation expired", description: "This invitation’s dates have passed. Ask the missionary for a new invitation to start coaching." },
+  revoked: { title: "Invitation revoked", description: "The missionary revoked this invitation, so it can’t be accepted. Starting again requires a new invitation." },
 };
 // The acceptance fact and the portfolio's emptiness are two different facts, and the portfolio card above states the emptiness once when that is what its read returned: both notices below therefore state only where the acceptance stands, and neither repeats what the portfolio says about what is shared.
-const NO_PENDING_INVITATION_SENTENCE = "No invitation addressed to you is awaiting acceptance, so nothing on this page asks you to accept anything.";
-const NO_INVITATION_COPY: NoticeCopy = { title: "No coaching invitation for this account", description: `${NO_PENDING_INVITATION_SENTENCE} Opening this page accepts nothing, and a matching email address grants nothing either.` };
-const NO_ACCEPTANCE_COPY: NoticeCopy = { title: "No invitation is waiting for your acceptance", description: `${NO_PENDING_INVITATION_SENTENCE} The access you hold as this worker's coach is what the portfolio reports, and nothing here adds to it or takes any of it away.` };
+const NO_PENDING_INVITATION_SENTENCE = "No coaching invitation is waiting for your acceptance.";
+const NO_INVITATION_COPY: NoticeCopy = { title: "No coaching invitations", description: `${NO_PENDING_INVITATION_SENTENCE} Opening this page never grants access automatically.` };
+const NO_ACCEPTANCE_COPY: NoticeCopy = { title: "No pending invitations", description: `${NO_PENDING_INVITATION_SENTENCE} Your active coaching access is listed in your portfolio above.` };
 const MUTED_TEXT_CLASS = "type-supporting text-pretty";
-// An invitation names its organization and ministry from the records the worker's own admission states; where those records carry neither a label nor an identifier, this surface says so rather than leaving the row blank.
-const NO_ORGANIZATION_SENTENCE = "The records state neither an organization label nor an organization identifier for this invitation, so neither is shown here.";
+// An invitation names its organization and ministry from the records the missionary's own admission states; where those records carry neither a label nor an identifier, this surface says so rather than leaving the row blank.
+const NO_ORGANIZATION_SENTENCE = "No organization listed on this invitation.";
 const TRAILING_DIGITS = /(\d+)\s*$/u;
 function revisionOrdinal(revision: string): number {
   const digits = TRAILING_DIGITS.exec(revision);
@@ -79,7 +79,7 @@ function revisionOrdinal(revision: string): number {
 }
 /** The ministries one invitation names, each beside its own identifier: a label alone would be a name this page matched across records, and an identifier alone names nothing a person can read. */ const MinistryFacts = ({ ministries }: { readonly ministries: InvitationSummary["ministries"] }): ReactElement =>
   ministries.length === 0 ? (
-    <span className={MUTED_TEXT_CLASS}>{"This invitation's record names no ministry, so none is shown here."}</span>
+    <span className={MUTED_TEXT_CLASS}>{"No ministry listed on this invitation."}</span>
   ) : (
     <span className="flex min-w-0 flex-col gap-1">
       {ministries.map((ministry) => (
@@ -157,8 +157,8 @@ function OutcomeStanding({ outcomes }: { readonly outcomes: SharingOutcomeSet })
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} data-slot="coach-acceptance-outcomes" className="flex min-w-0 flex-col gap-3">
-      <h3 {...{ id: headingId, className: "type-subsection-title" }}>{"Where this invitation stands"}</h3>
-      <p className={MUTED_TEXT_CLASS}>{"These are four separate outcomes rather than four steps of one, so each is stated on its own and none of them stands in for another."}</p>
+      <h3 {...{ id: headingId, className: "type-subsection-title" }}>{"Invitation status"}</h3>
+      <p className={MUTED_TEXT_CLASS}>{"Each stage is tracked separately — completing one doesn’t automatically complete the next."}</p>
       <ul className="flex min-w-0 flex-col gap-4">
         {SHARING_OUTCOME_COPY.map((entry) => {
           const state = outcomes[OUTCOME_STATE_FIELD[entry.id]];

@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: INITIATIVE_COPY.listHeading };
 /** This surface's own address, so a retry re-reads the view the reader was in rather than dropping it. */ const LIST_HREF = "/partners/initiatives";
 /** This route's own wording for the three answers that are not the list. Not one of them states a count, a name, a working list or a size. */ const PAGE_COPY = {
-  denied: { title: "Initiatives are not available in this context", body: "This session may not read initiatives in the context it is working in, so no initiative, working list or count is stated here — a refusal is not an empty list. Another context, if this session holds one, can be chosen from the shell." },
-  unavailable: { title: "The initiative list could not be read", retry: "Try this read again" },
-  refused: { title: "The initiative list's request was refused", body: "The address states a view the initiative read does not admit, so nothing was read and the source behind the list did not fail. State a view it admits and ask again." },
+  denied: { title: "Initiatives aren’t available in this ministry", body: "Your current session doesn’t have permission to view initiatives here. Switch ministries from the sidebar if you have access to another one." },
+  unavailable: { title: "Couldn’t load initiatives", retry: "Try again" },
+  refused: { title: "Invalid initiative filter or page", body: "The URL includes a filter, sort, or page that isn’t supported. Return to the default initiatives list and try again." },
 } as const;
 const NOTICE_COPY: ReadNoticeCopy = { headingLevel: 1, denied: { title: PAGE_COPY.denied.title, body: PAGE_COPY.denied.body }, unavailable: { title: PAGE_COPY.unavailable.title }, refused: { title: PAGE_COPY.refused.title, body: PAGE_COPY.refused.body } };
 /** The initiative list: one whole-query read of the initiatives the admitted ministry permits, filtered, ordered and paged by the read itself, rendered by the family's own list body. */

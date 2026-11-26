@@ -59,7 +59,7 @@ export function ViewportPreviewStage({ revisionId, localeLabel, label = "Preview
       </div>
       <div
         className={cn(
-          "min-w-0 transition-[max-width] duration-150 ease-out",
+          "min-w-0",
           VIEWPORT_FRAME_CLASS[viewport],
           viewport !== "desktop" && "rounded-2xl border border-border/90 bg-card p-3.5 shadow-sm sm:p-4",
         )}

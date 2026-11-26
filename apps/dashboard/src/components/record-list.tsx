@@ -624,12 +624,12 @@ export function RecordList<TRow extends RowData>({
   }
 
   const selectedCount = selectedKeys.length;
-  const selectionSummary = selectedCount === 0 ? "" : `${countFormatOf(locale).format(selectedCount)} selected. A selection is not an audience or a consent: the action you choose re-checks every selected row.`;
+  const selectionSummary = selectedCount === 0 ? "" : `${countFormatOf(locale).format(selectedCount)} selected — each action checks eligibility before applying.`;
 
   if (unavailable !== undefined) {
     return (
       <div data-slot="record-list" className={cn("flex flex-col gap-3", className)}>
-        <StateNotice kind="unavailable" title={`${label} could not be read`} description="No count, total or empty result stands in for the missing data." source={unavailable.source} retry={unavailable.onRetry === undefined ? undefined : { label: "Try again", onClick: unavailable.onRetry }} />
+        <StateNotice kind="unavailable" title={`Couldn’t load ${label.toLowerCase()}`} description="We couldn’t reach this data source, so no zero or empty list is shown in its place." source={unavailable.source} retry={unavailable.onRetry === undefined ? undefined : { label: "Try again", onClick: unavailable.onRetry }} />
       </div>
     );
   }
@@ -637,8 +637,8 @@ export function RecordList<TRow extends RowData>({
   const emptyNotice = hasActiveFilters ? (
     <StateNotice
       kind="empty"
-      title={`No ${itemNoun} match these filters`}
-      description="The filters and search on this surface are narrowing the result, so what you see is the part of the collection they select. Clearing them returns this surface to the view it opens with."
+      title={`No ${itemNoun} match your filters`}
+      description="Try adjusting or clearing your search and filters to see everything."
       action={onClearFilters === undefined ? undefined : { label: "Clear filters", onClick: onClearFilters }}
     />
   ) : (

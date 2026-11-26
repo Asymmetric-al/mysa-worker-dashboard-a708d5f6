@@ -8,13 +8,13 @@ import { RESULTS_COPY } from "../copy";
 import type { AcceptImportRowsPayload } from "../schemas/acceptance";
 import AcceptanceReview from "./acceptance-review";
 const SUMMARY_COPY = {
-  heading: "What acceptance will do with this file",
-  lead: "Every number below is the importer's own summary of this file and of the decisions recorded for its rows, read back before anything is accepted. Nothing is created until you accept, and a row is accepted only for the decision it carries.",
-  countsHeading: "How this file's rows divide",
-  decisionsRecordedLabel: "Rows carrying a decision",
-  needsReviewLabel: "Rows still awaiting a decision",
+  heading: "Import summary",
+  lead: "Review how your rows will be handled before confirming. Nothing is imported until you click below.",
+  countsHeading: "Row breakdown",
+  decisionsRecordedLabel: "Rows decided",
+  needsReviewLabel: "Rows still undecided",
   detailNote:
-    "This summary states counts only, because the proposal read states counts only. A row's own problems, the cells kept as data and the restrictions it carries are stated row by row on the review step, beside the decision about that row; what became of each row — with how many rows a problem stopped, a correction changed or a restriction accompanied — is stated in the receipt on the results step once this acceptance has run.",
+    "Row-level issues, consent columns, and restrictions are shown on the Review rows step. After importing, you’ll see a row-by-row receipt on the Results step.",
 } as const;
 const COUNT_ROWS: readonly { readonly kind: ImportDecisionKind; readonly label: string }[] = [
   { kind: "create", label: RESULTS_COPY.summaryLabels.create },

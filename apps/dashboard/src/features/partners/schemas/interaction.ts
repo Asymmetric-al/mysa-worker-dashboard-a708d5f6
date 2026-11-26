@@ -16,6 +16,17 @@ const requiredReference = (invalidMessage: string, emptyMessage: string): z.ZodS
 const requiredText = (invalidMessage: string, emptyMessage: string): z.ZodString => z.string({ error: invalidMessage }).refine((value) => value.trim().length > 0, { error: emptyMessage });
 export const INTERACTION_KINDS = ["conversation", "visit", "call", "meeting", "written-exchange", "other"] as const;
 export type InteractionKind = (typeof INTERACTION_KINDS)[number];
+/** Human labels for the closed interaction-kind enum, shared between the logger form and partner activity timeline so stored enum values never render raw beside seeded activity types. */
+export const INTERACTION_KIND_LABELS: Readonly<Record<InteractionKind, string>> = {
+  conversation: "Conversation",
+  visit: "Visit",
+  call: "Phone call",
+  meeting: "Meeting",
+  "written-exchange": "Written message",
+  other: "Other",
+};
+/** Resolves a stored interaction type to its human label when it is one of the canonical kinds, preserving seeded free-text types verbatim. */
+export const interactionKindLabel = (type: string): string => (Object.hasOwn(INTERACTION_KIND_LABELS, type) ? INTERACTION_KIND_LABELS[type as InteractionKind] : type);
 export const interactionKindSchema = z.enum(INTERACTION_KINDS, { error: "Choose the kind of contact that took place." });
 export const INTERACTION_PRECISIONS = ["date", "approximate", "unknown"] as const satisfies readonly InteractionRecord["precision"][];
 export type InteractionPrecision = (typeof INTERACTION_PRECISIONS)[number];

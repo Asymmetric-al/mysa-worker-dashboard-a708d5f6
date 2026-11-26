@@ -16,15 +16,15 @@ type UnsubscribeOutcome = OperationResultProps["outcome"];
 /** The one membership this confirmation is about: */ export type UnsubscribeTarget = { readonly publisherId: string; readonly publisherLabel: string; readonly purpose: UnsubscribePayload["purpose"]; readonly purposeLabel: string; readonly membershipState: MembershipState; readonly expectedRevision: string };
 export type UnsubscribeConfirmProps = { readonly scope: Scope; readonly target: UnsubscribeTarget; readonly open?: boolean; readonly onOpenChange?: (open: boolean) => void; readonly disabled?: boolean; readonly disabledReason?: string; readonly onCheckResult?: () => void; readonly className?: string };
 const ACTION_CLASS = cn(BUTTON_WRAP_CLASS, "text-pretty");
-const CURRENT_STATE_LABEL = "This membership today:";
-const ALREADY_OFF_NOTE = "This membership is already off for this publisher and this purpose, so confirming changes nothing and creates no history entry.";
-const ACCEPTANCE_IS_NOT_DELIVERY = "This changes which notices are submitted for you. It is not a record that any message was delivered or was read, and it is not contact permission for anything else.";
-const NO_OTHER_MEMBERSHIP_TOUCHED = "No other membership of yours changed: other purposes from this publisher, other publishers and every other record about you stand exactly as they were.";
+const CURRENT_STATE_LABEL = "Current status:";
+const ALREADY_OFF_NOTE = "Update emails for this ministry are already turned off.";
+const ACCEPTANCE_IS_NOT_DELIVERY = "Stops future email notifications only — doesn’t affect your partner record or other subscriptions.";
+const NO_OTHER_MEMBERSHIP_TOUCHED = "Your subscriptions with other ministries and your contact record stay unchanged.";
 const MEMBERSHIP_STATE_WORD: Readonly<Record<MembershipState, string>> = {
-  active: "on — this address was confirmed for this publisher and this purpose",
-  "awaiting-proof": "waiting for this address to be confirmed, so no notice is submitted yet",
-  off: "off — these notices are not submitted for you",
-  restricted: "restricted — a restriction excludes this membership, and a restriction is not a choice you made",
+  active: "Active — confirmed and receiving update emails",
+  "awaiting-proof": "Awaiting email confirmation",
+  off: "Off — not receiving update emails",
+  restricted: "Restricted — excluded by a source restriction",
 };
 const PAYLOAD_FIELD_LABELS: Readonly<Record<string, string>> = { publisherId: "Publisher", purpose: "Purpose" };
 /** The payload this confirmation is the acknowledgement for: */ export function unsubscribeAcknowledgement(publisherId: string, purpose: UnsubscribePayload["purpose"]): UnsubscribePayload | null {
@@ -105,7 +105,7 @@ const PublisherSentence = ({ template, value }: { readonly template: string; rea
   return (
     <section data-slot="unsubscribe-confirm" data-state={state} data-membership-state={target.membershipState} aria-labelledby={titleId} aria-busy={review.pending ? true : undefined} className={cn("flex min-w-0 flex-col gap-3 text-start", className)}>
       <h3 {...{ id: titleId, className: "type-subsection-title wrap-anywhere" }}>{UNSUBSCRIBE_COPY.heading}</h3>
-      <p className="type-supporting text-pretty wrap-anywhere">Turning these notices off changes one membership: this publisher's Update email for this purpose. Every other purpose, every other publisher and every other record stays as it is.</p>
+      <p className="type-supporting text-pretty wrap-anywhere">Unsubscribing stops update emails from this ministry only. Your other subscriptions and contact record stay unchanged.</p>
       <p className="type-body text-pretty wrap-anywhere">
         {CURRENT_STATE_LABEL} <StatedValue value={membershipState} />.
       </p>

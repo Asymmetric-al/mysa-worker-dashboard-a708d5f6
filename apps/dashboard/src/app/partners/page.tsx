@@ -19,18 +19,18 @@ const ROSTER_HREF = "/partners";
 const ADD_CONTACT_ANCHOR = "add-private-contact";
 /** The one advisory action whose presence mounts the private-contact block below the roster. */
 /** This route's own wording. Not one word of it is a count, an amount, a record name or a permission. */ const PAGE_COPY = {
-  lede: "Everyone this ministry's records hold: people, households, churches, organizations and your own private preparation, searched and filtered over the whole authorised result rather than the page on screen.",
+  lede: "Everyone in your ministry — people, households, churches, organizations, and your private contacts. Search and filters apply across your full list.",
   classes:
-    "Two records that look alike stay two records, even where a name, an email address or a postal address is identical, and a tag, a favourite or an open task proves nothing about contact, consent or giving. Private preparation is a record class of its own: it is written and read here, and it is never copied into a shared history or another record's audience.",
-  emptyAction: "Add a private contact",
+    "Your private contacts and notes are visible only to you and are never copied into shared records or exports. Tags, favourites, and tasks help you organize and never record consent or giving.",
+  emptyAction: "Add private contact",
 } as const;
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 2,
-  denied: { title: "The partner roster is not available in this context", body: "This session may not read these records in the context it is working in, so no row, count, name or size is stated here — a refusal is not an empty roster. Another context, if this session holds one, can be chosen from the shell." },
-  unavailable: { title: "The partner roster could not be read" },
+  denied: { title: "Partners aren’t available in this ministry", body: "Your current session doesn’t have permission to view partners here. Switch ministries from the sidebar if you have access to another one." },
+  unavailable: { title: "Couldn’t load partners" },
   refused: {
-    title: "This roster's request was refused",
-    body: "The address states a view the partner read does not admit, so nothing was read and the source behind the roster did not fail. Every filter, ordering, page and page size this route sends is drawn from the read's own vocabulary, so a refusal says the request was refused rather than that the records are empty.",
+    title: "Invalid partner filter or page",
+    body: "The URL includes a filter, sort, or page that isn’t supported. Clear your filters or return to the default partner list.",
   },
 };
 /** This same view as an address, written by the one grammar the roster surface writes its own address with: a retry re-reads the roster the worker was looking at rather than dropping the view, and a page beyond the last one the result holds is answered by the last page it does hold. The page is replaced rather than appended, so one view is one address. */
@@ -76,7 +76,7 @@ export default async function PartnersRosterPage({ searchParams }: { readonly se
   return (
     <PageColumn>
       <PageHeading title="Partners" paragraphs={[PAGE_COPY.lede, PAGE_COPY.classes]} />
-      {result.kind === "envelope" ? <RosterBody result={result} /> : <ReadNotices failure={result} copy={{ ...NOTICE_COPY, unavailable: { ...NOTICE_COPY.unavailable, action: { label: "Try this read again", href: rosterHrefOf(view) } } }} />}
+      {result.kind === "envelope" ? <RosterBody result={result} /> : <ReadNotices failure={result} copy={{ ...NOTICE_COPY, unavailable: { ...NOTICE_COPY.unavailable, action: { label: "Try again", href: rosterHrefOf(view) } } }} />}
     </PageColumn>
   );
 }

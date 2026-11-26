@@ -31,8 +31,8 @@ export function AnimatedListItem({ index = 0, className, children }: AnimatedLis
   return (
     <motion.div
       data-slot="animated-list-item"
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, transform: "translateY(6px)" }}
+      animate={{ opacity: 1, transform: "translateY(0px)" }}
       transition={{ duration: 0.18, delay, ease: [0.22, 1, 0.36, 1] }}
       className={cn("min-w-0", className)}
     >

@@ -19,28 +19,28 @@ import { TextAreaField, TextField } from "./bound-fields";
 import { CONTACT_KIND_DEFAULT, CONTACT_METHODS_FIELD, ContactMethodList, contactMethodFieldLabels, type ContactMethodRow } from "./contact-method-rows";
 const NAME_FIELD = "displayName";
 const NOTE_FIELD = "note";
-const METHODS_LEGEND = "Contact methods";
+const METHODS_LEGEND = "Contact details";
 const SECTION_HEADING = PARTNER_ACTION_LABELS.addPrivateContact;
 const NAME_LABEL = "Name";
-const NAME_DESCRIPTION = "What you will recognise this person by. No email address, phone number or other detail is required.";
-const NOTE_LABEL = "Opening note";
-const NOTE_DESCRIPTION = "Anything you already know or have decided, written for yourself. " + PRIVATE_RECORD_COPY.noteIsPrivate.body;
-const METHODS_HELP = "Optional. Each detail you add states whether it may be used to reach the person. " + "Adding a detail here contacts no one, subscribes no one and records no consent.";
+const NAME_DESCRIPTION = "How you’ll recognize this person. Email and phone are optional.";
+const NOTE_LABEL = "Notes";
+const NOTE_DESCRIPTION = `Anything you want to remember about this person. ${PRIVATE_RECORD_COPY.noteIsPrivate.body}`;
+const METHODS_HELP = "Optional. Mark whether each detail is okay to use for outreach. Adding details here never sends a message or subscribes anyone.";
 const SUBMIT_LABEL = PARTNER_ACTION_LABELS.addPrivateContact;
-const ACTION_NOTE = "Adding the contact creates one private preparation record. It sends no message, subscribes no one, " + "creates no financial record and grants no one else access to anything.";
-const RESUBMIT_NOTE = "The receipt above stands for the record this form already created. Changing these details and " + "adding again creates a second private contact rather than changing the first one.";
-const UNCONFIRMED_NOTE = "Adding is paused until the result above is checked, because this attempt may already have created the contact. " + "Checking it reads what happened and applies nothing.";
-const NO_SHARED_IDENTITY = "Adding a contact here creates no shared identity: no partner, household, organization or membership is created beside it, " + "and no communication consent or reader grant is recorded.";
-const CREATED_BODY = "It is a private preparation record and the only record this form created. It has no shared identity, no household, " + "no organization and no membership, and no communication consent or reader grant was recorded.";
-const DENIED_BODY = "Private preparation is created inside the ministry that admits it, and the ministry selected in this session " + "does not, so nothing was created. A refusal here says nothing about what exists anywhere else.";
+const ACTION_NOTE = "Creates a private contact visible only to you — never sends messages, subscribes anyone, or creates shared records.";
+const RESUBMIT_NOTE = "This contact has already been added. Submitting again will create another separate private contact.";
+const UNCONFIRMED_NOTE = "Adding is paused until we check the previous result so we don’t create a duplicate.";
+const NO_SHARED_IDENTITY = "No shared partner record, household, email consent, or giving entry is created.";
+const CREATED_BODY = "Saved as a private contact visible only to you. No shared record, consent, or subscription was created.";
+const DENIED_BODY = "You don’t have permission to add private contacts in this ministry.";
 const RECEIPT_HEADING_LEVEL = 3;
 const CLEAR_ON_EDIT: ReadonlySet<MutationOutcome["outcome"]> = new Set<MutationOutcome["outcome"]>(["invalid", "conflict", "denied", "unavailable"]);
 const NOTICE_COPY: OutcomeNoticeCopy = {
-  denied: { title: "A private contact was not added here", description: DENIED_BODY },
+  denied: { title: "Couldn’t add private contact here", description: DENIED_BODY },
   unavailable: { title: FORM_OUTCOME_COPY.unavailable.title, description: FORM_OUTCOME_COPY.unavailable.body },
   unknown: { title: FORM_OUTCOME_COPY.unknown.title, description: FORM_OUTCOME_COPY.unknown.body },
   retryLabel: PARTNER_ACTION_LABELS.retry,
-  checkResultLabel: "Check the result",
+  checkResultLabel: "Check result",
 };
 export type PrivatePreparationInitialValues = { readonly displayName?: string; readonly contactMethods?: readonly PreparationContactMethod[]; readonly note?: string };
 export type PrivatePreparationFormProps = { readonly scope: Scope; readonly expectedRevision: string; readonly initialValues?: PrivatePreparationInitialValues; readonly onCreated?: (partnerRef: string) => void; readonly dir?: "ltr" | "rtl"; readonly className?: string };
@@ -70,18 +70,14 @@ function CreatedPrivateRecord({ partnerRef }: { readonly partnerRef: string }): 
   const route = `/partners/${encodeURIComponent(partnerRef)}`;
   return (
     <div data-slot="created-private-record" className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-4 text-sm">
-      <p className="type-group-title text-foreground">Created: one private preparation record</p>
+      <p className="type-group-title text-foreground">Private contact added</p>
       <p className="type-supporting text-pretty">{CREATED_BODY}</p>
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
-        <span className="text-muted-foreground">Its reference is</span>
+        <span className="text-muted-foreground">ID:</span>
         <bdi className="mono-identifier wrap-anywhere">{partnerRef}</bdi>
       </p>
-      <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
-        <span className="text-muted-foreground">Its page is</span>
-        <bdi className="mono-identifier wrap-anywhere">{route}</bdi>
-      </p>
       <p className="min-w-0">
-        <Link {...{ href: route, "data-slot": "button", className: cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal") }}>Open the private contact</Link>
+        <Link {...{ href: route, "data-slot": "button", className: cn(buttonVariants({ variant: "outline", size: "sm" }), "min-h-target max-w-full whitespace-normal") }}>Open contact</Link>
       </p>
     </div>
   );
@@ -94,7 +90,7 @@ function OutcomeRegion({ outcome, fieldLabels, createdReference, onReapply, onRe
   return (
     <div data-slot="private-preparation-outcome" data-outcome={outcome.outcome} className="flex min-w-0 flex-col gap-3">
       <OperationResult outcome={outcome} headingLevel={RECEIPT_HEADING_LEVEL} fieldLabels={outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" ? undefined : fieldLabels} onReapply={outcome.outcome === "conflict" ? () => onReapply(outcome.currentRevision) : undefined} />
-      {created ? createdReference === null ? <p className="type-supporting text-pretty">The result did not state the new record's reference, so the partner roster is where to find it.</p> : <CreatedPrivateRecord partnerRef={createdReference} /> : null}
+      {created ? createdReference === null ? <p className="type-supporting text-pretty">Saved, but no ID was returned — you’ll find it in your Partners list.</p> : <CreatedPrivateRecord partnerRef={createdReference} /> : null}
     </div>
   );
 }
@@ -136,7 +132,7 @@ function OutcomeRegion({ outcome, fieldLabels, createdReference, onReapply, onRe
     <section dir={dir} aria-labelledby={headingId} data-slot="private-preparation-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
         <h2 {...{ id: headingId, className: "type-section-title" as const }}>{SECTION_HEADING}</h2>
-        <p className="type-supporting text-pretty">A name is the only thing this needs. Everything else is optional, and you can add or change it later.</p>
+        <p className="type-supporting text-pretty">Only a name is required. Everything else is optional and stays private to you.</p>
       </div>
       <Alert className="min-w-0">
         <AlertTitle>{PRIVATE_RECORD_COPY.preparationIsPrivate.title}</AlertTitle>
@@ -160,9 +156,9 @@ function OutcomeRegion({ outcome, fieldLabels, createdReference, onReapply, onRe
                 rows={methods}
                 headingId={methodsHeadingId}
                 errors={fieldErrors}
-                valueDescription="The address, number or postal detail itself. Nothing here verifies it, so it states what you know rather than a confirmed detail."
-                emptyNote="No contact method is recorded. A name alone is a complete private contact, so this form can be submitted as it is."
-                addNote="A row you add can be removed again, and removing one leaves every other row exactly as you wrote it."
+                valueDescription="Email address, phone number, or mailing address (saved as entered, not verified automatically)."
+                emptyNote="No contact details added yet — a name alone is enough to save."
+                addNote="You can add or remove details anytime."
                 onRowsChange={setMethods}
                 onAdd={() => {
                   rowSequence.current += 1;
@@ -176,7 +172,7 @@ function OutcomeRegion({ outcome, fieldLabels, createdReference, onReapply, onRe
         <div className="flex min-w-0 flex-col gap-2">
           {unconfirmed ? null : (
             <div className="flex flex-wrap items-center gap-2">
-              <Button {...{ type: "submit" as const, disabled: isPending, "aria-describedby": actionNoteId, className: "min-h-target max-w-full whitespace-normal" as const }}>{isPending ? "Adding the private contact" : SUBMIT_LABEL}</Button>
+              <Button {...{ type: "submit" as const, disabled: isPending, "aria-describedby": actionNoteId, className: "min-h-target max-w-full whitespace-normal" as const }}>{isPending ? "Adding private contact…" : SUBMIT_LABEL}</Button>
             </div>
           )}
           <p {...{ id: actionNoteId, className: "type-supporting text-pretty" as const }}>{unconfirmed ? UNCONFIRMED_NOTE : createdReference === null ? ACTION_NOTE : RESUBMIT_NOTE}</p>

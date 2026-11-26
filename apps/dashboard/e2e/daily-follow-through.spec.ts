@@ -10,7 +10,7 @@ const PARTNER_ROUTE_PREFIX = "/partners"; // The prefix every partner record is 
 const PARTNER_API_PREFIX = "/api/partners";
 const SEEDED_TODAY = "2026-11-20";
 const PAGER = { taskNoun: "tasks", titleColumn: "Task", rowsPerPage: "Rows per page", pageSize: "50" } as const;
-const AUDIENCE = { href: "/communication/audience", heading: "Update email audience", countsSlot: '[data-slot="membership-counts"]', memberNoun: "members" } as const; // The publisher's audience, which a selection must never become, in the words its own surface states it with.
+const AUDIENCE = { href: "/communication/audience", heading: "Email audience", countsSlot: '[data-slot="membership-counts"]', memberNoun: "members" } as const; // The publisher's audience, which a selection must never become, in the words its own surface states it with.
 type TaskListKey = "today" | "upcoming" | "overdue" | "all" | "undated";
 const TASK_LISTS: readonly { readonly key: TaskListKey; readonly label: string }[] = [
   { key: "today", label: "Today" },
@@ -25,11 +25,11 @@ const LINKED = { title: "Follow up with Jo after the visit", category: "Care", c
 const MEETING = { title: "Talk terms with Grace", date: "2026-11-26", time: "14:30", partner: "partner-grace-adeyemi" } as const;
 const PLANNED_MEETING_ZONE = "Europe/London";
 const SEEDED_TASK = { overdue: "Send the thank-you note", overdueDate: "2026-11-10", completed: "Introduce Grace to the students' group", undated: "Pray for the students' exam week" } as const;
-const BULK = { tagIntent: "Private tag", applyTag: "Apply a private tag", removeTag: "Remove a private tag", followUpIntent: "Create follow-up tasks", completeIntent: "Complete these tasks" } as const;
-const REVIEW = { tagField: "Private tag", tag: "venue-chased", followUpTitle: "Chase the venue hire agreement", heading: "Review this bulk action", confirm: "Apply to the selected rows" } as const;
-const SECTION = { activity: "Actual activity", openTasks: "Open tasks" } as const;
-const RECEIPT = { saved: "Saved", nothingToChange: "Nothing to change", perItem: "Result for each row", accepted: "Accepted" } as const;
-const COMPOSER = { newTask: "New task", editHeading: "Edit this task", title: "Title", category: "Category", dueDate: "Due date", create: "Create task", save: "Save task", done: "Done" } as const;
+const BULK = { tagIntent: "Private tag", applyTag: "Add private tag", removeTag: "Remove private tag", followUpIntent: "Create follow-up tasks", completeIntent: "Complete selected tasks" } as const;
+const REVIEW = { tagField: "Private tag", tag: "venue-chased", followUpTitle: "Chase the venue hire agreement", heading: "Review bulk action", confirm: "Apply to selected" } as const;
+const SECTION = { activity: "Activity", openTasks: "Open tasks" } as const;
+const RECEIPT = { saved: "Saved", nothingToChange: "No changes needed", perItem: "Row-by-row results", accepted: "Saved" } as const;
+const COMPOSER = { newTask: "New task", editHeading: "Edit task", title: "Title", category: "Category", dueDate: "Due date", create: "Create task", save: "Save task", done: "Done" } as const;
 const DETAIL_LIMIT = 400; // How much of an unreadable answer a failure quotes, so a diagnostic is readable without pasting a whole body.
 const authorisationHeader = (): Readonly<Record<string, string>> => ({ cookie: sessionCookie(SESSION.sessionId) });
 async function readEnvelope(request: APIRequestContext, path: string): Promise<Readonly<Record<string, unknown>>> {
@@ -106,7 +106,7 @@ async function chooseRowAction(page: Page, title: string, action: "Complete" | "
 test.use({ persona: PERSONA }); // This file acts as the established worker throughout, which is the persona the runner admits the context as.; Every test starts from the deterministic seed.
 async function createTaskDueToday(page: Page, dueOn: string): Promise<void> {
   await page.goto(WORK_HREF); // Creates the one task this journey gives the day, through the composer the Work surface owns.
-  await expect(page.getByRole("heading", { name: "Work", level: 1 }), "The five lists are a destination of their own, reached from the shell's own navigation.").toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", level: 1 }), "The five lists are a destination of their own, reached from the shell's own navigation.").toBeVisible();
   await expectDevelopmentData(page);
   await page.getByRole("button", { name: COMPOSER.newTask }).first().click();
   const composer = page.getByRole("region", { name: COMPOSER.newTask });
@@ -185,7 +185,7 @@ async function selectRows(page: Page, titles: readonly string[]): Promise<void> 
 async function clearBulkState(page: Page): Promise<void> {
   const clearSelection = page.getByRole("button", { name: "Clear selection" }); // Releases a selection and dismisses a settled receipt, so the next bulk action starts from nothing.
   if ((await clearSelection.count()) > 0) await clearSelection.first().click();
-  const dismiss = page.getByRole("button", { name: "Dismiss the result" });
+  const dismiss = page.getByRole("button", { name: "Dismiss" });
   if ((await dismiss.count()) > 0) await dismiss.first().click();
 }
 test("completing a task takes it out of Today, reopening returns it, a category change moves only that task, and a planned meeting is never counted as held", async ({ page }) => {
@@ -202,12 +202,12 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   await expect(completion, "Completing a task is one accepted change, recorded in the row it changed.").toBeVisible();
   await expect(completion.locator('[data-slot="operation-result"][data-outcome="accepted"]'), "The receipt is the durable in-context result, not a toast.").toBeVisible();
   await expect(completion.getByRole("heading", { name: RECEIPT.saved })).toBeVisible();
-  expect(await page.getByText("Completing or reopening a task records no contact, payment, fulfilment or message.").count(), "The surface states what completing a task does not prove, beside the action that completes it.").toBeGreaterThan(0);
+  expect(await page.getByText("Completing a task marks the reminder done without logging an interaction, gift, or email.").count(), "The surface states what completing a task does not prove, beside the action that completes it.").toBeGreaterThan(0);
   const completionRevision = await readReceiptRevision(completion.locator('[data-slot="operation-result"]')); // The revision the receipt states is the record's own, and the reopen below states a different one: an accepted change advances the revision the next change has to present.
   const created = await readTaskRow(all, TODAY_TASK.title);
   const createdActions = page.locator(`[data-slot="task-actions"][data-task-id="${created.taskId}"]`);
   await expect(createdActions, "The accepted change re-reads the list, so the row states the status the task now holds.").toHaveAttribute("data-status", "completed");
-  await completion.getByRole("button", { name: "Dismiss this result" }).click();
+  await completion.getByRole("button", { name: "Dismiss" }).click();
   await expect(completion).toHaveCount(0);
   await page.getByRole("tab", { name: "Today" }).click(); // Today states the work still due, so completed work leaves it: an empty Today is a state of its own rather than the row it used to hold.
   await expect(page.locator('[data-slot="work-task-lists"]')).toHaveAttribute("data-list", "today");
@@ -223,7 +223,7 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   await expect(reopenedRow.getByText("Reopened"), "The row states the reopened status rather than an open one.").toBeVisible();
   const reopeningRevision = await readReceiptRevision(reopening.locator('[data-slot="operation-result"]'));
   expect(reopeningRevision, "An accepted change advances the revision the next change has to present, so the reopen states a different revision than the completion did.").not.toBe(completionRevision);
-  await reopening.getByRole("button", { name: "Dismiss this result" }).click();
+  await reopening.getByRole("button", { name: "Dismiss" }).click();
   await expect(rowOf(await openList(page, { key: "today", label: "Today" }), TODAY_TASK.title), "Reopened work is due today again, so Today holds it.").toBeVisible();
   await page.goto(`${PARTNER_ROUTE_PREFIX}/${LINKED.partner}`); // category changes: a task is work the worker owns, so a change to one must not appear as anything that happened with a partner.
   const activity = page.getByRole("region", { name: SECTION.activity });
@@ -259,9 +259,9 @@ test("completing a task takes it out of Today, reopening returns it, a category 
   const meeting = rowOf(await openList(page, { key: "all", label: "All" }), MEETING.title);
   await expect(meeting, "A meeting is one task on the same model as ordinary work.").toBeVisible();
   await expect(meeting.getByText("Meeting", { exact: true }), "The row states the kind of work it is.").toBeVisible();
-  for (const text of ["Planned", MEETING.time, "Europe/London"]) await expect(meeting.getByText(text, { exact: true }), "A planned time is stated as planned, in its own clock time and its disclosed zone.").toBeVisible();
+  for (const text of ["Scheduled", MEETING.time, "Europe/London"]) await expect(meeting.getByText(text, { exact: true }), "A planned time is stated as planned, in its own clock time and its disclosed zone.").toBeVisible();
   await expect(meeting.getByText("Held", { exact: true }), "Nothing on the surface presents the planned meeting as held.").toHaveCount(0);
-  await expect(page.getByText("A planned time is a plan, and a meeting counts as held only once an interaction records that it happened."), "The surface says in its own words what a planned time does and does not mean.").toBeVisible();
+  await expect(page.getByText("A scheduled meeting time is a reminder only — log an activity once the meeting actually happens."), "The surface says in its own words what a planned time does and does not mean.").toBeVisible();
   await page.goto(`${PARTNER_ROUTE_PREFIX}/${MEETING.partner}`); // The partner's own measure surfaces count only what happened: the planned meeting is work still to do.
   const meetingActivity = page.getByRole("region", { name: SECTION.activity });
   await expect(meetingActivity).toBeVisible();
@@ -315,7 +315,7 @@ test("a record visit returns to the same filtered view, its same ordering and th
   const workPlaceBefore = await scrollPlaceOfRow(page, visitLink, "The Upcoming list");
   expect(workPlaceBefore.offset, "The filtered list is longer than the window, which is what makes the reader's place in it something to return to.").toBeGreaterThan(0);
   await visitLink.click(); // The visit: the row's own link is the only route to the partner, so the record is a destination.
-  await expect(page.getByRole("navigation", { name: "breadcrumb" }), "The record states the list it belongs to, so the visit is a navigation rather than a panel over the list.").toBeVisible();
+  await expect(page.getByRole("navigation", { name: "breadcrumb", exact: true }), "The record states the list it belongs to, so the visit is a navigation rather than a panel over the list.").toBeVisible();
   expect(new URL(page.url()).pathname, "The visit opens the record the row the reader clicked links to.").toBe(visitHref);
   await page.goBack();
   await expect(page.locator('[data-slot="work-task-lists"]'), "The same list comes back after the visit.").toHaveAttribute("data-list", "upcoming");
@@ -342,7 +342,7 @@ test("a record visit returns to the same filtered view, its same ordering and th
   const agendaPlaceBefore = await scrollPlaceOfRow(page, agendaVisitLink, "The dated agenda");
   expect(agendaPlaceBefore.offset, "The agenda is longer than the window, so its place is something to return to as well.").toBeGreaterThan(0);
   await agendaVisitLink.click();
-  await expect(page.getByRole("navigation", { name: "breadcrumb" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "breadcrumb", exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\/partners\/[^?/]+/u);
   await page.goBack();
   await expect(page, "The agenda returns at the address it was left at.").toHaveURL(/\/work\/agenda$/u);
@@ -367,7 +367,7 @@ test("the three bulk actions review the selection first and report each row's ow
   const partnerTagsBefore = listOf(objectOf(objectOf(partnerRecordBefore["data"], "The partner record read's data")["partner"], "The partner's own record")["tags"], "The partner's tags");
   const audienceBefore = await readAudience(page);
   await page.goto(WORK_HREF);
-  await expect(page.getByRole("heading", { name: "Work", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", level: 1 })).toBeVisible();
   const all = await openList(page, { key: "all", label: "All" });
   const linked = await readTaskRow(all, LINKED.title); // Each row states the task its own actions act on, which is the identity every result below is reported by.
   const thankYou = await readTaskRow(all, SEEDED_TASK.overdue);
@@ -376,8 +376,8 @@ test("the three bulk actions review the selection first and report each row's ow
   await expect(page.getByRole("heading", { name: "Bulk actions" }), "A selection is what a bulk action acts on, so the bar is not there to invite one.").toHaveCount(0);
   await selectRows(page, [LINKED.title, SEEDED_TASK.overdue]);
   await expect(page.getByRole("heading", { name: "Bulk actions" }), "A selection opens the one bulk bar over the rows that were ticked.").toBeVisible();
-  await expect(page.getByText(/Rows selected:\s*2\./u), "The bar states how many rows the selection holds, and that only they are affected.").toBeVisible();
-  await expect(page.getByText("A selection is not an audience, not a consent and not a campaign", { exact: false }).first(), "The bar says in its own words what a selection is not.").toBeVisible();
+  await expect(page.getByText(/2 selected\. Only the rows you selected will be updated\./u), "The bar states how many rows the selection holds, and that only they are affected.").toBeVisible();
+  await expect(page.getByText("Applies only to the rows you selected — doesn’t send messages or subscribe anyone.", { exact: false }).first(), "The bar says in its own words what a selection is not.").toBeVisible();
   await page.getByRole("button", { name: BULK.tagIntent }).click();
   await page.getByRole("menuitem", { name: BULK.applyTag }).click();
   const tagPanel = page.getByRole("region", { name: BULK.applyTag });
@@ -408,13 +408,13 @@ test("the three bulk actions review the selection first and report each row's ow
   await selectRows(page, [SEEDED_TASK.completed]); // only a closed row leaves this action nothing to act on: it is not offered, and the reason is stated beside it rather than left to be discovered by pressing it.
   const completeIntent = page.getByRole("button", { name: BULK.completeIntent });
   await expect(completeIntent, "A closed row cannot be completed on its own, so with only that row selected the action is not offered.").toBeDisabled();
-  await expect(page.getByText("A task is completed only while it is open or reopened, so a row that is already completed or cancelled is left as it is."), "The reason a closed row cannot be completed on its own is stated beside the action it belongs to.").toBeVisible();
+  await expect(page.getByText("Only open or reopened tasks can be completed — completed and cancelled rows are skipped."), "The reason a closed row cannot be completed on its own is stated beside the action it belongs to.").toBeVisible();
   await selectRows(page, [SEEDED_TASK.overdue]);
   await expect(completeIntent, "An open row gives the action something to act on.").toBeEnabled();
   await completeIntent.click();
   const completeReview = page.getByRole("region", { name: REVIEW.heading });
   await expect(completeReview.getByText(/Selected:\s*1\s*rows?\./u), "The review step states the rows the action can act on.").toBeVisible();
-  await expect(completeReview.getByText(/Excluded before this step:\s*1\s*rows?\./u), "A selected row this action cannot act on is reported as excluded, with its reason, before anything is applied.").toBeVisible();
+  await expect(completeReview.getByText(/Excluded:\s*1\s*rows?\b/u), "A selected row this action cannot act on is reported as excluded, with its reason, before anything is applied.").toBeVisible();
   await page.getByRole("button", { name: REVIEW.confirm }).click();
   const completedRows = page.locator('[data-slot="operation-result"][data-outcome="accepted"]').locator("table tbody tr"); // The receipt is read wherever the surface states it: once every selected row has been acted on, the review step has nothing left to review and the durable result stands on its own beneath it.
   await expect(completedRows, "The result holds one row for each selected row: the acted-on one accepted, the other excluded.").toHaveCount(2);

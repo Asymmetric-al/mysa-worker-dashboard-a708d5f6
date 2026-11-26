@@ -30,49 +30,49 @@ const DST_NOMINAL_WORDING = "Active through 5 September 2026";
 const OTHER_DISPLAY_ZONE = "Asia/Tokyo"; // The display time zone this file switches to, proving a reader's own zone cannot move a resolved endpoint.
 const COPY = {
   introductionHeading: "Original introduction",
-  recordIntroductionHeading: "Record an introduction",
+  recordIntroductionHeading: "Record introduction",
   saveIntroductionLabel: "Save introduction",
   acceptedReceiptHeading: "Saved",
-  sourceZoneLabel: "Time zone this date is known in",
+  sourceZoneLabel: "Time zone",
   sourceReferenceLabel: "Source reference",
-  introducedOnLabel: "Original introduction date",
-  precisionLabel: "How precisely is this date known?",
-  precisionDateLabel: "Known date",
-  entryTimeLabel: "Entered in this application",
-  entryTimeNote: "Entry time is never shown as the introduction date, and a late entry does not start the window again.",
-  noDeadline: "Without a known introduction date there is no deadline, no Active or Expired judgement and no Continue action; this referral is shown exactly as far as its evidence carries.",
+  introducedOnLabel: "Introduction date",
+  precisionLabel: "How well is this date known?",
+  precisionDateLabel: "Exact date",
+  entryTimeLabel: "Entered in MYSA",
+  entryTimeNote: "Tracked separately from when the introduction happened — logging late doesn’t restart the window.",
+  noDeadline: "Without an exact introduction date, there’s no referral deadline, no Active/Expired status, and no continuation option.",
   precisionUnknownLabel: "Unknown",
-  precisionUnknownHint: "No date is established for this introduction, so none is stored and none is implied.",
+  precisionUnknownHint: "Saved without a date rather than guessing.",
   precisionApproximateLabel: "Approximate",
-  precisionApproximateHint: "Recorded as it was remembered. An approximation is never turned into a precise date, so no deadline is derived from it.",
+  precisionApproximateHint: "Roughly remembered. Approximate dates don’t create a referral deadline.",
   statusIncomplete: "Incomplete date",
   statusActive: "Active",
   statusExpired: "Expired",
-  window: "Window",
-  newWindow: "New window",
-  noWindowEnd: "No window end",
-  calendarVsResolved: "Calendar wording and resolved end",
-  nominalLabel: "Dates as written",
-  resolvedLabel: "When the window ends",
-  disagreementNote: "The calendar wording and the resolved moment disagree here. Both are shown: the resolved moment is what decides whether the window is Active or Expired, and the wording stands as it was written rather than being rewritten to match.",
-  endpointResolvedOnce: "The end is resolved once and kept, so changing where you are or how dates are displayed does not move it.",
-  continueHeading: "Continue is not offered",
-  continueLabel: "Continue this referral",
+  window: "Referral window",
+  newWindow: "Initial window",
+  noWindowEnd: "No deadline",
+  calendarVsResolved: "Written dates & exact end time",
+  nominalLabel: "Calendar dates",
+  resolvedLabel: "Exact end time",
+  disagreementNote: "The written dates and exact end time differ here. Both are shown — the exact end time determines whether the window is Active or Expired.",
+  endpointResolvedOnce: "The end time is fixed when calculated so changing your display time zone never shifts it.",
+  continueHeading: "Continuation unavailable",
+  continueLabel: "Continue referral",
   continueConfirmTitle: "Continue this referral?",
   cycleTerm: "Cycle",
   continueNotExpired: "This referral's window has not ended, so there is nothing to continue.",
   continueNoPrecision: "The introduction date is not precise enough to have had a window, so there is nothing to continue.",
   continueSettingOff: "Worker continuation is off, so an ordinarily expired referral offers no Continue action.",
-  expiredHistoryHeading: "Permitted Expired history",
-  expiredPermission: "This list shows identity, source reference, status and permitted dates only.",
-  expiredReadOnly: "Nothing here can be changed. A permitted history is read-only, and the referral it describes is kept where it belongs.",
-  expiredAbsentHeading: "Not included here",
-  expiredNoMatchingHint: "A search here matches only the facts this list is permitted to show. No hidden field is ever used as a matching clue, so a search that finds nothing has told you nothing about what was withheld.",
-  searchEmptyTitle: "No referral matches this search",
+  expiredHistoryHeading: "Expired history",
+  expiredPermission: "Shows name, reference, status, and permitted dates only.",
+  expiredReadOnly: "Read-only history — nothing can be edited here.",
+  expiredAbsentHeading: "Not shown in expired history",
+  expiredNoMatchingHint: "Search only checks the fields visible here — hidden details are never matched.",
+  searchEmptyTitle: "No matching referrals",
   continuedWindow: "Continued window",
   continuedFrom: "Continued from",
-  elapsedNotCalendar: "This window is measured in elapsed seconds rather than calendar days, so a change of clocks neither lengthens nor shortens it.",
-  oneSuccessor: "A cycle carries at most one continuation, so continuing it once is the whole of what it offers.",
+  elapsedNotCalendar: "Measured in exact elapsed seconds so daylight-saving changes don’t shorten or lengthen it.",
+  oneSuccessor: "Each referral cycle can only be continued once.",
 } as const;
 function envelopeOf(body: unknown, what: string): JsonRecord {
   const refusal = fieldAt(body, "outcome");
@@ -211,14 +211,14 @@ test("an approximate introduction date is shown as approximate and is never turn
   expectStatedMembers(detail, { datePrecision: "approximate", originalIntroductionOn: APPROXIMATE_CYCLE.introducedOn, windowStart: null, windowEnd: null }, "data", "referral");
   expectStatedMembers(detail, { "status.status": "no-deadline", "continuation.available": false }, "data", "referral");
 });
-const countCaption = (heading: string, total: number): string => `${heading}: ${String(total)} ${total === 1 ? "referral" : "referrals"} in the whole result.`;
+const countCaption = (heading: string, total: number): string => `${heading}: ${String(total)} ${total === 1 ? "referral" : "referrals"}`;
 test("the seeded date-only cycle is Active until its exclusive endpoint and Expired at it", async ({ page }) => {
   await page.goto(referralDetailPath(DATE_ONLY_CYCLE.referralId));
   await expect(page.getByRole("heading", { name: DATE_ONLY_CYCLE.displayName, level: 1 })).toBeVisible();
   await expectStatusWord(page.locator('[data-slot="referral-detail-status"]'), COPY.statusActive);
   const windowPanel = page.locator('[data-slot="referral-window-panel"]');
   await expect(windowPanel.getByRole("heading", { name: COPY.newWindow })).toBeVisible();
-  for (const text of [DATE_ONLY_CYCLE.nominalWording, `The introduction date, ${DATE_ONLY_CYCLE.introducedOn}, is day one.`, `The last date the window includes is ${DATE_ONLY_CYCLE.lastIncludedOn}.`, COPY.endpointResolvedOnce]) await expect(windowPanel.getByText(text)).toBeVisible();
+  for (const text of [DATE_ONLY_CYCLE.nominalWording, `Day one: ${DATE_ONLY_CYCLE.introducedOn}.`, `Last included day: ${DATE_ONLY_CYCLE.lastIncludedOn}.`, COPY.endpointResolvedOnce]) await expect(windowPanel.getByText(text)).toBeVisible();
   for (const text of [DATE_ONLY_CYCLE.endpoint, DATE_ONLY_CYCLE.zone]) await expect(windowPanel.getByText(text, { exact: true }).first()).toBeVisible();
   await expect(windowPanel.getByText(COPY.disagreementNote)).toHaveCount(0);
   await setClock(page.request, "2026-11-25T23:59:59Z");
@@ -248,7 +248,7 @@ test("a New window across a daylight-saving transition ends at the first valid i
   await expectStatusWord(page.locator('[data-slot="referral-detail-status"]'), COPY.statusActive);
   const composedPanel = page.locator('[data-slot="referral-window-panel"]');
   await expect(composedPanel.getByRole("heading", { name: COPY.newWindow })).toBeVisible();
-  for (const text of [COMPOSED_WINDOW.nominalWording, `The introduction date, ${COMPOSED_INTRODUCTION.date}, is day one.`, `The last date the window includes is ${COMPOSED_INTRODUCTION.lastIncludedOn}.`]) await expect(composedPanel.getByText(text)).toBeVisible();
+  for (const text of [COMPOSED_WINDOW.nominalWording, `Day one: ${COMPOSED_INTRODUCTION.date}.`, `Last included day: ${COMPOSED_INTRODUCTION.lastIncludedOn}.`]) await expect(composedPanel.getByText(text)).toBeVisible();
   for (const text of [COMPOSED_WINDOW.endpoint, COMPOSED_INTRODUCTION.zone]) await expect(composedPanel.getByText(text, { exact: true }).first()).toBeVisible();
   await page.goto(`${REFERRALS_PATH}?list=active&search=${encodeURIComponent(COMPOSED_INTRODUCTION.displayName)}`);
   const composedRow = page.locator('[data-slot="referral-list"]').locator(`a[href*="${composedId}"]`); // The seeded cycle for this partner is on the same list, so the row is found by the cycle the recording created rather than by the partner's name alone.
@@ -263,7 +263,7 @@ test("a New window across a daylight-saving transition ends at the first valid i
   await page.goto(referralDetailPath(referralId)); // The surface states both facts under their own labels: the calendar wording as written, and the resolved moment that decides where the window stands — never one rewritten to look like the other.
   const windowPanel = page.locator('[data-slot="referral-window-panel"]');
   for (const heading of [COPY.newWindow, COPY.calendarVsResolved]) await expect(windowPanel.getByRole("heading", { name: heading })).toBeVisible();
-  for (const text of [COPY.nominalLabel, DST_NOMINAL_WORDING, COPY.resolvedLabel, COPY.disagreementNote, COPY.endpointResolvedOnce]) await expect(windowPanel.getByText(text)).toBeVisible();
+  for (const text of [COPY.nominalLabel, DST_NOMINAL_WORDING, COPY.resolvedLabel, COPY.disagreementNote, COPY.endpointResolvedOnce]) await expect(windowPanel.getByText(text).first()).toBeVisible();
   for (const text of [DST_LAST_INCLUDED_ON, DST_ENDPOINT, DST_INTRODUCTION.zone]) await expect(windowPanel.getByText(text, { exact: true }).first()).toBeVisible();
   await expectStatusWord(page.locator('[data-slot="referral-detail-status"]'), COPY.statusActive);
   await setClock(page.request, DST_ENDPOINT);
@@ -281,7 +281,7 @@ test("a New window across a daylight-saving transition ends at the first valid i
   await expect(revivedPanel.getByText(DST_NOMINAL_WORDING)).toBeVisible();
   await page.goto(SETTINGS_PATH);
   await page.getByLabel("Display time zone").selectOption(OTHER_DISPLAY_ZONE);
-  await expect(page.getByText(/no deadline moves/u)).toBeVisible();
+  await expect(page.getByText(/keep their original dates/u).first()).toBeVisible();
   await page.goto(referralDetailPath(referralId));
   await expectStatusWord(page.locator('[data-slot="referral-detail-status"]'), COPY.statusActive);
   const unchangedPanel = page.locator('[data-slot="referral-window-panel"]');
@@ -302,7 +302,7 @@ test("the permitted Expired history carries identity, source reference, status a
   for (const text of [COPY.expiredPermission, COPY.expiredReadOnly, COPY.expiredAbsentHeading]) await expect(list.getByText(text).first()).toBeVisible();
   await expect(list.getByRole("heading", { name: EXPIRED_CYCLE.displayName })).toBeVisible();
   for (const text of [EXPIRED_CYCLE.reference, COPY.statusExpired]) await expect(list.getByText(text, { exact: true }).first()).toBeVisible();
-  for (const absent of ["Contact details", "What the referrer said", "Precise location", "Notes", "Financial information"] as const) await expect(list.getByText(absent, { exact: true }).first()).toBeVisible();
+  for (const absent of ["Contact details", "Referrer context", "Exact address", "Private notes", "Giving history"] as const) await expect(list.getByText(absent, { exact: true }).first()).toBeVisible();
   await expect(list).not.toContainText(HIDDEN_EMAIL);
   await expect(list).not.toContainText("Prefers a call after 6pm");
   for (const currency of ["USD", "EUR", "KWD", "JPY"]) await expect(list).not.toContainText(currency);
@@ -379,7 +379,7 @@ test("a continued window ends in elapsed seconds, and a racing second Continue y
   const confirmStep = page.getByRole("alertdialog");
   await expect(confirmStep).toBeVisible();
   await expect(confirmStep).toContainText(COPY.continueConfirmTitle);
-  await expect(confirmStep.getByText(`This continues ${COPY.cycleTerm} 0, the cycle whose window has ended`)).toBeVisible();
+  await expect(confirmStep.getByText(`Opens one additional window from ${COPY.cycleTerm} 0 starting now.`)).toBeVisible();
   await expect(confirmStep.getByText(EXPIRED_CYCLE.referralId, { exact: true }).first()).toBeVisible();
   // One press, one attempt: the request the control sends is the whole statement of it, and the answer it receives is the outcome — the identifiers the acceptance created and changed.
   const [attemptRequest, attemptAnswer] = await Promise.all([

@@ -5,7 +5,7 @@ import { isRecord } from "@/lib/guards";
 import { PRESENTATION_CHOICES } from "@/modules/content/document";
 import { RENDITION_PURPOSES } from "@/modules/media/asset";
 import { mutationInputSchema, mutations, outcomeFromError, reads, toResponse } from "@/modules/data-service";
-import { UNIDENTIFIED_ATTEMPT, claimedBodyRoute, declaresJsonBody, dispatch, type ClaimedWrite } from "../handler";
+import { UNIDENTIFIED_ATTEMPT, claimedBodyRoute, dispatch, readRequestBody, type ClaimedWrite } from "../handler";
 import { readGrammar, readRoute } from "../read";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +13,6 @@ const REQUEST_BYTE_LIMIT = 1_048_576;
 const REFERENCE_MAX_LENGTH = 160;
 const CHECKSUM_MAX_LENGTH = 96;
 const MEDIA_PLACEMENTS_MAX = 64;
-const UTF8 = new TextEncoder();
 const MESSAGES = {
   bodyNotJson: "Send the change as a JSON object carrying operationId, scope, expectedRevision and payload.",
   bodyTooLarge: `A draft request carries prose and media references rather than media bytes, so a body over ${String(REQUEST_BYTE_LIMIT)} bytes is refused before it is read: nothing was saved and the editor's own text is untouched.`,
@@ -77,16 +76,6 @@ const DRAFT_MUTATIONS = ["saveDraft", "restoreRevisionAsDraft"] as const;
 const claimedMutationSchema = z.object({ payload: z.object({ operation: z.enum(DRAFT_MUTATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.payloadMissing }) }, { error: MESSAGES.bodyNotJson });
 const DRAFT_VIEWS = ["draft", "candidate"] as const;
 const readQuerySchema = z.strictObject({ view: z.enum(DRAFT_VIEWS, { error: MESSAGES.viewRequired }), variantId: editionReferenceSchema }, { error: MESSAGES.queryInvalid });
-const requestTextSchema = z.string({ error: MESSAGES.bodyNotJson }).superRefine((text, context) => {
-  if (UTF8.encode(text).byteLength > REQUEST_BYTE_LIMIT) context.addIssue({ code: "custom", message: MESSAGES.bodyTooLarge });
-});
-function bodyOfText(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
-}
 const readDraftEdition = readRoute(
   readGrammar(readQuerySchema, (search) => ({ view: search.get("view") ?? undefined, variantId: search.get("variantId") ?? undefined })),
   (query) => (query.view === "draft" ? reads.updates.readDraft({ variantId: query.variantId }) : reads.updates.readCandidate({ variantId: query.variantId })),
@@ -96,10 +85,9 @@ const DRAFT_WRITES = {
   restoreRevisionAsDraft: (raw, { operationId, sessionId }) => dispatch(restoreRevisionAsDraftRequestSchema, raw, operationId, "operation", (input) => mutations.updates.restoreRevisionAsDraft(sessionId, input)),
 } satisfies Readonly<Record<(typeof DRAFT_MUTATIONS)[number], ClaimedWrite>>;
 async function changeDraft(request: NextRequest): Promise<Response> {
-  if (!declaresJsonBody(request)) return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, new z.ZodError([{ code: "custom", path: [], message: MESSAGES.bodyNotJson }])));
-  const text = await request.text().catch(() => "");
-  const sized = requestTextSchema.safeParse(text);
-  if (!sized.success) return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, sized.error));
-  return claimedBodyRoute(request, bodyOfText(text), claimedMutationSchema, (claim) => claim.payload.operation, DRAFT_WRITES);
+  const read = await readRequestBody(request, REQUEST_BYTE_LIMIT);
+  if (read.kind === "oversized") return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, new z.ZodError([{ code: "custom", path: [], message: MESSAGES.bodyTooLarge }])));
+  if (read.kind === "unreadable") return toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, new z.ZodError([{ code: "custom", path: [], message: MESSAGES.bodyNotJson }])));
+  return claimedBodyRoute(request, read.value, claimedMutationSchema, (claim) => claim.payload.operation, DRAFT_WRITES);
 }
 export const { GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS } = routeMethods({ GET: readDraftEdition, POST: changeDraft });

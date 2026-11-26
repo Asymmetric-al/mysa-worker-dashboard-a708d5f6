@@ -6,12 +6,12 @@ import { useDirection } from "@/components/ui/direction";
 const Popover = ({ ...props }: PopoverPrimitive.Root.Props) => <PopoverPrimitive.Root data-slot="popover" {...props} />;
 const PopoverTrigger = ({ ...props }: PopoverPrimitive.Trigger.Props) => <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 const POPOVER_CONTENT_CLASS =
-  "z-50 flex w-72 origin-(--transform-origin) flex-col gap-4 rounded-2xl bg-popover p-4 text-sm text-popover-foreground shadow-2xl ring-1 ring-foreground/5 dark:ring-foreground/10 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95";
+  "z-(--z-popover) flex max-h-[min(var(--available-height),calc(100dvh-1rem))] w-72 max-w-[min(var(--available-width),calc(100vw-1rem))] origin-(--transform-origin) flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl bg-popover p-4 text-sm text-popover-foreground shadow-overlay outline-hidden duration-150 ease-out data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95";
 function PopoverContent({ className, align = "center", alignOffset = 0, side = "bottom", sideOffset = 4, ...props }: PopoverPrimitive.Popup.Props & Pick<PopoverPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
   const direction = useDirection();
   return (
     <PopoverPrimitive.Portal>
-      <PopoverPrimitive.Positioner align={align} alignOffset={alignOffset} side={side} sideOffset={sideOffset} className="isolate z-50">
+      <PopoverPrimitive.Positioner align={align} alignOffset={alignOffset} side={side} sideOffset={sideOffset} collisionPadding={8} className="isolate z-(--z-popover)">
         <PopoverPrimitive.Popup dir={direction} data-slot="popover-content" className={cn(POPOVER_CONTENT_CLASS, className)} {...props} />
       </PopoverPrimitive.Positioner>
     </PopoverPrimitive.Portal>

@@ -10,11 +10,11 @@ export const metadata: Metadata = { title: PAGE_TITLE };
 const NARROWING_HEADING_ID = "commitments-narrowing";
 const COMMITMENTS_PAGE_COPY = {
   title: PAGE_TITLE,
-  lead: "Every commitment the source reports, with the recurring outcome the current occurrence sits in. A commitment is not received money and a collection in progress is not cash: these rows state the source's own kind, cadence, currency and collection evidence, and none of them is counted in a received-support figure.",
-  narrowing: { heading: "What this list can be narrowed by", body: "This list is read whole from the source, so it carries no period filter and no currency filter. The reasons the read gives for both are stated below." },
-  denied: "This session may not read the commitments in this context, so nothing about them is stated here: no count, no amount, no empty list and no hint of whether any commitment exists.",
-  unavailableTitle: `${PAGE_TITLE} could not be read`,
-  refusedTitle: "This list's request was refused",
+  lead: "Recurring and fixed-total giving arrangements from your giving source. Commitments are tracked separately from received cash.",
+  narrowing: { heading: "Available filters", body: "Commitments are shown as one complete list from your source, without period or currency filters." },
+  denied: "Your current session doesn’t have permission to view commitments in this ministry context.",
+  unavailableTitle: `Couldn’t load ${PAGE_TITLE}`,
+  refusedTitle: "Couldn’t load Commitments",
 } as const;
 const FILTER_ACTION_LABELS: Readonly<Record<string, string>> = { filterByPeriod: "Period", filterByCurrency: "Currency" };
 function pageQueryOf(params: SearchParams): NonNullable<Parameters<typeof reads.support.readCommitments>[0]> {

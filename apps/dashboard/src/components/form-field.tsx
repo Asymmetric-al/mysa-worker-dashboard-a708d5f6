@@ -15,9 +15,9 @@ import type { ZodError } from "zod";
 }
 /** The one body measure for a field's hint: the design system's field description states a normal leading of its own, and every 14px paragraph in the product reads at the body measure instead. `leading-5` is the body measure's 20px step, and the class merge keeps it over the design system's own leading. */
 const HINT_CLASS = "type-supporting leading-5";
-/** The one sentence a date field states about itself: the convention a civil date is written and read in here, and the exact day the field holds once it holds one. */ export function civilDateConvention(value?: string | null): string {
+/** Concise civil-date format guidance shown beneath date inputs. */ export function civilDateConvention(value?: string | null): string {
   const held = typeof value === "string" ? value.trim() : "";
-  return held === "" ? "Civil dates here are written and read as year-month-day, for example 2026-09-12." : `Civil dates here are written and read as year-month-day, and this one is ${held}.`;
+  return held === "" ? "Use YYYY-MM-DD format (for example, 2026-09-12)." : `Use YYYY-MM-DD format (currently ${held}).`;
 }
 function messagesOf(value: unknown): readonly string[] {
   const messages: string[] = [];
@@ -54,7 +54,7 @@ function messagesOf(value: unknown): readonly string[] {
   const sentences: string[] = [];
   for (const [path, messages] of Object.entries(byField)) sentences.push(`${path}: ${messages.join(" ")}`);
   sentences.push(...form);
-  return sentences.length === 0 ? "The request stated no field this view can name, so it has to be corrected before the read can run." : sentences.join(" ");
+  return sentences.length === 0 ? "Please check your entries and try again." : sentences.join(" ");
 }
 /** What a {@link FormField} hands its control. */ export type FormFieldControl = { readonly id: string; readonly describedBy: string | undefined; readonly invalid: boolean; readonly required: boolean };
 export type FormFieldProps = {
@@ -153,7 +153,7 @@ export type FormFieldGroupProps = {
 /** The heading levels a surrounding page can need; the level is the caller's, not the summary's. */ export type SummaryHeadingLevel = 2 | 3 | 4;
 const SUMMARY_HEADING_TAG: Readonly<Record<SummaryHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
 /** The one type scale's utility per level, so the one error summary states its heading at the measure of the level it lands at. */ const SUMMARY_HEADING_SCALE: Readonly<Record<SummaryHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
-const DEFAULT_SUMMARY_TITLE = "There is a problem with this form";
+const DEFAULT_SUMMARY_TITLE = "Please check the highlighted fields";
 type SummaryEntry = { readonly path: string | null; readonly label: string; readonly messages: readonly string[] };
 export type FormErrorSummaryProps = {
   readonly errors: FieldErrorLookup | null | undefined;

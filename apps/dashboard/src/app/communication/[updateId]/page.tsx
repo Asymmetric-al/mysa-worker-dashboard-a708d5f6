@@ -12,18 +12,18 @@ import { reads } from "@/modules/data-service";
 import { PageColumn, PageHeading, pageRefusalOf, wireFormOf, type ReadNoticeCopy, type ReadRefusal } from "../../page-frame";
 export const metadata: Metadata = { title: "Update" };
 type OverviewEnvelope = Extract<Awaited<ReturnType<typeof reads.updates.readVariantOverview>>, { readonly kind: "envelope" }>["envelope"];
-const PAGE_LEDE = "Every edition of this Update, each with its own saved draft, its frozen candidate and its published revision. " + "A release is what a reader is served; a notice is a separate outcome again, and no edition is ever summarised " + "into one status for the whole Update.";
+const PAGE_LEDE = "Manage every audience and language edition of this update — each tracks its own draft, review, published copy, and email send status.";
 const SURFACE_HEADING_LEVEL = 2;
 /** The level the release review occupies: a second section under the same `h1`, beside the matrix rather than inside it, because releasing is not one of the matrix's per-edition writes and the review opens its own blocks below itself. */ const PUBLISH_HEADING_LEVEL = 2;
 /** The page's own title, stated by the heading block above the matrix and kept whenever the read answers with a refusal, so no refusal arm leaves a notice standing in for the page's heading. */ const PAGE_TITLE = "Update";
 /** The level a notice nests at beneath that title: the page keeps its heading and the refusal is stated under it. */ const NESTED_NOTICE_LEVEL = 2;
-const DENIED_DESCRIPTION = "This session may not read this Update's editions in the context it is working in, so no edition, revision, " + "candidate, language or count is stated here. A refusal is not an Update with no editions.";
-const UNAVAILABLE_TITLE = "The editions could not be read";
-const UNAVAILABLE_FALLBACK = "The source holding this Update could not be read, so nothing is stated in place of its editions. Retry the same " + "read: an outage is never presented as an Update with no editions.";
-const REFUSED_DESCRIPTION = "The address this page asked the read to resolve is not one the read admits, so nothing was read and nothing is " + "shown in its place. Opening an Update from the Updates list states the address the read does admit.";
-const NOT_AN_UPDATE_DESCRIPTION = "The document this address names is a Page rather than an Update, so it is not shown here under Update wording. " + "A Page is composed, previewed and released from its own route, where its locale editions and its give " + "placement are stated.";
+const DENIED_DESCRIPTION = "Your current session doesn’t have permission to view this update in this ministry context.";
+const UNAVAILABLE_TITLE = "Couldn’t load this update";
+const UNAVAILABLE_FALLBACK = "Couldn’t reach the content service right now. Try again in a moment.";
+const REFUSED_DESCRIPTION = "That update address isn’t valid. Open an update from your Updates list.";
+const NOT_AN_UPDATE_DESCRIPTION = "That address belongs to a Ministry page rather than an Update. Open it from Ministry pages instead.";
 /** The page's words for each arm of the one read it makes, so a refusal states what could not be read in the page's own terms. */
-const NOTICE_COPY: ReadNoticeCopy = { headingLevel: NESTED_NOTICE_LEVEL, denied: { title: "These editions are not available in this session", body: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE }, refused: { title: "This overview's request was refused", body: REFUSED_DESCRIPTION } };
+const NOTICE_COPY: ReadNoticeCopy = { headingLevel: NESTED_NOTICE_LEVEL, denied: { title: "This update isn’t available in this session", body: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE }, refused: { title: "Couldn’t open this update", body: REFUSED_DESCRIPTION } };
 type OverviewSurfaceProps = { readonly envelope: OverviewEnvelope; /** The recipient ceiling the audience read stated for this publisher, or why it stated none. */ readonly ceiling: PublishAudienceCeiling | undefined };
 /** What the audience read answers with: the recipient ceiling's own counts, its refusal, or the outage behind them. */ type AudienceResult = Awaited<ReturnType<typeof reads.audience.readAudience>>;
 /** One release as the review's own plain view: the record's fields with its instants as the ISO text the wire form carries. `JSON.stringify` writes a `Temporal.Instant` as the very text `toString()` states, so this is the value the transport would have handed a browser — an instant object cannot cross to a Client Component, and none does. */
@@ -105,7 +105,7 @@ async function ceilingOf(): Promise<PublishAudienceCeiling | undefined> {
   switch (result.kind) {
     case "envelope": {
       // An Update's matrix is this family's surface, so a document of another family is a request this route does not serve rather than one it renders under Update wording. The comparison is a routing decision on a fact the read states; it derives no lifecycle and carries no authority, which stays with the read.
-      if (result.envelope.data.document.family !== "update") return routeRefusal("This address does not name an Update", NOT_AN_UPDATE_DESCRIPTION);
+      if (result.envelope.data.document.family !== "update") return routeRefusal("Not an Update", NOT_AN_UPDATE_DESCRIPTION);
       return <OverviewSurface envelope={result.envelope} ceiling={await ceilingOf()} />; // The ceiling is read only for an Update this route serves, and it is the service's own audience read rather than a request to this application's handler: the same counts the audience screen shows, under this scope.
     }
     case "denied":

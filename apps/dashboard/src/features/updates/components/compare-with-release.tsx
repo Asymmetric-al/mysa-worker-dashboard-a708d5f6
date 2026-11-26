@@ -21,15 +21,15 @@ export type ComparisonChangeKind = (typeof COMPARISON_CHANGE_KINDS)[number];
 export type ComparisonSectionChange = { readonly kind: "section"; readonly element: string; readonly headingPath: readonly string[]; readonly state?: ValueState };
 export type ComparisonMediaChange = { readonly kind: "media"; readonly placementId: string; readonly renditionPurpose: string; readonly state?: ValueState };
 export type ComparisonChange = ComparisonSectionChange | ComparisonMediaChange;
-const DRAFT_PANE_TITLE = "Working draft";
-const RELEASE_PANE_TITLE = "Last release";
+const DRAFT_PANE_TITLE = "Current draft";
+const RELEASE_PANE_TITLE = "Published version";
 const ABSENCE_COPY = {
-  draftNone: { title: "No acknowledged revision yet", description: "Nothing has been saved and acknowledged for this edition, so there is no working revision to compare with the last release. A save whose acknowledgement never arrived leaves nothing acknowledged here." },
-  releaseNone: { title: "No prior release", description: "Nothing has been published for this audience and language yet, so there is no released revision to compare the draft with. This is an absence of a release, not a draft with no changes." },
-  withheld: { title: "This comparison cannot show the released revision", description: "The comparison shows the working draft on its own and states no fact about the released revision — not its title, its checksum, its size or its content." },
-  unavailable: { title: "The content source could not be read", description: "The other side is shown as it was read, so the comparison stays usable while this side is unreadable, and nothing on this pane stands in for what the source holds." },
+  draftNone: { title: "No saved draft yet", description: "Save your draft to compare it side by side with the published version." },
+  releaseNone: { title: "Not published yet", description: "This audience and language edition hasn’t been published yet." },
+  withheld: { title: "Published version not accessible", description: "Your current session doesn’t have permission to view the published version for comparison." },
+  unavailable: { title: "Couldn’t load this version", description: "The other version is still shown so you can continue working." },
 } as const;
-const RELEASE_UNCHANGED_BY_DRAFT_NOTE = "The last release still publishes the revision shown beside it. A draft edit changes nothing a reader can open until a new release is published.";
+const RELEASE_UNCHANGED_BY_DRAFT_NOTE = "Partners still see the published version until you publish a new release.";
 const CHANGE_KIND_WORDS: Readonly<Record<ComparisonChangeKind, string>> = { section: "Section", media: "Media placement" };
 const VALUE_STATE_PREFIX = "Value state";
 const HEADING_TAG: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
@@ -84,9 +84,9 @@ function ChangeItem({ change }: { readonly change: ComparisonChange }): ReactEle
 function ChangeList({ changes, unchanged, headingLevel, headingId }: { readonly changes: readonly ComparisonChange[] | undefined; readonly unchanged: boolean; readonly headingLevel: NoticeHeadingLevel; readonly headingId: string }): ReactElement {
   const body =
     changes === undefined ? (
-      <p className="type-supporting text-pretty wrap-anywhere">{"This comparison shows the two revisions, their checksums and their authors. The read supplied no change list, so no difference is claimed here."}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{"Compare the two versions side by side below."}</p>
     ) : changes.length === 0 ? (
-      <p className="type-body text-pretty wrap-anywhere">{"No changes were reported between these revisions."}</p>
+      <p className="type-body text-pretty wrap-anywhere">{"No changes between your draft and the published version."}</p>
     ) : (
       <ul className="flex min-w-0 list-none flex-col gap-1 p-0">
         {changes.map((change, index) => (
@@ -96,9 +96,9 @@ function ChangeList({ changes, unchanged, headingLevel, headingId }: { readonly 
     );
   return (
     <section data-slot="comparison-changes" aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
-      <Heading {...{ level: headingLevel, id: headingId }}>{"What the read reported as changed"}</Heading>
+      <Heading {...{ level: headingLevel, id: headingId }}>{"Changes since last publish"}</Heading>
       {body}
-      <p className="type-supporting text-pretty wrap-anywhere">{unchanged ? "The two checksums are identical, so the last release publishes exactly the revision shown as the working draft." : RELEASE_UNCHANGED_BY_DRAFT_NOTE}</p>
+      <p className="type-supporting text-pretty wrap-anywhere">{unchanged ? "Your draft matches the currently published version." : RELEASE_UNCHANGED_BY_DRAFT_NOTE}</p>
     </section>
   );
 }
@@ -108,7 +108,7 @@ function SideNotice({ side, reading, headingLevel }: { readonly side: "draft" | 
     return <StateNotice kind="empty" title={copy.title} description={copy.description} headingLevel={headingLevel} className="min-w-0" />;
   }
   if (reading.status === "withheld") return <StateNotice kind="denied" title={ABSENCE_COPY.withheld.title} description={ABSENCE_COPY.withheld.description} headingLevel={headingLevel} className="min-w-0" />;
-  const retry: NoticeRetry | undefined = reading.onRetry === undefined ? undefined : { label: "Try this read again", onClick: reading.onRetry };
+  const retry: NoticeRetry | undefined = reading.onRetry === undefined ? undefined : { label: "Try again", onClick: reading.onRetry };
   return <StateNotice kind="unavailable" title={ABSENCE_COPY.unavailable.title} description={ABSENCE_COPY.unavailable.description} source={reading.source} retry={retry} headingLevel={headingLevel} className="min-w-0" />;
 }
 type ComparisonPaneProps = { readonly side: "draft" | "release"; readonly title: string; readonly headingId: string; readonly headingLevel: NoticeHeadingLevel; readonly direction: ContentVariant["locale"]["direction"]; readonly lang: string; readonly scrollLabel: string; readonly reading: ComparisonDraftSide };
@@ -168,7 +168,7 @@ export function CompareWithRelease({ variant, draft, release, reviewDecision, ch
     <section data-slot="compare-with-release" aria-labelledby={titleId} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <header className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty" }}>{"Compare with the last release"}</Heading>
+          <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty" }}>{"Compare with published version"}</Heading>
           <StatusBadge label={AUDIENCE_LABELS[variant.audience].label} tone={AUDIENCE_LABELS[variant.audience].tone} srPrefix="Audience" />
           <span className="text-sm text-muted-foreground">
             <bdi>{LOCALE_DISPLAY_NAMES[variant.locale.tag] ?? variant.locale.tag}</bdi>
@@ -177,7 +177,7 @@ export function CompareWithRelease({ variant, draft, release, reviewDecision, ch
         <DraftStatus state={lifecycleOf(variant, release.status === "revision" ? release.release : undefined, { reviewDecision: reviewDecision ?? null })} />
         {/* A static explanation, not an alarm: the pass leaves the announcing region to the notices that report a change of condition. */}
         <Alert role={undefined}>
-          <AlertTitle>{"What this comparison shows"}</AlertTitle>
+          <AlertTitle>{"Draft vs. published"}</AlertTitle>
           <AlertDescription>
             <p>{DRAFT_VS_RELEASED.draftIsNotWhatReadersSee}</p>
             <p>{DRAFT_VS_RELEASED.releaseIsWhatRecipientsReceive}</p>

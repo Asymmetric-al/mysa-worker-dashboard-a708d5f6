@@ -23,19 +23,19 @@ const NOTE_HEADING_SCALE = { 3: "type-subsection-title", 4: "type-group-title" }
 const NOTE_HEADING_LEVEL = 3;
 const AUDIENCE_WORD = AUDIENCE_LABEL_COPY.private.label;
 const RETRY_LABEL = FORM_OUTCOME_COPY.unavailable.actionLabel ?? "Try again";
-const CHECK_LABEL = FORM_OUTCOME_COPY.unknown.actionLabel ?? "Check the result";
-const UNSAVED_WORK_DESCRIPTION = "This private note has been written on this screen and not saved yet.";
-const SAVE_BLOCKED_PENDING = "The note was not saved and the context was not switched, so nothing you typed has been discarded: a save of this note is already in flight, so nothing was sent again.";
-const SAVE_NOT_SETTLED = "The note was not saved and the context was not switched, so nothing you typed has been discarded: ";
+const CHECK_LABEL = FORM_OUTCOME_COPY.unknown.actionLabel ?? "Check result";
+const UNSAVED_WORK_DESCRIPTION = "You have an unsaved private note on this partner.";
+const SAVE_BLOCKED_PENDING = "Your note is already saving. Wait a moment before switching ministries.";
+const SAVE_NOT_SETTLED = "Couldn’t save your note before switching ministries (your text is still here): ";
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { body: FIELD_LABEL };
 const NOTICE_COPY: OutcomeNoticeCopy = {
-  denied: { title: "A private note cannot be saved here", description: "A note is written inside the ministry that admits this record, and the context in view does not admit it. Nothing you typed was sent, and it stays in the box above this notice." },
+  denied: { title: "Can’t save private notes here", description: "You don’t have permission to save notes on this partner in the current ministry. Your text is still in the box above." },
   unavailable: { title: FORM_OUTCOME_COPY.unavailable.title, description: FORM_OUTCOME_COPY.unavailable.body },
   unknown: { title: FORM_OUTCOME_COPY.unknown.title, description: FORM_OUTCOME_COPY.unknown.body },
   retryLabel: RETRY_LABEL,
   checkResultLabel: CHECK_LABEL,
 };
-const characterLine = (count: number): string => `${count === 1 ? "1 character" : `${String(count)} characters`}. Your note is filed at the instant the service records when it accepts it, so this line states no date or time of its own.`;
+const characterLine = (count: number): string => `${count === 1 ? "1 character" : `${String(count)} characters`} · Timestamped automatically when saved.`;
 const describedByField = (field: string | undefined, context: string): string => (field === undefined || field.trim() === "" ? context : `${field} ${context}`);
 function OutcomeReceipt({ outcome, onReplay, onReapply }: { readonly outcome: MutationOutcome; readonly onReplay: () => void; readonly onReapply: () => void }): ReactElement {
   const notice = outcomeNotice(outcome, NOTICE_COPY, { onRetrySameWork: onReplay, onCheckResult: onReplay, headingLevel: 4 });
@@ -132,7 +132,7 @@ export default function PrivateNoteComposer({ scope, partnerId, expectedRevision
   useUnsavedWork(body.length === 0 ? null : { description: UNSAVED_WORK_DESCRIPTION, save: saveForGuard, discard: discardForGuard });
   return (
     <section data-slot="private-note-composer" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-3", className)}>
-      <Heading {...{ id: headingId, className: cn(NOTE_HEADING_SCALE[headingLevel], "text-pretty") }}>Write a private note</Heading>
+      <Heading {...{ id: headingId, className: cn(NOTE_HEADING_SCALE[headingLevel], "text-pretty") }}>Add a private note</Heading>
       <Alert data-slot="private-note-audience">
         <LockKeyholeIcon aria-hidden="true" />
         <AlertTitle className="flex flex-wrap items-center gap-2">
@@ -140,13 +140,11 @@ export default function PrivateNoteComposer({ scope, partnerId, expectedRevision
           <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{AUDIENCE_WORD}</span>
         </AlertTitle>
         <AlertDescription>
-          <p>{PRIVATE_RECORD_COPY.noteIsPrivate.body}</p>
-          <p>{AUDIENCE_LABEL_COPY.private.description}</p>
           <p>{PRIVATE_RECORD_COPY.remainsPrivate.body}</p>
         </AlertDescription>
       </Alert>
       <form className="flex min-w-0 flex-col gap-3" onSubmit={saveNote}>
-        <FormField label={FIELD_LABEL} name="body" description="Plain text, in your own words: what you observed, decided or want to remember about this contact." error={bodyErrors} required>
+        <FormField label={FIELD_LABEL} name="body" description="Jot down prayer requests, context, or next steps to remember." error={bodyErrors} required>
           {(field) => (
             <Textarea
               id={field.id}
@@ -166,7 +164,7 @@ export default function PrivateNoteComposer({ scope, partnerId, expectedRevision
         </FormField>
         <p {...{ id: contextId, className: "type-supporting text-pretty" as const }}>{characterLine(Array.from(body).length)}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <Button {...{ type: "submit" as const, "aria-busy": busy || undefined }}>{busy ? "Saving the note" : "Save the note"}</Button>
+          <Button {...{ type: "submit" as const, "aria-busy": busy || undefined }}>{busy ? "Saving note…" : "Save note"}</Button>
         </div>
       </form>
       {outcome === null ? null : (

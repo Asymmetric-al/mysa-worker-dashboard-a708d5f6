@@ -15,9 +15,9 @@ import { useSetPreference } from "../hooks/use-audience-mutations";
 import type { SetPreferencePayload } from "../schemas/preference";
 /** One language the caller's read made available for this membership. The tag is the value submitted; nothing here adds one. */ export type LanguageOption = { readonly tag: string; readonly label: string; readonly direction?: "ltr" | "rtl" };
 const SELECT_LABEL = "Reading language";
-const NOT_OFFERED_HINT = "The language recorded now is not one this publisher offers here, so choose one of the offered languages and save it.";
-const NO_LANGUAGE_YET_HINT = "No language is recorded for this membership yet. Choose one and save it to state how you read this publisher's Updates.";
-const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { membershipId: "Membership", choice: "Off or Immediate", languagePreference: SELECT_LABEL };
+const NOT_OFFERED_HINT = "Your saved language isn’t currently listed — choose an available language and save.";
+const NO_LANGUAGE_YET_HINT = "No reading language saved yet. Choose one below and save.";
+const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { membershipId: "Subscription", choice: "Email frequency", languagePreference: SELECT_LABEL };
 const tagKey = (tag: string): string => tag.trim().toLowerCase();
 function offeredLanguages(options: readonly LanguageOption[]): readonly LanguageOption[] {
   const offered = new Map<string, LanguageOption>();
@@ -64,11 +64,11 @@ function outcomeStatement(outcome: MutationOutcome, context: { readonly offered:
   if (outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted") {
     return (
       <p className="text-sm text-pretty wrap-anywhere">
-        {"The language above is read from the service rather than assumed here, so it states the record's own value. This save changed the language only: the Off or Immediate choice was sent exactly as it was read, and no notification already submitted, or still awaiting its outcome, was reset."}
+        {"Reading language saved. Your email notification setting and previously sent messages weren’t changed."}
       </p>
     );
   }
-  return outcome.outcome === "unchanged" ? <p className="text-sm text-pretty wrap-anywhere">Nothing needed changing, so nothing was written and no notification was touched. The language above is the record's own value.</p> : null;
+  return outcome.outcome === "unchanged" ? <p className="text-sm text-pretty wrap-anywhere">Your reading language was already set to this value.</p> : null;
 }
 export type LanguagePreferenceProps = {
   readonly scope: Scope;
@@ -138,11 +138,11 @@ export function LanguagePreference({ scope, membershipId, publisherId, purpose, 
               <p>{LANGUAGE_PREFERENCE_COPY.help}</p>
               <p>{LANGUAGE_PREFERENCE_COPY.separateFromProof}</p>
               <p className="text-muted-foreground">
-                {`${"This preference applies to notices from"} `}
-                <bdi className="mono-identifier">{publisherId === null ? "a publisher this read does not name" : publisherId}</bdi>
-                {` ${"for the purpose"} `}
+                {`${"Applies to emails from"} `}
+                <bdi className="mono-identifier">{publisherId === null ? "Unknown publisher" : publisherId}</bdi>
+                {` ${"for"} `}
                 <bdi className="mono-identifier">{purpose}</bdi>
-                {`. ${"No other publisher, purpose or record about you is affected."}`}
+                {`. ${"Other publishers and preferences aren’t affected."}`}
               </p>
             </div>
             <FormField label={SELECT_LABEL} name="language-preference-select">

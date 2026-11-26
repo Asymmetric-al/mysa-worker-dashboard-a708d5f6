@@ -68,83 +68,79 @@ const SUB_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 type SubHeadingLevel = keyof typeof SUB_HEADING_TAG;
 const subHeadingLevelOf = (panelLevel: keyof typeof PANEL_HEADING_TAG): SubHeadingLevel => (panelLevel === 1 ? 2 : panelLevel === 2 ? 3 : 4);
 const FAMILY_COPY: Readonly<Record<ReviewFamily, { readonly title: string; readonly introduction: string }>> = {
-  update: { title: "Review this Update", introduction: "A review answers the exact revision the author submitted, for one audience and one language. " + "Approving it publishes nothing and notifies nobody: the release is a separate step, and a " + "simulated notice is separate again." },
-  page: { title: "Review this Page", introduction: "A review answers the exact revision the author submitted for one language edition of this " + "Page. Approving it publishes nothing and makes the Page public to nobody: release, reach and " + "withdrawal stay separate steps on the Page's own surface." },
+  update: { title: "Review update", introduction: "Review the exact submitted revision for one audience and language. Approving doesn’t publish or email automatically — publishing and notifications remain separate steps." },
+  page: { title: "Review ministry page", introduction: "Review the exact submitted revision for one language edition. Approving doesn’t publish or change visibility automatically." },
 };
 type DecisionCopy = { readonly label: string; readonly description: string; readonly title: string; readonly confirmLabel: string; readonly consequential: boolean; readonly consequence?: string };
 const DECISION_COPY: Readonly<Record<ReviewDecision, DecisionCopy>> = {
-  approved: { label: "Approve", description: "The frozen revision is approved for this audience and language and can be published as it " + "stands. Approval itself publishes nothing.", title: "Approve the frozen revision", confirmLabel: "Approve this revision", consequential: false },
+  approved: { label: "Approve", description: "Approves this exact revision so it can be published. Approval alone doesn’t publish.", title: "Approve revision", confirmLabel: "Approve revision", consequential: false },
   "changes-requested": {
     label: "Request changes",
-    description: "The author reads your note and submits a new revision. This candidate is answered, not " + "re-reviewed, and its earlier submission stays on record.",
-    title: "Request changes to this revision",
-    confirmLabel: "Send this request for changes",
+    description: "Returns feedback to the author so they can submit an updated revision.",
+    title: "Request changes",
+    confirmLabel: "Send change request",
     consequential: false,
   },
   rejected: {
     label: "Reject",
-    description: "This candidate ends. The edition keeps whatever it published before, and the author's next " + "attempt is a new submission.",
-    title: "Reject this candidate",
-    confirmLabel: "Reject this candidate",
+    description: "Closes this submission. Any previously published version stays live.",
+    title: "Reject submission",
+    confirmLabel: "Reject submission",
     consequential: true,
-    consequence: "The candidate is closed and this edition keeps whatever it published before. Nothing is " + "deleted, no release is withdrawn and no message is sent to anyone.",
+    consequence: "Closes this submission without deleting drafts, unpublishing live editions, or sending emails.",
   },
 };
 const RECORDED_DECISION_COPY: Readonly<Record<ReviewDecision, { readonly title: string; readonly sentence: string }>> = {
-  approved: { title: "This candidate is approved", sentence: "The reviewer's answer is recorded as an approval for this audience and language. Approval " + "publishes nothing and notifies nobody: releasing the edition is a separate step on its own " + "surface, and a simulated notice is separate again." },
-  "changes-requested": { title: "A change to this candidate was requested", sentence: "The reviewer's answer is recorded as a request for changes, so the author's next attempt is a " + "new submission with a new revision. This candidate is answered, not re-reviewed, and its earlier " + "submission stays on record." },
-  rejected: { title: "This candidate was rejected", sentence: "The reviewer's answer is recorded as a rejection, so this candidate ends and the author's next " + "attempt is a new submission. Nothing is deleted, no release is withdrawn and no message is sent " + "to anyone." },
+  approved: { title: "Approved", sentence: "This revision is approved. Publishing and sending notifications remain separate steps." },
+  "changes-requested": { title: "Changes requested", sentence: "Changes were requested. The author can revise the draft and submit a new revision." },
+  rejected: { title: "Rejected", sentence: "This submission was rejected. Any previously published version stays live." },
 };
-const RENDITION_PURPOSE_WORDS: Readonly<Record<RenditionPurpose, string>> = { display: "Display image", playback: "Playback video", poster: "Poster image", captions: "Caption track", transcript: "Transcript" };
+const RENDITION_PURPOSE_WORDS: Readonly<Record<RenditionPurpose, string>> = { display: "Display image", playback: "Video", poster: "Poster image", captions: "Captions", transcript: "Transcript" };
 const FACT_LIST_CLASS = "grid min-w-0 gap-x-4 gap-y-2 text-sm sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]";
 /** The panel states its own title and each of its parts at the scale of the level they render at, so a part never reads at the same measure as the surface that holds it. */
 const PANEL_HEADING_SCALE: Readonly<Record<keyof typeof PANEL_HEADING_TAG, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title" };
 const PART_HEADING_SCALE: Readonly<Record<SubHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const COPY = {
-  notStated: "Not stated",
-  recordedDecisionHeading: "The decision on record",
-  decidedByLabel: "Decided by",
-  decidedAtLabel: "Decided at",
-  decisionNoteLabel: "Note for the author",
-  noDecisionNoteText: "No note was left with this answer.",
-  decisionInstantSentence: "The instant is stated exactly as the record holds it, in ISO 8601 (UTC), so the same answer reads the same on every device.",
-  noFurtherDecisionSentence: "No further decision is offered here: this candidate has already been answered, so a further review needs a new submission with a new revision.",
-  noCandidateNotice: "No revision is frozen for review here, so there is nothing to approve or refuse.",
-  noActiveNotice: "No edition under review is selected here. Choose the edition you mean from the list above; " + "nothing is approved until you decide on the edition on screen.",
+  notStated: "Not available",
+  recordedDecisionHeading: "Recorded decision",
+  decidedByLabel: "Reviewed by",
+  decidedAtLabel: "Reviewed at",
+  decisionNoteLabel: "Note for author",
+  noDecisionNoteText: "No note added.",
+  decisionInstantSentence: "Timestamp recorded in UTC.",
+  noFurtherDecisionSentence: "This submission already has a final decision. Further updates require a new submission.",
+  noCandidateNotice: "No revision is waiting for review.",
+  noActiveNotice: "Choose an edition above to review it.",
   editionLabel: "Edition under review",
-  frozenHeading: "The revision you are reviewing",
-  frozenExplanation: "These identify the exact revision the author submitted. A later save is a different revision " + "with a different checksum, so content written after this submission cannot become the revision " + "you approve.",
-  intentHeading: "What approval lets happen",
+  frozenHeading: "Submitted revision",
+  frozenExplanation: "Identifies the exact snapshot submitted for review. Later draft edits create a new revision and won’t alter what you approve.",
+  intentHeading: "Release mode",
   publishOnlyBadge: "Publish only",
-  notifyBadge: "Publish and notify now",
-  publishOnlySentence: "The author chose to publish this edition without notifying anyone.",
-  notifySentence: "The author chose to publish this edition and then notify the subscribers who are currently " + "eligible for this publisher's Update email purpose.",
-  reviewerCannotFlipSentence: "This is the author's choice, shown as a fact. A reviewer cannot turn Publish only into Publish " + "and notify now, or the reverse; if the other choice is the right one, ask for changes and say so " + "in the note.",
-  previewHeading: "What a released reader would see",
-  previewExplanation: "Shown in its own frame so nothing in the revision can act on this page: it runs no scripts, " + "cannot navigate, submit a form or open a window, and loads only the renditions this review was " + "admitted to read.",
-  mediaLabel: "Media in this revision",
-  noRenderedBodyNotice: "This revision arrived without a rendered body, so what a released reader would see cannot be " + "shown here. Nothing has been approved; the read that supplied this candidate should be repeated " + "before a decision is given.",
-  siblingHeading: "Other editions in this document",
-  heldPriorGoodSentence: "Not rolled back: this edition still publishes the revision it published before that attempt, and " + "the failure belongs to the edition the attempt named.",
-  approvalIsPerVariantSentence: "This decision answers the edition named above only: approving one language or audience approves " + "no other edition of this document.",
-  approvalIsNotDeliverySentence: "A decision is not a publication and not a delivery. It sends no message, and nothing here proves " + "that any reader received or opened anything.",
-  selfReviewHeading: "You wrote the revision under review",
-  selfReviewSentence:
-    "This revision was written by the principal reading it, so approving it records your own review of your own work " +
-    "and the decision on record names you as the principal who decided it. A candidate is normally answered by a " +
-    "different reviewer, where one is admitted to it; this page states whose answer this one is rather than " +
-    "withholding it.",
-  authorDecidedSentence: "This answer was the author's own rather than an independent reviewer's: the principal who decided it wrote the revision it answers.",
+  notifyBadge: "Publish and notify partners",
+  publishOnlySentence: "The author chose to publish without sending an email notification.",
+  notifySentence: "The author chose to publish and send an email notification to eligible subscribers.",
+  reviewerCannotFlipSentence: "Reviewers can’t switch between Publish only and Publish and notify partners. Request changes if you want the author to change it.",
+  previewHeading: "Reader preview",
+  previewExplanation: "Sandboxed preview — scripts, navigation, and forms are disabled.",
+  mediaLabel: "Attached media",
+  noRenderedBodyNotice: "Preview content wasn’t returned for this revision. Reload before recording a decision.",
+  siblingHeading: "Other editions",
+  heldPriorGoodSentence: "Previous published version remains live.",
+  approvalIsPerVariantSentence: "This decision applies only to the edition shown above — other languages and audiences are reviewed separately.",
+  approvalIsNotDeliverySentence: "Recording a decision doesn’t publish or send emails.",
+  selfReviewHeading: "You wrote this revision",
+  selfReviewSentence: "You’re reviewing your own revision, so your account will be recorded as the reviewer.",
+  authorDecidedSentence: "Reviewed by the author rather than a separate reviewer.",
   decisionLegend: "Your decision",
-  decisionDescription: "One decision, given once. If something needs to change, the author's next attempt is a new " + "submission with a new revision — this candidate is not re-reviewed.",
-  noteLabel: "Note for the author",
-  noteRequiredDescription: `Required for this decision: say what the author needs to know, in up to ${REVIEW_NOTE_MAX_CHARS} characters.`,
-  noteOptionalDescription: "Approving needs no note. Anything typed here stays on this page and is sent only if you choose " + `Request changes or Reject. Up to ${REVIEW_NOTE_MAX_CHARS} characters.`,
-  policyNotRequiredHeading: "Review is not required for this document",
-  policyNotRequiredSentence: "Contributor policy for this document requires no review, so this page offers no decision: there " + "is no candidate to approve, no second round to run and nothing for a reviewer to confirm.",
-  policyNotRequiredNothingApproved: "Nothing is approved, published or notified from here. The author's own surface reports what " + "happened when the edition was released.",
-  noteFieldLabels: { note: "Note for the author", reason: "Note for the author" },
-  openRenditionPrefix: "Open the",
+  decisionDescription: "Decisions are final for this submission. Any revisions require a new submission.",
+  noteLabel: "Note for author",
+  noteRequiredDescription: `Required — explain what should be updated (up to ${REVIEW_NOTE_MAX_CHARS} characters).`,
+  noteOptionalDescription: `Optional for approvals; sent if you choose Request changes or Reject (up to ${REVIEW_NOTE_MAX_CHARS} characters).`,
+  policyNotRequiredHeading: "Review isn’t required",
+  policyNotRequiredSentence: "Your ministry’s publishing settings don’t require review for this item, so no decision is needed here.",
+  policyNotRequiredNothingApproved: "Publish directly from the editor.",
+  noteFieldLabels: { note: "Note for author", reason: "Note for author" },
+  openRenditionPrefix: "Open",
 } as const;
 const REVIEW_DESCRIPTION = (
   <>
@@ -210,10 +206,10 @@ function FrozenRevision({ candidate, level }: { readonly candidate: CandidateVie
       <p className="text-sm text-muted-foreground text-pretty">{COPY.frozenExplanation}</p>
       {candidate.staleTranslation === true ? (
         <Alert variant="default" role={undefined} data-slot="review-stale-translation">
-          <AlertTitle>This is a translation of an edition that has changed</AlertTitle>
+          <AlertTitle>Source edition changed since this translation was written</AlertTitle>
           <AlertDescription>
             <p>{lifecycleSpecOf("stale-translation").explanation}</p>
-            <p>Approving it approves this language edition as it stands. The source having moved on withdraws nothing here and re-opens nothing for review.</p>
+            <p>Approving applies to this translation as shown.</p>
           </AlertDescription>
         </Alert>
       ) : null}
@@ -233,7 +229,7 @@ function PublishIntent({ notifyRequestedByAuthor, protectedNoticeScope, level }:
           <span className="min-w-0 text-pretty">{notifyRequestedByAuthor ? COPY.notifySentence : COPY.publishOnlySentence}</span>
         </p>
         <p className="text-muted-foreground text-pretty">{COPY.reviewerCannotFlipSentence}</p>
-        {notifyRequestedByAuthor && scope !== "" ? <p className="text-muted-foreground text-pretty">{`The notices would carry only this: ${scope}`}</p> : null}
+        {notifyRequestedByAuthor && scope !== "" ? <p className="text-muted-foreground text-pretty">{`Email notifications include: ${scope}`}</p> : null}
       </div>
       <SimulationLabel effect="publication-reach" />
       {notifyRequestedByAuthor ? <SimulationLabel effect="mail-submission" /> : null}
@@ -391,7 +387,7 @@ function DecisionStep({ candidate, scope, expectedRevision, onDecide, level }: {
           <Textarea id={field.id} name="review.note" value={note} onChange={(event) => setNote(event.target.value)} rows={4} maxLength={REVIEW_NOTE_MAX_CHARS} disabled={settled} aria-describedby={field.describedBy} aria-invalid={field.invalid} aria-required={field.required} className="min-h-24 text-foreground" />
         )}
       </FormField>
-      {settled ? <p className="text-sm text-muted-foreground text-pretty">This candidate is answered, so its decision is fixed. Anything further comes from the author as a new submission with a new revision.</p> : null}
+      {settled ? <p className="text-sm text-muted-foreground text-pretty">Decision recorded. Any further changes require a new submission.</p> : null}
       <ActionReview<ReviewDecisionPayload>
         {...{ title: copy.title, description: REVIEW_DESCRIPTION, consequence: copy.consequence, confirmLabel: copy.confirmLabel, consequential: copy.consequential, input: { scope, expectedRevision, payload }, submit: onDecide, fieldLabels: COPY.noteFieldLabels, headingLevel: level, onSettled: settleIfApplied }}
       />

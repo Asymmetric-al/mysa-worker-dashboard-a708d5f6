@@ -62,6 +62,27 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  /* Semantic interaction & surface tokens — flip automatically between light and dark without component-level dark: overrides. */
+  --color-surface-ring: var(--surface-ring);
+  --color-control-surface: var(--control-surface);
+  --color-control-surface-hover: var(--control-surface-hover);
+  --color-control-check-bg: var(--control-check-bg);
+  --color-ghost-hover: var(--ghost-hover);
+  --color-secondary-hover: var(--secondary-hover);
+  --color-destructive-text: var(--destructive-text);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-tint: var(--destructive-tint);
+  --color-destructive-tint-hover: var(--destructive-tint-hover);
+  --color-invalid-border: var(--invalid-border);
+  --color-invalid-ring: var(--invalid-ring);
+  --color-field-checked-border: var(--field-checked-border);
+  --color-field-checked-bg: var(--field-checked-bg);
+  --color-switch-unchecked: var(--switch-unchecked);
+  --color-switch-thumb-checked: var(--switch-thumb-checked);
+  --color-switch-thumb-unchecked: var(--switch-thumb-unchecked);
+  /* Layered multi-step elevation shadows, token-derived per theme. */
+  --shadow-card: var(--elevation-card);
+  --shadow-overlay: var(--elevation-overlay);
   /* Radius steps derive from the single --radius value, so no component hard-codes one. */
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -131,6 +152,45 @@
   --sidebar-border: oklch(0.92 0.004 286.32);
   --sidebar-ring: oklch(0.552 0.016 285.938);
 
+  /* Semantic light-mode interaction, surface & elevation tokens. */
+  --surface-ring: color-mix(in oklab, var(--foreground) 6%, transparent);
+  --control-surface: color-mix(in oklab, var(--input) 30%, transparent);
+  --control-surface-hover: color-mix(in oklab, var(--input) 40%, transparent);
+  --control-check-bg: transparent;
+  --ghost-hover: var(--muted);
+  --secondary-hover: color-mix(in oklab, var(--secondary), var(--foreground) 5%);
+  --destructive-text: color-mix(in oklab, var(--destructive), var(--foreground) 25%);
+  --destructive-hover: color-mix(in oklab, var(--destructive), var(--foreground) 15%);
+  --destructive-tint: color-mix(in oklab, var(--destructive) 10%, transparent);
+  --destructive-tint-hover: color-mix(in oklab, var(--destructive) 20%, transparent);
+  --invalid-border: var(--destructive);
+  --invalid-ring: color-mix(in oklab, var(--destructive) 20%, transparent);
+  --field-checked-border: color-mix(in oklab, var(--primary) 30%, transparent);
+  --field-checked-bg: color-mix(in oklab, var(--primary) 5%, transparent);
+  --switch-unchecked: var(--input);
+  --switch-thumb-checked: var(--background);
+  --switch-thumb-unchecked: var(--background);
+  --avatar-ring-blend: darken;
+  --elevation-card:
+    0 0 0 1px color-mix(in oklab, var(--border) 92%, transparent),
+    0 1px 2px 0 color-mix(in oklab, var(--foreground) 4%, transparent),
+    0 4px 12px -4px color-mix(in oklab, var(--foreground) 5%, transparent);
+  --elevation-overlay:
+    0 0 0 1px var(--surface-ring),
+    0 4px 12px -2px color-mix(in oklab, var(--foreground) 8%, transparent),
+    0 16px 36px -8px color-mix(in oklab, var(--foreground) 14%, transparent);
+
+  /* Fixed semantic z-index scale so nested popovers/selects always stack above modals and tooltips always stack above popovers. */
+  --z-sidebar: 10;
+  --z-sticky-cell: 12;
+  --z-progress: 15;
+  --z-header: 20;
+  --z-sticky-head: 22;
+  --z-modal: 50;
+  --z-popover: 60;
+  --z-tooltip: 70;
+  --z-skip-link: 80;
+
   --target-size-min: 1.5rem;
   /* One focus-visible width. The design system's components draw a 3px ring, so the declared width matches what they draw and the base focus outline below consumes this value. */
   --focus-ring-width: 3px;
@@ -188,7 +248,8 @@
   --info-foreground: oklch(0.18 0.012 260);
   --info-soft: oklch(0.245 0.035 258.3);
   --surface-subtle: oklch(0.175 0.005 285.823);
-  --border: oklch(1 0 0 / 10%);
+  /* Quiet solid Zinc border in dark mode (avoids translucent white borders glowing against elevated dark surfaces). */
+  --border: oklch(0.285 0.006 286.033);
   --input: oklch(0.552 0.016 285.938);
   --ring: oklch(0.552 0.016 285.938);
   /* The same ramp read from the dark end: 3.39/5.21/8.02/12.34/18.99:1 against the page and 3.02/4.65/7.15/11.00/16.93:1 against a card, with 1.54:1 between consecutive steps — the widest separation available while the darkest step still clears 3:1 on a card. */
@@ -204,8 +265,36 @@
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.274 0.006 286.033);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-border: oklch(0.285 0.006 286.033);
   --sidebar-ring: oklch(0.552 0.016 285.938);
+
+  /* Semantic dark-mode interaction, surface & elevation tokens. */
+  --surface-ring: color-mix(in oklab, var(--foreground) 11%, transparent);
+  --control-surface: color-mix(in oklab, var(--input) 30%, transparent);
+  --control-surface-hover: color-mix(in oklab, var(--input) 50%, transparent);
+  --control-check-bg: color-mix(in oklab, var(--input) 30%, transparent);
+  --ghost-hover: color-mix(in oklab, var(--muted) 50%, transparent);
+  --secondary-hover: color-mix(in oklab, var(--secondary), var(--foreground) 8%);
+  --destructive-text: color-mix(in oklab, var(--destructive), var(--foreground) 25%);
+  --destructive-hover: color-mix(in oklab, var(--destructive), var(--foreground) 15%);
+  --destructive-tint: color-mix(in oklab, var(--destructive) 20%, transparent);
+  --destructive-tint-hover: color-mix(in oklab, var(--destructive) 30%, transparent);
+  --invalid-border: color-mix(in oklab, var(--destructive) 50%, transparent);
+  --invalid-ring: color-mix(in oklab, var(--destructive) 40%, transparent);
+  --field-checked-border: color-mix(in oklab, var(--primary) 20%, transparent);
+  --field-checked-bg: color-mix(in oklab, var(--primary) 10%, transparent);
+  --switch-unchecked: color-mix(in oklab, var(--input) 80%, transparent);
+  --switch-thumb-checked: var(--primary-foreground);
+  --switch-thumb-unchecked: var(--foreground);
+  --avatar-ring-blend: lighten;
+  --elevation-card:
+    0 0 0 1px var(--border),
+    0 1px 2px 0 color-mix(in oklab, var(--overlay) 35%, transparent),
+    0 6px 16px -6px color-mix(in oklab, var(--overlay) 45%, transparent);
+  --elevation-overlay:
+    0 0 0 1px var(--surface-ring),
+    0 8px 24px -4px color-mix(in oklab, var(--overlay) 55%, transparent),
+    0 20px 44px -10px color-mix(in oklab, var(--overlay) 70%, transparent);
 
   --target-size-min: 1.5rem;
   --focus-ring-width: 3px;
@@ -227,6 +316,21 @@
 
   body {
     @apply bg-background text-foreground selection:bg-primary selection:text-primary-foreground;
+  }
+
+  /* Eliminate the 300ms double-tap delay across every interactive element on touch devices. */
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  summary,
+  [role="button"],
+  [role="tab"],
+  [role="checkbox"],
+  [role="radio"],
+  [role="switch"] {
+    touch-action: manipulation;
   }
 
   :where([id]) {
@@ -373,15 +477,15 @@
 
 /* The one type scale: every heading element and every body paragraph in the product resolves through these utilities, so the same element role measures the same on every screen. A page title is 24/32/600, a section title 18/28/500, a subsection 16/24/500 and a group title 14/20/500, so size falls as the level deepens and weight never rises. Body copy is 14/20/400; supporting copy states the one muted ink, while a record's own values and authored prose keep the body ink. Every value is a system type utility: a component states no font size, weight or leading of its own, except at the few composition points that replace a design-system default with the one body measure (the empty-state description and the field hint, which override the design system's own relaxed and normal leadings where the copy is owned). One documented exception: a surface that labels its own chrome rather than the page's outline — the compact side panel's region title — takes the group-title scale in the muted ink, because a panel header is chrome and not a section of the page. */
 @utility type-page-title {
-  @apply font-heading text-2xl font-semibold;
+  @apply font-heading text-2xl font-semibold tracking-[-0.02em] text-balance;
 }
 
 @utility type-section-title {
-  @apply font-heading text-lg font-medium;
+  @apply font-heading text-lg font-medium tracking-[-0.015em] text-balance;
 }
 
 @utility type-subsection-title {
-  @apply font-heading text-base font-medium;
+  @apply font-heading text-base font-medium tracking-[-0.01em] text-balance;
 }
 
 @utility type-group-title {
@@ -389,11 +493,11 @@
 }
 
 @utility type-body {
-  @apply text-sm font-normal;
+  @apply text-sm font-normal text-pretty;
 }
 
 @utility type-supporting {
-  @apply text-sm font-normal text-muted-foreground;
+  @apply text-sm font-normal text-muted-foreground text-pretty;
 }
 
 /* One link treatment: a link inside content is underlined in the ink of the words around it, at one offset, so a destination stays recognisable without relying on colour. A link styled as a control (a button, a pill, a pagination step, a tab) keeps the control's own treatment and states no underline, and an anchor inside authored content keeps the content renderer's own treatment, which is the same underline. */
@@ -412,8 +516,43 @@
   }
 }
 
-/* ReUI Data Grid sticky pinned columns: active from md (48rem) upwards so 320px narrow screens and 200% zoom reflow stay completely unobstructed. Uses logical borders so RTL mirrors automatically. */
-@media (min-width: 48rem) {
+/* Temporarily applied to <html> during a theme switch so every token settles in one clean paint without staggered transition flash. */
+.no-transitions,
+.no-transitions *,
+.no-transitions *::before,
+.no-transitions *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* On coarse (touch) pointers, expand compact buttons to a comfortable 44x44px hit area via a centered pseudo-element without shifting desktop geometry. */
+@media (pointer: coarse) {
+  [data-slot="button"][class*="size-6"],
+  [data-slot="button"][class*="size-8"],
+  [data-slot="button"][class*="h-6"],
+  [data-slot="button"][class*="h-7"],
+  [data-slot="button"][class*="h-8"] {
+    position: relative;
+  }
+
+  [data-slot="button"][class*="size-6"]::after,
+  [data-slot="button"][class*="size-8"]::after,
+  [data-slot="button"][class*="h-6"]::after,
+  [data-slot="button"][class*="h-7"]::after,
+  [data-slot="button"][class*="h-8"]::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    min-width: 44px;
+    min-height: 44px;
+    width: 100%;
+    height: 100%;
+  }
+}
+
+/* ReUI Data Grid sticky pinned columns: active from lg (64rem / 1024px) upwards so phones, 200% zoom, and 768px tablet portrait (where the sidebar leaves ~440px for main) keep the full table width cleanly scrollable without pinned edges consuming the scroll window. */
+@media (min-width: 64rem) {
   [data-slot="data-grid-body"] > section {
     scroll-padding-inline-start: var(--pin-scroll-pad-start, 0.5rem);
     scroll-padding-inline-end: var(--pin-scroll-pad-end, 0.5rem);
@@ -422,12 +561,12 @@
   [data-slot="data-grid"] [data-pinned="start"] {
     position: sticky;
     inset-inline-start: var(--pin-start-offset, 0px);
-    z-index: 12;
+    z-index: var(--z-sticky-cell);
     border-inline-end: 1px solid var(--border);
   }
 
   [data-slot="data-grid"] thead [data-pinned="start"] {
-    z-index: 22;
+    z-index: var(--z-sticky-head);
     background-color: var(--surface-subtle);
   }
 
@@ -435,7 +574,6 @@
     background-color: var(--card);
   }
 
-  [data-slot="data-grid"] tbody tr:hover [data-pinned="start"],
   [data-slot="data-grid"] tbody tr[data-state="selected"] [data-pinned="start"] {
     background-color: var(--muted);
   }
@@ -443,12 +581,12 @@
   [data-slot="data-grid"] [data-pinned="end"] {
     position: sticky;
     inset-inline-end: var(--pin-end-offset, 0px);
-    z-index: 12;
+    z-index: var(--z-sticky-cell);
     border-inline-start: 1px solid var(--border);
   }
 
   [data-slot="data-grid"] thead [data-pinned="end"] {
-    z-index: 22;
+    z-index: var(--z-sticky-head);
     background-color: var(--surface-subtle);
   }
 
@@ -456,9 +594,16 @@
     background-color: var(--card);
   }
 
-  [data-slot="data-grid"] tbody tr:hover [data-pinned="end"],
   [data-slot="data-grid"] tbody tr[data-state="selected"] [data-pinned="end"] {
     background-color: var(--muted);
+  }
+
+  /* Gate pinned-row hover background strictly to fine hover-capable pointers so touch taps never leave pinned cells stuck hovered. */
+  @media (hover: hover) and (pointer: fine) {
+    [data-slot="data-grid"] tbody tr:hover [data-pinned="start"],
+    [data-slot="data-grid"] tbody tr:hover [data-pinned="end"] {
+      background-color: var(--muted);
+    }
   }
 }
 
@@ -492,9 +637,9 @@
   }
 }
 
-/* Calm editorial typography measure for public Ministry Pages and Updates reading surfaces. */
+/* Calm editorial typography measure for public Ministry Pages and Updates reading surfaces (65ch cap for effortless scanning). */
 .editorial-reading {
-  @apply text-base leading-relaxed text-foreground;
+  @apply max-w-[65ch] text-base leading-relaxed text-foreground text-pretty;
 }
 
 .editorial-reading p + p {
@@ -511,12 +656,9 @@
   mask-image: radial-gradient(ellipse 85% 95% at 50% 0%, var(--foreground) 35%, transparent 100%);
 }
 
-/* Layered zinc card elevation inspired by Emil Kowalski's multi-step shadow rule, strictly token-derived. */
+/* Layered zinc card elevation inspired by Emil Kowalski's multi-step shadow rule, strictly token-derived per theme. */
 .surface-elevated {
-  box-shadow:
-    0 0 0 var(--border-hairline) var(--border),
-    0 1px 2px 0 color-mix(in oklab, var(--foreground) 4%, transparent),
-    0 4px 12px -4px color-mix(in oklab, var(--foreground) 6%, transparent);
+  box-shadow: var(--elevation-card);
 }
 
 /* Logical transform origin for GPU-composited reading progress hairlines. */

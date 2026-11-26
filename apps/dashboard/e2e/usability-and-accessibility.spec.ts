@@ -60,7 +60,7 @@ const conflictOn = (name: string): JsonRecord => ({ mode: "conflict", target: { 
 async function openPartnerEdit(page: Page): Promise<{ readonly form: Locator; readonly displayName: Locator; readonly givenName: Locator }> {
   await page.goto(ROUTES.partnerEdit); // Opens the permitted-field edit and answers it with the form and the two named fields every refusal below is read from.
   const form = page.locator('[data-slot="partner-edit-form"]');
-  return { form, displayName: form.getByRole("textbox", { name: /^Display name/u }), givenName: form.getByRole("textbox", { name: /^Given name/u }) };
+  return { form, displayName: form.getByRole("textbox", { name: /^Display name/u }), givenName: form.getByRole("textbox", { name: /^First name/u }) };
 }
 test.describe("at 320 CSS pixels, with motion suppressed", () => {
   test.use({ viewport: { width: 320, height: 800 } });
@@ -73,7 +73,7 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
     const motion = await readLongestMotion(page.locator("body")); // The slowest transition any control on the surface declares, read from the computed style rather than the class list: motion collapses to 0.01 ms, so a perceptible duration means a control ignoring the preference.
     expect(motion.slowestSeconds, `No control animates for longer than ${String(MOTION_CEILING_SECONDS)} s with motion suppressed, and the slowest was ${String(motion.slowestSeconds)} s on ${JSON.stringify(motion.control)}.`).toBeLessThanOrEqual(MOTION_CEILING_SECONDS);
     await expectTargetSizeFloor(page, page.locator('[data-slot="query-toolbar"]'), "The roster toolbar and its facet toggles", testInfo);
-    const roster = page.getByRole("region", { name: "Partner roster, scrollable" });
+    const roster = page.getByRole("region", { name: "Partners, scrollable" });
     await expect(roster, "The roster renders the one table pattern, named so it can be found as a landmark.").toBeVisible();
     await expectTargetSizeFloor(page, roster, "The roster's row controls", testInfo);
     const sortButtons = roster.getByRole("columnheader").getByRole("button"); // Ordering is a control rather than a gesture: each sortable column offers its ordering as a button with its own name, and nothing on the surface is draggable, so no retained job here depends on dragging (WCAG 2.5.7).
@@ -96,17 +96,17 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
       await page.goto(ROUTES.partners);
       await expect(page.getByRole("heading", { name: "Partners", level: 1 })).toBeVisible();
       const preparation = page.locator('[data-slot="private-preparation-form"]');
-      await expect(preparation.getByRole("heading", { name: "Add a private contact", level: 2 }), "The private-contact form is mounted once, below the roster, with its own heading.").toBeVisible();
+      await expect(preparation.getByRole("heading", { name: "Add private contact", level: 2 }), "The private-contact form is mounted once, below the roster, with its own heading.").toBeVisible();
       await expectNoHorizontalPageScroll(page, "The private-contact form at 320 CSS px"); // The narrow layout must not need a desktop drawer to reach the job: the form is on the page, in reading order.
       await typeFromKeyboard(page, preparation.getByRole("textbox", { name: /^Name/u }), "Ruth Okafor (met at the school gate)", "The private contact's name");
-      await pressFromKeyboard(page, preparation.getByRole("button", { name: "Add a private contact" }), "Submitting the private contact");
+      await pressFromKeyboard(page, preparation.getByRole("button", { name: "Add private contact" }), "Submitting the private contact");
       const created = preparation.locator('[data-slot="private-preparation-outcome"]');
       await expect(created, "The accepted result is stated in the form that submitted it, not in a toast that disappears.").toHaveAttribute("data-outcome", "accepted");
-      await expect(created.getByText("Created: one private preparation record", { exact: false }), "The receipt states what was created: one private preparation record, and nothing beside it.").toBeVisible();
-      await expect(created.getByRole("link", { name: "Open the private contact" }), "The receipt names where the record it created now lives, so the contact is findable from the result itself.").toBeVisible();
+      await expect(created.getByText("Private contact added", { exact: false }), "The receipt states what was created: one private contact, and nothing beside it.").toBeVisible();
+      await expect(created.getByRole("link", { name: "Open contact" }), "The receipt names where the record it created now lives, so the contact is findable from the result itself.").toBeVisible();
       await expectNoHorizontalPageScroll(page, "The private-contact form's result at 320 CSS px");
       await page.goto(ROUTES.work);
-      await expect(page.getByRole("heading", { name: "Work", level: 1 })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Tasks", level: 1 })).toBeVisible();
       await expectDevelopmentData(page, "The Work surface");
       await pressFromKeyboard(page, page.getByRole("button", { name: "New task" }).first(), "Opening the task composer");
       const composer = page.getByRole("region", { name: "New task" });
@@ -131,36 +131,36 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
     test.use({ persona: ESTABLISHED_WORKER });
     test("a partner's record is read, an interaction is logged and the next task created, with the keyboard alone", async ({ page }) => {
       await page.goto(ROUTES.partners);
-      const roster = page.getByRole("region", { name: "Partner roster, scrollable" });
+      const roster = page.getByRole("region", { name: "Partners, scrollable" });
       await expect(roster, "The roster is the way into a record at this width, and the only horizontal scroll port.").toBeVisible();
       await pressFromKeyboard(page, roster.getByRole("link", { name: `Open ${SEEDED_PARTNER_NAME}` }), "Opening the seeded partner's record");
       await expect(page.getByRole("heading", { name: SEEDED_PARTNER_NAME, level: 1 }), "The record opens as a full page at 320 CSS px, not as a panel a phone cannot show.").toBeVisible();
       await expect(page.getByRole("dialog"), "The record is the page itself at this width: opening it never depends on a panel only a wide screen can show.").toHaveCount(0);
       await expectDevelopmentData(page, "The partner's record");
       await expectNoHorizontalPageScroll(page, "The partner's record at 320 CSS px");
-      const restrictions = page.getByRole("region", { name: "Restrictions" }); // The restrictions section is read before anything is recorded: a limit the source recorded is part of what the worker must know before acting, and it is stated on the record rather than in a tooltip.
+      const restrictions = page.getByRole("region", { name: "Communication restrictions" }); // The restrictions section is read before anything is recorded: a limit the source recorded is part of what the worker must know before acting, and it is stated on the record rather than in a tooltip.
       await expect(restrictions, "The record states the restrictions recorded against this relationship.").toBeVisible();
       const recordedRestrictions = await restrictions.locator("li").count();
-      await pressFromKeyboard(page, page.getByRole("link", { name: "Log an interaction" }), "Opening the interaction form");
+      await pressFromKeyboard(page, page.getByRole("link", { name: "Log activity" }), "Opening the interaction form");
       const form = page.locator('[data-slot="interaction-form"]');
-      await expect(form.getByRole("heading", { name: "Log an interaction", level: 2 }), "The interaction is logged in the family's one record form.").toBeVisible();
+      await expect(form.getByRole("heading", { name: "Activity details", level: 2 }), "The interaction is logged in the family's one record form.").toBeVisible();
       await expectNoHorizontalPageScroll(page, "The interaction form at 320 CSS px");
-      await form.getByRole("combobox", { name: /^Kind of contact/u }).selectOption("call");
-      await form.getByRole("textbox", { name: /^The day it happened/u }).fill(INTERACTION_DATE);
-      await typeFromKeyboard(page, form.getByRole("textbox", { name: /^How they took part/u }), INTERACTION_ROLE, "How the contact took part");
-      await typeFromKeyboard(page, form.getByRole("textbox", { name: /^What came of it/u }), INTERACTION_OUTCOME, "What came of the contact");
-      await pressFromKeyboard(page, form.getByRole("radio", { name: /^Create a follow-up task/u }), "Choosing the follow-up task", " ");
-      await typeFromKeyboard(page, form.getByRole("textbox", { name: /^What needs doing/u }), FOLLOW_UP_TASK_TITLE, "The follow-up task's title");
-      await form.getByRole("textbox", { name: /^Due on/u }).fill(INTERACTION_DATE);
-      await pressFromKeyboard(page, form.getByRole("button", { name: "Log the interaction" }), "Submitting the interaction");
+      await form.getByRole("combobox", { name: /^Activity type/u }).selectOption("call");
+      await form.getByRole("textbox", { name: /^Date/u }).fill(INTERACTION_DATE);
+      await typeFromKeyboard(page, form.getByRole("textbox", { name: /^Role/u }), INTERACTION_ROLE, "How the contact took part");
+      await typeFromKeyboard(page, form.getByRole("textbox", { name: /^What happened/u }), INTERACTION_OUTCOME, "What came of the contact");
+      await pressFromKeyboard(page, form.getByRole("radio", { name: /^Add a follow-up task/u }), "Choosing the follow-up task", " ");
+      await typeFromKeyboard(page, form.getByRole("textbox", { name: /^Task title/u }), FOLLOW_UP_TASK_TITLE, "The follow-up task's title");
+      await form.getByRole("textbox", { name: /^Due date/u }).fill(INTERACTION_DATE);
+      await pressFromKeyboard(page, form.getByRole("button", { name: "Save activity" }), "Submitting the interaction");
       const receipts = form.locator('[data-slot="operation-result"][data-outcome="accepted"]'); // Two receipts, because the interaction and the task are two changes with two identities: a task that failed could not otherwise be told apart from an interaction that was recorded twice.
       await expect(receipts, "The interaction and the follow-up task are each accepted as their own change.").toHaveCount(2);
       await page.goto(ROUTES.partnerRecord);
       const openTasks = page.getByRole("region", { name: "Open tasks" });
       await expect(openTasks, "The recorded work is stated on the record it was filed against.").toBeVisible();
       await expect(openTasks.getByText(FOLLOW_UP_TASK_TITLE, { exact: false }), "The follow-up task the interaction created is open work on this record.").toBeVisible();
-      await expect(page.getByRole("region", { name: "Actual activity" }).getByText(INTERACTION_OUTCOME, { exact: false }), "What happened is stated as activity, because the interaction recorded something that did.").toBeVisible();
-      await expect(page.getByRole("region", { name: "Restrictions" }).locator("li"), "Logging an interaction neither adds nor removes a restriction.").toHaveCount(recordedRestrictions);
+      await expect(page.getByRole("region", { name: "Activity" }).getByText(INTERACTION_OUTCOME, { exact: false }), "What happened is stated as activity, because the interaction recorded something that did.").toBeVisible();
+      await expect(page.getByRole("region", { name: "Communication restrictions" }).locator("li"), "Logging an interaction neither adds nor removes a restriction.").toHaveCount(recordedRestrictions);
       await expectNoHorizontalPageScroll(page, "The partner's record after the interaction at 320 CSS px");
       await expectDevelopmentData(page, "The partner's record");
     });
@@ -181,7 +181,7 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
       await pressFromKeyboard(page, page.getByRole("button", { name: "Write", exact: true }), "Returning to the writing pane", " ");
       await expect(page.getByRole("textbox", { name: "The text of this Update edition" }), "Returning to the writing pane keeps the text that was typed in it.").toContainText(TYPED_PROSE);
       await pressFromKeyboard(page, page.getByRole("button", { name: "Media", exact: true }), "Returning to the media pane", " ");
-      const opener = mediaPane.getByRole("button", { name: "Add an image" });
+      const opener = mediaPane.getByRole("button", { name: "Add image" });
       await pressFromKeyboard(page, opener, "Opening the image picker");
       const picker = page.locator('[data-slot="media-picker"]');
       await expect(picker, "The picker opens as one dialog whatever the pane behind it is doing.").toBeVisible();
@@ -195,14 +195,14 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
       await picker.getByLabel(/^File/u).setInputFiles(IMAGE_FIXTURE_PATH); // The file chooser belongs to the browser and cannot be operated from a script, so the input is handed the file. Everything after it — the alternative text, the confirmation and the close — is done from the keyboard.
       const described = page.locator('[data-slot="media-picker"][data-phase="described"]');
       await expect(described, "A measured file reaches the step that describes it, where alternative text is required.").toBeVisible();
-      await typeFromKeyboard(page, described.getByRole("textbox", { name: /^Alternative text/u }), IMAGE_ALT_TEXT, "The image's alternative text");
+      await typeFromKeyboard(page, described.getByRole("textbox", { name: /^Alt text/u }), IMAGE_ALT_TEXT, "The image's alternative text");
       await pressFromKeyboard(page, described.getByRole("button", { name: "Add this image" }), "Placing the image");
       await expect(page.locator('[data-slot="media-picker"][data-phase="settled"]'), "The placement is settled inside the picker, which states what the attempt answered.").toBeVisible();
       await page.keyboard.press("Escape");
       await expect(picker, "Escape closes the picker rather than leaving an open dialog behind.").toHaveCount(0);
       await expect(opener, "Closing the picker returns focus to the control that opened it.").toBeFocused();
       await expect(page.getByRole("region", { name: "Images in this draft, scrollable" }).getByText(IMAGE_ALT_TEXT, { exact: false }), "The draft's media pane states the placement the draft now holds.").toBeVisible();
-      await pressFromKeyboard(page, page.getByRole("link", { name: "Preview this edition" }), "Opening the preview");
+      await pressFromKeyboard(page, page.getByRole("link", { name: "Preview edition" }), "Opening the preview");
       await expect(page.getByRole("heading", { name: "Preview", level: 1 }), "The preview is a destination of its own, one step from the editor.").toBeVisible();
       await expect(page.getByRole("img", { name: IMAGE_ALT_TEXT }).first(), "The preview renders the placement with its own text alternative, so the image is described to a reader who cannot see it.").toBeVisible();
       await expectNoHorizontalPageScroll(page, "The Update preview at 320 CSS px");
@@ -211,7 +211,7 @@ test.describe("at 320 CSS pixels, with motion suppressed", () => {
     test("every route this file visits fits 320 CSS px, and the matrix answers with its period-first presentation", async ({ page }) => {
       const surfaces: readonly { readonly route: string; readonly heading: string }[] = [
         { route: ROUTES.partners, heading: "Partners" },
-        { route: ROUTES.work, heading: "Work" },
+        { route: ROUTES.work, heading: "Tasks" },
         { route: ROUTES.partnerRecord, heading: SEEDED_PARTNER_NAME },
         { route: ROUTES.partnerEdit, heading: `Edit ${SEEDED_PARTNER_NAME}` },
         { route: ROUTES.editor, heading: "Update edition" },
@@ -270,7 +270,7 @@ test.describe("at 200 % zoom", () => {
   test.use({ viewport: ZOOM_VIEWPORT, deviceScaleFactor: 2, persona: ESTABLISHED_WORKER });
   test("a list, a form and the editor stay readable and operable, and an overlay still traps and returns focus", async ({ page }, testInfo) => {
     await page.goto(ROUTES.partners);
-    const roster = page.getByRole("region", { name: "Partner roster, scrollable" });
+    const roster = page.getByRole("region", { name: "Partners, scrollable" });
     await expect(roster).toBeVisible();
     const zoomed = await page.evaluate(() => ({ narrowQueryMatches: window.matchMedia("(max-width: 767px)").matches, innerWidth: window.innerWidth })); // The pass has to be a real browser zoom rather than a scaled root: what a zoomed reader meets is the layout's own breakpoints switched.
     expect(zoomed.narrowQueryMatches, "At 200 % zoom the layout's own breakpoints switch as they do in a browser: below 768 px the shell composes its mobile navigation, so the (max-width: 767px) query the responsive composition declares resolves true on this pass.").toBe(true);
@@ -282,7 +282,7 @@ test.describe("at 200 % zoom", () => {
     await testInfo.attach("tab order — partner roster at 200 % zoom", { body: JSON.stringify({ stops }, null, 2), contentType: "application/json" });
     const reachable: readonly { readonly name: string; readonly control: string }[] = [
       { name: "Search", control: "the roster's search field" },
-      { name: "Contact type", control: "a facet toggle" },
+      { name: "Type", control: "a facet toggle" },
       { name: "Name", control: "the sortable column headers" },
       { name: `Open ${SEEDED_PARTNER_NAME}`, control: "a record's own action" },
       { name: ZOOM_TAB_LAST_STOP, control: "the pager" },
@@ -305,10 +305,10 @@ test.describe("at 200 % zoom", () => {
     await page.goto(ROUTES.editor);
     await expect(page.getByRole("heading", { name: "Update edition", level: 1 })).toBeVisible();
     await expectNoHorizontalPageScroll(page, "The Update editor at 200 % zoom");
-    await expectTextNotClipped(page.getByRole("region", { name: "Write this Update edition" }), "The Update editor at 200 % zoom");
+    await expectTextNotClipped(page.getByRole("region", { name: "Edit update" }), "The Update editor at 200 % zoom");
     await pressFromKeyboard(page, page.getByRole("button", { name: "Media", exact: true }), "Switching to the media pane at 200 % zoom", " "); // Below the 768 px breakpoint the editor offers its two panes as pressed buttons, so the media pane is reached from the keyboard the way the 320 px pass reaches it rather than standing beside the writing pane.
     const mediaPane = page.getByRole("region", { name: "Media in this draft" });
-    const opener = mediaPane.getByRole("button", { name: "Add an image" });
+    const opener = mediaPane.getByRole("button", { name: "Add image" });
     await pressFromKeyboard(page, opener, "Opening the image picker at 200 % zoom");
     const picker = page.locator('[data-slot="media-picker"]');
     await expect(picker).toBeVisible();
@@ -331,17 +331,17 @@ test.describe("the WCAG 2.2 AA audit", () => {
     await page.goto(ROUTES.partners);
     await expect(page.getByRole("navigation", { name: "Primary" }), "The shell's navigation is a named landmark, so it can be audited as the surface it is.").toBeVisible();
     await auditSurface(page, testInfo, "the shell navigation");
-    const roster = page.getByRole("region", { name: "Partner roster, scrollable" });
+    const roster = page.getByRole("region", { name: "Partners, scrollable" });
     await expect(roster.getByRole("table")).toBeVisible();
     await auditSurface(page, testInfo, "the partners table");
     await page.goto(ROUTES.interactionForm);
     const form = page.locator('[data-slot="interaction-form"]');
-    await expect(form.getByRole("heading", { name: "Log an interaction", level: 2 })).toBeVisible();
-    await typeFromKeyboard(page, form.getByRole("textbox", { name: /^What came of it/u }), INTERACTION_OUTCOME, "What came of the contact");
+    await expect(form.getByRole("heading", { name: "Activity details", level: 2 })).toBeVisible();
+    await typeFromKeyboard(page, form.getByRole("textbox", { name: /^What happened/u }), INTERACTION_OUTCOME, "What came of the contact");
     await auditSurface(page, testInfo, "the interaction form");
     await page.goto(ROUTES.editor); // 4. An open dialog. The picker is audited while it is open, because a closed dialog is not a surface a person can meet and an open one is where focus containment, labelling and the file input all have to hold.
     const mediaPane = page.getByRole("region", { name: "Media in this draft" });
-    await pressFromKeyboard(page, mediaPane.getByRole("button", { name: "Add an image" }), "Opening the image picker for the audit");
+    await pressFromKeyboard(page, mediaPane.getByRole("button", { name: "Add image" }), "Opening the image picker for the audit");
     const picker = page.locator('[data-slot="media-picker"]');
     await expect(picker, "The dialog is open when it is audited.").toBeVisible();
     await auditSurface(page, testInfo, "the open media picker");
@@ -358,7 +358,7 @@ test.describe("a save that is refused", () => {
   test("a refusal is stated in the field's own error slot before anything is sent, and the corrected save is accepted", async ({ page }) => {
     const { form, displayName, givenName } = await openPartnerEdit(page);
     await expect(form, "The permitted-field edit is offered to the identity that may change this record.").toBeVisible();
-    const save = form.getByRole("button", { name: "Save these changes" });
+    const save = form.getByRole("button", { name: "Save changes" });
     await expect(save, "A pristine form is still offered for sending, so the save that changes nothing stays reachable.").toBeEnabled();
     await expect(page.locator("#field-displayName-error"), "A pristine form states no refusal, because no field has been edited yet.").toHaveCount(0);
     await typeFromKeyboard(page, givenName, EDITED_GIVEN_NAME, "The given name");
@@ -367,7 +367,7 @@ test.describe("a save that is refused", () => {
     await expect(displayName, "The control is marked invalid for assistive technology, not only coloured.").toHaveAttribute("aria-invalid", "true");
     await expect(displayName, "The invalid control is described by its own message, so a screen reader reads why it was refused.").toHaveAttribute("aria-describedby", /field-displayName-error/u);
     await expect(save, "The primary action is withheld while the field it would send states what it needs.").toBeDisabled();
-    await expect(form.getByText(/^Saving cannot start while a field above states what it needs\./u), "The action states why it is withheld and that nothing typed was discarded.").toBeVisible();
+    await expect(form.getByText(/^Please fix the highlighted fields above before saving\./u), "The action states why it is withheld and that nothing typed was discarded.").toBeVisible();
     await expect(givenName, "The refusal loses nothing else the worker typed.").toHaveValue(EDITED_GIVEN_NAME);
     await typeFromKeyboard(page, displayName, EDITED_DISPLAY_NAME, "Correcting the display name"); // The retry succeeds once the field it refused is corrected: the refusal changed nothing, so nothing has to be re-entered beyond the one value it named.
     await expect(page.locator("#field-displayName-error"), "The corrected field no longer states an error.").toHaveCount(0);
@@ -382,30 +382,30 @@ test.describe("a save that is refused", () => {
     await expect(form).toBeVisible();
     await typeFromKeyboard(page, givenName, EDITED_GIVEN_NAME, "The given name");
     await typeFromKeyboard(page, displayName, EDITED_DISPLAY_NAME, "The display name");
-    await pressFromKeyboard(page, form.getByRole("button", { name: "Save these changes" }), "Saving against a revision that has moved");
+    await pressFromKeyboard(page, form.getByRole("button", { name: "Save changes" }), "Saving against a revision that has moved");
     const conflict = page.locator('[data-slot="partner-edit-conflict"]'); // A stale revision is answered with the conflict panel rather than with a lost change: the input is preserved, the record's own value is stated beside it, and re-applying or discarding is the worker's decision.
     await expect(conflict, "A stale revision is answered with the conflict panel rather than a silently lost change.").toBeVisible();
-    for (const name of ["Apply my changes", "Discard mine"]) await expect(conflict.getByRole("button", { name }), `The panel offers ${name} deliberately rather than deciding for the worker.`).toBeVisible();
+    for (const name of ["Apply my changes", "Discard my edits"]) await expect(conflict.getByRole("button", { name }), `The panel offers ${name} deliberately rather than deciding for the worker.`).toBeVisible();
     await expect(conflict.getByText(/revision/u).first(), "The panel states the revision the record stands at, so the refusal is stated in the record's own terms.").toBeVisible();
     const conflictText = (await conflict.innerText()).replace(/\s+/gu, " "); // The panel's own words, read once: a conflict states the fields that differ rather than the two whole records, so a worker reads what the other change actually touched.
     expect(conflictText, "The panel lists the fields the record and this edit disagree on.").toContain("Fields that differ");
     expect(conflictText, "The display name this edit changed is named by the form's own label for it.").toContain("Display name");
-    expect(conflictText, "The given name this edit changed is named by the label the form gives that field, not as a nested record.").toContain("Given name");
+    expect(conflictText, "The given name this edit changed is named by the label the form gives that field, not as a nested record.").toContain("First name");
     expect(conflictText, "No whole record is printed: the panel states no JSON object and restates none of the record's untouched fields - its revision, audience, source reference, tags or contact methods.").not.toMatch(/[{}]|"(?:revision|audience|source|tags|favourite|restrictions|contactMethods)"|ownerPrincipalId/u);
     await expect(displayName, "Every value the worker typed is still in its own field after the refusal.").toHaveValue(EDITED_DISPLAY_NAME);
     await expect(givenName, "Every value the worker typed is still in its own field after the refusal.").toHaveValue(EDITED_GIVEN_NAME);
     await expect(page.locator('[data-slot="partner-edit-outcome"][data-outcome="accepted"]'), "The refused attempt applied nothing, so no accepted change is claimed.").toHaveCount(0);
     await page.goto(ROUTES.partnerEdit); // An armed conflict refuses a save that changes nothing too, because the revision is compared before anything is applied, so the panel must say that no field differs rather than fall back to printing the record.
-    await pressFromKeyboard(page, form.getByRole("button", { name: "Save these changes" }), "Saving with no field changed against a revision that has moved");
+    await pressFromKeyboard(page, form.getByRole("button", { name: "Save changes" }), "Saving with no field changed against a revision that has moved");
     await expect(conflict, "A save whose input differs on no field is still refused as a conflict rather than silently applied.").toBeVisible();
     const unchangedText = (await conflict.innerText()).replace(/\s+/gu, " ");
-    expect(unchangedText, "A conflict that disagrees on no field says so, naming the revision as what it refuses.").toContain("Your input states no value the record holds differently");
+    expect(unchangedText, "A conflict that disagrees on no field says so, naming the revision as what it refuses.").toContain("Your values already match the saved version — only the revision changed.");
     expect(unchangedText, "Even then no whole record is printed: no JSON object and none of the record's untouched fields reach the worker.").not.toMatch(/[{}]|"(?:revision|audience|source|tags|favourite|restrictions|contactMethods|displayName|nameParts)"|ownerPrincipalId/u);
     await clearFailurePlan(request);
     await page.goto(ROUTES.partnerEdit);
-    await typeFromKeyboard(page, form.getByRole("textbox", { name: /^Given name/u }), EDITED_GIVEN_NAME, "The given name, re-entered");
+    await typeFromKeyboard(page, form.getByRole("textbox", { name: /^First name/u }), EDITED_GIVEN_NAME, "The given name, re-entered");
     await typeFromKeyboard(page, form.getByRole("textbox", { name: /^Display name/u }), EDITED_DISPLAY_NAME, "The display name, re-entered");
-    await pressFromKeyboard(page, form.getByRole("button", { name: "Save these changes" }), "Saving the same change against the revision now standing");
+    await pressFromKeyboard(page, form.getByRole("button", { name: "Save changes" }), "Saving the same change against the revision now standing");
     await expect(page.locator('[data-slot="partner-edit-outcome"][data-outcome="accepted"]'), "The change the conflict preserved is applied once the revision it presents is the one the record stands at.").toBeVisible();
     await expectDevelopmentData(page, "The permitted-field edit after recovery");
   });
@@ -413,22 +413,22 @@ test.describe("a save that is refused", () => {
     await armLostAcknowledgement(request, "logInteraction");
     await page.goto(ROUTES.interactionForm);
     const form = page.locator('[data-slot="interaction-form"]');
-    await expect(form.getByRole("heading", { name: "Log an interaction", level: 2 })).toBeVisible();
-    await form.getByRole("combobox", { name: /^Kind of contact/u }).selectOption("call");
-    await form.getByRole("textbox", { name: /^The day it happened/u }).fill(INTERACTION_DATE);
-    await typeFromKeyboard(page, form.getByRole("textbox", { name: /^How they took part/u }), INTERACTION_ROLE, "How the contact took part");
-    await typeFromKeyboard(page, form.getByRole("textbox", { name: /^What came of it/u }), INTERACTION_OUTCOME, "What came of the contact");
-    await pressFromKeyboard(page, form.getByRole("button", { name: "Log the interaction" }), "Submitting the interaction");
+    await expect(form.getByRole("heading", { name: "Activity details", level: 2 })).toBeVisible();
+    await form.getByRole("combobox", { name: /^Activity type/u }).selectOption("call");
+    await form.getByRole("textbox", { name: /^Date/u }).fill(INTERACTION_DATE);
+    await typeFromKeyboard(page, form.getByRole("textbox", { name: /^Role/u }), INTERACTION_ROLE, "How the contact took part");
+    await typeFromKeyboard(page, form.getByRole("textbox", { name: /^What happened/u }), INTERACTION_OUTCOME, "What came of the contact");
+    await pressFromKeyboard(page, form.getByRole("button", { name: "Save activity" }), "Submitting the interaction");
     const receipt = form.locator('[data-slot="operation-result"]'); // The acknowledgement was lost, so the receipt claims neither success nor failure, keeps every typed value on screen, and offers no second submit.
     await expect(receipt, "A lost acknowledgement is stated as unknown rather than claimed as saved or refused.").toHaveAttribute("data-outcome", "unknown");
-    await expect(receipt.getByRole("button", { name: "Check the result" }), "The receipt offers checking this same attempt rather than sending the work again.").toBeVisible();
-    await expect(form.getByRole("textbox", { name: /^What came of it/u }), "Every value the worker typed is still on screen while the result is unconfirmed.").toHaveValue(INTERACTION_OUTCOME);
-    await expect(form.getByRole("button", { name: "Log the interaction" }), "No second submit is offered for work that may already exist.").toHaveCount(0);
+    await expect(receipt.getByRole("button", { name: "Check result" }), "The receipt offers checking this same attempt rather than sending the work again.").toBeVisible();
+    await expect(form.getByRole("textbox", { name: /^What happened/u }), "Every value the worker typed is still on screen while the result is unconfirmed.").toHaveValue(INTERACTION_OUTCOME);
+    await expect(form.getByRole("button", { name: "Save activity" }), "No second submit is offered for work that may already exist.").toHaveCount(0);
     await clearFailurePlan(request);
-    await pressFromKeyboard(page, receipt.getByRole("button", { name: "Check the result" }), "Checking the same attempt's result");
+    await pressFromKeyboard(page, receipt.getByRole("button", { name: "Check result" }), "Checking the same attempt's result");
     await expect(form.locator('[data-slot="operation-result"][data-outcome="alreadyAccepted"]'), "The same attempt's result is recovered by its own identity, so exactly one effect exists.").toBeVisible();
     await page.goto(ROUTES.partnerRecord);
-    await expect(page.getByRole("region", { name: "Actual activity" }).getByText(INTERACTION_OUTCOME, { exact: false }), "The recovered attempt recorded the contact once, and the record states it.").toHaveCount(1);
+    await expect(page.getByRole("region", { name: "Activity" }).getByText(INTERACTION_OUTCOME, { exact: false }), "The recovered attempt recorded the contact once, and the record states it.").toHaveCount(1);
     await expectDevelopmentData(page, "The partner's record after a recovered interaction");
   });
   test("a refused autosave keeps the readable text, says it is not acknowledged, and the kept copy saves once the condition is gone", async ({ page, request }) => {
@@ -443,10 +443,10 @@ test.describe("a save that is refused", () => {
     const status = page.locator('[data-slot="autosave-status"]');
     await expect(status, "The refused save is stated as a conflict rather than as an empty editor or a silent failure.").toHaveAttribute("data-autosave-state", "conflict");
     await expect(editor, "A refused save keeps the readable text on screen: nothing the worker wrote is discarded by a failure.").toContainText(TYPED_PROSE);
-    await expect(status.getByRole("button", { name: "Retry the same work" }), "The status offers re-sending this same attempt rather than a second save under a new identity.").toBeVisible();
+    await expect(status.getByRole("button", { name: "Retry save" }), "The status offers re-sending this same attempt rather than a second save under a new identity.").toBeVisible();
     await clearFailurePlan(request); // The condition is cleared, and the editor is re-read: the text this browser kept is offered as exactly what it is — the text the service never acknowledged — and adopting it begins an ordinary change against the revision the record now stands at.
     await page.reload();
-    const kept = page.getByRole("button", { name: "Use the text this browser kept" });
+    const kept = page.getByRole("button", { name: "Restore backup into editor" });
     await expect(kept, "After the editor is re-read, the text this browser kept is offered and labelled as existing only in this browser.").toBeVisible();
     await pressFromKeyboard(page, kept, "Adopting the text this browser kept");
     await expect(page.locator('[data-slot="autosave-status"]'), "The adopted text saves as an ordinary change once the condition behind the refusal is gone.").toHaveAttribute("data-autosave-state", "saved");
@@ -469,7 +469,7 @@ test.describe("a save that is refused", () => {
     await page.keyboard.type(TYPED_STALE);
     await expect(status, "The first tab's save is refused as a conflict with the revision the record now stands at.").toHaveAttribute("data-autosave-state", "conflict");
     await other.close(); // The second tab has done its work: resolving the conflict belongs to the first tab.
-    await pressFromKeyboard(page, status.getByRole("button", { name: "Retry the same work" }), "Retrying the same work after the conflict");
+    await pressFromKeyboard(page, status.getByRole("button", { name: "Retry save" }), "Retrying the same work after the conflict");
     await expect(status, "The retried save is acknowledged, so the one owner of the draft's save state states one saved outcome.").toHaveAttribute("data-autosave-state", "saved");
     await expect(page.getByText(/Not saved/u), "Nothing on the page still says the text is unsaved: one owner of that state is what leaves one state on screen.").toHaveCount(0);
     const revisionFact = page.locator('[data-slot="editor-shell-body"] dl dd .mono-identifier').first(); // The draft revision the editor states: the fact a save moves, and so the proof a later edit reached the service.

@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/cn";
 
 /** Concentric framed surface inspired by ReUI Frame (`@reui/frame`), styled exclusively with Maia Zinc tokens. */
-const frameVariants = cva("relative flex min-w-0 flex-col bg-surface-subtle p-1 text-card-foreground border border-border/80 [--frame-radius:var(--radius-2xl)] rounded-(--frame-radius)", {
+const frameVariants = cva("relative isolate flex min-w-0 flex-col bg-surface-subtle p-1 text-card-foreground border border-border/80 [--frame-radius:var(--radius-2xl)] rounded-(--frame-radius)", {
   variants: {
     variant: { default: "bg-surface-subtle", muted: "bg-muted/50", ghost: "border-transparent bg-transparent p-0" },
     spacing: {

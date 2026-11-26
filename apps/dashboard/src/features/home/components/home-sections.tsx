@@ -31,10 +31,10 @@ const KPI_STYLE: Readonly<Record<HomeSectionKey, { readonly iconVariant: IconTil
 
 const QUICK_DESTINATIONS = [
   { href: "/partners", label: "Partners" },
-  { href: "/work", label: "Work" },
+  { href: "/work", label: "Tasks" },
+  { href: "/communication", label: "Updates" },
   { href: "/support", label: "Support" },
-  { href: "/communication", label: "Communication" },
-  { href: "/pages", label: "Pages" },
+  { href: "/pages", label: "Ministry pages" },
 ] as const;
 
 function HomeSection({ group }: { readonly group: HomeSectionGroupView }): ReactElement {
@@ -66,7 +66,7 @@ function HomeOverview({ data }: { readonly data: HomeData }): ReactElement {
   const [filter, setFilter] = useState<SectionFilter>("all");
   const groups = homeSectionGroupsOf(data);
   const totalCount = groups.reduce((sum, group) => sum + group.items.length, 0);
-  const filterOptions: readonly SegmentedOption<SectionFilter>[] = [{ value: "all", label: "All queues", count: totalCount }, ...groups.map((group) => ({ value: group.sectionKey as SectionFilter, label: SECTION_COPY[group.sectionKey].heading, count: group.items.length }))];
+  const filterOptions: readonly SegmentedOption<SectionFilter>[] = [{ value: "all", label: "Everything", count: totalCount }, ...groups.map((group) => ({ value: group.sectionKey as SectionFilter, label: SECTION_COPY[group.sectionKey].heading, count: group.items.length }))];
   const visibleGroups = filter === "all" ? groups : groups.filter((group) => group.sectionKey === filter);
   const pulseSegments = groups.map((group) => ({
     key: group.sectionKey,
@@ -76,25 +76,25 @@ function HomeOverview({ data }: { readonly data: HomeData }): ReactElement {
   }));
   return (
     <div className="flex min-w-0 flex-col gap-6 text-start">
-      <section aria-label="Workspace pulse" data-slot="home-pulse-banner" className="relative overflow-hidden rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs sm:p-5">
+      <section aria-label="Today at a glance" data-slot="home-pulse-banner" className="relative overflow-hidden rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs sm:p-5">
         <div aria-hidden="true" className="bg-dot-grid bg-dot-grid-fade pointer-events-none absolute inset-0 opacity-75" />
         <div className="relative flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Workspace summary</p>
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Today at a glance</p>
               <p className="text-sm text-foreground">
                 <span className="font-semibold tabular-figures">
                   <CountUp value={totalCount} />
                 </span>
-                {totalCount === 1 ? " open item across your three queues." : " open items across your three queues."}
+                {totalCount === 1 ? " item on your dashboard." : " items on your dashboard."}
               </p>
             </div>
-            <nav aria-label="Quick destinations" className="flex flex-wrap items-center gap-1.5">
+            <nav aria-label="Quick links" className="flex flex-wrap items-center gap-1.5">
               {QUICK_DESTINATIONS.map((dest) => (
                 <Link
                   key={dest.href}
                   href={dest.href}
-                  aria-label={`Open ${dest.label} workspace`}
+                  aria-label={`Open ${dest.label}`}
                   className="inline-flex min-h-7 items-center gap-1 rounded-4xl border border-border/80 bg-card/90 px-2.5 py-1 text-xs font-medium text-foreground shadow-2xs transition-colors hover:border-foreground/30 hover:bg-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]"
                 >
                   <span>{dest.label}</span>
@@ -103,7 +103,7 @@ function HomeOverview({ data }: { readonly data: HomeData }): ReactElement {
               ))}
             </nav>
           </div>
-          {totalCount > 0 ? <SegmentedMeter segments={pulseSegments} label="Home queue distribution" /> : null}
+          {totalCount > 0 ? <SegmentedMeter segments={pulseSegments} label="Home items breakdown" /> : null}
         </div>
       </section>
       <KpiGrid columns={3}>
@@ -111,7 +111,7 @@ function HomeOverview({ data }: { readonly data: HomeData }): ReactElement {
           const copy = SECTION_COPY[group.sectionKey];
           const style = KPI_STYLE[group.sectionKey];
           return (
-            <AnimatedListItem key={group.sectionKey} index={index}>
+            <AnimatedListItem key={group.sectionKey} index={index} className="h-full">
               <KpiCard
                 label={copy.heading}
                 value={<CountUp value={group.items.length} />}

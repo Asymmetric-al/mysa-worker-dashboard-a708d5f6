@@ -10,7 +10,35 @@ export type ViewerPreferencesContextValue = ViewerPreferences & { setAppearance:
 export type ViewerPreferencesProviderProps = { children: ReactNode };
 const STORAGE_KEY = "dashboard:viewer-preferences";
 const DARK_CLASS = "dark";
+const NO_TRANSITIONS_CLASS = "no-transitions";
 const PRE_HYDRATION_TIME_ZONE = "UTC";
+let pendingTransitionFrame = 0;
+let pendingTransitionReleaseFrame = 0;
+
+/**
+ * Toggles `.dark` on `<html>` while momentarily suspending CSS transitions so
+ * switching themes happens in a single clean paint rather than staggered fades.
+ */
+function applyDarkClass(root: HTMLElement, isDark: boolean): void {
+  if (root.classList.contains(DARK_CLASS) === isDark) return;
+  if (typeof window === "undefined" || typeof window.requestAnimationFrame !== "function") {
+    root.classList.toggle(DARK_CLASS, isDark);
+    return;
+  }
+  if (pendingTransitionFrame !== 0) window.cancelAnimationFrame(pendingTransitionFrame);
+  if (pendingTransitionReleaseFrame !== 0) window.cancelAnimationFrame(pendingTransitionReleaseFrame);
+  root.classList.add(NO_TRANSITIONS_CLASS);
+  root.classList.toggle(DARK_CLASS, isDark);
+  // Flush computed styles while transitions are paused so the new tokens settle immediately.
+  void root.offsetHeight;
+  pendingTransitionFrame = window.requestAnimationFrame(() => {
+    pendingTransitionFrame = 0;
+    pendingTransitionReleaseFrame = window.requestAnimationFrame(() => {
+      pendingTransitionReleaseFrame = 0;
+      root.classList.remove(NO_TRANSITIONS_CLASS);
+    });
+  });
+}
 const DEFAULT_PREFERENCES: ViewerPreferences = { appearance: "system", interfaceLocale: DEFAULT_INTERFACE_LOCALE, displayTimeZone: PRE_HYDRATION_TIME_ZONE, publishing: "publish-only" };
 type ViewerPreferencesPatch = { appearance?: ViewerAppearance; interfaceLocale?: string; displayTimeZone?: string; publishing?: PublishingPreference };
 let currentPreferences: ViewerPreferences = DEFAULT_PREFERENCES;
@@ -114,25 +142,29 @@ const ViewerPreferencesContext = createContext<ViewerPreferencesContextValue | n
   const { appearance, interfaceLocale } = preferences;
   useEffect(() => {
     const root = document.documentElement;
-    const clearDark = (): void => void root.classList.remove(DARK_CLASS);
     if (appearance !== "system") {
-      root.classList.toggle(DARK_CLASS, appearance === "dark");
-      return clearDark;
+      applyDarkClass(root, appearance === "dark");
+      return;
     }
     const query = darkPreferenceQuery();
     if (query === null) {
-      clearDark();
-      return clearDark;
+      applyDarkClass(root, false);
+      return;
     }
-    const applySystemAppearance = (prefersDark: boolean): void => void root.classList.toggle(DARK_CLASS, prefersDark);
+    const applySystemAppearance = (prefersDark: boolean): void => applyDarkClass(root, prefersDark);
     applySystemAppearance(query.matches);
     const handleSystemAppearanceChange = (event: MediaQueryListEvent): void => applySystemAppearance(event.matches);
     query.addEventListener("change", handleSystemAppearanceChange);
     return () => {
       query.removeEventListener("change", handleSystemAppearanceChange);
-      clearDark();
     };
   }, [appearance]);
+  useEffect(() => {
+    const root = document.documentElement;
+    return () => {
+      root.classList.remove(DARK_CLASS, NO_TRANSITIONS_CLASS);
+    };
+  }, []);
   useEffect(() => {
     const html = document.documentElement;
     const previousLocale = html.getAttribute("lang");
@@ -160,6 +192,9 @@ const ViewerPreferencesContext = createContext<ViewerPreferencesContextValue | n
     [preferences, setAppearance, setInterfaceLocale, setDisplayTimeZone, setPublishingPreference],
   );
   return <ViewerPreferencesContext.Provider value={value}>{children}</ViewerPreferencesContext.Provider>;
+}
+export function useOptionalViewerPreferences(): ViewerPreferencesContextValue | null {
+  return useContext(ViewerPreferencesContext);
 }
 export function useViewerPreferences(): ViewerPreferencesContextValue {
   const value = useContext(ViewerPreferencesContext);

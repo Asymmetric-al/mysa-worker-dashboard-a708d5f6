@@ -139,14 +139,17 @@ function EditionRow({ edition, selected, onSelectedChange, onOpenPanel }: { read
   const offered = EDITION_STEPS.filter((step) => step.offered(edition));
   return (
     <li data-slot="release-edition" data-lifecycle-state={edition.lifecycle} className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3">
-      <div className="flex min-w-0 items-start gap-3">
-        <Checkbox id={checkboxId} className="mt-0.5" checked={selected} aria-label={`${copy.editions.localeLabel} ${edition.locale}`} onCheckedChange={(checked: boolean) => onSelectedChange(checked)} />
-        <div className="flex min-w-0 flex-col gap-1">
-          <Label htmlFor={checkboxId} className="min-h-6 flex-wrap">
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <Label htmlFor={checkboxId} className="flex min-h-6 min-w-0 cursor-pointer items-center gap-3 font-normal">
+          <Checkbox id={checkboxId} checked={selected} aria-label={`${copy.editions.localeLabel} ${edition.locale}`} onCheckedChange={(checked: boolean) => onSelectedChange(checked)} />
+          <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm leading-none font-medium">
             <span className="font-normal text-muted-foreground">{copy.editions.localeLabel}</span>
             <bdi>{edition.locale}</bdi>
-          </Label>
+          </span>
+        </Label>
+        <div className="flex flex-col gap-1 ps-7">
           <DraftStatus state={edition.lifecycle} />
+          {edition.lifecycle === "candidate" ? <p className="text-xs text-pretty text-muted-foreground">{"Awaiting review — approve this submission before publishing."}</p> : null}
         </div>
       </div>
       {offered.length === 0 ? null : (
@@ -316,7 +319,7 @@ export function ReleaseControls({ scope, documentId, expectedRevision, documentR
     for (const variant of variants) {
       if (!selectedSet.has(variant.variantId)) continue;
       const candidateId = (variant.candidateId ?? "").trim();
-      if (candidateId === "") {
+      if (candidateId === "" || variant.lifecycle !== "approved") {
         excluded += 1;
         continue;
       }

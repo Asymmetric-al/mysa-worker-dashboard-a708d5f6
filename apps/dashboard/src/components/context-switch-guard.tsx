@@ -21,26 +21,26 @@ export type SwitchTone = "switched" | "refused" | "uncertain";
 export type OutcomeDetail = { readonly label: string; readonly value: string };
 export type OutcomeSummary = { readonly tone: SwitchTone; readonly sentence: string; readonly detail?: OutcomeDetail };
 export type ContextSwitchGuardCopy = { readonly title: string; readonly body: string; readonly saveLabel: string; readonly discardLabel: string; readonly stayLabel: string; readonly saveNote: string; readonly unsavedWorkNote: string; readonly conflictNote: string; readonly stayNote: string };
-/** Says what a mutation outcome means for a context switch, exactly once. */ export function summariseOutcome(outcome: MutationOutcome, copy: ContextSwitchGuardCopy): OutcomeSummary {
+/** Summarizes a ministry switch result cleanly. */ export function summariseOutcome(outcome: MutationOutcome, copy: ContextSwitchGuardCopy): OutcomeSummary {
   switch (outcome.outcome) {
     case "accepted":
-      return { tone: "switched", sentence: "The switch was accepted. The context you selected is loading." };
+      return { tone: "switched", sentence: "Ministry switch accepted. Loading your selected ministry." };
     case "alreadyAccepted":
-      return { tone: "switched", sentence: "This switch had already been accepted, so nothing was repeated." };
+      return { tone: "switched", sentence: "This switch was already completed, so nothing was repeated." };
     case "unchanged":
-      return { tone: "switched", sentence: "The context already matched your selection, so nothing changed." };
+      return { tone: "switched", sentence: "You’re already working in that ministry." };
     case "conflict":
       return { tone: "refused", sentence: copy.conflictNote, detail: { label: "conflict", value: outcome.reason } };
     case "denied":
-      return { tone: "refused", sentence: "The switch was refused, so you are still in your current context.", detail: { label: "refusal code", value: outcome.reasonCode } };
+      return { tone: "refused", sentence: "Couldn’t switch ministry, so you’re still in your current one.", detail: { label: "reason", value: outcome.reasonCode } };
     case "invalid": {
       const fields = Object.keys(outcome.fields);
-      return { tone: "refused", sentence: "The switch request was not valid, so nothing changed.", ...(fields.length === 0 ? {} : { detail: { label: "fields", value: fields.join(", ") } }) };
+      return { tone: "refused", sentence: "That ministry selection wasn’t valid, so nothing changed.", ...(fields.length === 0 ? {} : { detail: { label: "fields", value: fields.join(", ") } }) };
     }
     case "unavailable":
-      return { tone: "refused", sentence: `The source behind the switch could not complete it, so you are still in your current context. ${outcome.guidance}`, detail: { label: "source", value: outcome.source.system } };
+      return { tone: "refused", sentence: `Couldn’t reach the service to switch ministries, so you’re still in your current one. ${outcome.guidance}`, detail: { label: "source", value: outcome.source.system } };
     case "unknown":
-      return { tone: "uncertain", sentence: "The switch may or may not have been applied. Check the result before trying again.", detail: { label: "operation", value: outcome.operationId } };
+      return { tone: "uncertain", sentence: "We couldn’t confirm whether the ministry switch completed. Check your active ministry before trying again.", detail: { label: "operation", value: outcome.operationId } };
   }
 }
 function announcementFor(summary: OutcomeSummary): string {
@@ -179,8 +179,8 @@ export type ContextSwitchGuardProps = {
   readonly pendingScopeLabel?: string;
   readonly outcome?: MutationOutcome | null;
 };
-const DISCARD_FAILED = "The switch did not complete and its result is not known. Nothing here has been discarded; check the current context before trying again.";
-const SAVE_FAILED = "The save did not report a result, so the switch did not happen. Nothing here has been discarded; check whether the save is in place before trying again.";
+const DISCARD_FAILED = "Couldn’t confirm the ministry switch. Nothing was discarded — check your current ministry before trying again.";
+const SAVE_FAILED = "Couldn’t confirm your save, so we stayed in your current ministry and kept your changes.";
 /** The Save / Discard / Stay guard for a context change. */ export function ContextSwitchGuard({ copy, open, pendingScope, unsavedWork, onStay, onDiscard, onSaveAndSwitch, busy = false, className, pendingScopeLabel, outcome = null }: ContextSwitchGuardProps): ReactElement {
   const [pendingAction, setPendingAction] = useState<GuardAction | null>(null);
   const [actionFailure, setActionFailure] = useState<string | null>(null);
@@ -254,7 +254,7 @@ const SAVE_FAILED = "The save did not report a result, so the switch did not hap
         {busyNow ? (
           <output className="flex items-center gap-2 text-sm text-muted-foreground">
             <Spinner />
-            {pendingAction === "save" ? "Saving your work before switching…" : "Switching context…"}
+            {pendingAction === "save" ? "Saving your changes before switching…" : "Switching ministry…"}
           </output>
         ) : null}
         {notice === null ? null : (

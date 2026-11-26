@@ -13,13 +13,13 @@ import { fetchPartnerRead, PARTNER_KEY, PartnerReadTransportError } from "../hoo
 import { PARTNERS_READ_PATH, ROSTER_PAGE_SIZE_CAP, ROSTER_QUERY_PARAM, ROSTER_READ_JOB, rosterRequestParams, type RosterRequestParams } from "../hooks/use-roster-query";
 import { isSharedRecord, SHARED_RECORD_FACET, SHARED_RECORD_FACET_SELECTION } from "../record-class";
 const PICKER_COPY = {
-  searchPlaceholder: "Search partners by name",
-  emptyTitle: "No shared record exists yet",
-  emptyBody: "This control offers only the roster's shared records, and it holds none yet, so the first useful step is bringing contacts in rather than picking one. A private preparation record stays the worker's own and is never a participant or a link target.",
-  elsewhereBody: "The roster answered under a different organisation, ministry or support subject from the one this field is working in, so nothing from that answer is shown, counted or offered here.",
-  unavailableTitle: "The partner records could not be read",
-  retry: "Read the roster again",
-  showingFirst: (shown: number, total: number): string => `Showing the first ${shown} of ${total} matching records. Refine the search to reach the rest.`,
+  searchPlaceholder: "Search partners by name…",
+  emptyTitle: "No shared partners yet",
+  emptyBody: "Only shared partner records can be linked here — private contacts stay private to you. Import contacts or wait until shared partners are added.",
+  elsewhereBody: "These results came from a different ministry, so they’re hidden here.",
+  unavailableTitle: "Couldn’t load partners",
+  retry: "Try again",
+  showingFirst: (shown: number, total: number): string => `Showing the first ${shown} of ${total} matches. Keep typing to narrow the list.`,
 } as const;
 const PICKER_PAGE_SIZE = Math.min(20, ROSTER_PAGE_SIZE_CAP);
 const READ_PARAM = { search: "search", facet: "facet", page: "page", pageSize: "pageSize" } as const;
@@ -118,10 +118,10 @@ function PartnerComboboxPopup({ options, excluded, pending, term }: Pick<Partner
     <ComboboxContent className="w-80 max-w-[calc(100vw-2rem)]">
       {pending ? (
         <div className="p-1.5">
-          <StateNotice kind="loading" title="Reading the partner records this search matches" loadingLines={2} className="border-0 p-3" />
+          <StateNotice kind="loading" title="Searching partners…" loadingLines={2} className="border-0 p-3" />
         </div>
       ) : null}
-      {noMatch ? <output className="block px-3.5 py-3 text-start text-sm text-pretty text-muted-foreground">{term === "" ? "This roster holds no record this control can offer yet." : "No partner record matches that search. Try fewer words, or a different spelling."}</output> : null}
+      {noMatch ? <output className="block px-3.5 py-3 text-start text-sm text-pretty text-muted-foreground">{term === "" ? "No shared partners available yet." : "No matching partners found. Try a shorter search or another spelling."}</output> : null}
       <ComboboxList>
         {(option: PartnerSelection) => {
           const reference = partnerSelectionRef(option);
@@ -187,15 +187,15 @@ function PartnerCombobox({ field, options, excluded, pending, disabled, term, on
   const retry = (): void => void read.refetch();
   let replacement: ReactElement | null = null;
   if (!disabled) {
-    if (!resolved) replacement = <StateNotice kind="denied" title="Choose a context before choosing a partner" description="A partner read runs under one organisation, ministry and support subject, so this search waits until a context is selected." headingLevel={headingLevel} />;
+    if (!resolved) replacement = <StateNotice kind="denied" title="Choose a ministry first" description="Select an active ministry before searching partners." headingLevel={headingLevel} />;
     else if (read.isError) {
-      replacement = <StateNotice kind="unavailable" title={PICKER_COPY.unavailableTitle} description="The source behind the roster did not answer, so this control offers no record rather than an empty list or a count of zero." retry={{ label: PICKER_COPY.retry, onClick: retry }} headingLevel={headingLevel} />;
-    } else if (elsewhere && !read.isFetching) replacement = <StateNotice kind="denied" title="These partner records were read in another context" description={PICKER_COPY.elsewhereBody} headingLevel={headingLevel} />;
-    else if (refusal === null) replacement = nothingYet ? <StateNotice kind="empty" title={PICKER_COPY.emptyTitle} description={PICKER_COPY.emptyBody} action={{ label: "Bring in contacts from a file", href: "/partners/import" }} headingLevel={headingLevel} /> : null;
+      replacement = <StateNotice kind="unavailable" title={PICKER_COPY.unavailableTitle} description="The partner service didn’t respond. Try loading again." retry={{ label: PICKER_COPY.retry, onClick: retry }} headingLevel={headingLevel} />;
+    } else if (elsewhere && !read.isFetching) replacement = <StateNotice kind="denied" title="Partners loaded from another ministry" description={PICKER_COPY.elsewhereBody} headingLevel={headingLevel} />;
+    else if (refusal === null) replacement = nothingYet ? <StateNotice kind="empty" title={PICKER_COPY.emptyTitle} description={PICKER_COPY.emptyBody} action={{ label: "Import contacts", href: "/partners/import" }} headingLevel={headingLevel} /> : null;
     else if (refusal.kind === "unavailable") replacement = <StateNotice kind="unavailable" title={PICKER_COPY.unavailableTitle} description={refusal.unavailable.guidance} source={refusal.unavailable.source} retry={{ label: PICKER_COPY.retry, onClick: retry }} headingLevel={headingLevel} />;
     else if (refusal.kind === "denied") {
-      replacement = <StateNotice kind="denied" title="Partner records are not available in this context" description="No partner read is admitted for the context selected here, so this control offers no record rather than an empty list." reasonCode={refusal.denied.reasonCode} headingLevel={headingLevel} />;
-    } else replacement = <StateNotice kind="refused" title="That search could not be asked" description={refusalSummary(refusal.refused)} headingLevel={headingLevel} />;
+      replacement = <StateNotice kind="denied" title="Partners aren’t available in this ministry" description="Your session doesn’t have access to partners here." reasonCode={refusal.denied.reasonCode} headingLevel={headingLevel} />;
+    } else replacement = <StateNotice kind="refused" title="Couldn’t run that search" description={refusalSummary(refusal.refused)} headingLevel={headingLevel} />;
   }
   const showCount = replacement === null && total !== null && total > options.length;
   const showExcludeNote = replacement === null && options.some((option) => excluded.has(partnerSelectionRef(option)));
@@ -212,7 +212,7 @@ function PartnerCombobox({ field, options, excluded, pending, disabled, term, on
             {showCount || showExcludeNote ? (
               <div className="flex min-w-0 flex-col gap-1">
                 {showCount && total !== null ? <p className="text-xs text-pretty text-muted-foreground">{PICKER_COPY.showingFirst(options.length, total)}</p> : null}
-                {showExcludeNote ? <p className="text-xs text-pretty text-muted-foreground">A record already chosen in another field is listed here but cannot be chosen again.</p> : null}
+                {showExcludeNote ? <p className="text-xs text-pretty text-muted-foreground">Partners already added can’t be selected twice.</p> : null}
               </div>
             ) : null}
           </div>

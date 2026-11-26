@@ -41,21 +41,21 @@ interface TaskComposerCommonProps {
   readonly className?: string;
 } /** The composer's contract: a new task needs the collection's revision, an edit needs the record it changes and the private tags that record carries. */
 export type TaskComposerProps = (TaskComposerCommonProps & { readonly mode: "create"; readonly record?: null | undefined }) | (TaskComposerCommonProps & { readonly mode: "edit"; readonly record: TaskRecord; readonly tags: readonly string[] });
-const HEADINGS = { create: "New task", edit: "Edit this task" } as const;
+const HEADINGS = { create: "New task", edit: "Edit task" } as const;
 const NO_TAGS: readonly string[] = [];
-const LABELS = { title: "Title", kind: "Kind of work", note: "Note", link: "Linked record", partners: "Partners", initiatives: "Initiatives", noLink: "No link" } as const;
+const LABELS = { title: "Title", kind: "Type", note: "Note", link: "Linked to", partners: "Partners", initiatives: "Initiatives", noLink: "Not linked" } as const;
 const DESCRIPTIONS = {
-  title: `What the work is, in a few words — ${String(TASK_TITLE_MAX_LENGTH)} characters at most.`,
-  category: `${CATEGORY_HINT} ${String(TASK_CATEGORY_MAX_LENGTH)} characters at most.`,
-  dueOn: "A calendar date with no time of day and no zone behind it. Leave it empty for undated work.",
-  plannedTime: "The day and clock time this meeting is planned for. Give a time and its zone together, or neither; the planned day is also the due date.",
-  timeZone: "The zone this planned time is stated in, so the clock reading is disclosed rather than assumed.",
-  note: `A short reminder about the work — ${String(TASK_NOTE_MAX_LENGTH)} characters at most.`,
-  link: "Only the records this read admitted are listed. A link names one of them by its opaque identity and changes nothing else.",
+  title: `What you need to do (up to ${String(TASK_TITLE_MAX_LENGTH)} characters).`,
+  category: `${CATEGORY_HINT} Up to ${String(TASK_CATEGORY_MAX_LENGTH)} characters.`,
+  dueOn: "Optional calendar date. Leave blank for undated tasks.",
+  plannedTime: "Date and time for this meeting. Sets the task’s due date to the same day.",
+  timeZone: "Time zone for the scheduled meeting time.",
+  note: `Optional context or talking points (up to ${String(TASK_NOTE_MAX_LENGTH)} characters).`,
+  link: "Optionally connect this task to a partner or outreach initiative.",
 } as const;
-const KIND_HINTS: Readonly<Record<TaskKind, string>> = { default: "Ordinary work with an optional due date.", meeting: "Work planned for a time, stated in a zone you choose." };
+const KIND_HINTS: Readonly<Record<TaskKind, string>> = { default: "A call, email, thank-you, or general reminder.", meeting: "A scheduled meeting with a specific time and time zone." };
 const KIND_OPTIONS = (["default", "meeting"] as const satisfies readonly TaskKind[]).map((kind) => ({ value: kind, label: TASK_KIND_LABELS[kind], hint: KIND_HINTS[kind] }));
-const ZONE_PLACEHOLDER = "Not stated";
+const ZONE_PLACEHOLDER = "Select a time zone";
 const FIELD_NAMES = { title: "title", category: "category", dueOn: "dueOn", kind: "kind", plannedTime: "plannedTime", timeZone: "timeZone", note: "note", link: "link" } as const;
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
   [FIELD_NAMES.title]: LABELS.title,
@@ -151,17 +151,17 @@ function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly 
         <span className="min-w-0 wrap-anywhere text-muted-foreground">{timeZone.trim() === "" ? ZONE_PLACEHOLDER : timeZone}</span>
       </p>
       <p className="text-sm text-pretty text-muted-foreground">{PLANNED_VERSUS_HELD_NOTE}</p>
-      <p className="text-sm text-pretty text-muted-foreground">{"A meeting's planned day is also its due date, so stating a planned time sets the due date to that day."}</p>
+      <p className="text-sm text-pretty text-muted-foreground">{"The meeting’s date also sets this task’s due date."}</p>
     </div>
   );
 }
-/** The private tags this task already carries, stated read-only: the composer is not where a tag is set, and a task with no tag says so because that is a fact of its own rather than a gap in the record. */ function PrivateTagsDisclosure({ tags }: { readonly tags: readonly string[] }): ReactElement {
+function PrivateTagsDisclosure({ tags }: { readonly tags: readonly string[] }): ReactElement {
   return (
     <div className="flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border/80 bg-surface-subtle p-3.5">
       <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
         <span className="font-medium">{"Private tags"}</span>
         {tags.length === 0 ? (
-          <span className="text-muted-foreground">{"No private tag"}</span>
+          <span className="text-muted-foreground">{"None"}</span>
         ) : (
           tags.map((tag) => (
             <Badge key={tag} variant="outline">
@@ -170,7 +170,7 @@ function PlanDisclosure({ value, timeZone }: { readonly value: string; readonly 
           ))
         )}
       </p>
-      <p className="text-sm text-pretty text-muted-foreground">{`A private tag is set only by the ${BULK_INTENT_LABELS["private-tag"]} bulk action on the Work list, and only you see it. Saving this task changes no tag.`}</p>
+      <p className="text-sm text-pretty text-muted-foreground">{`Manage private tags using the ${BULK_INTENT_LABELS["private-tag"]} bulk action on the Tasks list (visible only to you).`}</p>
     </div>
   );
 }
@@ -270,10 +270,10 @@ function LinkGroup({ label, choices }: { readonly label: string; readonly choice
         <Heading id={headingId} className={HEADING_SCALE[headingLevel]}>
           {editing ? HEADINGS.edit : HEADINGS.create}
         </Heading>
-        <p className="type-supporting text-pretty">{"A task needs only a title. Everything else is optional, and saving it changes this task alone."}</p>
+        <p className="type-supporting text-pretty">{"Only a title is required — everything else is optional."}</p>
       </div>
       {editing ? <PrivateTagsDisclosure tags={tags} /> : null}
-      {linkUnavailable === null ? null : <StateNotice kind="unavailable" title="The records a task can link to could not be read" description={linkUnavailable.guidance} source={linkUnavailable.source} headingLevel={4} />}
+      {linkUnavailable === null ? null : <StateNotice kind="unavailable" title="Couldn’t load partners or initiatives to link" description={linkUnavailable.guidance} source={linkUnavailable.source} headingLevel={4} />}
       <form noValidate onSubmit={onSubmit} className="flex min-w-0 flex-col gap-5">
         {refusal === null || refusal.count === 0 ? null : <FormErrorSummary errors={refusal} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={receiptHeadingLevel} />}
         <form.Subscribe selector={(state) => state.values}>
@@ -303,7 +303,7 @@ function LinkGroup({ label, choices }: { readonly label: string; readonly choice
                   </div>
                 ) : null}
                 {admitted === null ? null : !linkable ? (
-                  <p className="text-sm text-pretty text-muted-foreground">{"This read admitted no partner or initiative to link, so the task stands on its own."}</p>
+                  <p className="text-sm text-pretty text-muted-foreground">{"No shared partners or initiatives are available to link right now."}</p>
                 ) : (
                   <FormSelectField name={FIELD_NAMES.link} label={LABELS.link} description={DESCRIPTIONS.link} errors={refusal} error={linkError} mark="optional" announcesRequired={false} className="w-full" value={values.link} onValueChange={(value) => edit(FIELD_NAMES.link, value)}>
                     <NativeSelectOption value="">{LABELS.noLink}</NativeSelectOption>

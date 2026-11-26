@@ -6,7 +6,7 @@ const TableHeader = ({ className, ...props }: React.ComponentProps<"thead">) => 
 const TableBody = ({ className, ...props }: React.ComponentProps<"tbody">) => <tbody data-slot="table-body" className={cn("[&_tr:last-child]:border-0", className)} {...props} />;
 const TableFooter = ({ className, ...props }: React.ComponentProps<"tfoot">) => <tfoot data-slot="table-footer" className={cn("border-t bg-surface-subtle font-medium [&>tr]:last:border-b-0", className)} {...props} />;
 const TableRow = ({ className, ...props }: React.ComponentProps<"tr">) => (
-  <tr data-slot="table-row" className={cn("border-b border-border/70 transition-colors hover:bg-muted/45 hover:row-state-indicator has-aria-expanded:bg-muted/45 has-aria-expanded:row-state-indicator data-[state=selected]:bg-muted/70 data-[state=selected]:row-state-indicator", className)} {...props} />
+  <tr data-slot="table-row" className={cn("border-b border-border/70 transition-colors duration-150 ease-out hover:bg-muted/45 hover:row-state-indicator has-aria-expanded:bg-muted/45 has-aria-expanded:row-state-indicator data-[state=selected]:bg-muted/70 data-[state=selected]:row-state-indicator", className)} {...props} />
 );
 const TableHead = ({ className, ...props }: React.ComponentProps<"th">) => (
   <th data-slot="table-head" scope="col" className={cn("h-11 px-3.5 text-start align-middle text-xs font-medium tracking-wide whitespace-nowrap text-muted-foreground group-data-[density=dense]/data-grid:h-9 group-data-[density=dense]/data-grid:px-3 [&:has([role=checkbox])]:pe-0", className)} {...props} />

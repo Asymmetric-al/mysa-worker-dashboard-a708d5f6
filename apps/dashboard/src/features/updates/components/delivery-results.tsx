@@ -26,106 +26,103 @@ type UnservedRecipient = SendResultData["unserved"][number];
 type Usefulness = SendResultData["usefulness"];
 type ValueStates = Readonly<Record<string, ValueState>>;
 const SURFACE = {
-  heading: "Delivery results",
+  heading: "Send results",
   intro:
-    "One row per recipient of one submitted notice: the copy that was pinned for them, the outcome this application recorded, and whether a repeat is still permitted. A definite failure may be repeated from here while the notice is inside its usefulness window; acceptance is not delivery and not reading, no figure here is added to another, and an unknown outcome is recovered by reading this same notice again rather than by sending anything a second time.",
-  loadingTitle: "Delivery results",
-  loadingDescription: "The recorded outcomes for this notice are being read. No count, no empty row and no zero stands in for them while the read runs.",
-  unavailableTitle: "The recorded outcomes could not be read",
-  unavailableDescription: "This screen states no acceptance, no failure and no unknown outcome for anyone until the read succeeds: an outage is not a notice that failed and not one that was accepted.",
-  deniedTitle: "This notice's results are not available in this session",
-  deniedDescription: "The answer is the same whether or not this notice exists, so nothing here reveals what it cannot show.",
-  refusedTitle: "This screen's request was refused",
-  noNoticeTitle: "No submitted notice is named",
-  noNoticeDescription: "This screen reports the delivery results of one notice that was already submitted, so it needs that notice's own identity. Nothing is shown and nothing is counted until one is named, because a screen that guessed would report whichever notice was submitted last.",
-  noNoticeAction: "Open the Updates list",
-  emptyTitle: "No recipient outcome was recorded for this notice",
-  emptyDescription: "Nothing here states that the notice reached anyone: the service recorded no per-recipient outcome for this intent. The eligible recipients it did not serve are listed above, and no outcome is inferred for them.",
-  orderNote: "The service states this order and this read takes no ordering parameter, so the table offers no sort that would change nothing.",
-  recipientHelp: "A recipient is an opaque reference recorded for this notice. It is not a name, not an address and not a link, and two references describe the same person only when they are the same reference.",
-  pinnedHelp:
-    "Each recipient's copy was pinned to one rendition when the notice was submitted, so a later change of audience, language or restriction cannot substitute a different copy for the one recorded here. A row states that copy's identity: the audience and the language belong to the edition this notice was submitted for, not to the row, and neither is inferred from a rendition identifier.",
-  dedupeHelp:
-    "A dedupe identity is four values taken together: the publisher, the purpose, the recipient and the intent. One intent yields at most one message per recipient, so a repeat of the same work is recognised as the same message rather than becoming a second one. The publisher, the purpose and the intent are the same on every row and all four are stated on each row anyway, because a duplicate is the one thing that identity exists to make visible.",
-  noClockNote: "Every instant here is the one the service resolved when it answered, stated exactly as supplied. This screen reads no clock of its own and compares no deadline, so whether a repeat is still permitted is the service's answer and never a browser's.",
+    "Per-recipient status for this email notification. Failed sends can be retried while the 24-hour window is open; Unknown outcomes should be refreshed rather than sent twice.",
+  loadingTitle: "Loading send results…",
+  loadingDescription: "Loading recipient outcomes for this notification.",
+  unavailableTitle: "Couldn’t load send results",
+  unavailableDescription: "Couldn’t reach the send service right now. Try again in a moment.",
+  deniedTitle: "Send results aren’t available in this session",
+  deniedDescription: "Your current session doesn’t have permission to view this notification’s send results.",
+  refusedTitle: "Couldn’t load send results",
+  noNoticeTitle: "No send selected",
+  noNoticeDescription: "Open a published update and choose View send history to inspect results for a specific email send.",
+  noNoticeAction: "Back to Updates",
+  emptyTitle: "No recipient results recorded",
+  emptyDescription: "No per-recipient outcomes were recorded for this notification. Any unserved eligible partners are listed above.",
+  orderNote: "Shown in the exact order recorded by the service.",
+  recipientHelp: "Recipients are shown by their opaque partner IDs.",
+  pinnedHelp: "Each recipient’s email stays pinned to the exact edition published when the send began.",
+  dedupeHelp: "Each notification produces at most one email per recipient using its unique send key (publisher, list, recipient, and notification ID).",
+  noClockNote: "All timestamps and retry-window checks come from the server.",
 } as const;
 const SUMMARY = {
-  title: "The notice these outcomes belong to",
-  description: "The intent, the edition it was submitted for and the period the figures cover, exactly as the read resolved them.",
-  noticeLabel: "Notice",
-  releaseLabel: "Edition submitted for",
+  title: "Notification details",
+  description: "Summary of the published edition, audience counts, and retry window for this send.",
+  noticeLabel: "Notification ID",
+  releaseLabel: "Published edition",
   publisherLabel: "Publisher",
-  purposeLabel: "Purpose",
-  intendedLabel: "Meant for",
-  recordedLabel: "Result recorded at",
-  notRecorded: "No result has been recorded for this notice yet.",
-  ceilingLabel: "Eligible recipients the notice could not exceed",
-  servedLabel: "Recipients with a recorded outcome",
-  unservedLabel: "Eligible recipients not served",
-  asOfLabel: "As of",
+  purposeLabel: "List",
+  intendedLabel: "Sent at",
+  recordedLabel: "Recorded at",
+  notRecorded: "Not recorded yet.",
+  ceilingLabel: "Eligible audience ceiling",
+  servedLabel: "Recipients with results",
+  unservedLabel: "Eligible partners not emailed",
+  asOfLabel: "Updated",
   coverageLabel: "Coverage",
   sourceLabel: "Source",
   revisionLabel: "Revision",
 } as const;
-const COLUMN = { recipient: "Recipient", pinned: "Pinned copy", outcome: "Outcome", dedupe: "Dedupe identity", recorded: "Recorded at", repeat: "Repeat" } as const;
-const PURPOSE_LABELS: Readonly<Record<SendResultData["purpose"], string>> = { "update-email": "Update email" };
+const COLUMN = { recipient: "Recipient", pinned: "Pinned copy", outcome: "Status", dedupe: "Send key", recorded: "Recorded at", repeat: "Retry" } as const;
+const PURPOSE_LABELS: Readonly<Record<SendResultData["purpose"], string>> = { "update-email": "Update emails" };
 const OUTCOME_NARRATIVE: Readonly<Record<SendOutcome, string>> = {
-  accepted: "Accepted means this application's simulated submission step took this copy for this recipient. It is not delivery and it is not reading: nothing here states that a message arrived, that anyone received it or that anyone opened it, and no accepted row may be presented as any of those.",
-  failed: "Failed is a definite failure for this recipient: the simulated submission step reports that it did not take the copy, so nothing was submitted under this intent for them. A repeat is permitted under the same identity only while the usefulness window is open.",
-  unknown: "An unknown outcome means this application does not know whether the effect was applied for this recipient: the acknowledgement was lost. It is neither a success nor a failure, and no second attempt starts from here — the result is recovered by reading this same notice again.",
+  accepted: "Accepted — the simulated email step queued this message (doesn’t prove external delivery or opens).",
+  failed: "Failed — the simulated email wasn’t queued. Can be retried once while the 24-hour window stays open.",
+  unknown: "Unknown — confirmation was lost. Refresh results rather than resending to avoid duplicates.",
 };
-const OUTCOMES_BLOCK = { title: "What the outcomes on this page mean", description: "Only the outcomes this page holds are described, and each is described with what it does not mean." } as const;
+const OUTCOMES_BLOCK = { title: "What these statuses mean", description: "Statuses present in this send." } as const;
 /** The message the notice carries, stated where its outcomes are read: a notice the records can no longer resolve is stated as absent rather than reconstructed. */ const NOTICE_BLOCK = {
-  title: "The message this notice carries",
-  description: "The one message a recipient of this notice is served, rebuilt from the release the notice was submitted for: the sender, subject and link it states, the wording it carries, and both the HTML and the plain text it renders as.",
-  absent: "The message cannot be shown: the release this notice was submitted for no longer resolves from the records, so no message is reconstructed in its place.",
+  title: "Email message sent",
+  description: "Exact sender, subject, link, and HTML/plain-text preview sent for this notification.",
+  absent: "Message preview isn’t available because the underlying release couldn’t be loaded.",
 } as const;
 /** The one write this surface performs: repeating the copies of this notice that definitely failed, while the notice is still inside its usefulness window. */ const REPEAT = {
-  label: "Repeat the failed copies",
-  pendingLabel: "Repeating the failed copies…",
-  description:
-    "This notice is still inside its usefulness window, so the copies the service recorded as definite failures may be submitted again under this same notice. Nothing else is resubmitted: an accepted copy is never sent a second time, an outcome the service reports as unknown is recovered by reading this notice again rather than by sending anything, and the earlier failure stays recorded as the failure it was. The repeat is a new notice of its own, so the result below names it.",
-  targetsLead: "The rows on this page the read marks repeatable:",
-  openLabel: "Open the repeated notice's results",
+  label: "Retry failed sends",
+  pendingLabel: "Retrying failed sends…",
+  description: "Retries only the recipients whose send failed while the 24-hour window is open. Accepted and unknown rows are never resent.",
+  targetsLead: "Failed recipients on this page:",
+  openLabel: "View retry send results",
 } as const;
-const COUNTS = { title: "Outcomes recorded for this notice", intro: "Each of the three outcomes is counted on its own, from that outcome's own value state. They are never added together: one number across three different outcomes would state something none of them means." } as const;
+const COUNTS = { title: "Results breakdown", intro: "Each status is counted separately and never combined." } as const;
 const USEFULNESS_COPY = {
-  title: "The usefulness window",
-  stateLabel: "Window at this read",
+  title: "Retry window",
+  stateLabel: "Status",
   deadlineLabel: "Closes at",
-  remainingLabel: "Remaining when this read ran",
-  statement: "A definite failure may be repeated only while this window is open, under the same dedupe identity. The window runs 24 elapsed hours from the instant the notice was meant for and is strict at equality: at exactly that instant it is closed, and nothing on this screen reopens it or extends it.",
+  remainingLabel: "Time remaining",
+  statement: "Failed sends can be retried within 24 hours of the original send. Once closed, the window doesn’t reopen.",
 } as const;
-const USEFULNESS_STATE: Readonly<Record<Usefulness["state"], StatusBadgeSpec>> = { "within-usefulness": { label: "Within its usefulness window", tone: "info" }, "past-usefulness": { label: "Past its usefulness window", tone: "muted" } };
+const USEFULNESS_STATE: Readonly<Record<Usefulness["state"], StatusBadgeSpec>> = { "within-usefulness": { label: "Retry window open", tone: "info" }, "past-usefulness": { label: "Retry window closed", tone: "muted" } };
 const UNSERVED_BLOCK = {
-  title: "Eligible recipients this notice did not serve",
-  description: "These recipients were eligible for the notice and received no copy. Each is listed with the reason the service recorded, and none of them is counted as an outcome above.",
-  alreadyCovered: "An earlier notice already pinned a copy for this recipient, so this intent did not make a second one.",
-  coveredByIntent: "Earlier notice",
-  coveredByRendition: "Copy already pinned",
+  title: "Eligible partners not emailed",
+  description: "Eligible partners who weren’t sent a copy in this notification and why.",
+  alreadyCovered: "Already received a copy from an earlier notification for this update.",
+  coveredByIntent: "Earlier notification",
+  coveredByRendition: "Pinned copy",
 } as const;
-const UNSERVED_STATE: Readonly<Record<UnservedRecipient["reason"], StatusBadgeSpec>> = { "already-covered": { label: "Already had a copy from an earlier notice", tone: "muted" }, "no-eligible-rendition": { label: "No copy they may read", tone: "caution" } };
+const UNSERVED_STATE: Readonly<Record<UnservedRecipient["reason"], StatusBadgeSpec>> = { "already-covered": { label: "Already emailed", tone: "muted" }, "no-eligible-rendition": { label: "No readable edition", tone: "caution" } };
 const RENDITION_REFUSAL_NARRATIVE: Readonly<Record<Extract<UnservedRecipient, { readonly reason: "no-eligible-rendition" }>["renditionRefusal"], string>> = {
-  "no-candidates": "No edition of this notice could be pinned for this recipient when the notice was submitted, so no copy was fixed for them.",
-  "no-readable-edition": "Every edition that could have served this recipient was unreadable when the notice was submitted, so no copy was fixed for them.",
-  "audience-not-admitted": "This recipient is not admitted to the audience of any edition of this notice, so no copy they may read could be fixed for them.",
+  "no-candidates": "No matching edition was available when this notification started.",
+  "no-readable-edition": "No readable edition was available when this notification started.",
+  "audience-not-admitted": "This recipient doesn’t have permission to view any edition in this notification.",
 };
 const DUPLICATE_BLOCK = {
-  label: "The recorded results disagree",
-  title: "Two recorded rows share one dedupe identity",
-  description: "One intent yields at most one message per recipient, so this is a defect in the recorded results rather than a second copy. The rows are listed exactly as recorded and are never added together or reduced to one: a screen that quietly merged them would hide the defect the identity exists to expose.",
+  label: "Duplicate detected",
+  title: "Multiple rows share one send key",
+  description: "Each notification should produce at most one email per recipient. Both recorded rows are shown transparently so the duplicate isn’t hidden.",
 } as const;
 const RECOVERY = {
-  title: "Checking the result",
-  intro: "Checking the result reads this same notice again, under the same identity. A read performs no effect, so checking can reveal an outcome that was recorded and can never repeat a submission.",
-  checkLabel: "Check the result",
-  checkingLabel: "Checking the result…",
-  checkDescription: "Reading this notice again, under the identity it already has.",
-  noActionNote: "The service offers no recovery action for this notice, so none is presented here.",
-  noRepeatNote: "The service offers no repeat action for this notice, so none is presented here.",
-  noRepeatOnThisPage: "The copies this notice recorded as a definite failure are not on this page, so no repeat is offered here: a repeat submits exactly the copies that failed and nothing else, and those rows are on the page that states them.",
-  unavailableNoReason: "The service reports this action as unavailable and stated no reason for it, so none is written here.",
-  repeatsLabel: "A repeat under the same identity",
+  title: "Refresh & retry",
+  intro: "Refresh checks the latest server status without sending any emails.",
+  checkLabel: "Refresh status",
+  checkingLabel: "Refreshing…",
+  checkDescription: "Re-reads the latest results for this notification.",
+  noActionNote: "Status refresh isn’t available for this notification.",
+  noRepeatNote: "Retrying failed sends isn’t available for this notification.",
+  noRepeatOnThisPage: "No failed recipients appear on this page — check other pages to retry failed rows.",
+  unavailableNoReason: "Not available right now.",
+  repeatsLabel: "Retry failed sends",
 } as const;
 const HOUR_MS = 3_600_000;
 const FIRST_PAGE = 1;

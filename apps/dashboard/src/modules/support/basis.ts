@@ -6,7 +6,7 @@ import type { CommitmentRow } from "./buckets";
 export const SUPPORT_BASIS: SupportBasis = "effective_cash_allocation";
 export type { SupportBasis };
 export const BASIS_DESCRIPTION =
-  "Received support is measured as source-qualified effective cash allocations at the grain of one authorised allocation — a gift with no allocation counts once at gift grain, and a split gift contributes only the allocation this read is authorised to see — attributed to each gift's own original gift date, with accepted corrections and refunds reflected exactly as the source states them.";
+  "Counts source-verified cash gifts and authorised allocations on each gift’s original date, including accepted corrections and refunds. Split gifts include only the allocation visible to your account.";
 export type SupportMeasure = "received-gifts" | "recurring-collection-outcomes" | "commitments" | "monthly-equivalent-support" | "support-goal";
 export const SUPPORT_MEASURE_LABELS: Readonly<Record<SupportMeasure, string>> = { "received-gifts": "Received gifts", "recurring-collection-outcomes": "Recurring collection outcomes", commitments: "Commitments", "monthly-equivalent-support": "Monthly-equivalent support", "support-goal": "Support goal" };
 export interface GiftRow {

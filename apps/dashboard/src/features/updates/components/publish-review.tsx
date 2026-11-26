@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement } from "react";
 import { Temporal } from "temporal-polyfill";
@@ -50,29 +51,29 @@ export type PublishReviewProps = { readonly scope: Scope; readonly documentId: s
 type SubmittedEdition = { readonly variantId: string; readonly audience: ContentAudience; readonly locale: PublishLocale; readonly revisionId: string; readonly contentChecksum: string; readonly mode: PublishMode };
 type NoticeAttempt = { readonly variantId: string; readonly notice: PublishedEditionNotice } | { readonly variantId: string; readonly withheld: string };
 type ReportedEdition = { readonly variantId: string; readonly state: string; readonly releaseId: string | null; readonly reasonCode?: string; readonly reason?: string };
-const EDITIONS_LEGEND = "Editions to release";
-const MODE_LEGEND = "How this edition is released";
-const NOTIFY_DROPPED_REASON = "This edition's submission asked for a notice, so releasing it without one is refused. A new submission is required to release it and submit nothing.";
-const NO_CANDIDATE_REASON = "This edition has no frozen candidate, so this release cannot publish it. Submit a revision for its one review step first.";
-const RELEASE_CONFIRM_LABEL = "Release these editions";
-const SIBLING_PROMISE = "If one selected edition cannot be released, the others proceed. The edition that fails keeps the revision it already published, and nothing is rolled back: this is not a batch that reverts.";
-const NOTHING_OUTSIDE = "Nothing outside the editions listed below changes: this step creates no financial record, subscribes no one and completes no task.";
-const CEILING_ACKNOWLEDGEMENT = "This ceiling is the count the audience envelope stated when this review was read. It is acknowledged at this instant, so a person who signs up later never expands it, and the number acknowledged here is the number the notice request carries.";
-const CEILING_ELIGIBLE_LABEL = "Eligible recipients";
-const CEILING_EXCLUDED_LABEL = "Excluded from this purpose";
-const CEILING_UNAVAILABLE_TITLE = "The notice audience could not be read";
-const CEILING_UNAVAILABLE_DESCRIPTION = "The eligible and excluded counts behind a notice could not be read, so no notice can be acknowledged from this screen. Publishing is unaffected: a release is a separate step, and it is recorded with the notification still needing attention.";
-const CEILING_DENIED_DESCRIPTION = "The notice audience was refused before it was enumerated, so no count, no membership and no exclusion is stated here. Retrying the same read is the only recovery: it is never presented as an audience of nobody.";
-const NOTICE_READING_TITLE = "Reading what this notice would point at";
-const NOTICE_TARGET_LABEL = "The notice links to";
-const NOTICE_UNREADABLE_REASON = "The edition's share presentation could not be read, so no notice is submitted for it. The release proceeds and the notification needs attention.";
-const NOTICE_NOT_READY_REASON = "The edition's share presentation had not been read when this release was submitted, so no notice went with it. The release stands and the notification needs attention.";
-const NOTICE_CEILING_REASON = "The eligible-recipient ceiling could not be read, so no notice is submitted for it. The release proceeds and the notification needs attention.";
-const NOTICE_REPLAY_DETAIL = "A notice for this publication had already been submitted, so this attempt created no second copy.";
-const STANDING_HEADING = "What this edition publishes now";
-const STANDING_RELEASED = "Currently published";
-const STANDING_CHECKING = "Re-reading this edition's release head and its share presentation. Whatever the service now states is what appears here.";
-const WITHHELD_PREFIX = "Published. Notification needs attention:";
+const EDITIONS_LEGEND = "Editions to publish";
+const MODE_LEGEND = "Release option";
+const NOTIFY_DROPPED_REASON = "This submission includes email notifications. To publish without emailing, submit a new draft with Publish only.";
+const NO_CANDIDATE_REASON = "Submit a saved draft for review first before publishing this edition.";
+const RELEASE_CONFIRM_LABEL = "Publish selected editions";
+const SIBLING_PROMISE = "Each edition publishes independently — if one fails, the others stay live and nothing rolls back.";
+const NOTHING_OUTSIDE = "Only the selected editions are published — no financial records, subscriptions, or tasks are changed.";
+const CEILING_ACKNOWLEDGEMENT = "Locks the eligible partner count at this moment so later signups won’t expand this send.";
+const CEILING_ELIGIBLE_LABEL = "Eligible partners";
+const CEILING_EXCLUDED_LABEL = "Excluded";
+const CEILING_UNAVAILABLE_TITLE = "Couldn’t load Email audience";
+const CEILING_UNAVAILABLE_DESCRIPTION = "Email audience counts couldn’t load, so notifications can’t be sent right now. You can still publish the update itself.";
+const CEILING_DENIED_DESCRIPTION = "Your session doesn’t have permission to view the email audience count right now.";
+const NOTICE_READING_TITLE = "Loading notification link…";
+const NOTICE_TARGET_LABEL = "Email link";
+const NOTICE_UNREADABLE_REASON = "Couldn’t load the update’s share link, so no email was queued. Your update still published.";
+const NOTICE_NOT_READY_REASON = "Share link wasn’t ready when publishing ran, so no email was queued. Your update still published.";
+const NOTICE_CEILING_REASON = "Eligible partner count wasn’t available, so no email was queued. Your update still published.";
+const NOTICE_REPLAY_DETAIL = "A notification was already queued for this release — no duplicate was sent.";
+const STANDING_HEADING = "Currently published";
+const STANDING_RELEASED = "Live version";
+const STANDING_CHECKING = "Refreshing live publication status…";
+const WITHHELD_PREFIX = "Published — email notification needs attention:";
 const isRecordValue = (value: unknown): value is Readonly<Record<string, unknown>> => typeof value === "object" && value !== null && !Array.isArray(value);
 const textOf = (value: unknown): string | null => (typeof value === "string" && value.trim() !== "" ? value : null);
 const childLevel = (level: ReviewHeadingLevel): ReviewHeadingLevel => (level === 2 ? 3 : 4);
@@ -128,7 +129,7 @@ const NOTICE_ATTEMPT = {
 function noticeAttemptOf(variantId: string, outcome: PublishOutcome): NoticeAttempt {
   if (outcome.outcome === "invalid") return { variantId, notice: { state: "failed", detail: refusalSummary(outcome) } };
   if (outcome.outcome === "unavailable") return { variantId, notice: { state: "failed", detail: outcome.guidance } };
-  const row = NOTICE_ATTEMPT[outcome.outcome] ?? { state: "unknown", detail: "The notice answered with a result this surface does not describe, so nothing is claimed about acceptance here." };
+  const row = NOTICE_ATTEMPT[outcome.outcome] ?? { state: "unknown", detail: "Notification status couldn’t be confirmed — check Send history before retrying." };
   return { variantId, notice: outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" ? { ...row, ...noticeIdentityOf(outcome) } : row };
 }
 function messagesOfIssues(error: { readonly issues: readonly { readonly path: readonly PropertyKey[]; readonly message: string }[] }): Readonly<Record<string, readonly string[]>> {
@@ -205,9 +206,11 @@ function EditionRow({ edition, index, selected, disabled, refusal, onSelectedCha
   const candidate = edition.candidate;
   const modeRefusal = refusal?.byField[`variants.${String(index)}.mode`];
   const name = `${audienceLabelOf(edition)} — ${localeNameOf(edition)}`;
+  const awaitingReview = candidate !== null && edition.lifecycle === "candidate";
+  const rowDescription = candidate === null ? NO_CANDIDATE_REASON : awaitingReview ? "This edition is still awaiting review and cannot be published until approved." : "Tick this edition's checkbox to publish its frozen revision in this release.";
   return (
     <li data-slot="publish-review-edition" data-variant-id={edition.variantId} data-selected={selected ? "true" : "false"} data-lifecycle-state={edition.lifecycle} data-mode={fixedModeOf(edition)} className="min-w-0 rounded-lg border border-border p-3">
-      <FormFieldGroup legend={name} name={`publish-edition-${edition.variantId}`} description={candidate === null ? NO_CANDIDATE_REASON : "Tick this edition's checkbox to publish its frozen revision in this release."}>
+      <FormFieldGroup legend={name} name={`publish-edition-${edition.variantId}`} description={rowDescription}>
         {({ legendId }) => (
           <div className="flex min-w-0 flex-col gap-3">
             <p className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 type-supporting">
@@ -217,13 +220,20 @@ function EditionRow({ edition, index, selected, disabled, refusal, onSelectedCha
               <bdi className="mono-identifier">{edition.locale.tag}</bdi>
             </p>
             {candidate === null ? null : (
-              <p className="flex min-w-0 items-center gap-3 type-body">
+              <label htmlFor={`${idPrefix}-select`} className={`flex min-w-0 items-center gap-3 type-body select-none ${disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}>
                 {/* The primitive renders its control beside a labelled input, so the name is stated on the control itself: every tick says which edition it selects. */}
                 <Checkbox id={`${idPrefix}-select`} checked={selected} disabled={disabled} aria-label={`Release ${name}`} aria-describedby={legendId} onCheckedChange={(checked: boolean) => onSelectedChange(checked)} />
-                <span className="text-pretty">{"Include this edition in the release"}</span>
-              </p>
+                <span className="text-pretty">{awaitingReview ? "Include this edition in the release (awaiting review)" : "Include this edition in the release"}</span>
+              </label>
             )}
-            <DraftStatus state={edition.lifecycle} />
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+              <DraftStatus state={edition.lifecycle} />
+              {awaitingReview ? (
+                <Link href={`/communication/review/${encodeURIComponent(edition.variantId)}`} className="inline-link text-sm font-medium text-foreground">
+                  {"Open review"}
+                </Link>
+              ) : null}
+            </div>
             {candidate === null ? null : <FrozenRevisionFacts candidate={candidate} />}
             {selected && candidate !== null ? <ReleaseModeChoice edition={edition} idPrefix={idPrefix} error={modeRefusal} /> : null}
           </div>
@@ -533,16 +543,16 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
         <CardHeader>
           <CardTitle>
             <Heading id={titleId} className={HEADING_SCALE[headingLevel]}>
-              {"Release the selected editions"}
+              {"Publish approved editions"}
             </Heading>
           </CardTitle>
-          <CardDescription>{"A release publishes the exact frozen revision of each edition you select. It sends no message by itself: a notice is a separate deliberate request, and it is submitted here only for an edition whose submission asked for one."}</CardDescription>
+          <CardDescription>{"Select which approved editions to publish now. Email notifications are sent only for editions submitted with Publish and notify partners."}</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           {editions.length === 0 ? (
-            <StateNotice kind="empty" headingLevel={childHeading} title="This Update has no edition to release" description={"No edition of this Update exists yet, so there is nothing a release could publish and nothing a notice could point at. Add an audience and language edition first."} />
+            <StateNotice kind="empty" headingLevel={childHeading} title="No editions to publish yet" description={"Add an audience and language edition first before publishing."} />
           ) : (
-            <FormFieldGroup legend={EDITIONS_LEGEND} name="publish-editions" description={"Each edition keeps its own draft, its own review and its own release. Tick the editions this release publishes: only an edition with a frozen candidate can be released, and one release lists each edition once."}>
+            <FormFieldGroup legend={EDITIONS_LEGEND} name="publish-editions" description={"Check the approved editions you want to publish."}>
               {() => (
                 <ul className="flex min-w-0 flex-col gap-3">
                   {editions.map((edition, index) => (
@@ -571,9 +581,9 @@ export function PublishReview({ scope, documentId, expectedRevision, editions, c
               <p className="type-supporting text-pretty">{SIBLING_PROMISE}</p>
               <p className="type-supporting text-pretty">{NOTHING_OUTSIDE}</p>
               {settled ? (
-                <p className="type-supporting text-pretty">{"This step is complete for this attempt, and the result below is its record. Changing the selection or the acknowledged ceiling begins a new attempt with its own identity."}</p>
+                <p className="type-supporting text-pretty">{"Publishing complete — review results below. Change your selection to publish again."}</p>
               ) : (
-                <p className="type-supporting text-pretty">{"Pressing release again resubmits this same attempt: it keeps its own identity, so work that was already accepted answers with its result instead of happening twice."}</p>
+                <p className="type-supporting text-pretty">{"If you need to retry, the same operation ID prevents publishing twice."}</p>
               )}
               <ReleaseConfirmation selections={chosen} notifyCount={notifyEditions.length} blockedReason={blockedReason} busy={pending} onConfirm={confirmRelease} />
             </>

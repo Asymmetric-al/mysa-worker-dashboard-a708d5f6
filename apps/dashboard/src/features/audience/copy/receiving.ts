@@ -4,23 +4,23 @@ import { REACH_VALUES, type Reach } from "@/modules/content/reach";
 import { PREVIEW_DENIAL_REASONS } from "@/modules/content/preview";
 type ReachOptionCopy = { readonly label: string; readonly description: string };
 export const REACH_COPY: Record<Reach, ReachOptionCopy> = {
-  "not-public": { label: REACH_STATUS["not-public"].label, description: "Only you can see this edition: your own reading view and your preview show it, and nobody " + "else can reach it, with a link or otherwise." },
-  "link-public": { label: REACH_STATUS["link-public"].label, description: "Anyone holding the link can read this edition, but it is unlisted: it is kept out of the " + "public discovery index, search engines are asked not to index it (noindex), and the link is " + "checked again every time it is opened." },
-  listed: { label: REACH_STATUS.listed.label, description: "Anyone holding the link can read this edition, and it appears in the public discovery index, " + "where it can be opened from there and search engines may index it." },
+  "not-public": { label: REACH_STATUS["not-public"].label, description: "Only visible to you in your workspace preview. Public links won’t work." },
+  "link-public": { label: REACH_STATUS["link-public"].label, description: "Anyone with the direct link can read it, but it stays hidden from the public directory and search engines." },
+  listed: { label: REACH_STATUS.listed.label, description: "Visible in the public directory, open to anyone with the link, and open to search engines." },
 } satisfies Record<(typeof REACH_VALUES)[number], ReachOptionCopy>;
 export const DISCOVERY_INDEX_COPY: { heading: string; description: string; emptyTitle: string; emptyDescription: string } = {
-  heading: "Pages listed publicly",
+  heading: "Public pages",
   description:
-    "Only released editions that are listed publicly appear here. An edition shared only by link is absent on purpose rather than missing: it opens when someone gives you its link, and it is never listed on this page. An edition that has been withdrawn leaves this list, and its address answers a short notice instead.",
-  emptyTitle: "Nothing is listed publicly yet",
-  emptyDescription: "Every released edition that is listed publicly appears on this page, so it is empty because " + "none is listed publicly at the moment. An edition shared only by link does not appear here by " + "design, and an edition still in draft is not released at all.",
+    "Published ministry pages listed publicly. Unlisted (link-only) pages and drafts don’t appear here, and unpublished pages are removed automatically.",
+  emptyTitle: "No public pages listed yet",
+  emptyDescription: "Pages set to Listed publicly appear here once published. Unlisted (link-only) pages and drafts stay hidden from this directory.",
 };
 export const RECEIVING_LIST_COPY: { heading: string; description: string; recheckStatement: string; emptyTitle: string; emptyDescription: string } = {
-  heading: "Editions you can open",
-  description: "Every released edition this membership may read appears here, in the language it may be served " + "in. Each one opens at the address this list gives, where access is checked again.",
-  recheckStatement: "Access is checked again every time this list opens, so a release that has been withdrawn, or a " + "membership that has changed, is reflected the next time it is opened rather than in a copy " + "kept from before.",
-  emptyTitle: "No edition is available to this membership yet",
-  emptyDescription: "This list holds the released editions this membership may read, and it is empty because none " + "has been released for it. That is an empty list rather than a source that could not be read: a " + "list that cannot be read at all is reported separately, as unavailable.",
+  heading: "Updates available to read",
+  description: "Published updates available to this reader account in its permitted language.",
+  recheckStatement: "Access is verified every time you open this list, so unpublished updates or permission changes apply immediately.",
+  emptyTitle: "No updates available yet",
+  emptyDescription: "Published updates that this reader has permission to view will appear here.",
 };
 type PreviewDenialReason = (typeof PREVIEW_DENIAL_REASONS)[number];
 interface ReceivingPostCopy {
@@ -31,27 +31,27 @@ interface ReceivingPostCopy {
   readonly inertStatement: string;
 }
 export const RECEIVING_POST_COPY: ReceivingPostCopy = {
-  recheckStatement: "Access is checked again every time this edition is opened, so a change to the release or to " + "this membership takes effect on the next open rather than in a copy kept from before.",
+  recheckStatement: "Access is checked each time this page opens, so changes to publishing or permissions apply right away.",
   languageFallbackStatement: (requestedLanguage, servedLanguage) =>
-    `You asked to read this in ${requestedLanguage}, and it is shown in ${servedLanguage}. ` + "The language actually served is named so you know which language you are reading; asking for " + "a language does not widen what this membership may read, and it does not subscribe you to " + "anything.",
+    `Requested in ${requestedLanguage} — showing the available ${servedLanguage} edition instead. Choosing a language doesn’t change your access or email preferences.`,
   languageUnavailable: {
-    title: "Language unavailable",
-    description: "Nothing readable here exists in the language asked for, and no permitted edition in another " + "language stands in for it. This is not an empty list and not a source that could not be " + "read: it says only that there is nothing in this language here, and nothing has been " + "substituted for it.",
+    title: "Language not available",
+    description: "No edition exists in the requested language, and no other language was substituted.",
   },
   denialNotices: {
-    "not-authorised": "This address cannot be read with the access this session holds. The check is repeated every " + "time it is opened, so a change in access is reflected on the next open.",
-    "revision-not-acknowledged": "The revision this request names is not the one that may be shown here. Open the preview " + "again from the draft or the review step it belongs to, so the revision on screen is the one " + "being acknowledged.",
-    "locale-not-admitted": "The language this request names is not one this preview serves. Open the preview in the " + "edition's own language: a preview never stands in for another edition's content, and another " + "language is not substituted for it.",
-    unreleased: "This address is not public, so it cannot be read here. Nothing at this address is readable " + "by link, and the public discovery index does not list it.",
-    withdrawn: "This address has been withdrawn and no longer serves anyone. Withdrawal ends access from now " + "on; it recalls no copy that was already received, saved or shared.",
-    unavailable: "This surface cannot be read at the moment, so nothing is shown either way. That is a source " + "that could not be read rather than a decision about access, so nothing here concludes " + "whether an edition exists.",
+    "not-authorised": "This reader account doesn’t have permission to view this update.",
+    "revision-not-acknowledged": "This preview link points to an outdated revision. Reopen preview from the draft or review page.",
+    "locale-not-admitted": "This preview isn’t available in the requested language. Open preview from the edition’s own language.",
+    unreleased: "This page isn’t public and isn’t listed in the public directory.",
+    withdrawn: "This page was unpublished and is no longer available here. Unpublishing doesn’t recall copies already saved or shared.",
+    unavailable: "Couldn’t load this page right now. Try again in a moment.",
   },
-  inertStatement: "Nothing in this reading view can post money, subscribe you to anything, publish content or " + "start a checkout. Reading an edition changes nothing.",
+  inertStatement: "Preview only — reading here never takes payments, sends emails, subscribes anyone, or publishes content.",
 };
 export const GIVING_UNAVAILABLE_COPY: { heading: string; description: string } = {
   heading: "Giving unavailable",
   description:
-    "Giving cannot be placed on this page right now: the one approved designation for it is " + "missing, no longer approved, or not compatible with this placement. No other fund and no " + "default destination is used in its place, no payment is taken here, and the placement is shown " + "for information only.",
+    "Giving details can’t be shown right now because the approved fund designation for this page is missing or no longer approved. No fallback fund is substituted.",
 };
 export const TOMBSTONE_COPY = "This page is no longer available.";
 export const RECEIVING_SIMULATION_EFFECT = "publication-reach" as const satisfies SimulatedEffect;

@@ -18,7 +18,7 @@ export type MoveToPositionProps = {
 };
 const CURRENT_POSITION_LABEL = "Current position";
 function unusableReason(callerDisabled: boolean, callerReason: string | undefined, hasOtherPosition: boolean): string | null {
-  return callerDisabled ? (callerReason !== undefined && callerReason.length > 0 ? callerReason : "The order of this edition cannot be changed right now.") : hasOtherPosition ? null : "This edition holds no other position to move this section to.";
+  return callerDisabled ? (callerReason !== undefined && callerReason.length > 0 ? callerReason : "Section order can’t be changed right now.") : hasOtherPosition ? null : "Add another section to reorder.";
 }
 export function MoveToPosition({ controlId, sectionId, sectionLabel, index, count, disabled, disabledReason, busy = false, onMove, className }: MoveToPositionProps): ReactElement {
   const reasonId = useId();

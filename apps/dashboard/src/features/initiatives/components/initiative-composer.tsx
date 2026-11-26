@@ -30,12 +30,12 @@ const START_DATE_LABEL = "Start date";
 const END_DATE_LABEL = "End date";
 const FIELD_LABELS: Readonly<Record<string, string>> = { [NAME_FIELD]: INITIATIVE_COPY.nameLabel, [PURPOSE_FIELD]: INITIATIVE_COPY.purposeLabel, [RESPONSIBLE_FIELD]: INITIATIVE_COPY.responsibleLabel, [START_FIELD]: START_DATE_LABEL, [END_FIELD]: END_DATE_LABEL };
 const SCOPE_LABEL = "Ministry";
-const SINGLE_PRINCIPAL_DESCRIPTION = "The acting principal is the only person this release admits as responsible, because an initiative carries no delegation. It is shown by its opaque reference and is already selected.";
-const START_DATE_DESCRIPTION = "The first civil date of the initiative, as YYYY-MM-DD.";
-const END_DATE_DESCRIPTION = "The last civil date of the initiative, as YYYY-MM-DD. It cannot be before the start date.";
+const SINGLE_PRINCIPAL_DESCRIPTION = "Assigned to your account automatically.";
+const START_DATE_DESCRIPTION = "Optional start date (YYYY-MM-DD).";
+const END_DATE_DESCRIPTION = "Optional end date (YYYY-MM-DD, on or after the start date).";
 const CLOSE_LABEL = "Close";
-const CIVIL_DATE_NOTE = "civil dates, shown exactly as entered";
-const SCOPE_FACT_NOTE = "the ministry from the selected context";
+const CIVIL_DATE_NOTE = "calendar dates";
+const SCOPE_FACT_NOTE = "active ministry";
 type ControlAria = { readonly "aria-describedby": string | undefined; readonly "aria-invalid": true | undefined };
 const controlAria = (control: FormFieldControl): ControlAria => ({ "aria-describedby": control.describedBy, "aria-invalid": control.invalid ? true : undefined });
 const defaultValuesFor = (actingPrincipalId: string): InitiativeFormValues => ({ name: "", purpose: "", responsiblePrincipalId: actingPrincipalId, startOn: "", endOn: "" });
@@ -88,7 +88,7 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
   const ministryId = scope.ministryId;
   const organizationId = scope.organizationId;
   const createAction = envelope.actions.find((action) => action.name === "createInitiative");
-  const unavailableReason = createAction === undefined || createAction.available ? null : (createAction.reason?.trim() ?? "This read does not admit the create action, so no form is offered.");
+  const unavailableReason = createAction === undefined || createAction.available ? null : (createAction.reason?.trim() ?? "You can’t create an initiative right now.");
   const admittedPrincipals = useMemo(() => [actingPrincipalId], [actingPrincipalId]);
   const form = useForm({ defaultValues: defaultValuesFor(actingPrincipalId) });
   const create = useCreateInitiative(scope);
@@ -191,12 +191,12 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{INITIATIVE_COPY.createLabel}</DialogTitle>
-          <DialogDescription>{"A named purpose inside the ministry you are acting in, with the person responsible and an optional period of dates. Creating an initiative records no pledge, gift, commitment, membership, notification, task or send."}</DialogDescription>
+          <DialogDescription>{"Set up a named outreach or support-raising goal in your active ministry. Creating an initiative doesn’t send messages or add partners automatically."}</DialogDescription>
         </DialogHeader>
         {unavailableReason !== null ? (
           <div className="flex min-w-0 flex-col gap-4">
             <Alert>
-              <AlertTitle>{"An initiative cannot be created here"}</AlertTitle>
+              <AlertTitle>{"Can’t create an initiative here"}</AlertTitle>
               <AlertDescription>{unavailableReason}</AlertDescription>
             </Alert>
             <DialogFooter>
@@ -206,10 +206,10 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
         ) : step === "review" && reviewed !== null ? (
           <div className="flex min-w-0 flex-col gap-4">
             <ActionReview<CreateInitiativePayload>
-              title="Review this new initiative"
+              title="Review new initiative"
               description={<ReviewSummary payload={reviewed} ministryId={ministryId} organizationId={organizationId} />}
               confirmLabel="Create initiative"
-              cancelLabel="Back to the details"
+              cancelLabel="Back to form"
               onCancel={() => {
                 setStep("form");
                 setSettled(null);
@@ -222,13 +222,13 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
             />
             {settledEffect === null ? null : (
               <div className="flex flex-wrap items-center gap-2">
-                {settledEffect.kind === "created" && createdId !== null && onCreated !== undefined ? <Button {...{ type: "button", onClick: openCreated }}>{"Open the initiative"}</Button> : null}
+                {settledEffect.kind === "created" && createdId !== null && onCreated !== undefined ? <Button {...{ type: "button", onClick: openCreated }}>{"Open initiative"}</Button> : null}
                 <Button {...{ type: "button", variant: "outline", onClick: finish }}>{settledEffect.kind === "created" ? "Done" : CLOSE_LABEL}</Button>
               </div>
             )}
           </div>
         ) : step === "discard" ? (
-          <DiscardConfirmation title={"Discard what you entered?"} body={"Nothing has been created yet. Going back keeps every value you entered; discarding closes this form and loses them."} keepEditingLabel={"Keep editing"} discardLabel={"Discard and close"} onKeepEditing={keepEditing} onDiscard={discardAndClose} />
+          <DiscardConfirmation title={"Discard this draft?"} body={"Nothing has been created yet. Closing now discards what you’ve typed."} keepEditingLabel={"Keep editing"} discardLabel={"Discard and close"} onKeepEditing={keepEditing} onDiscard={discardAndClose} />
         ) : (
           <form noValidate className="flex min-w-0 flex-col gap-4" onSubmit={reviewTheDetails}>
             <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/40 p-3 text-sm">
@@ -236,19 +236,19 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
                 <span className="text-muted-foreground">{`${SCOPE_LABEL}: `}</span>
                 <bdi className="mono-identifier wrap-anywhere">{ministryId}</bdi>
               </p>
-              <p className="text-pretty text-muted-foreground">{"This is the ministry from the selected context. It is stated here and is not a field, because a form may never name a context the session is not admitted to."}</p>
+              <p className="text-pretty text-muted-foreground">{"Created under your active ministry."}</p>
             </div>
             {errors === null || errors.count === 0 ? null : <FormErrorSummary errors={errors} labels={FIELD_LABELS} order={FIELD_ORDER} headingLevel={3} />}
             <form.Field name="name">
               {(field) => (
-                <FormField name={NAME_FIELD} label={INITIATIVE_COPY.nameLabel} description={"What this outreach is called — up to 200 characters."} error={errors?.byField[NAME_FIELD]} required>
+                <FormField name={NAME_FIELD} label={INITIATIVE_COPY.nameLabel} description={"A clear name for this initiative (up to 200 characters)."} error={errors?.byField[NAME_FIELD]} required>
                   {(control) => <Input id={control.id} name={NAME_FIELD} type="text" autoComplete="off" required={control.required} {...entryOf(field)} {...controlAria(control)} />}
                 </FormField>
               )}
             </form.Field>
             <form.Field name="purpose">
               {(field) => (
-                <FormField name={PURPOSE_FIELD} label={INITIATIVE_COPY.purposeLabel} description={"What it is for, in your own words — up to 2,000 characters."} error={errors?.byField[PURPOSE_FIELD]} required>
+                <FormField name={PURPOSE_FIELD} label={INITIATIVE_COPY.purposeLabel} description={"What this initiative is for (up to 2,000 characters)."} error={errors?.byField[PURPOSE_FIELD]} required>
                   {(control) => <Textarea id={control.id} name={PURPOSE_FIELD} rows={5} required={control.required} {...entryOf(field)} {...controlAria(control)} />}
                 </FormField>
               )}
@@ -268,7 +268,7 @@ function ReviewSummary({ payload, ministryId, organizationId }: { readonly paylo
                 </FormField>
               )}
             </form.Field>
-            <FormFieldGroup legend={INITIATIVE_COPY.periodLabel} name={"period"} description={"Optional calendar dates, with no time of day and no zone behind them. Leave both empty when the initiative has no period; filling one requires the other."} optionalHint>
+            <FormFieldGroup legend={INITIATIVE_COPY.periodLabel} name={"period"} description={"Optional start and end dates. Leave both blank if this initiative has no fixed timeframe."} optionalHint>
               {() => (
                 <>
                   <form.Field name="startOn">

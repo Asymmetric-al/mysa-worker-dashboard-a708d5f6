@@ -12,13 +12,13 @@ import { cn } from "@/lib/cn";
 import { PUBLISHING_PREFERENCES, VIEWER_APPEARANCES, canResolveTimeZone, useViewerPreferences, type PublishingPreference, type ViewerAppearance } from "./viewer-preferences-provider";
 type ChoiceCopy = { readonly label: string; readonly description: string; readonly icon: ReactElement };
 const APPEARANCE_COPY: Record<ViewerAppearance, ChoiceCopy> = {
-  system: { label: "Match your device", description: "Follows your operating system's light or dark setting while this page is open.", icon: <MonitorIcon /> },
-  light: { label: "Light", description: "Always shows this application's light colour scheme.", icon: <SunIcon /> },
-  dark: { label: "Dark", description: "Always shows this application's dark colour scheme.", icon: <MoonIcon /> },
+  system: { label: "Match device", description: "Follows your system light or dark setting automatically.", icon: <MonitorIcon /> },
+  light: { label: "Light", description: "Always use the light color theme.", icon: <SunIcon /> },
+  dark: { label: "Dark", description: "Always use the dark color theme.", icon: <MoonIcon /> },
 };
-/** The two release modes a new submission can ask for: each value is the provider's own, so no mode the preference does not hold can be offered. */ const PUBLISHING_COPY: Record<PublishingPreference, ChoiceCopy> = {
-  "publish-only": { label: "Publish only", description: "Releases the exact frozen candidate and submits no notice.", icon: <FileCheck2Icon /> },
-  "publish-and-notify": { label: "Publish and notify now", description: "Asks for one simulated notice for each eligible recipient.", icon: <BellRingIcon /> },
+/** The two default release modes for new update submissions. */ const PUBLISHING_COPY: Record<PublishingPreference, ChoiceCopy> = {
+  "publish-only": { label: "Publish only", description: "Publish your update to the portal without emailing partners.", icon: <FileCheck2Icon /> },
+  "publish-and-notify": { label: "Publish and notify partners", description: "Publish your update and request email notices for eligible partners (simulated locally).", icon: <BellRingIcon /> },
 };
 const LANGUAGE_SHORTLIST: readonly string[] = ["en-GB", "en-US", "en-AU", "en-CA", "fr-FR", "de-DE", "es-ES", "pt-BR", "ar", "he", "ko-KR", "ja-JP"];
 const TIME_ZONE_SHORTLIST: readonly string[] =
@@ -82,9 +82,9 @@ const usePlatformReady = (): boolean =>
     () => true,
     () => false,
   );
-const APPEARANCE_CARD_DESCRIPTION = "Appearance, language and time zone are presentation preferences for this browser. They change only how dates, times and numbers are formatted on screen — not which records you can see, the ministry you are working in, or anything a partner receives.";
-const APPEARANCE_HINT = "Applies to this browser only and takes effect immediately. “Match your device” follows your operating system while this page is open.";
-const PUBLISHING_HINT = "This sets the release mode a new submission asks for. The submission records that mode, a reviewer cannot change it, and this control sends nothing itself: the release and the notice are separate deliberate steps.";
+const APPEARANCE_CARD_DESCRIPTION = "Choose how dates, times, numbers, and colors appear in this browser. These preferences only affect your screen — never what partners receive.";
+const APPEARANCE_HINT = "Saved to this browser and applied immediately.";
+const PUBLISHING_HINT = "Sets the default option when you submit a ministry update for review. Changing this preference never publishes or sends anything on its own.";
 const isAppearanceChoice = (value: string): value is ViewerAppearance => (VIEWER_APPEARANCES as readonly string[]).includes(value);
 const isPublishingChoice = (value: string): value is PublishingPreference => (PUBLISHING_PREFERENCES as readonly string[]).includes(value); /** One closed choice rendered as radios: appearance and publishing both state their options through it, so neither can offer a value its preference does not hold. */
 function ChoiceRadios<Key extends string>({
@@ -111,7 +111,7 @@ function ChoiceRadios<Key extends string>({
       <legend {...{ id: legendId, className: "mb-3 text-sm font-medium" }}>{legend}</legend>
       <div className="flex flex-col gap-3">
         <p {...{ id: hintId, className: "type-supporting" }}>{hint}</p>
-        <RadioGroup value={value} onValueChange={onChoose} aria-labelledby={legendId} aria-describedby={hintId} className={cn("grid gap-2.5", choices.length >= 3 ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
+        <RadioGroup value={value} onValueChange={onChoose} aria-labelledby={legendId} aria-describedby={hintId} className={cn("grid gap-2.5", choices.length >= 3 ? "@2xl/main:grid-cols-3" : "@xl/main:grid-cols-2")}>
           {choices.map((choice) => {
             const entry = copy[choice];
             const choiceId = `${legendId}-${choice}`;
@@ -169,12 +169,12 @@ export function SettingsPreferencePanel() {
   const announceTypedTimeZone = useCallback(() => setAnnouncement(`Display time zone: ${displayTimeZone}. This browser cannot check time-zone names, so the name is used exactly as typed.`), [displayTimeZone]);
   return (
     <>
-      <SectionCard title="Appearance, language and time zone" description={APPEARANCE_CARD_DESCRIPTION} contentClassName="flex min-w-0 flex-col gap-6">
+      <SectionCard title="Display & time zone" description={APPEARANCE_CARD_DESCRIPTION} contentClassName="flex min-w-0 flex-col gap-6">
         <ChoiceRadios legend="Appearance" legendId={`${idPrefix}-appearance-legend`} hint={APPEARANCE_HINT} hintId={`${idPrefix}-appearance-hint`} value={appearance} choices={VIEWER_APPEARANCES} copy={APPEARANCE_COPY} onChoose={chooseAppearance} />
         <Separator />
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex min-w-0 flex-col gap-2">
-            <Label htmlFor={languageId}>Interface language</Label>
+            <Label htmlFor={languageId}>Date &amp; number format</Label>
             <NativeSelect id={languageId} className="w-full" value={interfaceLocale} aria-describedby={languageHintId} onChange={(event) => chooseLanguage(event.target.value)}>
               {languages.map((tag) => (
                 <NativeSelectOption key={tag} value={tag}>
@@ -182,7 +182,7 @@ export function SettingsPreferencePanel() {
                 </NativeSelectOption>
               ))}
             </NativeSelect>
-            <p {...{ id: languageHintId, className: "type-supporting" }}>Sets the language of the dates, times and numbers you see here. It does not translate the interface, and it is never the language of something sent to a partner.</p>
+            <p {...{ id: languageHintId, className: "type-supporting" }}>Controls how dates, times, and numbers are formatted for you. It doesn’t translate the dashboard or change the language of partner updates.</p>
           </div>
           <div className="flex min-w-0 flex-col gap-2">
             <Label htmlFor={timeZoneId}>Display time zone</Label>
@@ -202,14 +202,14 @@ export function SettingsPreferencePanel() {
               </NativeSelect>
             )}
             <p id={timeZoneHintId} className="type-supporting">
-              Changes how dates and times are shown to you. A date with no time of day — a due date, an introduction date — keeps the day the service recorded, and no deadline moves.
-              {mode === "text" ? " This browser cannot list or check time-zone names, so the name you type is used exactly as typed, for example Europe/Berlin." : ""}
+              Controls how timestamps appear on screen. Calendar-day due dates and repeating task schedules keep their original dates.
+              {mode === "text" ? " Type an IANA time zone name such as Europe/Berlin." : ""}
             </p>
           </div>
         </div>
       </SectionCard>
-      <SectionCard title="Publishing" description="The release mode a new submission of an edition asks for. Nothing on this screen publishes, notifies or sends anything." contentClassName="flex min-w-0 flex-col gap-6">
-        <ChoiceRadios legend="Publishing preferences" legendId={`${idPrefix}-publishing-legend`} hint={PUBLISHING_HINT} hintId={`${idPrefix}-publishing-hint`} value={publishing} choices={PUBLISHING_PREFERENCES} copy={PUBLISHING_COPY} onChoose={choosePublishing} />
+      <SectionCard title="Update publishing default" description="Choose the default release option when submitting ministry updates for review. Nothing is published or sent from here." contentClassName="flex min-w-0 flex-col gap-6">
+        <ChoiceRadios legend="Default release option" legendId={`${idPrefix}-publishing-legend`} hint={PUBLISHING_HINT} hintId={`${idPrefix}-publishing-hint`} value={publishing} choices={PUBLISHING_PREFERENCES} copy={PUBLISHING_COPY} onChoose={choosePublishing} />
       </SectionCard>
       {/* One polite region for all four controls, placed after both cards: every change is announced once, in words. */}
       <output className="sr-only">{announcement}</output>

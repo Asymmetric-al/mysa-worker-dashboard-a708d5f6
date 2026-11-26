@@ -19,18 +19,18 @@ const EXCLUSION_REASON_ORDER = Object.keys(EXCLUSION_REASON_COPY) as readonly Ex
 const MEMBERSHIP_STATE_ORDER = Object.keys(MEMBERSHIP_STATE_DESCRIPTIONS) as readonly MembershipStateKey[];
 const NO_COLUMNS_HIDDEN: RecordListQueryState["columnVisibility"] = {};
 const SURFACE_COPY = {
-  loadingTitle: "Reading this publisher's audience",
-  loadingBody: "The counts, the states and the members are on their way; nothing is shown as empty or zero until the read answers.",
-  unavailableTitle: "This publisher's audience could not be read",
-  deniedTitle: "This audience is not available in the current scope and session",
-  refusedTitle: "This request was not one the audience read admits",
-  emptyTitle: "No membership for this purpose yet",
-  emptyBody: "Nobody is eligible and nobody is excluded: this publisher's Update email has no membership in this context yet, and the counts below would all be zero rather than unknown.",
+  loadingTitle: "Loading Email audience…",
+  loadingBody: "Loading subscriber counts and consent statuses.",
+  unavailableTitle: "Couldn’t load Email audience",
+  deniedTitle: "Email audience isn’t available in this ministry context",
+  refusedTitle: "Couldn’t load Email audience",
+  emptyTitle: "No subscribers yet",
+  emptyBody: "No one has requested or confirmed update emails for this ministry yet.",
   retry: "Try again",
-  readAt: "Read at",
+  readAt: "Updated",
   fromSource: "from",
-  eligibleFigureLabel: "Eligible memberships",
-  excludedFigureLabel: "Excluded memberships",
+  eligibleFigureLabel: "Eligible subscribers",
+  excludedFigureLabel: "Excluded contacts",
 } as const;
 const statedState = (valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState => valueStates[path] ?? "unknown";
 function StatedValue({ value, mono = false }: { readonly value: string; readonly mono?: boolean }): ReactElement {
@@ -149,7 +149,7 @@ export type MembershipTableProps = { readonly envelope: MembershipSource; readon
   const columns = useMemo<ReadonlyArray<RecordListColumnDef<MembershipMember>>>(
     () => [
       columnOf("identity", MEMBERSHIP_COLUMN_HEADINGS.identity, identityCell, false),
-      columnOf("emailValue", MEMBERSHIP_COLUMN_HEADINGS.emailValue, () => <span className="text-muted-foreground text-pretty">No address in this projection</span>),
+      columnOf("emailValue", MEMBERSHIP_COLUMN_HEADINGS.emailValue, () => <span className="text-muted-foreground text-pretty">Hidden in this view</span>),
       columnOf("state", MEMBERSHIP_COLUMN_HEADINGS.state, (member) => <StatusBadge {...statusBadgeProps(MEMBERSHIP_STATUS, member.state)} />),
       columnOf("languagePreference", MEMBERSHIP_COLUMN_HEADINGS.languagePreference, (member) => <StatedValue value={member.languagePreference} />),
       columnOf("purpose", MEMBERSHIP_COLUMN_HEADINGS.purpose, () => (purpose === null ? null : PURPOSE_LABEL[purpose])),

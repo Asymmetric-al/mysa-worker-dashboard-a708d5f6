@@ -7,10 +7,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Repeating plan" };
 const WORK_HREF = "/work";
 const PAGE_COPY = {
-  denied: { title: "This repeating plan is not available", body: "This session may not read that plan, so no rule, date, occurrence or count is stated here — a refusal discloses nothing about whether the plan exists. Another plan, or another context, can be read from the Work lists." },
-  unavailable: { title: "This repeating plan could not be read", retry: "Try this read again" },
-  refused: { title: "This plan's request was refused", body: "The identifier in this address is not one the series read admits, or the request stated something it does not accept, so the refusal is answered here rather than thrown." },
-  backToLists: "Read the Work lists",
+  denied: { title: "This repeating plan isn’t available", body: "Your current session doesn’t have access to this repeating plan. Return to Tasks to view plans in your current ministry." },
+  unavailable: { title: "Couldn’t load this repeating plan", retry: "Try again" },
+  refused: { title: "Couldn’t load repeating plan", body: "This address isn’t valid for a repeating plan." },
+  backToLists: "Back to Tasks",
 } as const;
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 1,

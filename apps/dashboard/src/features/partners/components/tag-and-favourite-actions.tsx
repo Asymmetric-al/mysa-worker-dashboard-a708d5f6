@@ -35,27 +35,27 @@ const SENTENCE_CLASS = "type-supporting text-pretty";
 const CONTROL_ROW_CLASS = "flex min-w-0 flex-wrap items-center gap-2";
 const ROW_COLUMNS: readonly PerItemColumn[] = [{ key: "revision", label: "Revision" }];
 const recordsNoun = (count: number): string => (count === 1 ? "record" : "records");
-const ROW_ALREADY_APPLIED = "This record's change was already applied under the same request, so nothing was applied twice and its revision did not advance.";
-const ROW_CONFLICT = "This record moved after you read it, so nothing was written to it. Re-apply the change to write it against the revision it holds now.";
-const ROW_DENIED = "This change was not permitted in the current session and context, so nothing was written to this record.";
-const ROW_UNKNOWN = "This record's result is not confirmed. Checking it returns the original result, and repeating the same request replays it rather than opening a second change.";
-const ROW_UNAVAILABLE = (system: string, reference: string): string => `The source behind this change could not be read (${system}, reference ${reference}), so nothing was written to this record.`;
+const ROW_ALREADY_APPLIED = "Already applied by an earlier attempt — no duplicate change was made.";
+const ROW_CONFLICT = "Updated elsewhere before this change arrived. Re-apply against the latest version if needed.";
+const ROW_DENIED = "You don’t have permission to update this partner in this ministry.";
+const ROW_UNKNOWN = "Result not confirmed yet — check before retrying so it isn’t applied twice.";
+const ROW_UNAVAILABLE = (system: string, reference: string): string => `Couldn’t reach the partner service (${system}, ${reference}), so this partner wasn’t updated.`;
 const FILING_COPY = {
-  notPrivateText: `A tag sits on the record rather than in your private preparation, so it is not private text: ${AUDIENCE_LABEL_COPY.shared.description}`,
+  notPrivateText: `Tags sit on the shared partner record rather than in private notes: ${AUDIENCE_LABEL_COPY.shared.description}`,
   tagLabel: "Tag",
   addLabel: "Add tag",
-  removeLabel: "Remove tag",
-  removeTagFromRecord: (tag: string): string => `Remove tag “${tag}” from this record`,
+  removeLabel: "Remove",
+  removeTagFromRecord: (tag: string): string => `Remove tag “${tag}”`,
   favouriteLabel: "Favourite",
-  favouriteDescription: "The favourite mark is your own: it sorts records for you and changes nothing about who may see the record or how it is supported.",
+  favouriteDescription: "Marks a partner for quick access in your personal list — doesn’t change permissions or sharing.",
   favouriteOnLabel: "Mark as favourite",
-  favouriteOffLabel: "Clear the favourite",
-  selectionIntro: (count: number): string => `Each of the ${String(count)} selected ${recordsNoun(count)} is filed on its own, with its own revision checked and its own result reported below.`,
-  selectionSummary: (count: number): string => `${String(count)} ${recordsNoun(count)} selected. Choose the tag or the favourite mark below, then review the change before it is applied; choosing one changes nothing on its own.`,
-  favouriteValue: (favourite: boolean): string => (favourite ? "The favourite mark is set on each selected record." : "The favourite mark is cleared on each selected record."),
+  favouriteOffLabel: "Remove favourite",
+  selectionIntro: (count: number): string => `Applies to the ${String(count)} selected ${recordsNoun(count)} individually, with results shown per partner.`,
+  selectionSummary: (count: number): string => `${String(count)} ${recordsNoun(count)} selected. Choose a tag or favourite change below, then confirm.`,
+  favouriteValue: (favourite: boolean): string => (favourite ? "Mark all selected partners as favourites." : "Remove the favourite mark from all selected partners."),
 } as const;
 const ROW_COPY: OutcomeRowCopy = { alreadyApplied: ROW_ALREADY_APPLIED, conflict: ROW_CONFLICT, denied: ROW_DENIED, unavailable: (source) => ROW_UNAVAILABLE(source.system, source.reference), unknown: (operationId) => `${ROW_UNKNOWN} Operation ${operationId}.` };
-const excludedRow = (partnerId: string): PerItemResult => ({ targetId: partnerId, state: "excluded", reasonCode: "not-prepared", reason: "This record's change could not be prepared in this view, so nothing about it changed." });
+const excludedRow = (partnerId: string): PerItemResult => ({ targetId: partnerId, state: "excluded", reasonCode: "not-prepared", reason: "Skipped because this partner couldn’t be prepared in this view." });
 const standsAsChanged = (outcome: MutationOutcome): boolean => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted";
 type RevisionStatingOutcome = Extract<MutationOutcome, { readonly outcome: "accepted" | "alreadyAccepted" | "unchanged" }>;
 const lastRevisionOf = (outcomes: readonly MutationOutcome[]): string => outcomes.findLast((outcome): outcome is RevisionStatingOutcome => outcome.outcome === "accepted" || outcome.outcome === "alreadyAccepted" || outcome.outcome === "unchanged")?.revision ?? "";
@@ -92,12 +92,12 @@ function RecordSubmitters({ record, register }: { readonly record: PartnerFiling
   return null;
 }
 function TagSuggestions({ suggestions, disabled, onChoose }: { readonly suggestions: readonly string[]; readonly disabled: boolean; readonly onChoose: (tag: string) => void }): ReactElement {
-  if (suggestions.length === 0) return <p className={SENTENCE_CLASS}>No tag has been used in this ministry yet, so there is nothing to reuse. The first label you type is the first one recorded.</p>;
+  if (suggestions.length === 0) return <p className={SENTENCE_CLASS}>No tags in this ministry yet — type a label above to create the first one.</p>;
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger {...{ render: <Button type="button" variant="outline" size="sm" />, disabled: disabled }}>Your tags</DropdownMenuTrigger>
+      <DropdownMenuTrigger {...{ render: <Button type="button" variant="outline" size="sm" />, disabled: disabled }}>Saved tags</DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
-        <DropdownMenuLabel>Tags you already use</DropdownMenuLabel>
+        <DropdownMenuLabel>Existing tags</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {suggestions.map((tag) => (
           <DropdownMenuItem key={tag} onClick={() => onChoose(tag)}>
@@ -113,7 +113,7 @@ function TagEntry({ text, onTextChange, pending, error, suggestions, onApply }: 
   const typed = text.trim();
   return (
     <>
-      <FormField name="tag" label={FILING_COPY.tagLabel} description="Type any label you file records under. A label you have not used before is accepted exactly as you type it, because this vocabulary is yours and not a fixed list." error={error}>
+      <FormField name="tag" label={FILING_COPY.tagLabel} description="Type any label to organize your partners (new labels are created automatically)." error={error}>
         {(field) => (
           <div className={CONTROL_ROW_CLASS}>
             <Input id={field.id} value={text} autoComplete="off" aria-describedby={field.describedBy} aria-invalid={field.invalid ? true : undefined} onChange={(event) => onTextChange(event.target.value)} className="min-w-0 flex-1 basis-40" />
@@ -172,9 +172,9 @@ function SingleRecordFiling({ scope, record, tagSuggestions, onSettled, onCheckR
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <section aria-labelledby={tagsHeadingId} data-slot="record-tags" className={PANEL_CLASS}>
-        <p {...{ id: tagsHeadingId, className: "type-group-title" }}>Tags on this record</p>
+        <p {...{ id: tagsHeadingId, className: "type-group-title" }}>Tags on this partner</p>
         {currentTags.length === 0 ? (
-          <p className={SENTENCE_CLASS}>No tag is on this record yet.</p>
+          <p className={SENTENCE_CLASS}>No tags on this partner yet.</p>
         ) : (
           <ul className="flex min-w-0 flex-wrap items-center gap-2">
             {currentTags.map((held) => (
@@ -363,8 +363,8 @@ const NESTED_HEADING: Readonly<Record<ReviewHeadingLevel, 3 | 4>> = { 2: 3, 3: 4
 const TAG_FIELD_LABELS: Readonly<Record<string, string>> = { tag: FILING_COPY.tagLabel, partnerId: "Record", present: "Change", records: "Records" };
 const FAVOURITE_FIELD_LABELS: Readonly<Record<string, string>> = { favourite: FILING_COPY.favouriteLabel, partnerId: "Record", records: "Records" };
 function favouriteSentence(favourite: boolean | undefined): string {
-  if (favourite === undefined) return "The read published no favourite mark for this record, so the mark cannot be changed here.";
-  return favourite ? "This record is marked as a favourite." : "This record is not marked as a favourite.";
+  if (favourite === undefined) return "Favourite status isn’t available for this partner right now.";
+  return favourite ? "Marked as a favourite." : "Not marked as a favourite.";
 }
 function invalidFieldsOf(entries: readonly BatchEntry[]): FieldErrorLookup | null {
   for (const entry of entries) if (entry.outcome !== null && entry.outcome.outcome === "invalid") return fieldErrorsFromInvalid(entry.outcome);
@@ -380,11 +380,11 @@ const reviewDescription = (value: ReactNode, records: readonly PartnerFilingRef[
   <div className="flex min-w-0 flex-col gap-2">
     <p>{FILING_COPY.selectionIntro(records.length)}</p>
     <p>{value}</p>
-    <p>Only the records listed here are affected. This selection is not an audience, a consent or a campaign, and the change never reaches a record you did not select.</p>
+    <p>Only the partners listed below will be updated — no messages, consents, or tasks are created.</p>
     <SelectedRecordList records={records} />
   </div>
 );
-/** Files one record, or exactly the records the caller selected, under the worker's own tag or favourite mark. */ export function TagAndFavouriteActions({ scope, target, tagSuggestions = [], onSettled, onCheckResult, headingLevel = 2, className }: TagAndFavouriteActionsProps): ReactElement {
+/** Files one record, or exactly the records the caller selected, under the missionary's own tag or favourite mark. */ export function TagAndFavouriteActions({ scope, target, tagSuggestions = [], onSettled, onCheckResult, headingLevel = 2, className }: TagAndFavouriteActionsProps): ReactElement {
   const headingId = useId();
   const records = useMemo(() => filingRecordsOf(target), [target]);
   const Heading = HEADING_TAG[headingLevel];
@@ -392,13 +392,13 @@ const reviewDescription = (value: ReactNode, records: readonly PartnerFilingRef[
   return (
     <section aria-labelledby={headingId} data-slot="tag-and-favourite-actions" data-mode={onlyRecord === undefined ? "selection" : "record"} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
-        <Heading {...{ id: headingId, className: HEADING_SCALE[headingLevel] }}>Tags and favourite</Heading>
-        <p className={SENTENCE_CLASS}>A tag is your own filing label on this record. It is not an audience, a consent, a stage or a segment, and filing the record changes nothing else about it: no notice is sent, no gift is recorded and no task is created.</p>
+        <Heading {...{ id: headingId, className: HEADING_SCALE[headingLevel] }}>Tags &amp; favourite</Heading>
+        <p className={SENTENCE_CLASS}>Organize partners with your own labels and favourites — never sends messages, subscribes anyone, or creates tasks.</p>
         <p className={SENTENCE_CLASS}>{FILING_COPY.notPrivateText}</p>
       </div>
       {onlyRecord === undefined ? (
         records.length === 0 ? (
-          <StateNotice kind="empty" title="No record is selected" description="This surface files only the records it is handed. Select at least one row in the list, then apply the tag or the favourite mark to the selection." headingLevel={NESTED_HEADING[headingLevel]} />
+          <StateNotice kind="empty" title="No partners selected" description="Select at least one partner in the list to tag or favourite them." headingLevel={NESTED_HEADING[headingLevel]} />
         ) : (
           <SelectionFiling scope={scope} records={records} tagSuggestions={tagSuggestions} onSettled={onSettled} onCheckResult={onCheckResult} headingLevel={headingLevel} />
         )

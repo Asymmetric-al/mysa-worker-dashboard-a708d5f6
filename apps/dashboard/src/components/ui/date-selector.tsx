@@ -203,9 +203,9 @@ export function DateSelector({ value, presets, onChange, anchorDate, locale, tri
                   aria-pressed={isStart || isEnd}
                   onClick={() => handleDaySelect(cell.iso)}
                   className={cn(
-                    "inline-flex min-h-7 min-w-7 cursor-pointer items-center justify-center rounded-lg text-xs tabular-figures transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[color:var(--ring)]",
+                    "inline-flex min-h-7 min-w-7 cursor-pointer items-center justify-center rounded-lg text-xs font-medium tabular-figures transition-colors duration-150 ease-out focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[color:var(--ring)]",
                     isStart || isEnd
-                      ? "bg-primary font-semibold text-primary-foreground"
+                      ? "bg-primary text-primary-foreground"
                       : inRange
                         ? "bg-secondary text-secondary-foreground"
                         : cell.inMonth
@@ -218,65 +218,80 @@ export function DateSelector({ value, presets, onChange, anchorDate, locale, tri
               );
             })}
           </fieldset>
+          <p className="text-xs text-pretty text-muted-foreground" aria-live="polite">
+            {pickingEnd ? "Select an end date on the calendar, or click Apply range for this single day." : "Click a start date on the calendar or enter dates below."}
+          </p>
         </div>
 
         <Separator />
 
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex flex-col gap-1">
-            <Label htmlFor={fromInputId} className="text-xs">
-              Start date
-            </Label>
-            <Input
-              id={fromInputId}
-              type="text"
-              inputMode="numeric"
-              placeholder="YYYY-MM-DD"
-              value={draftFrom}
-              aria-invalid={error !== null ? true : undefined}
-              aria-describedby={error !== null ? errorId : undefined}
-              onChange={(event) => {
-                setDraftFrom(event.target.value);
-                setError(null);
-              }}
-              className="h-8 text-xs mono-identifier"
-            />
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            applyCustomRange();
+          }}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor={fromInputId} className="text-xs">
+                Start date
+              </Label>
+              <Input
+                id={fromInputId}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="YYYY-MM-DD"
+                value={draftFrom}
+                aria-invalid={error !== null ? true : undefined}
+                aria-describedby={error !== null ? errorId : undefined}
+                onChange={(event) => {
+                  setDraftFrom(event.target.value);
+                  setError(null);
+                }}
+                className="h-8 text-base md:text-xs mono-identifier"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor={toInputId} className="text-xs">
+                End date
+              </Label>
+              <Input
+                id={toInputId}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="YYYY-MM-DD"
+                value={draftTo}
+                aria-invalid={error !== null ? true : undefined}
+                aria-describedby={error !== null ? errorId : undefined}
+                onChange={(event) => {
+                  setDraftTo(event.target.value);
+                  setError(null);
+                }}
+                className="h-8 text-base md:text-xs mono-identifier"
+              />
+            </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <Label htmlFor={toInputId} className="text-xs">
-              End date
-            </Label>
-            <Input
-              id={toInputId}
-              type="text"
-              inputMode="numeric"
-              placeholder="YYYY-MM-DD"
-              value={draftTo}
-              aria-invalid={error !== null ? true : undefined}
-              aria-describedby={error !== null ? errorId : undefined}
-              onChange={(event) => {
-                setDraftTo(event.target.value);
-                setError(null);
-              }}
-              className="h-8 text-xs mono-identifier"
-            />
+
+          {error === null ? null : (
+            <p id={errorId} role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          )}
+
+          <div className="flex items-center justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" size="sm">
+              Apply range
+            </Button>
           </div>
-        </div>
-
-        {error === null ? null : (
-          <p id={errorId} role="alert" className="text-xs text-destructive">
-            {error}
-          </p>
-        )}
-
-        <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button type="button" size="sm" onClick={() => applyCustomRange()}>
-            Apply range
-          </Button>
-        </div>
+        </form>
       </PopoverContent>
     </Popover>
   );

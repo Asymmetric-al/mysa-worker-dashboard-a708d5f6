@@ -31,12 +31,12 @@ const editionViewOf = (documentId: string, edition: PageLocaleEdition): LocalesE
 const editionViewsOf = (documentId: string, editions: readonly PageLocaleEdition[]): LocalesEnvelope["data"] => editions.map((edition) => editionViewOf(documentId, edition));
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 2,
-  denied: { title: "This Page is not available in this session", body: "This session may not read the Page this address names, so no edition, section, draft or giving destination is stated here. " + "A refusal is not a Page with nothing composed." },
+  denied: { title: "This ministry page isn’t available in this session", body: "Your current session doesn’t have permission to view or edit this page." },
   unavailable: {
-    title: "This Page's builder could not be composed",
-    body: "The records the builder is composed from could not be read, so no section, edition or giving destination is shown in their place. " + "No control is offered until the read succeeds: an empty builder would state that nothing is composed yet, " + "which a failed read does not say.",
+    title: "Couldn’t load Page builder",
+    body: "Couldn’t load this page’s sections and language editions right now. Try again in a moment.",
   },
-  refused: { title: "This builder's request was refused" },
+  refused: { title: "Couldn’t open Page builder" },
 };
 const PAGE_HEADING: PageHeadingContent = { title: SURFACE_TITLE };
 /** A refusal keeps the page's own title and states what could not be read beneath it, so the screen still says which page it is. */ const failureNoticeOf = (result: Exclude<PageResult, { readonly kind: "envelope" }>): ReactElement => pageRefusalOf(result, NOTICE_COPY, 6, PAGE_HEADING);

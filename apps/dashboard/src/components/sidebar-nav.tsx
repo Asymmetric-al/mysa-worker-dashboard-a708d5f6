@@ -4,49 +4,54 @@ import { useId, useState, type MouseEvent } from "react";
 import { ChevronDownIcon, CircleHelpIcon, CompassIcon, HandCoinsIcon, HomeIcon, LayoutTemplateIcon, ListChecksIcon, MegaphoneIcon, SettingsIcon, UsersIcon, type LucideIcon } from "lucide-react";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuAction, SidebarMenuButton, SidebarMenuItem, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem, SidebarSeparator } from "@/components/ui/sidebar";
 import { cn } from "@/lib/cn";
-/** A sub-surface of a section: a page that belongs to a destination rather than being one. */ export type NavSubItem = { readonly href: string; readonly label: string };
+/** A sub-page beneath a primary navigation section. */ export type NavSubItem = { readonly href: string; readonly label: string };
 export type NavSection = "primary" | "secondary";
-export type NavItem = { readonly href: string; readonly label: string; readonly icon?: LucideIcon; readonly section?: NavSection; readonly children?: readonly NavSubItem[] };
-/** The navigation model: the seven everyday destinations in the order the questions are asked, then Settings and Help. */ export const PRIMARY_NAV: readonly NavItem[] = [
-  { href: "/", label: "Home", icon: HomeIcon },
+export type NavGroup = "ministry" | "growth";
+export type NavItem = { readonly href: string; readonly label: string; readonly icon?: LucideIcon; readonly section?: NavSection; readonly group?: NavGroup; readonly children?: readonly NavSubItem[] };
+/** The navigation model: everyday missionary workflows first, then support & ministry growth, and Settings & Help at the foot. */ export const PRIMARY_NAV: readonly NavItem[] = [
+  { href: "/", label: "Home", icon: HomeIcon, group: "ministry" },
   {
     href: "/partners",
     label: "Partners",
     icon: UsersIcon,
+    group: "ministry",
     children: [
       { href: "/partners/import", label: "Import contacts" },
       { href: "/partners/initiatives", label: "Initiatives" },
       { href: "/partners/referrals", label: "Referrals" },
     ],
   },
-  { href: "/work", label: "Work", icon: ListChecksIcon, children: [{ href: "/work/agenda", label: "Agenda" }] },
+  { href: "/work", label: "Tasks", icon: ListChecksIcon, group: "ministry", children: [{ href: "/work/agenda", label: "Agenda" }] },
+  {
+    href: "/communication",
+    label: "Updates",
+    icon: MegaphoneIcon,
+    group: "ministry",
+    children: [
+      { href: "/communication/audience", label: "Email audience" },
+      { href: "/communication/delivery", label: "Send history" },
+      { href: "/communication/inbox", label: "Test inbox" },
+      { href: "/preview", label: "Reader preview" },
+      { href: "/preview/pages", label: "Public pages" },
+      { href: "/preview/preferences", label: "Reader preferences" },
+    ],
+  },
   {
     href: "/support",
     label: "Support",
     icon: HandCoinsIcon,
+    group: "growth",
     children: [
       { href: "/support/gifts", label: "Gifts" },
       { href: "/support/commitments", label: "Commitments" },
     ],
   },
-  {
-    href: "/communication",
-    label: "Communication",
-    icon: MegaphoneIcon,
-    children: [
-      { href: "/communication/audience", label: "Audience" },
-      { href: "/communication/delivery", label: "Delivery" },
-      { href: "/communication/inbox", label: "Inbox" },
-      { href: "/preview", label: "Receiving preview" },
-      { href: "/preview/pages", label: "Published pages" },
-      { href: "/preview/preferences", label: "Your preferences" },
-    ],
-  },
-  { href: "/pages", label: "Pages", icon: LayoutTemplateIcon },
+  { href: "/pages", label: "Ministry pages", icon: LayoutTemplateIcon, group: "growth" },
   {
     href: "/coaching",
     label: "Coaching",
     icon: CompassIcon,
+    group: "growth",
     children: [
       { href: "/coaching/targets", label: "Targets" },
       { href: "/coaching/check-ins", label: "Check-ins" },
@@ -64,29 +69,48 @@ export type NavItem = { readonly href: string; readonly label: string; readonly 
 }
 type CurrentDestination = { readonly href: string; readonly sectionHref?: string };
 export type SidebarNavProps = { readonly items?: readonly NavItem[]; readonly currentPath: string; readonly onNavigate?: (href: string) => void; readonly className?: string };
-/** The primary navigation: a labelled `nav` landmark holding the everyday destinations and, below a separator, the quiet ones — Settings and, always last, Help. */ export function SidebarNav({ items = PRIMARY_NAV, currentPath, onNavigate, className }: SidebarNavProps) {
+/** The primary navigation: Ministry daily work, Support & growth, and Account (Settings and Help). */ export function SidebarNav({ items = PRIMARY_NAV, currentPath, onNavigate, className }: SidebarNavProps) {
   const [sectionOverrides, setSectionOverrides] = useState<Readonly<Record<string, boolean>>>({});
   const current = resolveCurrent(items, currentPath);
   const primaryItems = items.filter((item) => (item.section ?? "primary") === "primary");
+  const ministryItems = primaryItems.filter((item) => (item.group ?? "ministry") === "ministry");
+  const growthItems = primaryItems.filter((item) => item.group === "growth");
   const secondaryItems = items.filter((item) => item.section === "secondary");
   const toggleSection = (href: string): void => setSectionOverrides((previous) => ({ ...previous, [href]: !(previous[href] ?? href === current?.sectionHref) }));
   return (
     <nav aria-label="Primary" className={cn("flex min-w-0 flex-col", className)}>
-      <SidebarGroup>
-        <SidebarGroupLabel>Workspace</SidebarGroupLabel>
-        <SidebarGroupContent>
-          <SidebarMenu>
-            {primaryItems.map((item) => (
-              <NavEntry key={item.href} item={item} current={current} sectionOverrides={sectionOverrides} onToggleSection={toggleSection} onNavigate={onNavigate} />
-            ))}
-          </SidebarMenu>
-        </SidebarGroupContent>
-      </SidebarGroup>
+      {ministryItems.length === 0 ? null : (
+        <SidebarGroup>
+          <SidebarGroupLabel>Ministry</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {ministryItems.map((item) => (
+                <NavEntry key={item.href} item={item} current={current} sectionOverrides={sectionOverrides} onToggleSection={toggleSection} onNavigate={onNavigate} />
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      )}
+      {growthItems.length === 0 ? null : (
+        <>
+          <SidebarSeparator />
+          <SidebarGroup>
+            <SidebarGroupLabel>Support &amp; growth</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {growthItems.map((item) => (
+                  <NavEntry key={item.href} item={item} current={current} sectionOverrides={sectionOverrides} onToggleSection={toggleSection} onNavigate={onNavigate} />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        </>
+      )}
       {secondaryItems.length === 0 ? null : (
         <>
           <SidebarSeparator />
           <SidebarGroup>
-            <SidebarGroupLabel>System</SidebarGroupLabel>
+            <SidebarGroupLabel>Account</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {secondaryItems.map((item) => (

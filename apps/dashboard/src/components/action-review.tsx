@@ -13,9 +13,9 @@ import type { MutationInput } from "@/modules/data-service/envelope";
 import type { MutationOutcome } from "@/modules/data-service/outcome";
 export { attemptForIntent, intentKeyOf, mayReplay, reappliableRevision, useReviewedMutation } from "@/components/attempt";
 export type { MutationSubmit, ReviewedAttempt, UseReviewedMutationResult } from "@/components/attempt";
-const CONTAINMENT_SENTENCE = "Confirming applies this change once. Nothing outside the summary above changes: this step sends " + "no notice, creates no financial record and subscribes no one unless the summary names it.";
-const SETTLED_SENTENCE = "This step is complete for this attempt, and the result below is its record. Changing what this " + "step would apply begins a new attempt with its own identity.";
-const NOTHING_SELECTED_SENTENCE = "Nothing is selected, so this step has nothing to apply. Select at least one row in the list, then " + "return here.";
+const CONTAINMENT_SENTENCE = "Confirming applies only the change summarized above. Nothing else is sent, recorded, or subscribed unless listed here.";
+const SETTLED_SENTENCE = "Done — the result is recorded below. Adjusting any option above starts a new change.";
+const NOTHING_SELECTED_SENTENCE = "Select at least one row in the list first, then return here to continue.";
 const COUNT_CLASS = "tabular-figures font-medium text-foreground";
 const STEP_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's utility per level, so a review step and its receipt state the level they sit at with the same measure on every surface. */ const STEP_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
@@ -50,7 +50,7 @@ function SelectionSummary({ selection }: { readonly selection: ActionReviewSelec
       </p>
       {excluded <= 0 ? null : (
         <p className="text-muted-foreground">
-          Excluded before this step: <bdi className={COUNT_CLASS}>{String(excluded)}</bdi> {selection.noun}. This step leaves them unchanged.
+          Excluded: <bdi className={COUNT_CLASS}>{String(excluded)}</bdi> {selection.noun} (left unchanged).
         </p>
       )}
     </div>
@@ -123,13 +123,13 @@ export function ActionReview<P = unknown>({ title, description, consequence, con
                             <AlertDialogTitle>{confirmLabel}</AlertDialogTitle>
                             <AlertDialogDescription className="flex flex-col gap-2">
                               <span className="font-medium text-foreground">{title}</span>
-                              <span>{"It takes effect as soon as you confirm it."}</span>
+                              <span>{"This takes effect right away once you confirm."}</span>
                               {selection === undefined ? null : (
                                 <span>
-                                  It applies to <bdi className={COUNT_CLASS}>{String(selection.count)}</bdi> selected {selection.noun}
+                                  Applies to <bdi className={COUNT_CLASS}>{String(selection.count)}</bdi> selected {selection.noun}
                                   {(selection.excluded ?? 0) <= 0 ? null : (
                                     <>
-                                      ; <bdi className={COUNT_CLASS}>{String(selection.excluded ?? 0)}</bdi> excluded {selection.noun} are left unchanged
+                                      ; <bdi className={COUNT_CLASS}>{String(selection.excluded ?? 0)}</bdi> excluded {selection.noun} will stay unchanged
                                     </>
                                   )}
                                   .

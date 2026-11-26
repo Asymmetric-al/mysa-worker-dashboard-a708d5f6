@@ -80,11 +80,22 @@ function RelationshipSection({ relationship, index, scope, asOf, grantLevelEffec
   return (
     <section data-slot="coaching-relationship" data-grant={relationship.grantId} data-state={relationship.state} aria-labelledby={headingId} className={"flex min-w-0 flex-col gap-4"}>
       {/* Both references are opaque and are shown exactly as the read reports them: the grant a stop-type effect names, and the principal the coach acts as. Neither is parsed, shortened or resolved to a name here. */}
-      <h2 id={headingId} className={"type-section-title text-pretty wrap-anywhere"}>
-        Sharing with <bdi className={IDENTIFIER_CLASS}>{relationship.recipientPrincipalId}</bdi> under <bdi className={IDENTIFIER_CLASS}>{relationship.grantId}</bdi>
-      </h2>
+      <div className="flex min-w-0 flex-col gap-1">
+        <h2 id={headingId} className={"type-section-title text-pretty wrap-anywhere"}>
+          Sharing with your coach
+        </h2>
+        <p className="type-supporting flex flex-wrap items-baseline gap-x-2 text-xs">
+          <span>
+            Coach: <bdi className={IDENTIFIER_CLASS}>{relationship.recipientPrincipalId}</bdi>
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            Grant: <bdi className={IDENTIFIER_CLASS}>{relationship.grantId}</bdi>
+          </span>
+        </p>
+      </div>
       {/* The summary states only what this section does not already state in a card of its own: the module controls below carry the five modules for a relationship the read admitted, and the range review below carries that relationship's reviewed range. Everything else — the relationship itself, the four outcomes, the duration and the closing instant — is stated by the summary and nothing else. */}
-      <SharingSummary grant={grantViewOf(relationship)} locale={INTERFACE_LOCALE} statedElsewhere={{ modules: refusal === null, financialRange: true }} />
+      <SharingSummary grant={grantViewOf(relationship)} locale={INTERFACE_LOCALE} statedElsewhere={{ identity: true, modules: refusal === null, financialRange: true }} />
       {/* The range this relationship's own record states, with the figure a coach reads for it and the coverage that figure was reported over. A record that states no range renders the review's own "not shared" statement here, in this relationship's section, so the page never speaks for another grant's range. */}
       <FinancialRangeReview range={reviewedRangeOf(relationship, asOf)} reviewedAt={relationship.invitation.issuedAt} reviewedByRole={ACTING_ROLE} locale={INTERFACE_LOCALE} />
       {refusal === null ? (

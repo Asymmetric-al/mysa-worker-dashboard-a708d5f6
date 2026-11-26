@@ -23,13 +23,13 @@ function resolveView({ preparation, busy = false, unavailable = null }: Preparat
 function PreparationContent({ view }: { readonly view: PreparationView }): ReactElement {
   switch (view.state) {
     case "busy":
-      return <output className="block text-sm text-muted-foreground text-pretty wrap-anywhere">Reading your preparation. Anything already saved is untouched.</output>;
+      return <output className="block text-sm text-muted-foreground text-pretty wrap-anywhere">Loading your private notes…</output>;
     case "unavailable":
-      return <StateNotice kind="unavailable" title="Preparation unavailable" description={COACHING_COPY.overview.unavailable} source={view.source} headingLevel={3} />;
+      return <StateNotice kind="unavailable" title="Private notes unavailable" description={COACHING_COPY.overview.unavailable} source={view.source} headingLevel={3} />;
     case "present":
-      return view.body.trim() === "" ? <p className="type-supporting text-pretty wrap-anywhere">This preparation has no text in it yet.</p> : <bdi className="block break-words text-pretty whitespace-pre-wrap">{view.body}</bdi>;
+      return view.body.trim() === "" ? <p className="type-supporting text-pretty wrap-anywhere">No private notes yet.</p> : <bdi className="block break-words text-pretty whitespace-pre-wrap">{view.body}</bdi>;
     case "absent":
-      return <StateNotice kind="empty" title="No preparation yet" description={COACHING_COPY.overview.empty} action={{ label: "Write a check-in", href: CHECK_INS_HREF }} headingLevel={3} />;
+      return <StateNotice kind="empty" title="No coaching notes yet" description={COACHING_COPY.overview.empty} action={{ label: "Write a check-in", href: CHECK_INS_HREF }} headingLevel={3} />;
   }
 }
 export default function PreparationSurface(props: PreparationSurfaceProps): ReactElement {
@@ -39,16 +39,16 @@ export default function PreparationSurface(props: PreparationSurfaceProps): Reac
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="wrap-anywhere">
-            <h2 {...{ id: "coaching-preparation-heading", className: "type-section-title" }}>{"Private preparation"}</h2>
+            <h2 {...{ id: "coaching-preparation-heading", className: "type-section-title" }}>{"Private coaching notes"}</h2>
           </CardTitle>
           <CardDescription className="text-pretty wrap-anywhere">{COACHING_COPY.overview.purpose}</CardDescription>
           <CardAction>
-            <Badge variant="secondary">Private to you</Badge>
+            <Badge variant="secondary">Only visible to you</Badge>
           </CardAction>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           <p className="type-supporting text-pretty wrap-anywhere">
-            <bdi>Only you can see this; a coach you invite never sees it.</bdi>
+            <bdi>Only you can see these notes — never shared with your coach.</bdi>
           </p>
           <Separator />
           <PreparationContent view={view} />
@@ -57,7 +57,7 @@ export default function PreparationSurface(props: PreparationSurfaceProps): Reac
           <CardFooter className="flex-col items-start gap-2">
             <p className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-muted-foreground">
               {view.updatedOn === null ? (
-                "No update date was recorded for this preparation."
+                "No update date recorded."
               ) : (
                 <>
                   <span>Last updated</span>

@@ -14,7 +14,7 @@ import { PageColumn, PageHeading, ReadNotices, paramOf, type ReadNoticeCopy, typ
 import { WorkListsSurface } from "./display-zone-surfaces";
 type TaskListsResult = Awaited<ReturnType<typeof reads.work.listTasks>>;
 export const dynamic = "force-dynamic";
-const PAGE_TITLE = "Work";
+const PAGE_TITLE = "Tasks";
 export const metadata: Metadata = { title: PAGE_TITLE };
 const TASK_LIST_KEYS = ["today", "upcoming", "overdue", "all", "undated"] as const satisfies readonly TaskListKey[];
 /** This surface's agenda address, named once so the link and any other reference to it state one address. */
@@ -26,14 +26,14 @@ const LINK_CHOICE_PAGE_SIZE = PAGE_SIZE_DEFAULT;
 const FIRST_PAGE = 0;
 const FIRST_INITIATIVE_PAGE = 1;
 const PAGE_COPY = {
-  lede: "The five task lists over the one task model this workspace keeps: today, upcoming, overdue, all and undated. Each row states its own status, the day it stands at and the records it is linked to, and completing a task records that the work was closed and says nothing about contact, payment or a message.",
-  agendaLink: "Read the dated agenda",
+  lede: "Calls, emails, thank-yous, and follow-ups that keep you close to your partners.",
+  agendaLink: "View dated agenda",
 } as const;
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 2,
-  denied: { title: "The Work lists are not available in this context", body: "This session may not read the tasks of the context it is working in, so no row, count or list is stated here — a refusal is not an empty workspace. Another context, if this session holds one, can be chosen from the shell." },
-  unavailable: { title: "The Work lists could not be read", action: { label: "Try this read again", href: "/work" } },
-  refused: { title: "This view's request was refused", body: "This route states only the list, the display time zone and a page size the read admits, so a request the read refuses is answered here rather than thrown, and the source behind it did not fail." },
+  denied: { title: "Tasks aren’t available in this ministry", body: "Your current session doesn’t have access to tasks here. If you belong to another ministry, switch to it from the header." },
+  unavailable: { title: "Couldn’t load your tasks", action: { label: "Try again", href: "/work" } },
+  refused: { title: "Couldn’t load tasks", body: "This view couldn’t run with the requested parameters. Reload to try again." },
 };
 async function readLists(): Promise<Readonly<Record<TaskListKey, TaskListsResult>>> {
   const answers = await Promise.all(TASK_LIST_KEYS.map((list) => reads.work.listTasks({ list, displayTimeZone: DISPLAY_TIME_ZONE, pageSize: TASK_PAGE_SIZE })));

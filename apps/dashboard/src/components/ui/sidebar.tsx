@@ -88,7 +88,7 @@ function Sidebar({ side = "left", variant = "sidebar", collapsible = "offcanvas"
       <div
         data-slot="sidebar-gap"
         className={cn(
-          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+          "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-out",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset" ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]" : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)",
@@ -98,7 +98,7 @@ function Sidebar({ side = "left", variant = "sidebar", collapsible = "offcanvas"
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
+          "fixed inset-y-0 z-(--z-sidebar) hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-out data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)] md:flex",
           variant === "floating" || variant === "inset" ? "p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]" : "group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l",
           className,
         )}
@@ -154,7 +154,7 @@ const SidebarGroupLabel = ({ className, ...props }: React.ComponentProps<"div">)
   <div
     data-slot="sidebar-group-label"
     data-sidebar="group-label"
-    className={cn("flex h-7 shrink-0 items-center rounded-md px-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase transition-[margin,opacity] duration-200 ease-linear group-data-[collapsible=icon]:-mt-7 group-data-[collapsible=icon]:opacity-0", className)}
+    className={cn("flex h-7 shrink-0 items-center rounded-md px-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase transition-[margin,opacity] duration-200 ease-out group-data-[collapsible=icon]:-mt-7 group-data-[collapsible=icon]:opacity-0", className)}
     {...props}
   />
 );
@@ -162,7 +162,7 @@ const SidebarGroupContent = ({ className, ...props }: React.ComponentProps<"div"
 const SidebarMenu = ({ className, ...props }: React.ComponentProps<"ul">) => <ul data-slot="sidebar-menu" data-sidebar="menu" className={cn("flex w-full min-w-0 flex-col gap-0.5", className)} {...props} />;
 const SidebarMenuItem = ({ className, ...props }: React.ComponentProps<"li">) => <li data-slot="sidebar-menu-item" data-sidebar="menu-item" className={cn("group/menu-item relative", className)} {...props} />;
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full touch-manipulation items-center gap-2.5 overflow-hidden rounded-xl px-2.5 py-2 text-start text-sm text-sidebar-foreground/85 ring-sidebar-ring outline-hidden transition-[width,height,padding,background-color,color] group-has-data-[sidebar=menu-action]/menu-item:pe-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-card data-active:font-medium data-active:text-foreground data-active:shadow-xs data-active:ring-1 data-active:ring-border/80 [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full touch-manipulation items-center gap-2.5 overflow-hidden rounded-xl px-2.5 py-2 text-start text-sm font-medium text-sidebar-foreground/80 ring-sidebar-ring outline-hidden transition-[width,height,padding,background-color,color] duration-150 ease-out group-has-data-[sidebar=menu-action]/menu-item:pe-8 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-2! hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-accent data-open:hover:text-sidebar-accent-foreground data-active:bg-card data-active:text-foreground data-active:shadow-xs data-active:ring-1 data-active:ring-border/80 [&_svg]:size-4 [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     variants: {
       variant: { default: "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", outline: "bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]" },

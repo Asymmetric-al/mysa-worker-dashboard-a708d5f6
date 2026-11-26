@@ -25,29 +25,29 @@ type DurationValue = { readonly kind: "ongoing" } | { readonly kind: "through-da
 type FrozenDurationCutoff = { readonly instant: string; readonly zone: string; readonly sourceLimitWins: boolean; readonly sourceLimit?: string | null };
 type DurationControlProps = { readonly value: DurationValue | null; readonly onChange: (next: DurationValue | null) => void; readonly error?: string | null; readonly frozenCutoff?: FrozenDurationCutoff | null; readonly disabledReason?: string | null; readonly locale: string };
 /** The wording the duration control states, in the two kinds a share can take; the object is its own type, so no second shape restates its keys. */ const DURATION_WORDING = {
-  legend: "How long sharing runs",
-  fieldLead: "A duration is required. Modules start switched off, and nothing is readable by a coach until the person accepts, so the choice below sets the most this invitation can ever cover.",
-  missingIsNotPermission: "No duration is chosen yet, and a missing duration is not permission to share: the invitation cannot be submitted until one is chosen.",
+  legend: "Sharing duration",
+  fieldLead: "Required. All modules start off and nothing is shared until your coach accepts — this sets the maximum length of the coaching relationship.",
+  missingIsNotPermission: "Choose a duration before creating the invitation.",
   dateLabel: "Share through",
-  dateDescription: "The last calendar date sharing should cover. It is a date as you would say it, with no time of day recorded, and the cutoff it produces is the start of the following day.",
-  dateRequired: "Choose the Share-through date.",
-  dateRefused: "This value could not be read as a calendar date in the form YYYY-MM-DD, so no date was recorded for it. The field is empty again: choose the date once more.",
+  dateDescription: "Last calendar date included in sharing. Access closes at the start of the following day.",
+  dateRequired: "Choose a Share through date.",
+  dateRefused: "Enter a valid calendar date (YYYY-MM-DD).",
   cutoffHeading: "When sharing ends",
-  cutoffFixedBadge: "Cutoff fixed on acceptance",
+  cutoffFixedBadge: "Cutoff set on acceptance",
   cutoffNotFixedBadge: "No cutoff yet",
-  cutoffInstantLabel: "Share cutoff",
-  cutoffZoneLabel: "Zone the cutoff was resolved in",
-  cutoffExclusive: "The cutoff is the exclusive start of the civil day after the Share-through date: a read at that instant is refused, so the last day sharing covers is the day before it.",
-  cutoffFrozenAtAcceptance: "This value was fixed when the invitation was accepted. Travelling, changing your display time zone or a later change to the source cannot move it.",
-  chosenIsAMaximum: "The duration you chose is a maximum and not a guarantee: an earlier limit set by the source can end access sooner, and you can revoke access before the cutoff.",
-  cutoffNotFixed: "The cutoff is fixed when the invitation is accepted. Until then this surface states the rule rather than a value.",
-  cutoffNotProvisional: "No provisional cutoff is shown, because a provisional number would not be the one that governs access.",
-  sourceLimitTitle: "An earlier limit from the source applies",
-  sourceLimitWins: "A limit set by the source ends access before the date this invitation chose, and the earlier limit wins: the cutoff shown above is the source's, not the one chosen here.",
-  sourceLimitUnknown: "A limit set by the source ends access before the date this invitation chose, and the earlier limit wins. Its own value cannot be read right now, so nothing is put in its place.",
+  cutoffInstantLabel: "Access cutoff",
+  cutoffZoneLabel: "Time zone",
+  cutoffExclusive: "Access ends at the start of the day after your Share through date.",
+  cutoffFrozenAtAcceptance: "Fixed when the invitation is accepted — travel or display time zone changes won’t shift it.",
+  chosenIsAMaximum: "This is a maximum duration: an organization limit may end access sooner, and you can revoke access anytime.",
+  cutoffNotFixed: "The exact cutoff is locked in when your coach accepts.",
+  cutoffNotProvisional: "No provisional cutoff is displayed beforehand.",
+  sourceLimitTitle: "Organization time limit applies",
+  sourceLimitWins: "An organization limit ends access earlier than your selected date — the earlier cutoff applies.",
+  sourceLimitUnknown: "An earlier organization limit applies, though its exact value couldn’t be loaded right now.",
   kinds: {
-    ongoing: { label: "Ongoing, until you end it", hint: "Sharing has no end date. It stays open until you revoke it or the coaching relationship ends, whichever comes first." },
-    "through-date": { label: "Through a date you choose", hint: "Sharing closes at the cutoff that date produces. Choose the last calendar date it should cover; the cutoff is stated once the invitation is accepted." },
+    ongoing: { label: "Ongoing (until you stop it)", hint: "Stays open until you revoke access or end the coaching relationship." },
+    "through-date": { label: "Through a specific date", hint: "Ends automatically after the date you choose." },
   },
 };
 const isDurationKind = (value: unknown): value is DurationKind => value === "ongoing" || value === "through-date";
@@ -154,8 +154,8 @@ type InvitationCandidates = {
 /** The props of {@link InvitationForm}: the admitted choices, the currencies this session's support source holds, and the context and revision the mutation is submitted under. `rangeCurrencies` is the read's own answer: a reviewed range names one of them and nothing else, and an empty list offers no range at all, because a source nothing can be read from is never a zero figure. */
 export type InvitationFormProps = { readonly candidates: InvitationCandidates; readonly rangeCurrencies: readonly string[]; readonly scope: Scope; readonly expectedRevision: string; readonly locale: string; readonly onInvited?: (outcome: MutationOutcome) => void; readonly className?: string };
 const SECTION_LEAD = COACHING_COPY.sharing.purpose;
-const MODULES_HEADING = "Five modules, each starting unselected";
-const MODULE_STATE_WORD = "Starts unselected";
+const MODULES_HEADING = "Modules (all start off)";
+const MODULE_STATE_WORD = "Starts off";
 const RECIPIENT_FIELD = "coachPrincipalId";
 const ORGANIZATION_FIELD = "organizationId";
 const MINISTRY_FIELD = "ministryId";
@@ -165,36 +165,36 @@ const ORGANIZATION_LABEL = "Organization";
 const MINISTRY_LABEL = "Ministry";
 type ChoiceFieldName = typeof RECIPIENT_FIELD | typeof ORGANIZATION_FIELD | typeof MINISTRY_FIELD;
 const CHOICE_FIELDS: readonly { readonly name: ChoiceFieldName; readonly label: string; readonly description: string; readonly placeholder: string }[] = [
-  { name: RECIPIENT_FIELD, label: RECIPIENT_LABEL, description: "The named person this invitation is for, chosen from the coaches your own coaching records already name. A typed name or address would establish nothing: an address that looks the same verifies nobody.", placeholder: "Choose the person to invite" },
-  { name: ORGANIZATION_FIELD, label: ORGANIZATION_LABEL, description: "The organization this invitation is recorded under, chosen from those admitted to this context.", placeholder: "Choose the organization" },
-  { name: MINISTRY_FIELD, label: MINISTRY_LABEL, description: "The one ministry this invitation covers. A coach reads nothing outside the ministry chosen here.", placeholder: "Choose the ministry" },
+  { name: RECIPIENT_FIELD, label: RECIPIENT_LABEL, description: "Select a coach from your available coaching directory.", placeholder: "Choose a coach" },
+  { name: ORGANIZATION_FIELD, label: ORGANIZATION_LABEL, description: "Organization this coaching relationship belongs to.", placeholder: "Choose an organization" },
+  { name: MINISTRY_FIELD, label: MINISTRY_LABEL, description: "The ministry this invitation covers. Your coach won’t see other ministries.", placeholder: "Choose a ministry" },
 ];
-const CONFIRM_LABEL = "Record invitation";
-const NO_RECIPIENTS = "No coach is named in your own coaching records yet, so there is no one this surface can invite.";
-const NO_MINISTRIES = "No ministry is admitted in this context.";
+const CONFIRM_LABEL = "Create invitation";
+const NO_RECIPIENTS = "No coaches are available in your directory yet.";
+const NO_MINISTRIES = "No ministries are available in this context.";
 const RANGE_FIELD = "financialRange"; // The reviewed financial range: the one fact an invitation may carry and may equally leave out. It is a separate decision from the modules, so the wording never presents it as part of them and never presents silence as a zero.
 const RANGE_FROM_FIELD = "financialRange.fromDate";
 const RANGE_TO_FIELD = "financialRange.toDate";
 const RANGE_CURRENCY_FIELD = "financialRange.currency";
 const RANGE_COPY = {
-  heading: "A reviewed financial range",
-  lead: "Financial sharing is a separate decision from the modules above, and it is optional. Set the two dates only if you want your coach to read support figures for that fixed period: a range never widens to all history, and an invitation with no dates shares no figure at all.",
-  fromLabel: "Range from",
-  toLabel: "Range to",
+  heading: "Financial range (optional)",
+  lead: "Optional and separate from the modules above. Pick dates only if you want your coach to see support received for a fixed period — leave blank to share no financial figures.",
+  fromLabel: "From date",
+  toLabel: "To date",
   currencyLabel: "Currency",
-  fromDescription: "The first calendar date this range covers. It is a date as you would say it, with no time of day recorded.",
-  toDescription: "The last calendar date this range covers, and the range includes this day. Nothing after it is ever reported.",
-  currencyPlaceholder: "Choose the currency",
-  currencyRequired: "This account holds support in more than one currency, so the range names the one currency it was reviewed in: a range that names none is refused rather than totalled across them.",
-  currencyDescription: "The currency these figures were reviewed in. Figures are reported on the same basis as every other amount in this application, and only this period's are reported.",
-  optionalNote: "Leave both dates empty to share no financial figure with this coach at all.",
-  tooEarly: "Range to is before Range from, so these two dates describe no period.",
-  reversed: "This range ends before it starts, so no figure could be reported for it once the person accepts. Nothing is sent while the two dates describe no period: move Range to to the same day as Range from or a later one.",
-  unreadable: "A reviewed range cannot be chosen right now: the support source behind it cannot be read, so no period is offered rather than a zero or a guessed figure. The invitation itself can still be recorded without one.",
+  fromDescription: "First calendar date included in this range.",
+  toDescription: "Last calendar date included in this range.",
+  currencyPlaceholder: "Choose currency",
+  currencyRequired: "Your support spans multiple currencies, so choose one currency for this range — currencies are never combined.",
+  currencyDescription: "Currency for this reviewed range, calculated on the same Effective cash allocation basis.",
+  optionalNote: "Leave both dates empty to share no financial figures.",
+  tooEarly: "To date must be on or after From date.",
+  reversed: "To date is before From date. Move To date to the same day or later before continuing.",
+  unreadable: "Support data couldn’t be loaded right now, so a financial range can’t be added. You can still create the invitation without one.",
   reviewTerm: "Reviewed financial range",
-  reviewNone: "No financial range: this invitation shares no support figure of any kind.",
-  reviewNotReadable: "Nothing from your support view is readable to this person until they accept the invitation, and only the figures for the period above are ever reported.",
-  singleCurrency: (currency: string): string => `Every currency this source holds is ${currency}, so a range is reviewed in it.`,
+  reviewNone: "None — no financial figures will be shared.",
+  reviewNotReadable: "Not visible until your coach accepts, and strictly limited to the dates above.",
+  singleCurrency: (currency: string): string => `Figures are reviewed in ${currency}.`,
 } as const;
 const RANGE_DAYS: readonly { readonly key: "fromDate" | "toDate"; readonly name: string; readonly label: string; readonly description: string }[] = [
   { key: "fromDate", name: RANGE_FROM_FIELD, label: RANGE_COPY.fromLabel, description: RANGE_COPY.fromDescription },
@@ -408,8 +408,8 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
         <p className="type-supporting text-pretty">{SECTION_LEAD}</p>
       </div>
       <section aria-labelledby={stagesId} className="flex min-w-0 flex-col gap-2">
-        <h3 {...{ id: stagesId, className: "type-subsection-title" }}>{"What an invitation does, and what it never does"}</h3>
-        <p className="type-supporting text-pretty">{"These four things are separate outcomes, and recording an invitation reaches only the first: it sends no message, verifies nobody and makes nothing readable."}</p>
+        <h3 {...{ id: stagesId, className: "type-subsection-title" }}>{"How coaching invitations work"}</h3>
+        <p className="type-supporting text-pretty">{"Creating an invitation completes step 1 only — it doesn’t send an email, verify identity, or share any data."}</p>
         <ol className="flex min-w-0 list-decimal flex-col gap-2 ps-5 text-sm">
           {SHARING_OUTCOME_COPY.map((stage) => (
             <li key={stage.id} className="min-w-0 text-pretty">
@@ -421,10 +421,10 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
       </section>
       {gap === null ? null : (
         <Alert id={gapId} role={undefined}>
-          <AlertTitle>{"No admitted choice is available for this invitation"}</AlertTitle>
+          <AlertTitle>{"Can’t create invitation yet"}</AlertTitle>
           <AlertDescription>
             <p>{gap}</p>
-            <p>{"An invitation needs one admitted person, organization and ministry, so nothing can be submitted from this surface until the source admits them."}</p>
+            <p>{"An invitation requires an available coach, organization, and ministry."}</p>
           </AlertDescription>
         </Alert>
       )}
@@ -461,7 +461,7 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
               <Separator />
               <section aria-labelledby={modulesId} className="flex min-w-0 flex-col gap-2">
                 <h3 {...{ id: modulesId, className: "type-subsection-title" }}>{MODULES_HEADING}</h3>
-                <p className="type-supporting text-pretty">{"Every module is recorded as switched off when the invitation is created. You choose which ones to switch on once the person has accepted, so nothing here pre-selects a module and no module can be read before then."}</p>
+                <p className="type-supporting text-pretty">{"All modules start off when the invitation is created. Once your coach accepts, you choose which modules to turn on."}</p>
                 <ul className="flex min-w-0 flex-col gap-3">
                   {Object.entries(MODULE_COPY).map(([key, wording]) => (
                     <li key={key} className="flex min-w-0 flex-col gap-0.5">
@@ -523,12 +523,12 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
                   )}
                 </FormFieldGroup>
               )}
-              {outstanding.length === 0 ? null : <p className="type-supporting text-pretty">{`Still needed before this invitation can be recorded: ${listOf(outstanding)}.`}</p>}
+              {outstanding.length === 0 ? null : <p className="type-supporting text-pretty">{`Still required: ${listOf(outstanding)}.`}</p>}
               {gap === null && !rangeReversed ? (
                 <ActionReview<InvitationPayload>
-                  title="Record this invitation"
+                  title="Review invitation"
                   description={<ReviewedInvitation values={values} recipientOptions={recipientOptions} organizationOptions={organizationOptions} ministryOptions={ministryOptions} rangeCurrencies={rangeCurrencies} />}
-                  consequence="Recording an invitation adds the invitation record and nothing else: no message leaves this application, the person's identity is not verified, and no module becomes readable."
+                  consequence="Creates the invitation record only — doesn’t send an email, verify identity, or turn on any modules."
                   confirmLabel={CONFIRM_LABEL}
                   input={{ scope, expectedRevision, payload }}
                   submit={submit}
@@ -539,10 +539,10 @@ export default function InvitationForm({ candidates, rangeCurrencies, scope, exp
               ) : (
                 <div className="flex min-w-0 flex-col gap-2">
                   <Button {...{ type: "button", disabled: true, "aria-describedby": gap === null ? rangeBlockedId : gapId }}>{CONFIRM_LABEL}</Button>
-                  <p {...{ id: gap === null ? rangeBlockedId : undefined, className: "type-supporting text-pretty" }}>{gap === null ? RANGE_COPY.reversed : "Nothing can be submitted until the missing choice above is available."}</p>
+                  <p {...{ id: gap === null ? rangeBlockedId : undefined, className: "type-supporting text-pretty" }}>{gap === null ? RANGE_COPY.reversed : "Complete the required selections above before creating the invitation."}</p>
                 </div>
               )}
-              {recorded ? <p className="type-supporting text-pretty">{"Recording an invitation reached the first of the four outcomes above and no further: identity verification, deliberate acceptance and live access have not happened."}</p> : null}
+              {recorded ? <p className="type-supporting text-pretty">{"Invitation created. Identity verification, coach acceptance, and active access are separate steps that haven’t happened yet."}</p> : null}
             </div>
           );
         }}

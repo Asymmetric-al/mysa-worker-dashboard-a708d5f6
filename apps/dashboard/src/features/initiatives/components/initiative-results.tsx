@@ -26,17 +26,17 @@ type ColumnVisibility = RecordListQueryState["columnVisibility"];
 const COPY_KIND_OF_RECORDED_KIND: Readonly<Record<RecordedResponseKind, ResponseKind>> = { agreed: "agreed", conditional: "conditional", partial: "partial", deferred: "deferred", declined: "declined", unanswered: "unanswered", "needs-clarification": "needs clarification" };
 const TERMS_VERSION_STATE: Readonly<Record<TermsVersionRow["state"], StatusBadgeSpec>> = { current: { label: "Current terms version", tone: "info" }, superseded: { label: "Superseded by a later version", tone: "muted" } };
 const SURFACE_COPY = {
-  intro: "Each row states one recorded response kind, the count the read supplied for it, and the base that count is measured against.",
-  worthNote: "A recorded response is one named person's answer; a change in these counts says nothing about anyone's motivation or worth.",
-  emptyAction: "Review the Requests on this initiative",
+  intro: "Breakdown of partner responses recorded for this initiative, shown alongside the total base each count is measured against.",
+  worthNote: "Each response reflects one person’s answer to an invitation — never a rating of a partner.",
+  emptyAction: "View requests",
   termsHeading: "Terms versions",
   termsVersionColumn: "Terms version",
-  termsStateColumn: "State",
-  termsReferencingColumn: "Requests referencing",
-  termsResponsesColumn: "Responses recorded",
-  readingTitle: "Reading the results",
-  readingDescription: "This surface states every recorded response with the base it is counted against, so it waits for the read rather than showing an empty result.",
-  kindsLabelSuffix: "by response kind",
+  termsStateColumn: "Status",
+  termsReferencingColumn: "Requests using version",
+  termsResponsesColumn: "Recorded responses",
+  readingTitle: "Loading results…",
+  readingDescription: "Fetching response counts for this initiative.",
+  kindsLabelSuffix: "by response",
 } as const;
 const shareFormat = new Intl.NumberFormat("en-US", { style: "unit", unit: "percent", maximumFractionDigits: 1 });
 const NO_SORT: RecordListQueryState["sort"] = [];

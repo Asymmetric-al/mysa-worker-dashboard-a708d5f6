@@ -6,6 +6,7 @@ import { FormField, fieldErrorsFromInvalid, type FieldErrorLookup } from "@/comp
 import { OperationResult, type OperationResultProps } from "@/components/operation-result";
 import { SimulationLabel } from "@/components/simulation-label";
 import { StateNotice } from "@/components/state-notice";
+import StatusBadge from "@/components/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +51,7 @@ const FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({
   captions: "Caption track",
   "captions.language": "Caption language",
   "captions.label": "Track label",
-  "placement.altText": "Alternative text",
+  "placement.altText": "Alt text",
   "placement.caption": "Caption",
   "placement.credit": "Credit",
   "placement.transcript": "Transcript",
@@ -130,7 +131,7 @@ function mergeMessages(first: readonly string[] | undefined, second: readonly st
   const messages = [...(first ?? []), ...(second ?? [])];
   return messages.length === 0 ? undefined : messages;
 }
-const missingAltText = (kind: MediaPickerKind): string => (kind === "image" ? "Describe what this image shows. It is read aloud in place of the picture." : "Describe what this video shows. It stays as the text alternative when the video cannot play.");
+const missingAltText = (kind: MediaPickerKind): string => (kind === "image" ? "Describe what this image shows for screen readers." : "Describe what this video shows when it can’t play.");
 type PickerPhase =
   | { readonly name: "choosing" }
   | { readonly name: "preparing"; readonly stage: "measuring" | "submitting" }
@@ -140,18 +141,18 @@ type PickerPhase =
   | { readonly name: "removing" }
   | { readonly name: "settled"; readonly outcome: MediaPickerOutcome };
 const OPENING_SENTENCE: Readonly<Record<MediaPickerKind, string>> = Object.freeze({
-  image: "Choose an image from this device and describe what it shows. It is placed in the draft you are editing; nothing is published and no address is made public.",
-  video: "Choose a video from this device and describe what it shows. It is placed in the draft you are editing; nothing is published and no address is made public.",
+  image: "Choose an image from your device and add alt text. It stays in your draft and isn’t published yet.",
+  video: "Choose a video from your device and add alt text. It stays in your draft and isn’t published yet.",
 });
-const REMOVAL_DESCRIPTION = "Removing a placement changes released content, so this asks before it acts.";
+const REMOVAL_DESCRIPTION = "Confirm before removing this media placement.";
 const PHASE_DESCRIPTION: Readonly<Record<PickerPhase["name"], (kind: MediaPickerKind) => string>> = {
   choosing: (kind) => OPENING_SENTENCE[kind],
-  preparing: (kind) => `This ${kind} is being prepared with this application's own media pipeline, on this device.`,
-  described: (kind) => `Describe the ${kind} this placement shows. Alternative text is required; every other field is optional.`,
-  cancelled: () => "Nothing was added, and the draft you were editing is unchanged.",
+  preparing: (kind) => `Preparing this ${kind} locally on your device.`,
+  described: (kind) => `Describe this ${kind}. Alt text is required; all other fields are optional.`,
+  cancelled: () => "Cancelled — nothing was added to your draft.",
   "confirming-removal": () => REMOVAL_DESCRIPTION,
   removing: () => REMOVAL_DESCRIPTION,
-  settled: () => "This is what the attempt answered. The record stays on screen until you close the picker.",
+  settled: () => "Result of your media update.",
 };
 type FooterAction = { readonly label: string; readonly onClick?: () => void; readonly variant?: "default" | "destructive"; readonly disabled?: boolean; readonly className?: string };
 /** The single image and video picker and placement form. */ export function MediaPicker({ kind, open, onOpenChange, placement, direction, onRegister, onReplace, onRemove, onSettled, className }: MediaPickerProps): ReactElement {
@@ -250,7 +251,7 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
     // A caption track is bound to the placement's own language rather than to a second one beside it, so a track with no language is refused here, where the field that states it is on screen, instead of by the service one request later.
     const captionTrack = kind === "video" ? captionFile : null;
     if (captionTrack !== null && composed.language === undefined) {
-      setLocalErrors({ "placement.language": ["A caption track states the language its cues are in, so give the media's language before adding the track."] });
+      setLocalErrors({ "placement.language": ["Add the video’s language above before attaching a caption track."] });
       setPhase({ name: "described" });
       languageRef.current?.focus();
       return;
@@ -350,14 +351,14 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
     return (
       <div className="flex flex-col gap-1">
         <p id={instructionsId} className="text-sm font-medium">
-          What this placement admits
+          Supported formats &amp; limits
         </p>
         <ul id={limitsId} aria-labelledby={instructionsId} className="flex list-disc flex-col gap-1 ps-5 text-sm text-muted-foreground">
           {limits.map((limit) => (
             <li key={limit}>{limit}</li>
           ))}
         </ul>
-        <p className="text-sm text-muted-foreground">This application checks the file&rsquo;s content itself, so a name or an extension never decides what a file is.</p>
+        <p className="text-sm text-muted-foreground">Files are inspected by content rather than file extension.</p>
       </div>
     );
   }
@@ -433,7 +434,7 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
     );
   }
   function renderPreparing(stage: "measuring" | "submitting"): ReactElement {
-    const sentence = stage === "measuring" ? "Reading this file's own details in this browser so the form can show them beside the limit." : "Preparing this file with the local media pipeline: it is decoded, checked, re-encoded so its metadata is removed, and stored. Nothing is published.";
+    const sentence = stage === "measuring" ? "Reading file details…" : "Preparing file locally: checking format, removing metadata, and saving to your draft. Nothing is published.";
     return (
       <div aria-busy={true} className="flex flex-col gap-3">
         <Progress value={null} aria-label={`Preparing this ${kind}`} />
@@ -472,29 +473,34 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
       </Card>
     );
   }
-  const altTextDescription = kind === "image" ? "What this image shows, in your words. It is read aloud in place of the picture." : "What this video shows, in your words. It stays as the text alternative when the video cannot play.";
+  const altTextDescription = kind === "image" ? "Describe what this image shows for screen readers." : "Describe what this video shows when it can’t play.";
   function renderDescriptorForm(): ReactElement | null {
     if (file === null) return null;
+    const selectedState = mediaStateReason("selected");
     return (
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
           {renderChosenFile()}
+          <div data-slot="media-preparation-state" data-preparation-state="selected" className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <StatusBadge label="Selected" tone="neutral" srPrefix="Media preparation state" />
+            <span className="text-pretty">{selectedState.label}</span>
+          </div>
           {renderLimitWarnings()}
         </div>
-        <FormField {...{ label: "Alternative text", name: "placement.altText", required: true, description: altTextDescription, error: errorsFor("placement.altText") }}>
+        <FormField {...{ label: "Alt text", name: "placement.altText", required: true, description: altTextDescription, error: errorsFor("placement.altText") }}>
           {({ id, describedBy, invalid, required }) => <Textarea id={id} ref={altTextRef} rows={3} value={draft.altText} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} aria-required={required} onChange={(event) => update("altText", event.target.value)} />}
         </FormField>
-        <FormField label="Caption" name="placement.caption" optionalHint description="Shown beneath the media. Leave it empty when a caption would only repeat the alternative text." error={errorsFor("placement.caption")}>
+        <FormField label="Caption" name="placement.caption" optionalHint description="Shown below the media. Leave blank if it only repeats the alt text." error={errorsFor("placement.caption")}>
           {({ id, describedBy, invalid }) => <Input id={id} value={draft.caption} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("caption", event.target.value)} />}
         </FormField>
-        <FormField label="Credit" name="placement.credit" optionalHint description="Who made or supplied this media, as it should read beside it." error={errorsFor("placement.credit")}>
+        <FormField label="Credit" name="placement.credit" optionalHint description="Photographer or source credit shown alongside the media." error={errorsFor("placement.credit")}>
           {({ id, describedBy, invalid }) => <Input id={id} value={draft.credit} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("credit", event.target.value)} />}
         </FormField>
-        <FormField label="Language" name="placement.language" optionalHint description="The language this media is in, as a tag such as en or ar, or as a name. It is the media's language, never this interface's." error={errorsFor("placement.language")}>
+        <FormField label="Language" name="placement.language" optionalHint description="Language tag for this media (for example, en or ar)." error={errorsFor("placement.language")}>
           {({ id, describedBy, invalid }) => <Input id={id} ref={languageRef} value={draft.language} autoComplete="off" spellCheck={false} className="font-mono" aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("language", event.target.value)} />}
         </FormField>
         {kind === "video" ? (
-          <FormField label="Transcript" name="placement.transcript" optionalHint description="The video's words as text, for a reader who cannot play it. It is stored and shown as content, never as trusted metadata." error={errorsFor("placement.transcript")}>
+          <FormField label="Transcript" name="placement.transcript" optionalHint description="Text version of the video for readers who can’t play it." error={errorsFor("placement.transcript")}>
             {({ id, describedBy, invalid }) => <Textarea id={id} rows={4} value={draft.transcript} dir={direction} aria-describedby={describedBy} aria-invalid={invalid} onChange={(event) => update("transcript", event.target.value)} />}
           </FormField>
         ) : null}
@@ -571,10 +577,10 @@ type FooterAction = { readonly label: string; readonly onClick?: () => void; rea
     <div className="flex flex-col gap-4">
       <Alert>
         <TriangleAlertIcon aria-hidden="true" />
-        <AlertTitle>Remove this placement?</AlertTitle>
+        <AlertTitle>Remove media?</AlertTitle>
         <AlertDescription>
-          <p>This removes the {kind} from the draft you are editing and changes released content, so it asks before it acts.</p>
-          <p>It recalls nothing that was already sent or read, the registered file stays available to every other placement, and the text around the placement is unchanged.</p>
+          <p>Removes this {kind} from your draft. Any published version updates when you next publish.</p>
+          <p>Surrounding text stays intact, and copies already sent cannot be recalled.</p>
         </AlertDescription>
       </Alert>
       {renderFaulted()}

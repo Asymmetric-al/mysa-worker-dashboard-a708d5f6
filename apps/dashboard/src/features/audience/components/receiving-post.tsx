@@ -24,20 +24,20 @@ type PostRendition = PostData["renditions"][number];
 type DenialSource = NonNullable<StateNoticeProps["source"]>;
 type DenialCode = NonNullable<StateNoticeProps["reasonCode"]>;
 const LABELS = {
-  headingFallback: "Update with no recorded title",
-  readingAs: "Reading as",
+  headingFallback: "Untitled update",
+  readingAs: "Previewing as",
   audience: "Audience",
-  servedLanguage: "Language served",
-  requestedLanguage: "Language requested",
-  released: "Released",
-  asOf: "As of",
+  servedLanguage: "Language",
+  requestedLanguage: "Requested language",
+  released: "Published",
+  asOf: "Checked",
   captions: "Captions",
   undeterminedLanguage: "und",
-  videoTitle: "Video placed in this Update",
-  retry: "Check this edition again",
-  deniedTitle: "This edition cannot be read here",
-  unavailableTitle: "This edition cannot be read at the moment",
-  refusedTitle: "This request was refused",
+  videoTitle: "Update video",
+  retry: "Try again",
+  deniedTitle: "This update isn’t available",
+  unavailableTitle: "Couldn’t load this update",
+  refusedTitle: "Couldn’t open this update",
 } as const;
 const AUDIENCE_WORDS: Readonly<Record<NonNullable<PostData["audience"]>, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
 const HEADING_TAGS: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };

@@ -4,7 +4,7 @@ import { reachMetadata } from "@/modules/content/reach";
 import { reads, type Scope } from "@/modules/data-service";
 import { PageSurface } from "../../../../page-frame";
 export const dynamic = "force-dynamic";
-const SURFACE_TITLE = "Page edition";
+const SURFACE_TITLE = "Public page";
 const NOINDEX: Metadata["robots"] = { index: false, follow: false };
 const NO_AUTHORITY_SCOPE: Scope = { organizationId: "" as Scope["organizationId"], ministryId: "" as Scope["ministryId"], supportSubjectId: "" as Scope["supportSubjectId"], principalId: "" as Scope["principalId"] };
 const UNREADABLE_METADATA: Metadata = { title: SURFACE_TITLE, robots: NOINDEX };

@@ -110,7 +110,7 @@ export function DataGridColumnHeaderMenu({
             aria-label="Column menu"
             aria-describedby={describedById}
             className={cn(
-              "hidden min-h-6 min-w-6 shrink-0 rounded-lg text-muted-foreground opacity-65 transition-opacity hover:bg-secondary hover:text-foreground hover:opacity-100 focus-visible:opacity-100 md:inline-flex",
+              "hidden min-h-6 min-w-6 shrink-0 rounded-lg text-muted-foreground opacity-65 transition-opacity hover:bg-secondary hover:text-foreground hover:opacity-100 focus-visible:opacity-100 lg:inline-flex",
               isPinnedStart && "text-foreground opacity-100",
             )}
           />
@@ -344,6 +344,8 @@ export function DataGridViewSettings({
   hasCustomLayout,
   onResetLayout,
 }: DataGridViewSettingsProps) {
+  const virtualToggleId = React.useId();
+  const columnToggleBaseId = React.useId();
   const triggerText = suppressVisibility ? "Grid view" : "Columns";
   const dense = density === "dense";
   return (
@@ -385,13 +387,13 @@ export function DataGridViewSettings({
           </div>
 
           {showVirtualToggle && onVirtualEnabledChange !== undefined ? (
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/80 bg-surface-subtle px-2.5 py-2">
+            <label htmlFor={virtualToggleId} className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border/80 bg-surface-subtle px-2.5 py-2 select-none transition-colors duration-150 ease-out hover:bg-muted/50">
               <div className="flex min-w-0 flex-col">
                 <span className="text-xs font-medium text-foreground">Virtualized scroll</span>
                 <span className="text-xs text-muted-foreground">Window rows smoothly on large pages.</span>
               </div>
-              <Switch checked={virtualEnabled} aria-label={`Virtualized scroll for ${tableLabel}`} onCheckedChange={onVirtualEnabledChange} />
-            </div>
+              <Switch id={virtualToggleId} checked={virtualEnabled} aria-label={`Virtualized scroll for ${tableLabel}`} onCheckedChange={onVirtualEnabledChange} />
+            </label>
           ) : null}
         </div>
 
@@ -401,22 +403,31 @@ export function DataGridViewSettings({
             <fieldset className="m-0 flex max-h-64 flex-col gap-1.5 overflow-y-auto overscroll-contain border-0 p-0 pe-0.5" aria-label={`Column layout for ${tableLabel}`}>
               {columns.map((item) => {
                 const hidesLast = item.visible && visibleCount <= 1;
+                const checkboxDisabled = !item.canHide || hidesLast;
                 const isPinnedStart = item.pinned === "start";
+                const columnToggleId = `${columnToggleBaseId}-${item.id}`;
                 return (
                   <div key={item.id} className="flex min-w-0 items-center justify-between gap-1.5 rounded-xl border border-border/70 bg-card px-2 py-1.5">
-                    <div className="flex min-w-0 flex-1 items-center gap-2">
-                      {suppressVisibility ? null : (
+                    {suppressVisibility ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <span className="truncate text-xs font-medium text-foreground">
+                          <bdi>{item.label}</bdi>
+                        </span>
+                      </div>
+                    ) : (
+                      <label htmlFor={columnToggleId} className={cn("flex min-w-0 flex-1 items-center gap-2 select-none", checkboxDisabled ? "cursor-not-allowed opacity-70" : "cursor-pointer")}>
                         <Checkbox
+                          id={columnToggleId}
                           checked={item.visible}
-                          disabled={!item.canHide || hidesLast}
+                          disabled={checkboxDisabled}
                           aria-label={`Show ${item.label} column`}
                           onCheckedChange={(checked) => onToggleVisibility(item.id, checked)}
                         />
-                      )}
-                      <span className="truncate text-xs font-medium text-foreground">
-                        <bdi>{item.label}</bdi>
-                      </span>
-                    </div>
+                        <span className="truncate text-xs font-medium text-foreground">
+                          <bdi>{item.label}</bdi>
+                        </span>
+                      </label>
+                    )}
                     <div className="flex shrink-0 items-center gap-0.5">
                       <Button
                         type="button"

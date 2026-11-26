@@ -11,19 +11,19 @@ import { PageSurface, ReadNotices, type ReadNoticeCopy } from "../../page-frame"
 type PreferencesResult = Awaited<ReturnType<typeof reads.audience.readPreferences>>;
 type PreferencesEnvelope = Extract<PreferencesResult, { readonly kind: "envelope" }>["envelope"];
 type ActionAvailability = { readonly available: boolean; readonly reason: string | undefined };
-const PAGE_TITLE = "Your preferences";
+const PAGE_TITLE = "Reader preferences";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: PAGE_TITLE };
 const NOTICE_COPY = {
   noMembership: {
-    title: "No Update-email membership is recorded for this session",
+    title: "No email subscription for this session",
     description:
-      "The read found no membership for this purpose, so there is no Off or Immediate choice to record, no reading language to state, no address awaiting proof and no subscription to turn off. It also names no single publisher whose Update email this session could ask for, so the request is not offered here, and rendering a page, opening a link, importing a contact or editing one creates no membership.",
-    action: { label: "Open the receiving preview", href: "/preview" },
+      "This session doesn’t have an active or pending update-email subscription. Previewing updates or importing contacts never subscribes anyone automatically.",
+    action: { label: "Open Reader preview", href: "/preview" },
   },
-  denied: { title: "Your preferences are not available in this session", description: "This session may not read a membership here, so no choice, language, address or subscription state is stated in its place." },
-  unavailable: { title: "Your preferences could not be read" },
-  refused: { title: "This page's read was refused" },
+  denied: { title: "Reader preferences aren’t available in this session", description: "Your current session doesn’t have permission to view subscription preferences here." },
+  unavailable: { title: "Couldn’t load Reader preferences" },
+  refused: { title: "Couldn’t open Reader preferences" },
 } as const;
 const REFUSAL_COPY: ReadNoticeCopy = { headingLevel: 2, denied: { title: NOTICE_COPY.denied.title, body: NOTICE_COPY.denied.description }, unavailable: { title: NOTICE_COPY.unavailable.title }, refused: { title: NOTICE_COPY.refused.title } };
 function availabilityOf(envelope: PreferencesEnvelope, name: string): ActionAvailability {
@@ -70,7 +70,7 @@ const PreferencesBody = ({ result }: { readonly result: PreferencesResult }): Re
   return (
     <PageSurface headingId="reader-preferences-heading" title={PAGE_TITLE}>
       <p className="max-w-prose type-supporting text-pretty">
-        {"Four separate facts are stated here: your Off or Immediate choice for this publisher's Update email, the language you read it in, the proof that the address that membership is set for is yours, and turning those notices off. Each is changed on its own, and choosing one never decides another."}
+        {"Manage your update-email delivery (Off or Immediate), reading language, email confirmation, and unsubscribe status independently."}
       </p>
       <PreferencesBody result={result} />
     </PageSurface>

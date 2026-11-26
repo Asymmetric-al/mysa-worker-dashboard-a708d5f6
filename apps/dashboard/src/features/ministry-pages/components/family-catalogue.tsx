@@ -30,7 +30,7 @@ type FamilyCatalogueSharedProps = { readonly family: PageFamily; readonly catalo
 /** A draft context names the edition it composes and the Page that edition belongs to, because a section change is judged against both. */
 export type FamilyCatalogueProps = FamilyCatalogueSharedProps & ({ readonly target: FamilyCatalogueTarget; readonly document: FamilyCatalogueDocument } | { readonly target?: undefined; readonly document?: FamilyCatalogueDocument | undefined });
 type SectionChoice = { readonly sectionType: CatalogueSectionType; readonly afterSectionId: string | null; readonly seat: number; readonly variantId: string; readonly expectedRevision: string };
-const POSITION_LABEL = "Where the section goes";
+const POSITION_LABEL = "Position";
 const FIELD_LABELS: Readonly<Record<string, string>> = { documentId: "Page", locale: copy.editions.localeLabel, audience: "Audience", variantId: "Draft edition", sectionType: "Section type", afterSectionId: POSITION_LABEL };
 const insertionPositions = (sectionCount: number): readonly number[] => (Number.isInteger(sectionCount) && sectionCount > 0 ? Array.from({ length: sectionCount }, (_unused, index) => index + 2) : [1]);
 const afterSectionIdOf = (seat: number): string | null => (seat <= 1 ? null : String(seat - 2));
@@ -131,9 +131,9 @@ export function FamilyCatalogue({ family, catalogue, scope, document: pageDocume
             </div>
           ) : null}
           {catalogue.sections.length === 0 ? (
-            <p className="type-supporting text-pretty">{"This family's catalogue listed no section types, so there is nothing to compose here. No type is invented in their place."}</p>
+            <p className="type-supporting text-pretty">{"No section types are available for this page type."}</p>
           ) : (
-            <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <ul className="grid min-w-0 gap-3 @2xl/main:grid-cols-2">
               {catalogue.sections.map((entry) => {
                 const entryCopy = copy.catalogue.sections[entry.key];
                 const selectId = `${entryIdPrefix}-${entry.key}`;

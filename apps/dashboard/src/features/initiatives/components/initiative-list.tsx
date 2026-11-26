@@ -31,22 +31,22 @@ const NO_ROWS: InitiativeListPage["items"] = [];
 const DETAILS_PATH = "/partners/initiatives"; // The one address a row opens, and the actions a read may publish
 const STATE_FACET = "state";
 const ORDER_FACET = "order";
-const ORDER_VALUE_COPY: Readonly<Record<InitiativeOrder, string>> = { name: "Name, A to Z", "period-start": "Period start, earliest first", state: "State, open first" };
+const ORDER_VALUE_COPY: Readonly<Record<InitiativeOrder, string>> = { name: "Name (A–Z)", "period-start": "Start date (earliest first)", state: "Status (open first)" };
 const SURFACE_COPY = {
-  intro: "Every initiative you may read in this ministry, filtered and paged over the whole result rather than over the rows on screen.",
-  tableLabel: "Initiatives, one page of the whole authorised result",
+  intro: "Organize support-raising campaigns, working lists of partners, and partnership requests.",
+  tableLabel: "Initiatives",
   itemNoun: "initiatives",
-  filtersLabel: "Initiative filters",
-  searchPlaceholder: "Search name or purpose",
-  stateFilterLabel: "State",
-  orderLabel: "Order",
-  stateColumnLabel: "State",
+  filtersLabel: "Filter initiatives",
+  searchPlaceholder: "Search name or purpose…",
+  stateFilterLabel: "Status",
+  orderLabel: "Sort by",
+  stateColumnLabel: "Status",
   membersColumnLabel: "Working list",
   reopenedLabel: "Reopened",
-  createEffectNote: "Creating an initiative records one initiative. It sends no message, presents no Request, adds nobody to a working list and creates no gift, pledge, commitment, notice or task.",
-  createUnavailableReason: "This read does not offer creating an initiative in the context it was read in.",
-  loadingTitle: "Reading the initiatives",
-  loadingBody: "The first answer for this view is still arriving, so nothing here is stated as an empty list or as zero.",
+  createEffectNote: "Creates an initiative only — doesn’t add partners, send messages, or create tasks.",
+  createUnavailableReason: "You don’t have permission to create initiatives in this ministry.",
+  loadingTitle: "Loading initiatives…",
+  loadingBody: "Fetching your ministry’s initiatives.",
 } as const;
 const MUTED_TEXT_CLASS = "text-muted-foreground";
 const membershipStatePath = (initiativeId: string, member: (typeof MEMBERSHIP_STATES)[number]): string => `${initiativeId}.memberStates.${member}`;

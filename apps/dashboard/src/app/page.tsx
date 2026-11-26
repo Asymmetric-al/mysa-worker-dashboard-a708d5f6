@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 /** The home title states the product suffix itself: this route sits in the root layout's own segment, where `title.template` is not applied to the segment's own `title`. */ export const metadata: Metadata = { title: { absolute: `${HOME_COPY.title}${PRODUCT_TITLE_SUFFIX}` } };
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 1,
-  denied: { title: HOME_COPY.title, body: "Home could not be read for this session, so no item, count or reason is stated here — a refusal is not a quiet day. " + "If this session admits another context, the shell is where that context is chosen." },
+  denied: { title: HOME_COPY.title, body: "Your current session doesn’t have access to Home for this ministry. If you belong to another ministry, switch to it from the header." },
   unavailable: { title: HOME_COPY.title },
   refused: { title: HOME_COPY.title },
 };

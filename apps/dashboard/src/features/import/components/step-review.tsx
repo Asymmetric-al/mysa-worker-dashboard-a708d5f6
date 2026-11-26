@@ -30,12 +30,12 @@ const isDecisionKind = (value: unknown): value is ImportDecisionKind => typeof v
 type Branch = "table" | "card";
 const BRANCHES: readonly Branch[] = ["table", "card"];
 const ROW_COPY = {
-  restrictionsKept: "Kept exactly as written. This step does not edit a restriction, and nothing here removes or narrows one.",
-  correctionLimit: `At most ${String(IMPORT_MAX_CELL_CODE_POINTS)} characters, counted as Unicode code points. This field does not block a longer value: the importer refuses one with its own count, so a valid value is never stopped here.`,
-  chooseFirst: "Choose one of the decisions above, then record it.",
-  alreadyRecorded: (rowNumber: number): string => `This decision is already recorded for row ${String(rowNumber)}. Change the choice or one of its values to record a different decision.`,
-  materialMissing: (rowNumber: number): string => `The values, problems, kept cells, restrictions and proposed contacts of row ${String(rowNumber)} were not derived, so none of them is shown as if it were empty.`,
-  noName: "This row supplies no name",
+  restrictionsKept: "Kept verbatim — restrictions are never edited or removed during import.",
+  correctionLimit: `Up to ${String(IMPORT_MAX_CELL_CODE_POINTS)} characters.`,
+  chooseFirst: "Pick an option above before saving.",
+  alreadyRecorded: (rowNumber: number): string => `Saved for row ${String(rowNumber)}. Change an option or edit a value to update it.`,
+  materialMissing: (rowNumber: number): string => `Couldn’t prepare details for row ${String(rowNumber)}.`,
+  noName: "No name in this row",
 } as const;
 /** The cancellation the stop control submits, with the transport that performs it and what to do once it settles. */
 export type ImportStopControl = { readonly input: Omit<MutationInput<CancelPayload>, "operationId">; readonly submit: MutationSubmit<CancelPayload>; readonly onSettled: (outcome: MutationOutcome) => void };

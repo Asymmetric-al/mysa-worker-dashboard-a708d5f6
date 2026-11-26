@@ -9,7 +9,7 @@ import { ReadNotices, type ReadNoticeCopy } from "../../../../page-frame";
 const PARTNERS_PATH = "/partners";
 const SURFACE_COPY = SURFACE_STATE_COPY.interactions;
 const RECORD_REFUSED_COPY = SURFACE_STATE_COPY["partner-detail"].refused;
-const RETURN_LABEL = "Back to the record";
+const RETURN_LABEL = "Back to partner";
 const NOTICE_CLASS = "flex min-w-0 flex-col gap-4 text-start";
 const recordHref = (partnerId: string): string => `${PARTNERS_PATH}/${encodeURIComponent(partnerId)}`;
 const formHref = (partnerId: string): string => `${recordHref(partnerId)}${"/interactions/new"}`;
@@ -21,8 +21,8 @@ const NOTICE_COPY: ReadNoticeCopy = {
   refused: { title: RECORD_REFUSED_COPY.title, body: RECORD_REFUSED_COPY.body, action: { label: PARTNER_ACTION_LABELS.backToRoster, href: PARTNERS_PATH } },
 };
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Log an interaction" };
-/** Everything that actually happened between the worker and one record: the entry itself, with the optional next task saved as a second change. */ export default async function NewInteractionPage({ params }: { readonly params: Promise<{ partnerId: string }> }): Promise<ReactElement> {
+export const metadata: Metadata = { title: "Log activity" };
+/** Everything that actually happened between the missionary and one partner: the entry itself, with an optional next task saved as a second change. */ export default async function NewInteractionPage({ params }: { readonly params: Promise<{ partnerId: string }> }): Promise<ReactElement> {
   const { partnerId } = await params;
   const result = await reads.partners.readPartner(partnerId);
   if (result.kind !== "envelope") return <ReadNotices failure={result} copy={{ ...NOTICE_COPY, unavailable: { ...NOTICE_COPY.unavailable, action: { label: PARTNER_ACTION_LABELS.retry, href: formHref(partnerId) } } }} className={NOTICE_CLASS} />;
@@ -34,9 +34,9 @@ export const metadata: Metadata = { title: "Log an interaction" };
     <div className="flex min-w-0 flex-col gap-6 text-start">
       <div className="flex min-w-0 flex-col gap-2">
         <h1 className="type-page-title text-pretty wrap-anywhere">
-          {"Log an interaction with"} <bdi>{partner.displayName}</bdi>
+          {"Log activity with"} <bdi>{partner.displayName}</bdi>
         </h1>
-        <p className="type-supporting text-pretty">{"What you record here is a contact that actually happened, with the day it happened or the precision you honestly have. A follow-up task is optional and is saved as a separate change with its own identity, so a task that fails never sends the interaction again."}</p>
+        <p className="type-supporting text-pretty">{"Record a real call, visit, conversation, or message. If you add a follow-up task, it’s saved separately so a task error never duplicates your activity."}</p>
       </div>
       <InteractionForm scope={envelope.scope} partnerId={partner.partnerId} expectedRevision={envelope.revision} subject={{ partnerId: partner.partnerId, kind: partner.kind, displayName: partner.displayName, source: envelope.source }} />
       <p className="min-w-0">

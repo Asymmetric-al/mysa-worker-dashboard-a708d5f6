@@ -6,15 +6,15 @@ import { translationStaleness, type ContentVariant, type Release, type ReleaseOu
 export type ContentLifecycleState = (typeof CONTENT_LIFECYCLE_STATES)[number];
 export type LifecycleSpec = { readonly label: string; readonly tone: StatusTone; readonly explanation: string };
 /** The whole lifecycle vocabulary: one exhaustive record over the closed union, so a state added without its word, tone and sentence is a compile error rather than an unlabelled chip. */ export const LIFECYCLE_STATUS: Readonly<Record<ContentLifecycleState, LifecycleSpec>> = {
-  "not-started": { label: "Not started", tone: "muted", explanation: "Nothing has been written for this audience and language yet, so there is nothing to review and nothing to read." },
-  draft: { label: "Draft", tone: "neutral", explanation: "Saved and unpublished. A saved draft is not a release, so no audience can read it." },
-  candidate: { label: "Submitted for review", tone: "info", explanation: "Frozen for its one review step. A reviewer can approve it or ask for changes, and only a release lets an audience read it." },
-  approved: { label: "Approved", tone: "positive", explanation: "A reviewer approved this frozen candidate for this audience and language. Approval publishes nothing and notifies nobody: the release is a separate step, and a simulated notice is separate again." },
-  released: { label: "Published", tone: "positive", explanation: "Published for this audience and language, so an authorised reader can open the released revision. Releasing sends no message." },
-  "partially-released": { label: "Partially released", tone: "caution", explanation: "Published for this audience and language. Another edition in the same release attempt kept its earlier published revision, which was not rolled back." },
-  withdrawn: { label: "Withdrawn", tone: "danger", explanation: "No longer available to this audience, and the edition now reads as a tombstone. Withdrawing deleted no source work and recalled no copy a reader already received." },
-  "superseded-head": { label: "Superseded", tone: "muted", explanation: "Published once and since replaced by a later release of this edition, so it is no longer the current publication." },
-  "stale-translation": { label: "Translation stale", tone: "caution", explanation: "The source revision this translation copied is no longer current. Nothing was withdrawn and nothing needs re-approval, but the translation no longer reflects the source." },
+  "not-started": { label: "Not started", tone: "muted", explanation: "Nothing drafted yet for this audience and language." },
+  draft: { label: "Draft", tone: "neutral", explanation: "Saved privately — not visible to readers until published." },
+  candidate: { label: "In review", tone: "info", explanation: "Submitted for review. Approving doesn’t publish automatically." },
+  approved: { label: "Approved", tone: "positive", explanation: "Approved for this audience and language. Ready to publish whenever you choose." },
+  released: { label: "Published", tone: "positive", explanation: "Live for this audience and language. Publishing doesn’t send email automatically." },
+  "partially-released": { label: "Partially published", tone: "caution", explanation: "Published for this audience and language, while another edition kept its earlier published version." },
+  withdrawn: { label: "Unpublished", tone: "danger", explanation: "No longer shown to readers. Your draft stays intact; copies already sent cannot be recalled." },
+  "superseded-head": { label: "Replaced", tone: "muted", explanation: "Previously published and replaced by a newer edition." },
+  "stale-translation": { label: "Translation out of date", tone: "caution", explanation: "The source language changed since this translation was written. It remains live until you update it." },
 };
 export type VariantReleaseOutcome = { readonly variantId: string; readonly outcome: ReleaseOutcome };
 /** The facts {@link lifecycleOf} reads besides the two records themselves — each optional, because a surface that has not run a release attempt, shown a translation or read the review record has none: `synthesis` is the attempt's per-edition results, `translationSource` the edition this one copied, and `reviewDecision` the answer recorded on the frozen candidate this edition holds, which only a surface or a read that states that answer sets. */

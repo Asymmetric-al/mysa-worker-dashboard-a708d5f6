@@ -1,19 +1,19 @@
 /** Criterion 3 — relationship care: find a person and a church, read what their records honestly say, log an interaction, then create a separate task. */ import type { Locator, Page } from "@playwright/test";
 import { armLostAcknowledgement, clearFailurePlan, expect, expectDevelopmentData, test } from "../playwright.config";
 const HREF = { roster: "/partners", work: "/work" } as const;
-const ROSTER = { search: "Search", label: "Partner roster", facet: "Contact type", facetValue: "Person" } as const;
+const ROSTER = { search: "Search", label: "Partners", facet: "Type", facetValue: "Person" } as const;
 const PERSON = { restricted: "Marcus Webb", care: "Jo Mbeki", church: "St Aidan's Church", churchKind: "Church", phone: "Kenji Nakamura" } as const;
-const SECTION = { contactMethods: "Permitted contact methods", restrictions: "Restrictions", activity: "Actual activity", privateNotes: "Private notes", openTasks: "Open tasks" } as const;
-const RESTRICTION = { kind: "no-phone", detail: "Asked that we never telephone, and confirmed it in writing.", permittedMethod: "Permitted on this record" } as const;
-const CONTACT = { restrictedNumber: "+44 20 7946 0958", restrictedEmail: "marcus.webb@example.org", careEmail: "jo.mbeki@example.org", phoneNumber: "+44 20 7946 0421", noteAudience: "Private note — only you", seededInteraction: "Left a voicemail", noneRecorded: "No interaction recorded for this partner" } as const;
+const SECTION = { contactMethods: "Contact details", restrictions: "Communication restrictions", activity: "Activity", privateNotes: "Private notes", openTasks: "Open tasks" } as const;
+const RESTRICTION = { kind: "no-phone", detail: "Asked that we never telephone, and confirmed it in writing.", permittedMethod: "Permitted" } as const;
+const CONTACT = { restrictedNumber: "+44 20 7946 0958", restrictedEmail: "marcus.webb@example.org", careEmail: "jo.mbeki@example.org", phoneNumber: "+44 20 7946 0421", noteAudience: "Private", seededInteraction: "Left a voicemail", noneRecorded: "No activity logged yet" } as const;
 const CARE_PERSON_PRIVATE_NOTE = "Prefers a call after 6pm, and asked for nothing to be posted to the shared house address.";
-const RECEIPT = { unconfirmed: "Result not confirmed", alreadySaved: "Already saved", saved: "Saved", checkTheDetails: "Check the details", checkResult: "Check the result", retrySameWork: "Retry the same request", resendWording: /resend|send again|send it again/iu } as const; // The four headings this journey reads off the durable in-context result, the two controls an unconfirmed outcome offers, and the resend wording it never states.
-const FORM = { kindOfContact: "Kind of contact", theDay: "The day it happened", whatCameOfIt: "What came of it", howTheyTookPart: "How they took part", noteField: /^A note about this contact/u, submit: "Log the interaction" } as const; // The interaction form's own labels, taken from the one form rather than restated in this file's words.
-const VISIT = { kind: "A visit", day: "2026-11-18", outcome: "Talked through the Christmas plan and agreed a visit in December", role: "Worker", note: "Agreed to bring the rota on the next visit." } as const;
-const FOLLOW_UP = { taskIntent: "Create a follow-up task", taskTitle: "What needs doing", saveTask: "Save the follow-up task", backToRecord: "Back to the record", createFollowUpTask: "Create a follow-up task", logInteraction: "Log an interaction" } as const;
+const RECEIPT = { unconfirmed: "Couldn’t confirm result", alreadySaved: "Already saved", saved: "Saved", checkTheDetails: "Please check these details", checkResult: "Check result", retrySameWork: "Retry request", resendWording: /resend|send again|send it again/iu } as const; // The four headings this journey reads off the durable in-context result, the two controls an unconfirmed outcome offers, and the resend wording it never states.
+const FORM = { kindOfContact: "Activity type", theDay: "Date", whatCameOfIt: "What happened", howTheyTookPart: "Role", noteField: /^Private note/u, submit: "Save activity" } as const; // The interaction form's own labels, taken from the one form rather than restated in this file's words.
+const VISIT = { kind: "Visit", day: "2026-11-18", outcome: "Talked through the Christmas plan and agreed a visit in December", role: "Worker", note: "Agreed to bring the rota on the next visit." } as const;
+const FOLLOW_UP = { taskIntent: "Add a follow-up task", taskTitle: "Task title", saveTask: "Save follow-up task", backToRecord: "Back to partner", createFollowUpTask: "Add follow-up task", logInteraction: "Log activity" } as const;
 const TASK = { seeded: "Follow up with Jo after the visit", followUp: "Send Jo the Christmas rota", next: "Book the December visit with Jo", tooLongMessage: "Shorten the title to a phrase, so it reads at a glance in a list." } as const;
 const TITLE_TOO_LONG_TASK = "Collect the Christmas rota from the church office, confirm the December visit with the students' group, check the venue booking with the warden and agree who brings the refreshments on the day of the visit. ".repeat(2);
-const COMPOSER = { newTask: "New task", title: "Title", linkedRecord: /^Linked record/u, create: "Create task" } as const;
+const COMPOSER = { newTask: "New task", title: "Title", linkedRecord: /^Linked to/u, create: "Create task" } as const;
 const rosterToolbar = (page: Page): Locator => page.getByRole("region", { name: ROSTER.label, exact: true });
 async function openRoster(page: Page): Promise<Locator> {
   await page.goto(HREF.roster);
@@ -43,11 +43,11 @@ async function selectFacetValue(page: Page, facetLabel: string, valueLabel: stri
 }
 async function removeFacetValue(page: Page, facetLabel: string, valueLabel: string): Promise<void> {
   const toolbar = rosterToolbar(page);
-  await toolbar.getByRole("button", { name: `Remove this filter: ${facetLabel}: ${valueLabel}` }).click();
+  await toolbar.getByRole("button", { name: `Remove filter: ${facetLabel}: ${valueLabel}` }).click();
   await expect(toolbar.getByRole("button", { name: facetLabel, exact: true }), "Removing the filter leaves its control stating no selection, so the list widens again.").toBeVisible();
 }
 async function clearSearch(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Clear the search text", exact: true }).click(); // Clears the search through the field's own control, so the list returns to the whole authorised result.
+  await page.getByRole("button", { name: "Clear search", exact: true }).click(); // Clears the search through the field's own control, so the list returns to the whole authorised result.
   await expect(page.getByLabel(ROSTER.search, { exact: true }), "Clearing the search leaves the field empty.").toHaveValue("");
 }
 async function recordAddress(page: Page, name: string): Promise<string> {
@@ -90,7 +90,7 @@ function partnerIdOf(href: string): string {
 const receipt = (page: Page, outcome: string): Locator => page.locator(`[data-slot="operation-result"][data-outcome="${outcome}"]`); // One durable outcome receipt, addressed by the outcome it reports rather than by its position on the page.
 async function openInteractionForm(page: Page, name: string): Promise<void> {
   await page.getByRole("link", { name: FOLLOW_UP.logInteraction, exact: true }).first().click(); // Opens the interaction form from the record's own action and answers once the form states the record it writes to.
-  await expect(page.getByRole("heading", { level: 1, name: `Log an interaction with ${name}` }), "The form is opened from the record it is recorded against, and it names that record in its own heading.").toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: `Log activity with ${name}` }), "The form is opened from the record it is recorded against, and it names that record in its own heading.").toBeVisible();
   await expectDevelopmentData(page, "The interaction form");
 }
 async function fillLoggedInteraction(page: Page): Promise<void> {
@@ -137,7 +137,7 @@ test("a person and a church are found by searching the whole roster and filterin
   expect(seededActivity[0], "The activity history states what the source recorded, in the record's own words.").toContain(CONTACT.seededInteraction);
   const privateNotes = section(page, SECTION.privateNotes);
   await expect(privateNotes.getByText(CARE_PERSON_PRIVATE_NOTE, { exact: true }), "The worker's own note is read on the record it belongs to.").toBeVisible();
-  await expect(privateNotes.getByText(CONTACT.noteAudience), "The note states its audience where it is read, so private text is never mistaken for shared activity.").toBeVisible();
+  await expect(privateNotes.getByText(`Audience: ${CONTACT.noteAudience}`, { exact: true }), "The note states its audience where it is read, so private text is never mistaken for shared activity.").toBeVisible();
   await page.goBack();
   await expect(page.getByLabel(ROSTER.search, { exact: true })).toHaveValue(PERSON.care);
   await searchRoster(page, PERSON.church);
@@ -220,7 +220,7 @@ test("completing a task and creating the next one close work and change nothing 
   const seededTaskOpen = openTasksBefore.some((item) => item.includes(TASK.seeded));
   expect(seededTaskOpen, "The seeded task is open work on this record before the journey completes it.").toBe(true);
   await page.goto(HREF.work);
-  await expect(page.getByRole("heading", { name: "Work", level: 1 }), "The five task lists are a destination of the shell's own navigation.").toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", level: 1 }), "The five task lists are a destination of the shell's own navigation.").toBeVisible();
   await expectDevelopmentData(page, "The Work surface");
   await page.getByRole("tab", { name: "All", exact: true }).click();
   await expect(page.getByRole("row", { name: TASK.seeded }), "The seeded task is one row of the widest list.").toBeVisible();
@@ -232,7 +232,7 @@ test("completing a task and creating the next one close work and change nothing 
   expect(await activityRows(page), "Completing a task records that the work was closed: the activity history holds exactly the rows it held before, in the same order.").toEqual([...before]);
   await expect(section(page, SECTION.openTasks).getByText(TASK.seeded, { exact: true }), "The completed task is no longer open work on the record it was linked to.").toHaveCount(0);
   await page.getByRole("link", { name: FOLLOW_UP.createFollowUpTask, exact: true }).first().click();
-  await expect(page.getByRole("heading", { name: "Work", level: 1 }), "The record's own next-task action opens the work surface rather than a second task form.").toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", level: 1 }), "The record's own next-task action opens the work surface rather than a second task form.").toBeVisible();
   await page.getByRole("button", { name: COMPOSER.newTask, exact: true }).click();
   await expect(page.getByRole("region", { name: COMPOSER.newTask, exact: true }), "The task is created in the one composer that owns the task form.").toBeVisible();
   await expect(page.getByRole("combobox", { name: COMPOSER.linkedRecord }), "The record this task was created from is already stated as its link, so the work is filed against the same record.").toHaveValue(`partner:${partnerIdOf(careAddress)}`);

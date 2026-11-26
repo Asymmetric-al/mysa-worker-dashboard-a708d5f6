@@ -28,30 +28,29 @@ const GIVEN_NAME_FIELD = "nameParts.given";
 const FAMILY_NAME_FIELD = "nameParts.family";
 const ADDITIONAL_NAMES_FIELD = "nameParts.additional";
 const RELATIONSHIP_LABEL_FIELD = "stage";
-const REVISION_LABEL = "Revision this edit presents";
+const REVISION_LABEL = "Record version";
 const DISPLAY_NAME_LABEL = "Display name";
-const DISPLAY_NAME_DESCRIPTION = "What this record is recognised by. Changing it changes no other record, no household and no organization.";
-const GIVEN_NAME_LABEL = "Given name";
-const FAMILY_NAME_LABEL = "Family name";
+const DISPLAY_NAME_DESCRIPTION = "How this partner appears across your dashboard. Editing it doesn’t affect other records.";
+const GIVEN_NAME_LABEL = "First name";
+const FAMILY_NAME_LABEL = "Last name";
 const ADDITIONAL_NAME_PREFIX = "Additional name";
-const CONTACT_METHODS_LEGEND = "Contact methods";
-const CONTACT_METHODS_HELP = `Each detail states whether this record permits you to use it. Editing that fact changes contactability alone: ${PERMISSION_FACT_COPY.communicationConsent.explanation} ${PERMISSION_FACT_COPY.protectedReaderGrant.explanation}`;
-const CONTACT_METHODS_IDENTITY_NOTE = `${IDENTITY_COPY.equalLooking.body} ${IDENTITY_COPY.noJoinKey.body} Adding a detail here therefore re-identifies nothing: the record stays the record it was.`;
+const CONTACT_METHODS_LEGEND = "Contact details";
+const CONTACT_METHODS_HELP = `Mark whether each contact detail may be used to reach this partner. ${PERMISSION_FACT_COPY.communicationConsent.explanation}`;
+const CONTACT_METHODS_IDENTITY_NOTE = `${IDENTITY_COPY.equalLooking.body} ${IDENTITY_COPY.noJoinKey.body}`;
 const RELATIONSHIP_LABEL = "Relationship label";
-const RELATIONSHIP_LABEL_DESCRIPTION = "The relationship word recorded against this person or household, stated in the source's own words rather than chosen from a list. Leave it empty to clear the label.";
-const RESTRICTIONS_LEGEND = "Restrictions";
-const UNCONFIRMED_NOTE = "Saving is paused until the result above is checked, because this attempt may already have changed the record. Checking it reads what happened and applies nothing.";
-const SAVE_NOTE = "Saving changes the permitted fields of this record. It sends no message, records no interaction, subscribes no one and creates no financial record.";
-const UNSAVED_WORK_DESCRIPTION = "This record's permitted fields have been edited on this screen and not saved yet.";
-const SAVE_BLOCKED_PENDING = "A save of this record is already in flight, so nothing was sent again. Nothing you typed has been discarded: choose Save and switch once that save has settled.";
-const SAVE_BLOCKED_UNCONFIRMED = "The last attempt to save this record may already have changed it, and its result has to be checked before another save is sent. Nothing you typed has been discarded: check the result on the form, then choose Save and switch again.";
-const SAVE_BLOCKED_FIELDS = "Saving cannot start while a field on this form states what it needs, so nothing was sent and nothing you typed has been discarded. Correct the field the form names, then choose Save and switch again.";
-const SAVE_NOT_SETTLED = "The save did not settle and the context was not switched, so nothing you typed has been discarded: ";
-const BACK_TO_RECORD_LABEL = "Back to the record";
-const EDITS_UNAVAILABLE_TITLE = "Contact edits are unavailable here";
-const EDITS_UNAVAILABLE_BODY = "This record does not admit a permitted-field change in the current session and scope, so no field is offered and nothing was changed. A refusal here says nothing about what exists anywhere else.";
-const CONFLICT_CHOICE_BODY =
-  "Applying yours sends what this form holds now against the revision the record stands at, so nothing you have typed is lost and nothing of theirs is overwritten without your decision. Discarding yours returns the form to the values this page read; the value the record holds now stays visible above either way.";
+const RELATIONSHIP_LABEL_DESCRIPTION = "Optional label describing your relationship (for example, Prayer partner or Church contact). Leave blank to clear.";
+const RESTRICTIONS_LEGEND = "Communication restrictions";
+const UNCONFIRMED_NOTE = "Saving is paused until we check the previous result so we don’t overwrite anything.";
+const SAVE_NOTE = "Updates this partner’s details only — never sends messages, logs activity, or subscribes anyone.";
+const UNSAVED_WORK_DESCRIPTION = "You have unsaved edits on this partner profile.";
+const SAVE_BLOCKED_PENDING = "A save is already in progress. Wait a moment, then try again.";
+const SAVE_BLOCKED_UNCONFIRMED = "Check the unconfirmed save result on the form before switching ministries.";
+const SAVE_BLOCKED_FIELDS = "Please fix the highlighted fields before saving and switching ministries.";
+const SAVE_NOT_SETTLED = "Couldn’t save before switching ministries (your edits are still on screen): ";
+const BACK_TO_RECORD_LABEL = "Back to partner";
+const EDITS_UNAVAILABLE_TITLE = "Can’t edit this partner here";
+const EDITS_UNAVAILABLE_BODY = "You don’t have permission to edit this partner’s contact details in this ministry.";
+const CONFLICT_CHOICE_BODY = "Compare both versions above. You can apply your changes on top of the latest version, or discard your edits.";
 const CLEAR_ON_EDIT: ReadonlySet<MutationOutcome["outcome"]> = new Set<MutationOutcome["outcome"]>(["invalid", "conflict", "denied", "unavailable"]);
 type AdditionalNameRow = { readonly rowKey: string; value: string };
 type EditFormValues = { displayName: string; givenName: string; familyName: string; additionalNames: AdditionalNameRow[]; contactMethods: ContactMethodRow[]; relationshipLabel: string };
@@ -97,7 +96,7 @@ function payloadOf(values: EditFormValues, record: PartnerRecord, partnerRef: st
 function restrictionCarryProblem(record: PartnerRecord): string | null {
   const unrepresentable = record.restrictions.findIndex((restriction) => !restrictionEditSchema.safeParse(restriction).success);
   if (unrepresentable === -1) return null;
-  return `Restriction ${String(unrepresentable + 1)} on this record carries no label or no detail, so this edit cannot carry it through unchanged. Nothing was changed: correct that restriction first, because saving without it would drop a restriction rather than preserve it.`;
+  return `Restriction ${String(unrepresentable + 1)} is missing a label or description, so saving is paused to avoid dropping it accidentally.`;
 }
 const NO_REFUSAL: FieldErrorLookup = { byField: {}, form: [], count: 0 };
 /** The form field a path a local refusal can name belongs to, so its message is stated only once that field has been edited; `null` where this form offers no control for the path. */ function formFieldOf(path: string): string | null {
@@ -167,7 +166,7 @@ function AdditionalNameField({ index, row, errors, onChange, onRemove }: Additio
         {(control) => <Input id={control.id} type="text" value={row.value} autoComplete="off" aria-describedby={control.describedBy} aria-invalid={control.invalid ? true : undefined} onChange={(event) => onChange({ ...row, value: event.currentTarget.value })} className="w-full" />}
       </FormField>
       <div className="flex min-w-0">
-        <Button type="button" variant="outline" size="sm" className="min-h-target max-w-full whitespace-normal" onClick={onRemove}>{`Remove name part ${String(number)}`}</Button>
+        <Button type="button" variant="outline" size="sm" className="min-h-target max-w-full whitespace-normal" onClick={onRemove}>{`Remove name ${String(number)}`}</Button>
       </div>
     </div>
   );
@@ -175,14 +174,14 @@ function AdditionalNameField({ index, row, errors, onChange, onRemove }: Additio
 const RestrictionsBlock = ({ record }: { readonly record: PartnerRecord }): ReactElement => (
   <section aria-label={RESTRICTIONS_LEGEND} className="flex min-w-0 flex-col gap-2">
     <h3 className="type-subsection-title">{RESTRICTIONS_LEGEND}</h3>
-    <p className="type-supporting text-pretty">A restriction is a limit the source recorded, and this form changes none of them. Each one is carried through this edit exactly as it is stored, so an edit to another field can never drop a restriction the form does not mention.</p>
+    <p className="type-supporting text-pretty">Communication restrictions are read-only here and are always preserved when you save other edits.</p>
     {record.restrictions.length === 0 ? (
-      <p className="type-supporting text-pretty">No restriction is recorded for this record, so this edit carries none.</p>
+      <p className="type-supporting text-pretty">No communication restrictions on file.</p>
     ) : (
       <ul className="flex min-w-0 list-disc flex-col gap-2 ps-4 text-sm">
         {record.restrictions.map((restriction, index) => (
           <li key={`${restriction.kind}-${String(index)}`} className="min-w-0 text-pretty">
-            <span className="font-medium">{restriction.kind.trim() === "" ? "A restriction with no label is recorded on this record." : restriction.kind}</span>
+            <span className="font-medium">{restriction.kind.trim() === "" ? "Unlabeled restriction" : restriction.kind}</span>
             {restriction.detail.trim() === "" ? null : <span className="text-muted-foreground">{` — ${restriction.detail}`}</span>}
           </li>
         ))}
@@ -198,11 +197,11 @@ function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: Con
       <h3 {...{ id: titleId, className: "type-subsection-title sr-only" as const }}>{FORM_OUTCOME_COPY.conflict.title}</h3>
       <OperationResult outcome={outcome} headingLevel={4} fieldLabels={fieldLabels} />
       <div className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
-        <p className="type-group-title">What to do with your input</p>
+        <p className="type-group-title">Choose how to proceed</p>
         <p className="type-supporting text-pretty">{CONFLICT_CHOICE_BODY}</p>
         <div className="flex flex-wrap items-center gap-2">
           <Button {...{ type: "button", className: "min-h-target max-w-full whitespace-normal", onClick: () => onApplyMine(outcome.currentRevision) }}>Apply my changes</Button>
-          <Button {...{ type: "button", variant: "outline", className: "min-h-target max-w-full whitespace-normal", onClick: onDiscardMine }}>Discard mine</Button>
+          <Button {...{ type: "button", variant: "outline", className: "min-h-target max-w-full whitespace-normal", onClick: onDiscardMine }}>Discard my edits</Button>
         </div>
       </div>
     </section>
@@ -210,10 +209,10 @@ function ConflictPanel({ outcome, fieldLabels, onApplyMine, onDiscardMine }: Con
 }
 const AcceptedNote = ({ partnerRef, revision }: { readonly partnerRef: string; readonly revision: string }): ReactElement => (
   <div data-slot="partner-edit-accepted" className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-surface-subtle p-4 text-sm">
-    <p className="type-group-title">This record now stands at the revision below</p>
-    <p className="type-supporting text-pretty">The change was applied once, and this receipt stays on the page as the record of it.</p>
+    <p className="type-group-title">Changes saved</p>
+    <p className="type-supporting text-pretty">This partner’s profile has been updated.</p>
     <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-body">
-      <span className="text-muted-foreground">{REVISION_LABEL}</span>
+      <span className="text-muted-foreground">{REVISION_LABEL}:</span>
       <bdi className="mono-identifier wrap-anywhere">{revision}</bdi>
     </p>
     <p className="min-w-0">
@@ -235,7 +234,7 @@ const EDITS_NOTICE_COPY: OutcomeNoticeCopy = {
   unavailable: { title: FORM_OUTCOME_COPY.unavailable.title, description: FORM_OUTCOME_COPY.unavailable.body },
   unknown: { title: FORM_OUTCOME_COPY.unknown.title, description: FORM_OUTCOME_COPY.unknown.body },
   retryLabel: PARTNER_ACTION_LABELS.retry,
-  checkResultLabel: "Check the result",
+  checkResultLabel: "Check result",
 };
 function OutcomeRegion({ outcome, partnerRef, fieldLabels, onApplyMine, onDiscardMine, onRetrySameWork, onCheckResult }: OutcomeRegionProps): ReactElement {
   if (outcome.outcome === "conflict") return <ConflictPanel outcome={outcome} fieldLabels={fieldLabels} onApplyMine={onApplyMine} onDiscardMine={onDiscardMine} />;
@@ -342,13 +341,12 @@ type UnsavedWorkRegistrationProps = { readonly active: boolean; readonly save: (
   return (
     <section dir={dir} aria-labelledby={headingId} data-slot="partner-edit-form" className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 {...{ id: headingId, className: "type-section-title" }}>Edit permitted fields</h2>
-        <p className="type-supporting text-pretty">Only the fields this record permits you to change are shown, and each one is saved against the revision this page read.</p>
-        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 type-supporting">
-          <span>{REVISION_LABEL}</span>
+        <h2 {...{ id: headingId, className: "type-section-title" }}>Edit contact details</h2>
+        <p className="type-supporting text-pretty">Only fields you have permission to edit are shown. If someone else updates this profile first, you’ll be able to compare both versions before saving.</p>
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
+          <span>{REVISION_LABEL}:</span>
           <bdi className="mono-identifier wrap-anywhere">{envelope.revision}</bdi>
         </p>
-        <p className="type-supporting text-pretty">It is sent unchanged with your change. If someone saved this record after this page was read, your change is refused as a conflict and their value is shown beside yours instead of being replaced.</p>
       </div>
       {availability.admitted ? null : <StateNotice kind="denied" headingLevel={3} title={EDITS_UNAVAILABLE_TITLE} description={availability.reason ?? EDITS_UNAVAILABLE_BODY} action={{ label: BACK_TO_RECORD_LABEL, href: recordHref(partnerRef) }} className="min-w-0" />}
       {availability.admitted ? (
@@ -373,8 +371,8 @@ type UnsavedWorkRegistrationProps = { readonly active: boolean; readonly save: (
                     <form.Field name="displayName">{(field) => <TextField field={field} name={DISPLAY_NAME_FIELD} label={DISPLAY_NAME_LABEL} description={DISPLAY_NAME_DESCRIPTION} error={fieldErrors?.byField[DISPLAY_NAME_FIELD]} required onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
                     <div className="flex min-w-0 flex-col gap-4">
                       <div className="flex min-w-0 flex-col gap-1">
-                        <h3 {...{ id: namesHeadingId, className: "type-subsection-title" }}>Name parts</h3>
-                        <p className="type-supporting text-pretty">Optional. A record may be known by one name only, and a part you leave blank is stored as absent rather than as an empty name.</p>
+                        <h3 {...{ id: namesHeadingId, className: "type-subsection-title" }}>Name details</h3>
+                        <p className="type-supporting text-pretty">Optional. Leave blank any parts that don’t apply.</p>
                       </div>
                       <form.Field name="givenName">{(field) => <TextField field={field} name={GIVEN_NAME_FIELD} label={GIVEN_NAME_LABEL} error={fieldErrors?.byField[GIVEN_NAME_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
                       <form.Field name="familyName">{(field) => <TextField field={field} name={FAMILY_NAME_FIELD} label={FAMILY_NAME_LABEL} error={fieldErrors?.byField[FAMILY_NAME_FIELD]} optionalHint onEdit={clearSettledRefusal} className="w-full" />}</form.Field>
@@ -406,9 +404,9 @@ type UnsavedWorkRegistrationProps = { readonly active: boolean; readonly save: (
                                   setAdditionalNames([...additionalNames, { rowKey: additionalRowKey(rowSequence.current.additional), value: "" }]);
                                 }}
                               >
-                                Add another name part
+                                Add another name
                               </Button>
-                              <p className="text-xs text-pretty text-muted-foreground">Each part you add can be removed again, and removing one leaves every other part exactly as you wrote it.</p>
+                              <p className="text-xs text-pretty text-muted-foreground">You can add or remove additional names anytime.</p>
                             </div>
                           </div>
                         )}
@@ -418,7 +416,7 @@ type UnsavedWorkRegistrationProps = { readonly active: boolean; readonly save: (
                       <div className="flex min-w-0 flex-col gap-1">
                         <h3 {...{ id: methodsHeadingId, className: "type-subsection-title" as const }}>{CONTACT_METHODS_LEGEND}</h3>
                         <p className="type-supporting text-pretty">{CONTACT_METHODS_HELP}</p>
-                        <p className="type-supporting text-pretty">{CONTACT_METHODS_IDENTITY_NOTE}</p>
+                        <p className="text-xs text-pretty text-muted-foreground">{CONTACT_METHODS_IDENTITY_NOTE}</p>
                       </div>
                       <form.Subscribe selector={(state) => state.values.contactMethods}>
                         {(contactMethods) => (
@@ -426,9 +424,9 @@ type UnsavedWorkRegistrationProps = { readonly active: boolean; readonly save: (
                             rows={contactMethods}
                             headingId={methodsHeadingId}
                             errors={fieldErrors}
-                            valueDescription="The address, number or postal detail itself. The record stores no verification for it, so it states what was recorded rather than a confirmed detail."
-                            emptyNote="No contact method is recorded. Every permitted-field edit is still available, and a method you add is recorded against this same record."
-                            addNote="A row you add can be removed again, and removing one leaves every other row exactly as you wrote it."
+                            valueDescription="Email address, phone number, or mailing address (stored as entered, not verified automatically)."
+                            emptyNote="No contact details on file yet."
+                            addNote="You can add or remove details anytime."
                             showPermittedFact
                             onRowsChange={setContactMethods}
                             onAdd={() => {
@@ -445,7 +443,7 @@ type UnsavedWorkRegistrationProps = { readonly active: boolean; readonly save: (
                     <RestrictionsBlock record={record} />
                     {carryProblem === null ? null : (
                       <Alert variant="destructive" className="min-w-0">
-                        <AlertTitle>This edit cannot carry every restriction</AlertTitle>
+                        <AlertTitle>Can’t preserve all restrictions</AlertTitle>
                         <AlertDescription>
                           <p>{carryProblem}</p>
                         </AlertDescription>
@@ -455,10 +453,10 @@ type UnsavedWorkRegistrationProps = { readonly active: boolean; readonly save: (
                     <div className="flex min-w-0 flex-col gap-2">
                       {unconfirmed ? null : (
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button {...{ type: "submit" as const, disabled: isPending || carryProblem !== null || localRefusal.count > 0, "aria-describedby": actionNoteId, className: "min-h-target max-w-full whitespace-normal" as const }}>{isPending ? "Saving the changes" : "Save these changes"}</Button>
+                          <Button {...{ type: "submit" as const, disabled: isPending || carryProblem !== null || localRefusal.count > 0, "aria-describedby": actionNoteId, className: "min-h-target max-w-full whitespace-normal" as const }}>{isPending ? "Saving changes…" : "Save changes"}</Button>
                         </div>
                       )}
-                      <p {...{ id: actionNoteId, className: "type-supporting text-pretty" as const }}>{unconfirmed ? UNCONFIRMED_NOTE : localRefusal.count > 0 ? "Saving cannot start while a field above states what it needs. Nothing you typed has been discarded." : SAVE_NOTE}</p>
+                      <p {...{ id: actionNoteId, className: "type-supporting text-pretty" as const }}>{unconfirmed ? UNCONFIRMED_NOTE : localRefusal.count > 0 ? "Please fix the highlighted fields above before saving." : SAVE_NOTE}</p>
                     </div>
                   </>
                 );

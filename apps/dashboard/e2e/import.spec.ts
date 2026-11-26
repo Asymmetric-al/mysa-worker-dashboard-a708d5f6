@@ -11,7 +11,7 @@ const CORRECTED_EMAIL = "nadia.rahman@example.org"; // The corrected address row
 const RESTRICTED_NAME = "Hilary Beckett";
 const CARRIED_RESTRICTION = "Do not contact"; // The restriction row 14 carries in the file, which acceptance must keep exactly as written.
 const OVERSIZE_FILE = { name: "contacts-over-the-size-limit.csv", bytes: 5_242_907 } as const; // QA's own reproduction at step 1: three bytes past the 5 MiB the limits state, so the chooser's own measurement of the file is what refuses it.
-const REVIEW_TABLE = "Rows awaiting a decision";
+const REVIEW_TABLE = "Rows to review";
 const DECISIONS = { create: 2, reuse: 1, skip: 1 } as const;
 const UNDECIDED_ROWS = FIXTURE.dataRows - DECISIONS.create - DECISIONS.reuse - DECISIONS.skip;
 function exampleFixturePath(): string {
@@ -44,7 +44,7 @@ const armLostAcknowledgementOnAcceptance = async (page: Page): Promise<void> => 
 const stepHeading = (page: Page, step: string): Locator => page.getByRole("heading", { level: 2, name: step });
 const reviewTable = (page: Page): Locator => page.getByRole("table", { name: REVIEW_TABLE });
 const reviewRow = (page: Page, marker: string): Locator => reviewTable(page).getByRole("row").filter({ hasText: marker }); // One row of the review, found by a value only that row of the fixture carries.
-const resultsTable = (page: Page): Locator => page.getByRole("table", { name: "Per-row import results" });
+const resultsTable = (page: Page): Locator => page.getByRole("table", { name: "Import results by row" });
 const resultsRow = (page: Page, rowNumber: number): Locator =>
   resultsTable(page)
     .getByRole("row")
@@ -53,7 +53,7 @@ const rowsReporting = (page: Page, state: string): Locator =>
   resultsTable(page)
     .getByRole("row")
     .filter({ has: page.getByText(state, { exact: true }) }); // Every row of the receipt that reports one state, read from the word the row's badge carries.
-const audienceTable = (page: Page): Locator => page.getByRole("table", { name: "Memberships of this publisher's Update email for this purpose" });
+const audienceTable = (page: Page): Locator => page.getByRole("table", { name: "Subscribers and exclusions for your update emails" });
 async function openJourney(page: Page): Promise<void> {
   await page.goto("/partners/import"); // Opens the journey and states that it starts, as it always starts, at an unchosen file.
   await expect(page.getByRole("heading", { level: 1, name: "Import contacts" })).toBeVisible();
@@ -62,26 +62,26 @@ async function openJourney(page: Page): Promise<void> {
 async function chooseFile(page: Page, path: string, name: string): Promise<void> {
   await page.getByLabel("CSV file").setInputFiles(path); // Chooses one file from disk and continues to the mapping step, which is the first step that reads it.
   await expect(page.getByText(name, { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Continue to Map" }).click();
+  await page.getByRole("button", { name: "Continue to Match columns" }).click();
 }
 async function confirmSuggestedMapping(page: Page): Promise<void> {
-  await expect(stepHeading(page, "Map")).toBeVisible(); // Confirms the mapping the file's own headings suggest, which is the mapping this fixture needs unaltered.
-  await page.getByRole("button", { name: "Confirm the column mapping" }).click();
-  await expect(stepHeading(page, "Validate and review")).toBeVisible();
+  await expect(stepHeading(page, "Match columns")).toBeVisible(); // Confirms the mapping the file's own headings suggest, which is the mapping this fixture needs unaltered.
+  await page.getByRole("button", { name: "Continue to Review rows" }).click();
+  await expect(stepHeading(page, "Review rows")).toBeVisible();
 }
 async function recordDecision(page: Page, marker: string, choice: RegExp, fill?: (row: Locator) => Promise<void>): Promise<void> {
   const row = reviewRow(page, marker);
   await row.getByRole("radio", { name: choice }).click();
   if (fill !== undefined) await fill(row);
-  await row.getByRole("button", { name: /^Record the decision about row /u }).click();
-  await expect(row.getByText("No decision recorded")).toHaveCount(0);
+  await row.getByRole("button", { name: /^Save row /u }).click();
+  await expect(row.getByText("Not decided yet")).toHaveCount(0);
 }
 async function reachAcceptance(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Continue to Selectively accept" }).click(); // Moves from the review to the acceptance, which the recorded decisions are what opens.
-  await expect(stepHeading(page, "Selectively accept")).toBeVisible();
+  await page.getByRole("button", { name: "Continue to Confirm import" }).click(); // Moves from the review to the acceptance, which the recorded decisions are what opens.
+  await expect(stepHeading(page, "Confirm import")).toBeVisible();
 }
 async function acceptReviewedRows(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Accept the reviewed rows" }).click(); // Presses the one acceptance control and waits for the receipt the step moves to once it settles.
+  await page.getByRole("button", { name: "Import selected rows" }).click(); // Presses the one acceptance control and waits for the receipt the step moves to once it settles.
   await expect(stepHeading(page, "Results")).toBeVisible();
 }
 function operationNamedByAddress(page: Page): string {
@@ -91,29 +91,29 @@ function operationNamedByAddress(page: Page): string {
 }
 async function membershipRows(page: Page): Promise<number> {
   await page.goto("/communication/audience"); // Reads the audience's memberships, which is how "this import subscribed nobody" is counted.
-  await expect(page.getByRole("heading", { level: 1, name: "Update email audience" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Email audience" })).toBeVisible();
   await expect(audienceTable(page)).toBeVisible();
   return audienceTable(page).getByRole("row").count();
 }
 test("the example file is mapped, reviewed, decided and accepted, and its receipt states what became of every row", async ({ page }) => {
   const membershipsBefore = await membershipRows(page); // The audience before the import: the memberships the seed laid down. Nothing this test does may add one, because an imported row is a contact and never a subscription (AAP 0.8.5).
-  await expect(page.getByText("A subscribed-style flag, an imported row, a contact edit or an existing partner record is not consent to receive this publisher's Update email for this purpose.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Adding a contact, importing a spreadsheet, or editing an email address never subscribes someone automatically — partners must confirm their own consent.", { exact: true })).toBeVisible();
   await openJourney(page);
   await expect(page.getByText("Development data", { exact: true }).first()).toBeVisible();
-  const limits = page.getByRole("list", { name: "Limits this file is measured against" }); // Step 1 — Choose file. The four limits are stated before a file is chosen, and the simulated boundary is stated beside the control that triggers it, before anything is parsed.
-  for (const value of ["5 MiB", "5,000 nonblank data rows", "60 columns", "2,000 characters per cell"]) await expect(limits).toContainText(value);
+  const limits = page.getByRole("list", { name: "File limits" }); // Step 1 — Choose file. The four limits are stated before a file is chosen, and the simulated boundary is stated beside the control that triggers it, before anything is parsed.
+  for (const value of ["5 MiB", "5,000 rows", "60 columns", "2,000 characters per cell"]) await expect(limits).toContainText(value);
   await chooseFile(page, exampleFixturePath(), EXAMPLE_FILE);
-  await expect(stepHeading(page, "Map")).toBeVisible();
+  await expect(stepHeading(page, "Match columns")).toBeVisible();
   await expect(page.getByText(new RegExp(`${String(FIXTURE.dataRows)} rows · ${String(FIXTURE.columns)} columns`, "u"))).toBeVisible();
-  const mapping = page.getByRole("region", { name: "Imported columns and field mapping" });
-  const mappingGrid = page.getByRole("table", { name: "Imported columns and field mapping" });
+  const mapping = page.getByRole("region", { name: "CSV columns and matched fields" });
+  const mappingGrid = page.getByRole("table", { name: "CSV columns and matched fields" });
   for (const column of ["Column 5", "Column 7"]) await expect(mappingGrid.getByRole("rowheader", { name: column })).toBeVisible();
   const repeatedEmailColumns = mappingGrid.getByRole("row").filter({ hasText: "of 2" });
   await expect(repeatedEmailColumns).toHaveCount(2);
   for (let index = 0; index < 2; index += 1) await expect(repeatedEmailColumns.nth(index)).toContainText("Email");
   for (const text of ["1 of 2", "2 of 2"]) await expect(mapping).toContainText(text);
   for (const column of ["5", "7"]) await expect(mappingGrid.getByLabel(`Field for column ${column}`).getByRole("option", { name: "Email", exact: true })).toHaveCount(1);
-  const subscribedColumn = mappingGrid.getByRole("row").filter({ hasText: "Kept as data, not interpreted" }); // The "Subscribed" column: kept exactly as it arrived, never mapped, with no control offering it a field.
+  const subscribedColumn = mappingGrid.getByRole("row").filter({ hasText: "Kept as data (not consent)" }); // The "Subscribed" column: kept exactly as it arrived, never mapped, with no control offering it a field.
   await expect(subscribedColumn).toHaveCount(1);
   for (const text of ["Subscribed", "Not mapped"]) await expect(subscribedColumn).toContainText(text);
   await expect(mappingGrid.getByLabel("Field for column 10")).toHaveCount(0);
@@ -121,46 +121,46 @@ test("the example file is mapped, reviewed, decided and accepted, and its receip
   await confirmSuggestedMapping(page);
   await expect(reviewTable(page).getByRole("row")).toHaveCount(FIXTURE.dataRows + 1);
   const invalidRow = reviewRow(page, ROW_MARKER.invalidValue);
-  await expect(invalidRow).toContainText("Needs correction");
+  await expect(invalidRow).toContainText("Needs fix");
   await expect(invalidRow).toContainText("is not a complete email address");
   const duplicateRow = reviewRow(page, ROW_MARKER.duplicateLooking);
-  await expect(duplicateRow).toContainText("Existing value");
-  await expect(duplicateRow).toContainText("This row's value");
-  await expect(duplicateRow.getByRole("radio", { name: /Reuse an authorized identity/u })).toBeEnabled();
-  await expect(duplicateRow.getByText("No decision recorded")).toBeVisible();
+  await expect(duplicateRow).toContainText("Existing partner");
+  await expect(duplicateRow).toContainText("From CSV");
+  await expect(duplicateRow.getByRole("radio", { name: /Link to existing partner/u })).toBeEnabled();
+  await expect(duplicateRow.getByText("Not decided yet")).toBeVisible();
   const restrictionRow = reviewRow(page, ROW_MARKER.restriction); // A negative restriction is stated in the row's own words, and no control on this surface can clear it.
   await expect(restrictionRow).toContainText(CARRIED_RESTRICTION);
-  await expect(restrictionRow).toContainText("Kept exactly as written.");
+  await expect(restrictionRow).toContainText("Kept verbatim — restrictions are never edited or removed during import.");
   // The four decisions of this file: reuse the contact row 9 looks like, skip row 10, correct row 12 and create it, and create row 14 with its restriction exactly as the file states it.
-  await recordDecision(page, ROW_MARKER.duplicateLooking, /Reuse an authorized identity/u, async (row) => {
-    await row.getByLabel(`Contact row ${String(ROW.duplicateLooking)} would reuse`).selectOption({ index: 0 });
+  await recordDecision(page, ROW_MARKER.duplicateLooking, /Link to existing partner/u, async (row) => {
+    await row.getByLabel(`Partner to link for row ${String(ROW.duplicateLooking)}`).selectOption({ index: 0 });
   });
-  await recordDecision(page, ROW_MARKER.skipped, /Skip this row/u, async (row) => {
-    await row.getByLabel(`Why row ${String(ROW.skipped)} is skipped (optional)`).fill("The same person is already carried by row 11 of this file.");
+  await recordDecision(page, ROW_MARKER.skipped, /Skip row/u, async (row) => {
+    await row.getByLabel(`Reason for skipping row ${String(ROW.skipped)} (optional)`).fill("The same person is already carried by row 11 of this file.");
   });
-  await recordDecision(page, ROW_MARKER.invalidValue, /Create a new private entry/u, async (row) => {
-    await row.getByLabel(/corrected value for "Email"/u).fill(CORRECTED_EMAIL);
+  await recordDecision(page, ROW_MARKER.invalidValue, /Create private contact/u, async (row) => {
+    await row.getByLabel(/fix “Email”/u).fill(CORRECTED_EMAIL);
   });
-  await recordDecision(page, ROW_MARKER.restriction, /Create a new private entry/u);
+  await recordDecision(page, ROW_MARKER.restriction, /Create private contact/u);
   await reachAcceptance(page); // Step 4 — Selectively accept. The summary states the decision counts the read computed, before anything is accepted, and the notice states what acceptance never does.
-  const division = page.getByRole("region", { name: "How this file's rows divide" });
+  const division = page.getByRole("region", { name: "Row breakdown" });
   await expect(division).toContainText(
-    new RegExp([`Created as a new private entry\\s*${String(DECISIONS.create)}`, `Attached to a contact you reuse\\s*${String(DECISIONS.reuse)}`, `Skipped\\s*${String(DECISIONS.skip)}`, `Left undecided\\s*${String(UNDECIDED_ROWS)}`, `Data rows in the file\\s*${String(FIXTURE.dataRows)}`].join("\\s*"), "u"),
+    new RegExp([`Create private contact\\s*${String(DECISIONS.create)}`, `Link to existing partner\\s*${String(DECISIONS.reuse)}`, `Skipped\\s*${String(DECISIONS.skip)}`, `Undecided\\s*${String(UNDECIDED_ROWS)}`, `Total rows\\s*${String(FIXTURE.dataRows)}`].join("\\s*"), "u"),
   );
-  for (const value of ["No one is subscribed", "A consent-looking column stays as data", "A suggested contact is a proposal, not a merge"]) await expect(page.getByText(value, { exact: true })).toBeVisible();
+  for (const value of ["Nobody is subscribed", "Subscribed/consent columns stay raw data", "Matches are suggestions, not merges"]) await expect(page.getByText(value, { exact: true })).toBeVisible();
   await acceptReviewedRows(page);
   await expect(resultsTable(page).getByRole("row")).toHaveCount(FIXTURE.dataRows + 1);
-  for (const [state, count] of Object.entries({ Accepted: DECISIONS.create + DECISIONS.reuse, Skipped: DECISIONS.skip, "Needs review": UNDECIDED_ROWS, Failed: 0 })) await expect(rowsReporting(page, state)).toHaveCount(count);
-  await expect(resultsRow(page, ROW.invalidValue)).toContainText("Accepted");
-  await expect(resultsRow(page, ROW.duplicateLooking)).toContainText("Accepted");
+  for (const [state, count] of Object.entries({ Imported: DECISIONS.create + DECISIONS.reuse, Skipped: DECISIONS.skip, "Needs review": UNDECIDED_ROWS, Failed: 0 })) await expect(rowsReporting(page, state)).toHaveCount(count);
+  await expect(resultsRow(page, ROW.invalidValue)).toContainText("Imported");
+  await expect(resultsRow(page, ROW.duplicateLooking)).toContainText("Imported");
   await expect(resultsRow(page, ROW.duplicateLooking)).toContainText("that contact itself was not changed");
   for (const text of ["Skipped", "Skipped by the worker's own decision"]) await expect(resultsRow(page, ROW.skipped)).toContainText(text);
   await expect(resultsRow(page, ROW.skipped).getByRole("link")).toHaveCount(0);
   const correctedHref = await resultsRow(page, ROW.invalidValue) // this build and is not rendered here, so the contacts this import created are counted and opened where the receipt itself points — each applied row's own destination — rather than through a list this file cannot read.
-    .getByRole("link", { name: `Open the contact that row ${String(ROW.invalidValue)} became` })
+    .getByRole("link", { name: `Open contact (row ${String(ROW.invalidValue)})` })
     .getAttribute("href");
   const restrictedHref = await resultsRow(page, ROW.restriction)
-    .getByRole("link", { name: `Open the contact that row ${String(ROW.restriction)} became` })
+    .getByRole("link", { name: `Open contact (row ${String(ROW.restriction)})` })
     .getAttribute("href");
   expect(correctedHref, "the corrected row leads to the contact it became").not.toBeNull();
   expect(restrictedHref, "the restricted row leads to the contact it became").not.toBeNull();
@@ -170,7 +170,7 @@ test("the example file is mapped, reviewed, decided and accepted, and its receip
   await expect(page.getByRole("heading", { level: 1, name: "Nadia Rahman" })).toBeVisible();
   await page.goto(restrictedHref);
   await expect(page.getByRole("heading", { level: 1, name: RESTRICTED_NAME })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Restrictions" })).toContainText(CARRIED_RESTRICTION);
+  await expect(page.getByRole("region", { name: "Communication restrictions" })).toContainText(CARRIED_RESTRICTION);
   expect(await membershipRows(page)).toBe(membershipsBefore);
 });
 test("a lost acknowledgement is recovered by the operation's own identity, with no second contact and no subscription", async ({ page }) => {
@@ -178,29 +178,29 @@ test("a lost acknowledgement is recovered by the operation's own identity, with 
   await openJourney(page);
   await chooseFile(page, exampleFixturePath(), EXAMPLE_FILE);
   await confirmSuggestedMapping(page);
-  await recordDecision(page, ROW_MARKER.restriction, /Create a new private entry/u);
+  await recordDecision(page, ROW_MARKER.restriction, /Create private contact/u);
   const operation = operationNamedByAddress(page); // The identity the surface is showing this import under, read before the acceptance so the recovery can be compared with it: the address names the import, and a reload reads that same operation back.
   await armLostAcknowledgementOnAcceptance(page);
   await reachAcceptance(page);
-  await page.getByRole("button", { name: "Accept the reviewed rows" }).click();
-  await expect(page.getByRole("heading", { name: "Result not confirmed" })).toBeVisible();
-  await expect(page.getByText("The acceptance's acknowledgement was lost", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Import selected rows" }).click();
+  await expect(page.getByRole("heading", { name: "Couldn’t confirm result" })).toBeVisible();
+  await expect(page.getByText("Couldn’t confirm import", { exact: true })).toBeVisible();
   await expect(page.getByText(/Operation [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/u).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry the same request" })).toBeVisible();
-  await expect(page.getByText(/Nothing here starts a second attempt: retrying sends this same operation, which answers with its original result instead of repeating the effect\./u).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry request" })).toBeVisible();
+  await expect(page.getByText(/replays the original request rather than applying it twice/u).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /resend|send again|send it again|send a new one/iu })).toHaveCount(0);
-  await page.getByRole("button", { name: "Check whether this import was accepted" }).click(); // Checking that same operation reads back what happened and applies nothing, which is the recovery the criterion asks for: one accepted row, no second contact, and no decision sent again.
+  await page.getByRole("button", { name: "Check import status" }).click(); // Checking that same operation reads back what happened and applies nothing, which is the recovery the criterion asks for: one accepted row, no second contact, and no decision sent again.
   await expect(stepHeading(page, "Results")).toBeVisible();
   await expect(resultsTable(page).getByRole("row")).toHaveCount(FIXTURE.dataRows + 1);
-  for (const [state, count] of Object.entries({ Accepted: 1, "Accepted earlier": 0, "Needs review": FIXTURE.dataRows - 1 })) await expect(rowsReporting(page, state)).toHaveCount(count);
+  for (const [state, count] of Object.entries({ Imported: 1, "Already imported": 0, "Needs review": FIXTURE.dataRows - 1 })) await expect(rowsReporting(page, state)).toHaveCount(count);
   expect(operationNamedByAddress(page)).toBe(operation);
   await page.reload();
-  await expect(page.getByText("This import has already finished", { exact: true })).toBeVisible();
+  await expect(page.getByText("This import is already complete", { exact: true })).toBeVisible();
   expect(operationNamedByAddress(page)).toBe(operation);
   await expect(resultsTable(page).getByRole("row")).toHaveCount(FIXTURE.dataRows + 1);
-  for (const [state, count] of Object.entries({ Accepted: 1, "Accepted earlier": 0 })) await expect(rowsReporting(page, state)).toHaveCount(count);
-  await expect(resultsTable(page).getByRole("link", { name: /^Open the contact that row /u })).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Accept the reviewed rows" })).toHaveCount(0);
+  for (const [state, count] of Object.entries({ Imported: 1, "Already imported": 0 })) await expect(rowsReporting(page, state)).toHaveCount(count);
+  await expect(resultsTable(page).getByRole("link", { name: /^Open contact \(row /u })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Import selected rows" })).toHaveCount(0);
   expect(await membershipRows(page)).toBe(membershipsBefore);
   await clearFailurePlan(page.request);
 });
@@ -209,48 +209,48 @@ test("stopping an import after it accepted a row leaves that contact and stops o
   await openJourney(page);
   await chooseFile(page, exampleFixturePath(), EXAMPLE_FILE);
   await confirmSuggestedMapping(page);
-  await recordDecision(page, ROW_MARKER.restriction, /Create a new private entry/u);
+  await recordDecision(page, ROW_MARKER.restriction, /Create private contact/u);
   await reachAcceptance(page);
   await acceptReviewedRows(page);
-  await expect(rowsReporting(page, "Accepted")).toHaveCount(1);
+  await expect(rowsReporting(page, "Imported")).toHaveCount(1);
   await expect(rowsReporting(page, "Skipped")).toHaveCount(0);
-  await expect(page.getByText(/Stopping applies nothing further: a row this import already applied keeps the record it became, and every row it has not applied is stopped\./u).first()).toBeVisible();
-  await expect(page.getByText(/It withdraws no contact this import created and recalls no message, because an import sends none\./u).first()).toBeVisible();
-  await page.getByRole("button", { name: "Stop the rows not yet applied" }).click();
+  await expect(page.getByText(/Cancels any rows that haven’t been imported yet\. Contacts already created stay in your list\./u).first()).toBeVisible();
+  await expect(page.getByText(/Nothing else is sent, recorded, or subscribed unless listed here\./u).first()).toBeVisible();
+  await page.getByRole("button", { name: "Stop remaining rows" }).click();
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Stop this import");
-  await expect(dialog).toContainText("Confirming applies this change once.");
-  await dialog.getByRole("button", { name: "Stop the rows not yet applied" }).click();
-  await expect(rowsReporting(page, "Accepted")).toHaveCount(1);
+  await expect(dialog).toContainText("This takes effect right away once you confirm.");
+  await dialog.getByRole("button", { name: "Stop remaining rows" }).click();
+  await expect(rowsReporting(page, "Imported")).toHaveCount(1);
   await expect(rowsReporting(page, "Skipped")).toHaveCount(FIXTURE.dataRows - 1);
-  await expect(resultsRow(page, ROW.restriction)).toContainText("Accepted");
+  await expect(resultsRow(page, ROW.restriction)).toContainText("Imported");
   await expect(resultsTable(page).getByText("Stopped by the cancellation before acceptance").first()).toBeVisible();
   const keptHref = await resultsRow(page, ROW.restriction)
-    .getByRole("link", { name: `Open the contact that row ${String(ROW.restriction)} became` })
+    .getByRole("link", { name: `Open contact (row ${String(ROW.restriction)})` })
     .getAttribute("href");
   expect(keptHref, "the accepted row still leads to the contact it became").not.toBeNull();
   if (keptHref === null) throw new Error("The accepted row keeps its destination after the cancellation, so it cannot be absent here.");
   await page.goto(keptHref);
   await expect(page.getByRole("heading", { level: 1, name: RESTRICTED_NAME })).toBeVisible();
-  await expect(page.getByRole("region", { name: "Restrictions" })).toContainText(CARRIED_RESTRICTION);
+  await expect(page.getByRole("region", { name: "Communication restrictions" })).toContainText(CARRIED_RESTRICTION);
   expect(await membershipRows(page)).toBe(membershipsBefore);
 });
 test("a file over the row limit and a workbook are each refused before a single row is read", async ({ page }, testInfo) => {
   const inputs = writeRefusalInputs((name) => testInfo.outputPath(name));
   await openJourney(page);
   await chooseFile(page, inputs.tooManyRows, "contacts-over-the-row-limit.csv");
-  await expect(page.getByText("This file was not processed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Couldn’t process this file", { exact: true })).toBeVisible();
   await expect(page.getByText(/at least 5001 nonblank data rows/u)).toBeVisible();
   await expect(page.getByText(/the limit is 5000 nonblank data rows/u)).toBeVisible();
   await expect(stepHeading(page, "Choose file")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Confirm the column mapping" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Continue to Review rows" })).toHaveCount(0);
   await expect(page.getByRole("table", { name: REVIEW_TABLE })).toHaveCount(0);
-  await expect(page.getByText("synthetic files only; a successful local parse is not a safety qualification", { exact: true })).toBeVisible();
+  await expect(page.getByText("Sample import only — files are parsed locally and not virus-scanned.", { exact: true })).toBeVisible();
   await chooseFile(page, inputs.workbook, "contacts.xlsx"); // The workbook: a file whose own bytes say it is a ZIP container, whatever its name suggests. A filename or an extension never establishes type, so this is refused as a workbook rather than parsed as text.
   await expect(page.getByText(/spreadsheet workbook, not a CSV/u)).toBeVisible();
   await expect(stepHeading(page, "Choose file")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Confirm the column mapping" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Continue to Review rows" })).toHaveCount(0);
   await expect(page.getByRole("table", { name: REVIEW_TABLE })).toHaveCount(0);
 });
 test("a file over the size limit is refused in the browser, before its bytes are read or sent", async ({ page }, testInfo) => {
@@ -264,19 +264,19 @@ test("a file over the size limit is refused in the browser, before its bytes are
   await input.setInputFiles(path);
   await expect(input, "The refusal is stated at the control the file was chosen with, and that control is marked invalid as it is after a failed read.").toHaveAttribute("aria-invalid", "true");
   await expect(page.getByText(/This file is 5242907 bytes; the limit is 5242880 bytes \(5 MiB\)/u), "The refusal names the size this file measures and the 5 MiB limit it passes.").toBeVisible();
-  await expect(page.getByText(/did not read that file and sent nothing/u), "The chooser states what happened here: the file was not read, and nothing from it was sent to the importer.").toBeVisible();
-  await expect(page.getByText(/^No file chosen yet\./u), "No file stands as the chosen one, so the step says none is chosen rather than naming a file the importer would refuse.").toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue to Map" })).toBeDisabled();
+  await expect(page.getByText(/The file wasn’t read or uploaded\./u), "The chooser states what happened here: the file was not read, and nothing from it was sent to the importer.").toBeVisible();
+  await expect(page.getByText(/^No file selected yet\./u), "No file stands as the chosen one, so the step says none is chosen rather than naming a file the importer would refuse.").toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue to Match columns" })).toBeDisabled();
   await expect(input, "Another file can be chosen at once: nothing is left reading, because nothing was read.").toBeEnabled();
   await expect(stepHeading(page, "Choose file")).toBeVisible();
-  await expect(stepHeading(page, "Map"), "The journey stays at the step that refused the file, so no later step is reached with it.").toHaveCount(0);
+  await expect(stepHeading(page, "Match columns"), "The journey stays at the step that refused the file, so no later step is reached with it.").toHaveCount(0);
   await page.getByLabel("CSV file").setInputFiles(exampleFixturePath()); // A file the importer accepts, chosen after the refusal: the step reads it as it reads any other, so the guard has cost the worker nothing.
   await expect(page.getByText(EXAMPLE_FILE, { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue to Map" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Continue to Match columns" })).toBeEnabled();
   await input.setInputFiles(path); // The over-limit file again, now that an accepted file stands: the refusal is stated and that file stays exactly as it was chosen, rather than being cleared by a file the browser read nothing from.
-  await expect(page.getByText(/did not read that file and sent nothing/u)).toBeVisible();
+  await expect(page.getByText(/The file wasn’t read or uploaded\./u)).toBeVisible();
   await expect(page.getByText(EXAMPLE_FILE, { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Continue to Map" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Continue to Match columns" })).toBeEnabled();
   expect(posted, "The over-limit file never became a request, so the service was asked to judge no body at all.").toEqual([]);
 });
 test("a decision whose revision moved on states the conflict beside the decision it kept, and the reread rows let it be recorded", async ({ page }) => {
@@ -300,35 +300,35 @@ test("a decision whose revision moved on states the conflict beside the decision
     await route.continue();
   });
   const press = async (row: Locator): Promise<void> => {
-    await row.getByRole("radio", { name: "Create a new private entry" }).click();
-    await row.getByRole("button", { name: /^Record the decision about row /u }).click();
+    await row.getByRole("radio", { name: "Create private contact" }).click();
+    await row.getByRole("button", { name: /^Save row /u }).click();
   };
   const firstRow = reviewRow(page, ROW_MARKER.duplicateLooking);
   const secondRow = reviewRow(page, ROW_MARKER.restriction);
   await press(firstRow);
-  await expect(firstRow.getByRole("button", { name: `Recording the decision about row ${String(ROW.duplicateLooking)}…` }), "A row whose own decision is in flight states that it is recording it, rather than looking idle while it waits.").toBeVisible();
+  await expect(firstRow.getByRole("button", { name: `Saving row ${String(ROW.duplicateLooking)}…` }), "A row whose own decision is in flight states that it is recording it, rather than looking idle while it waits.").toBeVisible();
   await press(secondRow);
-  await expect(page.getByRole("button", { name: /^Recording the decision about row /u }), "Every attempt settles, so no row is left reading as if its decision were still being recorded.").toHaveCount(0);
-  const conflict = page.locator('[role="alert"]').filter({ hasText: "the review changed before it arrived" });
+  await expect(page.getByRole("button", { name: /^Saving row /u }), "Every attempt settles, so no row is left reading as if its decision were still being recorded.").toHaveCount(0);
+  const conflict = page.locator('[role="alert"]').filter({ hasText: "updated elsewhere before your change arrived" });
   await expect(conflict, "A stale revision is answered on the row it refused with the conflict outcome, rather than with silence or a changed decision.").toBeVisible();
   const panel = (await conflict.innerText()).replace(/\s+/gu, " ");
-  const named = /Decision about row (\d+)/u.exec(panel);
+  const named = /Row (\d+) changed elsewhere/u.exec(panel);
   expect(named, "The conflict names the row whose decision it refused.").not.toBeNull();
   const refusedRowNumber = Number(named?.[1] ?? "");
   expect([ROW.duplicateLooking, ROW.restriction], "The conflict is about one of the two rows this test pressed back to back.").toContain(refusedRowNumber);
   // Which of the two rows was refused is read off the rows themselves — the refused row recorded nothing, so it is the one still stating that no decision is recorded — and the conflict's own title is checked against it rather than trusted on its own.
-  const firstStillUndecided = (await firstRow.getByText("No decision recorded").count()) > 0;
+  const firstStillUndecided = (await firstRow.getByText("Not decided yet").count()) > 0;
   const refusedRow = firstStillUndecided ? firstRow : secondRow;
   const recordedRow = firstStillUndecided ? secondRow : firstRow;
   expect(refusedRowNumber, "The row the conflict names is the row whose decision recorded nothing.").toBe(firstStillUndecided ? ROW.duplicateLooking : ROW.restriction);
   // The conflict states the record's current value beside the caller's preserved input (AAP 0.7.1): the revision the review now stands at, the decision this attempt posted, and the decision the review now holds for that row.
-  for (const stated of ["Current revision", "rev-", "The decision you recorded", "Create a new private entry", "The decision the review now holds"]) expect(panel, `The conflict states ${JSON.stringify(stated)}.`).toContain(stated);
+  for (const stated of ["Current version", "rev-", "Your choice", "Create private contact", "Saved choice"]) expect(panel, `The conflict states ${JSON.stringify(stated)}.`).toContain(stated);
   expect(statuses.slice().sort(), "One decision was accepted at the revision both presented, and the other was refused as stale.").toEqual([200, 409]);
-  await expect(recordedRow.getByText("No decision recorded"), "The decision that reached the service first is recorded, so this row no longer states that none is.").toHaveCount(0);
-  await expect(refusedRow.getByText("No decision recorded"), "The refused row recorded nothing, so it still states that no decision is recorded for it.").toBeVisible();
-  await refusedRow.getByRole("button", { name: /^Record the decision about row /u }).click(); // The recovery the panel promises: the row kept the decision, and pressing it again submits against the revision the reread rows state.
-  await expect(refusedRow.getByText("No decision recorded"), "The kept decision is recorded once the row is pressed against the revision the review now stands at.").toHaveCount(0);
-  await expect(page.locator('[role="alert"]').filter({ hasText: "the review changed before it arrived" }), "Recording the decision again clears the conflict it was refused with.").toHaveCount(0);
-  await expect(refusedRow.getByText(new RegExp(`already recorded for row ${String(refusedRowNumber)}`, "u")), "The row reports the decision it now holds rather than offering the same one again.").toBeVisible();
+  await expect(recordedRow.getByText("Not decided yet"), "The decision that reached the service first is recorded, so this row no longer states that none is.").toHaveCount(0);
+  await expect(refusedRow.getByText("Not decided yet"), "The refused row recorded nothing, so it still states that no decision is recorded for it.").toBeVisible();
+  await refusedRow.getByRole("button", { name: /^Save row /u }).click(); // The recovery the panel promises: the row kept the decision, and pressing it again submits against the revision the reread rows state.
+  await expect(refusedRow.getByText("Not decided yet"), "The kept decision is recorded once the row is pressed against the revision the review now stands at.").toHaveCount(0);
+  await expect(page.locator('[role="alert"]').filter({ hasText: "updated elsewhere before your change arrived" }), "Recording the decision again clears the conflict it was refused with.").toHaveCount(0);
+  await expect(refusedRow.getByText(new RegExp(`Saved for row ${String(refusedRowNumber)}\\.`, "u")), "The row reports the decision it now holds rather than offering the same one again.").toBeVisible();
   await page.unroute("**/api/import/decisions");
 });

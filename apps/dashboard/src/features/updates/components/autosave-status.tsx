@@ -14,27 +14,27 @@ type RecoveryOffer = { readonly retrySameWork: boolean; readonly checkResult: bo
 const NO_OFFER: RecoveryOffer = { retrySameWork: false, checkResult: false };
 const RETRY_ONLY: RecoveryOffer = { retrySameWork: true, checkResult: false };
 const RETRY_OR_CHECK: RecoveryOffer = { retrySameWork: true, checkResult: true };
-const UNSAVED_DETAIL = "The editor sends a change after a short pause, and until an answer comes back the service still holds the earlier draft: nothing typed here has reached the record yet.";
-const SAVING_DETAIL = "No second attempt starts while one is in flight, so one pause cannot produce two saves. Whether the text was stored is stated only once the service answers.";
-const SAVED_DETAIL = "An acknowledgement records this text against that revision and states nothing more: it is not a review, not a release and not a notice.";
-const KEPT_WITH_COPY = "That copy lives in this tab's own storage and nowhere else: nobody else sees it, it is not the saved draft, and it ends with the tab.";
-const KEPT_WITHOUT_COPY = "The editor holds the text on screen, and this browser keeps no separate copy of it: leaving the page would lose it.";
-const LOCAL_ONLY = "This browser also keeps text from an earlier attempt that this editor is not showing. That copy exists only in this browser: the service has never acknowledged it, nobody else can see it, and it is not part of the draft record.";
-const NOT_ACKNOWLEDGED = "The service did not acknowledge this text, so nothing was saved.";
+const UNSAVED_DETAIL = "Changes save automatically after a brief pause.";
+const SAVING_DETAIL = "Saving your draft now — waiting for confirmation.";
+const SAVED_DETAIL = "Saved as a private draft (not yet reviewed, published, or emailed).";
+const KEPT_WITH_COPY = "Your unsaved text is backed up in this browser tab until you retry or discard it.";
+const KEPT_WITHOUT_COPY = "Your text is still in the editor, but leaving this page without saving will lose it.";
+const LOCAL_ONLY = "This browser also has an unconfirmed backup from an earlier save attempt.";
+const NOT_ACKNOWLEDGED = "Couldn’t confirm your save.";
 function savedStatement(revision: Revision | null, asOf: string | null): ReactNode {
   const statedRevision = revision?.trim() ?? "";
   const statedAsOf = asOf?.trim() ?? "";
-  if (statedRevision === "") return "Saved — the service acknowledged this text and stated no revision for it.";
+  if (statedRevision === "") return "Draft saved.";
   if (statedAsOf === "") {
     return (
       <>
-        Saved — acknowledged revision <bdi className="mono-identifier">{statedRevision}</bdi>.
+        Draft saved (revision <bdi className="mono-identifier">{statedRevision}</bdi>).
       </>
     );
   }
   return (
     <>
-      Saved — acknowledged revision <bdi className="mono-identifier">{statedRevision}</bdi> at <bdi className="mono-identifier">{statedAsOf}</bdi>.
+      Draft saved (revision <bdi className="mono-identifier">{statedRevision}</bdi> at <bdi className="mono-identifier">{statedAsOf}</bdi>).
     </>
   );
 }
@@ -46,23 +46,23 @@ function savedStatement(revision: Revision | null, asOf: string | null): ReactNo
     for (const message of messages) lines.push(`${path}: ${message}`);
   }
   lines.push(...form);
-  return lines.length > 4 ? [...lines.slice(0, 4), "There are more problems than these; fix these first."] : lines;
+  return lines.length > 4 ? [...lines.slice(0, 4), "Fix these issues first to see any remaining errors."] : lines;
 }
 function refusalDetail(outcome: MutationOutcome | null): ReactNode {
   if (outcome === null) return NOT_ACKNOWLEDGED;
   switch (outcome.outcome) {
     case "invalid":
-      return refusedFieldLines(outcome).length === 0 ? "The service refused this text, so nothing was saved, and it named no field this line can repeat." : "The service refused at least one field, so nothing was saved. Each field it refused is stated below in the service's own words.";
+      return refusedFieldLines(outcome).length === 0 ? "Couldn’t save — check your draft for issues and try again." : "Couldn’t save — fix the fields listed below.";
     case "unavailable":
       return (
         <>
-          The source that holds this draft could not be read, so nothing was saved. It named itself <bdi className="mono-identifier">{outcome.source.system}</bdi> with reference <bdi className="mono-identifier">{outcome.source.reference}</bdi>.
+          Couldn’t reach the draft service (<bdi className="mono-identifier">{outcome.source.system}</bdi>, <bdi className="mono-identifier">{outcome.source.reference}</bdi>).
         </>
       );
     case "denied":
       return (
         <>
-          This session may not save this draft, so nothing was saved. The reason the service gave is <bdi className="mono-identifier">{outcome.reasonCode}</bdi>.
+          Your session doesn’t have permission to save this draft (<bdi className="mono-identifier">{outcome.reasonCode}</bdi>).
         </>
       );
     default:
@@ -72,21 +72,21 @@ function refusalDetail(outcome: MutationOutcome | null): ReactNode {
 function conflictDetail(outcome: MutationOutcome | null, acknowledgedRevision: Revision | null): ReactNode {
   const current = outcome !== null && outcome.outcome === "conflict" ? outcome.currentRevision.trim() : "";
   const acknowledged = acknowledgedRevision?.trim() ?? "";
-  if (current === "") return "This editor's revision is no longer the one the service holds, so nothing was saved.";
+  if (current === "") return "This draft was updated elsewhere while you were editing, so your changes weren’t saved yet.";
   if (acknowledged === "") {
     return (
       <>
-        The service reports that this draft now stands at revision <bdi className="mono-identifier">{current}</bdi>, which is not the revision this editor was working from.
+        This draft is now at revision <bdi className="mono-identifier">{current}</bdi> on the server.
       </>
     );
   }
   return (
     <>
-      The service reports that this draft now stands at revision <bdi className="mono-identifier">{current}</bdi>, while this editor last had revision <bdi className="mono-identifier">{acknowledged}</bdi> acknowledged.
+      This draft moved to revision <bdi className="mono-identifier">{current}</bdi> (your editor was on <bdi className="mono-identifier">{acknowledged}</bdi>).
     </>
   );
 }
-const CONFLICT_RETRY = "Retrying the same work resends your text against the revision the service reported, so your text becomes the saved draft if the service accepts it and what the record holds now is replaced.";
+const CONFLICT_RETRY = "Retry save to apply your text on top of the latest revision.";
 function unknownDetails(outcome: MutationOutcome | null, keepsText: boolean): readonly ReactNode[] {
   const details: ReactNode[] = [];
   const operationId = outcome !== null && outcome.outcome === "unknown" ? outcome.operationId.trim() : "";
@@ -97,7 +97,7 @@ function unknownDetails(outcome: MutationOutcome | null, keepsText: boolean): re
       </>,
     );
   }
-  details.push("Nothing is resent on its own. Checking the result reads that same attempt again and reveals what the service recorded; retrying the same work resubmits this text under the attempt's own identity, so a save that did apply returns its original result instead of saving twice.");
+  details.push("Check status to see if the save completed, or retry safely without creating a duplicate save.");
   details.push(keepsText ? KEPT_WITH_COPY : KEPT_WITHOUT_COPY);
   return details;
 }
@@ -106,28 +106,28 @@ function wordingOf({ state, outcome, acknowledgedRevision, acknowledgedAsOf, kee
   const kept = keepsText ? KEPT_WITH_COPY : KEPT_WITHOUT_COPY;
   switch (state) {
     case "idle":
-      return { word: "Not yet saved", badge: "outline", statement: "Not yet saved — nothing has changed yet, so no save has been asked for.", details: ["The saved draft still holds what the service last recorded. A change becomes an unsaved change as soon as the editor reports it."], offers: NO_OFFER };
+      return { word: "Up to date", badge: "outline", statement: "No unsaved edits.", details: ["Start typing to update your draft — changes autosave after a brief pause."], offers: NO_OFFER };
     case "unsaved":
-      return { word: "Unsaved changes", badge: "secondary", statement: "Unsaved changes — this text has not reached the service yet.", details: [UNSAVED_DETAIL], offers: NO_OFFER };
+      return { word: "Unsaved changes", badge: "secondary", statement: "Unsaved edits — waiting to autosave.", details: [UNSAVED_DETAIL], offers: NO_OFFER };
     case "saving":
-      return { word: "Saving", badge: "secondary", statement: "Saving — one attempt is in flight, and this line states nothing about the text until the service answers.", details: [SAVING_DETAIL], offers: NO_OFFER };
+      return { word: "Saving…", badge: "secondary", statement: "Saving your draft…", details: [SAVING_DETAIL], offers: NO_OFFER };
     case "saved":
       return { word: "Saved", badge: "default", statement: savedStatement(acknowledgedRevision, acknowledgedAsOf), details: [SAVED_DETAIL, DRAFT_VS_RELEASED.draftIsNotWhatReadersSee], offers: NO_OFFER };
     case "failed-local-kept":
-      return { word: "Not saved", badge: "destructive", statement: "Not saved — your text is kept in this browser.", details: [refusalDetail(outcome), ...refusedFieldLines(outcome), kept], offers: RETRY_ONLY };
+      return { word: "Not saved", badge: "destructive", statement: "Couldn’t save — your text is kept locally.", details: [refusalDetail(outcome), ...refusedFieldLines(outcome), kept], offers: RETRY_ONLY };
     case "conflict":
-      return { word: "Not saved", badge: "destructive", statement: "Not saved — the record changed; your text is kept.", details: [conflictDetail(outcome, acknowledgedRevision), CONFLICT_RETRY, kept], offers: RETRY_ONLY };
+      return { word: "Conflict", badge: "destructive", statement: "Draft updated elsewhere — your text is kept locally.", details: [conflictDetail(outcome, acknowledgedRevision), CONFLICT_RETRY, kept], offers: RETRY_ONLY };
     case "unknown":
-      return { word: "Result unknown", badge: "outline", statement: "The save may or may not have been applied — the acknowledgement was lost.", details: unknownDetails(outcome, keepsText), offers: RETRY_OR_CHECK };
+      return { word: "Save unconfirmed", badge: "outline", statement: "Your save may have succeeded, but the confirmation was lost.", details: unknownDetails(outcome, keepsText), offers: RETRY_OR_CHECK };
     default:
       return assertNever(state, "Unhandled autosave state");
   }
 }
-const DISCARD_LABELS = { action: "Discard this browser's copy", title: "Discard the copy this browser kept?", confirm: "Discard the copy", cancel: "Keep the copy" } as const;
+const DISCARD_LABELS = { action: "Discard local backup", title: "Discard local browser backup?", confirm: "Discard backup", cancel: "Keep backup" } as const;
 const DISCARD_STATEMENTS = {
-  scope: "This removes only the copy this browser kept of text the service never acknowledged.",
-  onScreen: "It removes nothing from the text on screen, and nothing from the draft record: the editor keeps showing exactly what was typed.",
-  irreversible: "It cannot be undone from here. Once the copy is discarded, this browser has nothing to offer back after a reload.",
+  scope: "Removes the unconfirmed backup copy saved in this browser tab.",
+  onScreen: "Doesn’t change the text currently in the editor or your saved draft on the server.",
+  irreversible: "Once discarded, this backup can’t be restored if you reload the page.",
 } as const;
 function DiscardLocalRecoveryControl({ onDiscard }: { readonly onDiscard: () => void }): ReactElement {
   const [open, setOpen] = useState(false);
@@ -203,8 +203,8 @@ const MARK_STATE: Readonly<Record<AutosaveState, StatusMarkState>> = {
       </div>
       {offersActions ? (
         <div data-slot="autosave-status-actions" className="flex min-w-0 flex-wrap items-center gap-2">
-          {retry === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: retry }}>{"Retry the same work"}</Button>}
-          {checkResult === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: checkResult }}>{"Check the result"}</Button>}
+          {retry === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: retry }}>{"Retry save"}</Button>}
+          {checkResult === null ? null : <Button {...{ type: "button", size: "sm", variant: "outline", onClick: checkResult }}>{"Check status"}</Button>}
           {localRecovery.present ? <DiscardLocalRecoveryControl onDiscard={discard} /> : null}
         </div>
       ) : null}

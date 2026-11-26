@@ -3,25 +3,24 @@ import Link from "next/link";
 import SimulationLabel from "@/components/simulation-label";
 import { Separator } from "@/components/ui/separator";
 import { HelpContent } from "@/features/shell/components/help-content";
-const PAGE_TITLE = "Help";
-export const metadata: Metadata = { title: PAGE_TITLE, description: "Guidance for the workflows in this first release." };
+const PAGE_TITLE = "Help & guide";
+export const metadata: Metadata = { title: PAGE_TITLE, description: "Practical guides for staying connected with partners, tracking support, sharing updates, and using your missionary workspace." };
 const CONTENTS_ID = "on-this-page";
-const INTRODUCTION =
-  "This page covers the five workflows of the first release and nothing outside them. Every record in the application is synthetic, and every external effect is simulated and labelled where you trigger it. The Development data label sits in the application shell on every screen, including this one, and cannot be dismissed.";
+const INTRODUCTION = "Practical guides for every workflow in your missionary workspace. Everything here runs on local sample data, and any simulated action is clearly labelled where you use it.";
 const BODY_TEXT = "type-supporting text-pretty wrap-anywhere";
 const STEP_HEADING = "type-subsection-title text-pretty wrap-anywhere";
 const INLINE_LINK = "inline-flex min-h-6 items-center rounded-sm font-medium inline-link";
 const SECTIONS = [
-  { id: "journey-import-a-contact", label: "Add a contact and create the next task" },
-  { id: "journey-giving-investigation", label: "Investigate a giving change and export it" },
-  { id: "journey-update-publication", label: "Write, review and publish an Update" },
-  { id: "journey-pages-release", label: "Compose, release and withdraw a Page" },
-  { id: "journey-outreach-coaching", label: "Work outreach and a series, then share coaching" },
-  { id: "simulated-effects", label: "The Development data label and simulated effects" },
-  { id: "development-controls", label: "Development controls" },
-  { id: "session-context-settings", label: "Session states, context and settings" },
-  { id: "keyboard-and-display", label: "Keyboard, small screens, zoom and reduced motion" },
-  { id: "known-limitations", label: "Known limitations" },
+  { id: "journey-import-a-contact", label: "Add or import a partner and plan your next step" },
+  { id: "journey-giving-investigation", label: "Check monthly support, drill into gifts, and export" },
+  { id: "journey-update-publication", label: "Write, review, and share a ministry update" },
+  { id: "journey-pages-release", label: "Build, publish, and manage a ministry page" },
+  { id: "journey-outreach-coaching", label: "Run outreach, repeating tasks, and coaching" },
+  { id: "simulated-effects", label: "Sample data and simulated actions" },
+  { id: "development-controls", label: "Development tools" },
+  { id: "session-context-settings", label: "Access, switching ministries, and settings" },
+  { id: "keyboard-and-display", label: "Keyboard navigation, small screens, and accessibility" },
+  { id: "known-limitations", label: "Good to know" },
 ] as const;
 type SectionEntry = (typeof SECTIONS)[number];
 type SectionId = SectionEntry["id"];
@@ -31,207 +30,203 @@ type JourneyStep = { readonly title: string; readonly body: string; readonly bou
 type Journey = { readonly heading: string; readonly steps: readonly JourneyStep[] };
 const JOURNEYS: Readonly<Record<JourneyId, Journey>> = {
   "journey-import-a-contact": {
-    heading: "Import or add a contact → review context → log an actual interaction → create a next task.",
+    heading: "Add or import a partner → review their profile → log activity → create a follow-up task",
     steps: [
       {
-        title: "Add a private contact, or bring a list in",
-        body: "A private contact needs a name and nothing else, and stays your own preparation until you deliberately link it to a shared record. A list arrives through five steps — Choose file, Map, Validate and review, Selectively accept, Results — and the limits are stated before processing begins: 5 MiB, 5,000 nonblank rows, 60 columns and 2,000 characters per cell.",
-        boundary: "A column that looks like a subscription flag is never consent, importing or editing a " + "contact subscribes no one, and a duplicate suggestion never merges two records. The importer-safety label sits beside the file you submit.",
-        links: [{ href: "/partners/import", label: "the contact import journey" }],
+        title: "Add a private contact or import a list",
+        body: "Start with a name to create a private contact that only you can see until you link it to a shared partner record. To bring in a spreadsheet, Import contacts walks you through five steps: Choose file, Match columns, Review rows, Confirm import, and Results (up to 5 MiB, 5,000 rows, 60 columns).",
+        boundary: "Importing contacts never subscribes anyone to emails and never merges duplicates automatically.",
+        links: [{ href: "/partners/import", label: "Open Import contacts" }],
       },
       {
-        title: "Review the context before you act",
-        body: "A record opens into identity, permitted contact methods, restrictions, the relationship " + "context, actual activity, private notes, open tasks and the support history you are " + "authorised to read.",
-        boundary: "Private preparation and private notes stay private: they never appear in a shared projection, an export, or another record's audience.",
-        links: [{ href: "/partners", label: "the Partners roster" }],
+        title: "Review their profile before reaching out",
+        body: "Open any partner to see contact details, communication restrictions, relationship details, logged activity, private notes, open tasks, and giving history.",
+        boundary: "Private contacts and private notes stay visible only to you — never shared with coaches or included in exports.",
+        links: [{ href: "/partners", label: "Open Partners" }],
       },
       {
-        title: "Log an interaction that actually happened",
-        body: "An interaction records something that took place, with a date or honest precision, an outcome, the participants and a note labelled with the audience it belongs to.",
-        boundary: "A gift, a scheduled task, or opening a mail or dialer app is not an interaction.",
+        title: "Log a conversation or visit",
+        body: "Record calls, meetings, emails, or thank-yous with the date (or approximate month/year), outcome, participants, and notes.",
+        boundary: "Activity logs real interactions only — separate from gifts, scheduled tasks, or simply opening your email app.",
       },
       {
-        title: "Create the next task",
-        body: "The task needs only a title. A due date is a civil date rather than a fabricated midnight, and a meeting's planned time is not the time it was held.",
-        boundary: "If the task cannot be created, the interaction you already saved is not submitted again: the two are separate attempts with separate results. Completing the task proves the task is done and nothing about contact or payment.",
-        links: [{ href: "/work", label: "the Work lists" }],
+        title: "Create your next follow-up task",
+        body: "Add a task with a title and optional due date so no relationship slips through the cracks.",
+        boundary: "Completing a task marks the reminder done — log an activity separately if you want a conversation recorded.",
+        links: [{ href: "/work", label: "Open Tasks" }],
       },
     ],
   },
   "journey-giving-investigation": {
-    heading: "Investigate a monthly or yearly giving change → drill into exact records → return with filters intact → export the complete result.",
+    heading: "Review monthly support → inspect individual gifts → return without losing filters → export CSV",
     steps: [
       {
-        title: "Read the month, then open the ledger",
-        body: "Received support is stated on one named basis: effective cash allocations attributed to the " + "original gift date, in a stated currency and period, at a stated coverage and as-of time. " + "The ledger lists the records behind it, 50 rows at a time by default and 200 at most.",
-        boundary: "Mixed currencies stay separate with no combined total, a gift whose currency is unknown is never given one, and a missing month is a gap rather than a zero.",
+        title: "Check your monthly overview and gift ledger",
+        body: "Support shows your received gifts (effective cash allocations attributed to each gift’s original date), active commitments, and progress toward your monthly goal. Open Gifts to browse or filter individual entries (50 rows per page by default, up to 200).",
+        boundary: "Currencies are never mixed into a single combined total, unknown currencies stay clearly marked, and missing months appear as gaps rather than fake zeros.",
         links: [
-          { href: "/support", label: "the Support overview" },
-          { href: "/support/gifts", label: "the Gifts ledger" },
+          { href: "/support", label: "Open Support" },
+          { href: "/support/gifts", label: "Open Gifts" },
         ],
       },
       {
-        title: "Drill into the exact records",
-        body: "A cell in the partner-by-month matrix opens the gifts behind it, and four fixed reports are the whole set: monthly and year-to-date received with an equal-elapsed-period comparison, monthly history for a chosen year, the partner-by-month matrix, and period comparison with a signed difference and reconciling contributor deltas.",
-        boundary: "There is no report designer and no fifth report. A split gift counts once at its own grain, and a refund is explained in detail rather than hidden.",
+        title: "Explore the four support reports",
+        body: "Use the built-in reports to compare this month and year-to-date against last year, view monthly history by year, inspect giving by partner and month, or see exactly what changed between two periods. Click any partner-by-month cell to jump straight to those gifts.",
+        boundary: "Split gifts count once at their grain, and refunds are shown clearly rather than hidden.",
       },
       {
-        title: "Return with the filters you left",
-        body: "The filter, the sort and the scroll position you drilled from are restored when you come back, so an investigation is a detour rather than a reset.",
-        boundary: "The total on screen, the chart series, the table, the drilldown, the export and the print " + "view are one result from one snapshot, and they agree exactly in count and in minor-unit " + "sums per currency.",
+        title: "Come back right where you left off",
+        body: "When you drill into a gift or partner and return, your search, filters, sort order, and scroll position stay intact.",
+        boundary: "On-screen totals, charts, tables, CSV exports, and print views all come from the same data snapshot so the numbers always match.",
       },
       {
-        title: "Export the complete result",
-        body: "A CSV export covers the whole query rather than the loaded page, and carries its grain, basis, currency, period, coverage and snapshot time; the print view renders that same result.",
-        boundary: "Nothing in Support posts, corrects, refunds or infers money. The support goal is the only value you can edit, and only where the surface offers that action.",
+        title: "Export or print the complete result",
+        body: "CSV exports include every row matching your current filters — not just the visible page — along with the date range, currency, and snapshot time.",
+        boundary: "Support records are read-only here (only your personal monthly support goal can be edited).",
       },
     ],
   },
   "journey-update-publication": {
-    heading: "Write an Update → preview and review it → publish → simulate eligible notices → inspect the rendered message and the receiving experience.",
+    heading: "Write an update → preview & review → publish → notify partners → check what readers see",
     steps: [
       {
-        title: "Write one variant",
-        body: "One editor serves an Update's prose in each locale and audience variant, with images and " + "video placed through the media picker; autosave carries the revision it expects, so a change " + "made elsewhere is detected instead of overwritten.",
-        boundary: "Media preparation happens inside this application, and the label beside the placement states that it is local processing.",
-        links: [{ href: "/communication", label: "the Updates list" }],
-      },
-      { title: "Preview the revision you acknowledged", body: "The preview shows that exact revision, with its media, at the variant's own preview route.", boundary: "It is inert: it sends nothing, subscribes no reader and publishes nothing." },
-      { title: "Review once", body: "A review is one step, and it freezes the exact revisions it approves, so a draft edited afterwards cannot change what was approved.", boundary: "A reviewer cannot turn Publish only into Publish and notify now, and approving one language or one audience approves no other." },
-      {
-        title: "Publish, then notify",
-        body: "Results are reported per variant: if one locale releases and a sibling fails, the success and the sibling's prior good release both stand. A notification request is simulated rather than sent, the mail-submission label sits on the control that requests it and again on every per-send result, and each eligible recipient receives exactly one copy with one pinned rendition, while a protected notice is a minimal link-only message carrying no protected prose, images, poster, transcript or captions.",
-        boundary: "Accepted, failed and unknown are three different results: an accepted notification is neither a delivery nor a reading, an unknown result offers a check of the result rather than a second send, and a withdrawal does not recall a copy already seen.",
+        title: "Draft your update",
+        body: "Write your ministry update in one or more languages and audiences (Public or Approved supporters), and insert photos or video from the media picker. Autosave protects your draft and warns you if something changed elsewhere.",
+        boundary: "Images and videos are prepared locally in this development workspace.",
+        links: [{ href: "/communication", label: "Open Updates" }],
       },
       {
-        title: "Inspect the message and the receiving experience",
-        body: "The synthetic inbox renders the HTML and the plain-text form of each notice, and the receiving " + "preview shows the list and the exact post for the persona you selected, rechecking access " + "every time it is opened.",
-        boundary: "What a reader may see is decided again on open, not by the session that sent the notice.",
+        title: "Preview before submitting",
+        body: "Open the edition preview to check layout, text direction, images, and video exactly as readers will see them.",
+        boundary: "Previewing is completely safe — it sends nothing and publishes nothing.",
+      },
+      {
+        title: "Submit and review",
+        body: "Submitting freezes a snapshot for review so further draft edits can’t alter what gets approved. Each language and audience edition is reviewed independently.",
+        boundary: "A reviewer cannot switch a Publish-only update into an email send without your choice.",
+      },
+      {
+        title: "Publish and notify eligible partners",
+        body: "Publishing makes each approved edition available to its audience. Sending email notices is simulated locally — each eligible partner receives one copy, and protected updates send a link-only notice so private content stays off email.",
+        boundary: "An accepted email request is tracked separately from actual delivery, and unpublishing doesn’t recall copies already read.",
+      },
+      {
+        title: "Check the Test inbox and Reader preview",
+        body: "Open Test inbox to inspect the rendered HTML and plain-text emails, or open Reader preview to experience published updates as different personas.",
+        boundary: "Reader access is checked every time an update is opened.",
         links: [
-          { href: "/communication/inbox", label: "the synthetic inbox" },
-          { href: "/preview", label: "the receiving preview" },
+          { href: "/communication/inbox", label: "Open Test inbox" },
+          { href: "/preview", label: "Open Reader preview" },
         ],
       },
     ],
   },
   "journey-pages-release": {
-    heading: "Compose a Worker or Project Page → preview the selected locale edition and video → release → withdraw visibility.",
+    heading: "Build a Missionary or Project page → preview → publish → control visibility",
     steps: [
       {
-        title: "Compose from the two catalogues",
-        body: "Each of the two guided catalogues offers all eight admitted section types, and a section offers " + "only admitted presentation choices: normal or emphasized treatment, single-column or " + "two-column image and text, start or centre alignment, and cover or contain image fit.",
-        boundary: "There is no arbitrary styling, script, embed or per-page theme: a presentation value outside the admitted set is rejected rather than styled.",
-        links: [{ href: "/pages", label: "the Pages catalogue" }],
-      },
-      { title: "Build without dragging", body: "Add, move, duplicate and remove all work with a keyboard and a single pointer, and a preset creates a reviewable draft rather than a release.", boundary: "Nothing here needs a drag, and no arrangement is reachable only by pointer gesture." },
-      {
-        title: "Preview one locale edition",
-        body: "Each locale edition has its own draft, candidate and release, so editing the English never overwrites an Arabic draft or advances a French release. The preview shows the selected edition exactly, with its video, poster and captions, and the media-preparation label appears beside each image or video while it is prepared.",
-        boundary: "It is exact, currently authorised and inert: it sends no mail, subscribes no reader, publishes nothing and starts no payment.",
+        title: "Assemble sections cleanly",
+        body: "Choose from structured sections (story, prayer needs, gallery, video, giving link, and more) with clean, mobile-friendly layout options.",
+        boundary: "Styling stays consistent across devices and languages automatically — no custom HTML or scripts needed.",
+        links: [{ href: "/pages", label: "Open Ministry pages" }],
       },
       {
-        title: "Release, set reach, then withdraw",
-        body: "Reach is one of three values: Not public, Shared by link: public, or Listed publicly. The discovery index lists only the Listed-public editions, and a direct link to a link-public edition is served with noindex. The publication-reach label appears on the release result, because what a release reaches is demonstrated in the receiving preview rather than published anywhere.",
-        boundary: "Stop showing me publicly takes effect immediately and contains every locale edition, even when an unrelated draft is invalid; a withdrawn edition becomes a neutral tombstone.",
-        links: [{ href: "/preview/pages", label: "the discovery index" }],
+        title: "Reorder with clicks or keyboard",
+        body: "Add, move, duplicate, or remove sections using buttons or keyboard shortcuts — no drag-and-drop required.",
+        boundary: "Starting from a template creates a draft so you can review everything before publishing.",
       },
       {
-        title: "Giving and language on a released edition",
-        body: "Every Give placement uses the release's one approved Designation, and a placement appears only where the source qualifies the amount, goal, measure, currency, period and coverage.",
-        boundary:
-          "When that Designation is missing, revoked or incompatible the page shows Giving unavailable " + "with no fallback fund and takes no payment, and the giving-destination label appears on the " + "placement itself; a locale with no permitted fallback shows Language unavailable rather than " + "guessing.",
+        title: "Preview each language edition",
+        body: "Every language edition keeps its own draft and published version, so editing English never overwrites Arabic or French. Preview video, posters, and captions before publishing.",
+        boundary: "Previews never publish, send email, or process real gifts.",
+      },
+      {
+        title: "Publish and choose who can find it",
+        body: "Set visibility to Not public, Unlisted (link only), or Listed publicly. Only Listed publicly pages appear in Public pages.",
+        boundary: "Hide page from public takes effect right away across all language editions, even if another draft has errors.",
+        links: [{ href: "/preview/pages", label: "Open Public pages" }],
+      },
+      {
+        title: "Giving buttons on published pages",
+        body: "Every giving section uses the approved designation for that ministry or project and clearly displays the currency and goal when available.",
+        boundary: "If a giving designation isn’t active, the page shows Giving unavailable instead of falling back to another fund. Giving links are simulated here.",
       },
     ],
   },
   "journey-outreach-coaching": {
-    heading: "Manage an initiative, a referral and a recurring task → share coaching context → revoke it.",
+    heading: "Organize outreach, referrals & repeating tasks → share with a coach → revoke anytime",
     steps: [
       {
-        title: "Run an initiative",
-        body: "The working list holds only the partners you explicitly selected: included, removed and " + "excluded are three different states, stages come from a source-approved list with no drag " + "board, and each Request's response binds to the terms version it answers.",
-        boundary: "Agreement creates no pledge, gift, task, subscription or send, and a job title or household " + "relationship establishes no authority. Closing requires a disposition for owned unfinished " + "work, and reopening preserves history.",
-        links: [{ href: "/partners/initiatives", label: "the initiatives" }],
+        title: "Track an outreach initiative",
+        body: "Group specific partners you’re inviting into an initiative, track stages clearly, and log responses tied to what you asked.",
+        boundary: "Recording a positive response doesn’t automatically create a gift, commitment, or email subscription.",
+        links: [{ href: "/partners/initiatives", label: "Open Initiatives" }],
       },
       {
-        title: "Work a referral",
-        body: "A referral carries its original introduction date with its precision. The New window counts " + "N calendar days with the introduction date as day one and ends at an exclusive endpoint, and " + "Continue ends at the acceptance instant plus N × 86,400 seconds.",
-        boundary: "Unknown or approximate precision shows no deadline and no Continue; expired history shows " + "identity, source reference, status and permitted dates only; Continue consumes one cycle and " + "admits at most one follow-on cycle.",
-        links: [{ href: "/partners/referrals", label: "the referrals" }],
+        title: "Follow up on referrals",
+        body: "Keep track of who introduced you and when. Active referral windows show how long you have to follow up or extend once.",
+        boundary: "Approximate or unknown introduction dates don’t show artificial deadlines, and expired referrals keep only minimal history.",
+        links: [{ href: "/partners/referrals", label: "Open Referrals" }],
       },
       {
-        title: "Keep a recurring task useful",
-        body: "One of the five repeat profiles, with a first due date, a planning timezone and an explicit " + "end. A missing monthly day resolves to the final day of that month and the resolution is " + "disclosed, and only one occurrence is actionable at a time.",
-        boundary: "Several missed dates produce Plan needs review rather than an overdue stack, a this-and-future " + "change is prospective and leaves completed history intact, and a stale action cannot undo a Stop.",
-        links: [{ href: "/work", label: "the Work lists" }],
+        title: "Use repeating follow-up plans",
+        body: "Set up recurring reminders (weekly, every few weeks, monthly, or quarterly) with a clear start date and end condition. Only one occurrence is active at a time so overdue tasks don’t pile up.",
+        boundary: "Missing several dates flags the plan for review instead of flooding your list, and editing future dates leaves completed history untouched.",
+        links: [{ href: "/work", label: "Open Tasks" }],
       },
       {
-        title: "Share coaching context",
-        body: "The invitation names the recipient, organization, ministry, five modules that all start unselected, and a duration. The share cutoff is the exclusive start of the civil day after the Share-through date you choose, frozen when the invitation is accepted, and financial sharing uses a separately reviewed fixed date range.",
-        boundary: "The coach view is read-only, authorises before it enumerates and shows only admitted modules; a coach holds exactly two actions — accept, and leave.",
+        title: "Share selected areas with your coach",
+        body: "Invite a coach to read only the modules you choose (all start unchecked) through an end date you set. Financial summaries use their own explicit date range.",
+        boundary: "Coaches get read-only access only — they can accept or leave a share, never edit your records or see private notes.",
         links: [
-          { href: "/coaching", label: "your coaching preparation" },
-          { href: "/coaching/sharing", label: "coaching sharing" },
+          { href: "/coaching", label: "Open Coaching" },
+          { href: "/coaching/sharing", label: "Open Sharing" },
         ],
       },
       {
-        title: "Revoke it",
-        body: "Revocation sits beside the modules it ends, on the same sharing surface, and after the cutoff every read is denied.",
-        boundary: "Revocation and every stop action work even when a draft is invalid, never delete your own work, and never claim to recall information that has already been seen.",
-        links: [{ href: "/coaching/sharing", label: "coaching sharing" }],
+        title: "Revoke sharing anytime",
+        body: "End a coach’s access immediately from the Sharing page. Once revoked or past the end date, your shared modules are closed right away.",
+        boundary: "Revoking access never deletes your own targets, check-ins, or notes.",
+        links: [{ href: "/coaching/sharing", label: "Manage coach sharing" }],
       },
     ],
   },
 };
 const SIMULATED_EFFECTS = [
-  { effect: "mail-submission", title: "Mail submission", where: "Labelled when you request a notification for a publication, and again on the per-send result that follows it." },
-  { effect: "publication-reach", title: "Publication reach", where: "Labelled on a release result, because what a release reaches is demonstrated in the receiving preview rather than published anywhere." },
-  { effect: "giving-destination", title: "Giving destination", where: "Labelled on every placement that offers giving, where no payment can be taken." },
-  { effect: "importer-safety", title: "Importer safety", where: "Labelled when you submit a file to the import journey, where a successful local parse says nothing about whether the file was safe." },
-  { effect: "media-preparation", title: "Media preparation", where: "Labelled while an image or a video is prepared, here in the Update editor and in the Page builder." },
+  { effect: "mail-submission", title: "Email sending", where: "Shown when requesting partner update notifications and in Send history." },
+  { effect: "publication-reach", title: "Public publishing", where: "Shown when publishing an update or ministry page (viewable in Reader preview)." },
+  { effect: "giving-destination", title: "Giving links", where: "Shown on every giving section across ministry pages and previews." },
+  { effect: "importer-safety", title: "Contact imports", where: "Shown when uploading a file in Import contacts." },
+  { effect: "media-preparation", title: "Image & video prep", where: "Shown while preparing photos or videos in updates and ministry pages." },
 ] as const;
 type ProseSection = { readonly intro: string; readonly items: readonly { readonly title: string; readonly body: string }[] };
 const PROSE_SECTIONS: Readonly<Record<Exclude<SectionId, JourneyId | "simulated-effects" | "session-context-settings">, ProseSection>> = {
   "development-controls": {
-    intro: "The development panel switches the identity this session acts as and selects a scenario, a clock and a failure plan, and offers the same reset Settings offers. None of them is a permission, and none of them changes anything outside this session.",
+    intro: "At the bottom of the page in development mode, you can test different personas, scenarios, dates, and error states without changing real records.",
     items: [
-      {
-        title: "Preview persona",
-        body: "Offers the seeded personas the runtime lists and switches the one this browser acts as, so a preview shows what that identity is given. The choice travels in this browser's own session cookie, it stores nothing, and it is not a sign-in: every read that follows is authorised again, and a persona that may not read a surface receives the honest denial instead of a hidden destination.",
-      },
-      { title: "Scenario", body: "Selects which seeded world the session runs in — which source is unavailable, which content state is seeded, which setting a journey is under — for that session only, so two sessions can be in two scenarios at once." },
-      {
-        title: "Clock",
-        body: "An offset from one fixed seed instant, moved only by these controls. Moving it forward moves every boundary that is decided when you read: the referral windows, the notification usefulness window, the confirmation window, the coaching share cutoff and recurrence. Nothing advances it in the background.",
-      },
-      {
-        title: "Failure plan",
-        body: "Arms one mode for one named read or mutation and stays visible while armed. Scope denial refuses a surface without revealing whether anything exists behind it; a changed revision shows the current value beside the input you kept; a lost acknowledgement offers a check of the result by its operation identity instead of a second send.",
-      },
-      { title: "Reset", body: "Deletes this session's local store and re-seeds it deterministically from the seeded data — the same operation as running bun run reset from the repository root. Every accepted edit is discarded and there is no undo. It is offered here and in Settings." },
+      { title: "Preview persona", body: "Switch between seeded missionary, coach, reviewer, and reader personas to see what each role can view." },
+      { title: "Scenario", body: "Load a different sample dataset or simulate a data-source outage for this session." },
+      { title: "Clock", body: "Jump the simulated date forward or backward to test referral windows, repeating tasks, and coaching end dates." },
+      { title: "Failure simulator", body: "Simulate a single denied, conflict, unavailable, or unconfirmed response on one action to verify recovery flows." },
+      { title: "Reset sample data", body: "Clear all local edits and restore the original sample dataset (same as running bun run reset)." },
     ],
   },
   "keyboard-and-display": {
-    intro: "Every retained job completes with a keyboard, on a narrow screen, at 200% zoom, with reduced motion, and with a screen reader describing it.",
+    intro: "MYSA is built to work smoothly with a keyboard, on small phones, at 200% zoom, with reduced motion, and with screen readers.",
     items: [
-      {
-        title: "Keyboard",
-        body: "Every job is reachable from the keyboard and nothing needs dragging: list reordering, section moves and column sizing all offer button alternatives. The focus indicator stays visible and is never hidden behind the sticky header, and a table's scroll region is labelled, focusable, and the only thing that scrolls sideways.",
-      },
-      {
-        title: "Small screens and zoom",
-        body: "At 320 CSS pixels every job still completes: the shell collapses to phone navigation, the detail body becomes a full page, and the partner-by-month report switches to a period-first presentation rather than asking you to drag. 200% zoom behaves the same way, and the page itself never scrolls horizontally.",
-      },
-      { title: "Reduced motion", body: "Transitions are restrained and are dropped when your device asks for reduced motion." },
-      { title: "Screen readers", body: "State is carried by text and never by colour alone, every chart exposes a data table and a short summary, loading never renders as empty, and a source that did not answer says unavailable rather than zero." },
-      { title: "Forms", body: "A save that fails keeps what you already entered, and pasting into a field is never blocked." },
+      { title: "Keyboard support", body: "Press ? anywhere outside a text field for shortcuts, and Cmd/Ctrl+K for quick search. Every action — including reordering sections and resizing columns — works without dragging." },
+      { title: "Small screens & zoom", body: "Works cleanly down to 320px width and 200% browser zoom with no awkward horizontal page scrolling." },
+      { title: "Reduced motion", body: "Animations pause automatically when your operating system prefers reduced motion." },
+      { title: "Screen readers & clear states", body: "Every status uses words (never color alone), every chart includes a full data table, and outages are reported honestly instead of showing zero." },
+      { title: "Safe forms", body: "If a save fails, everything you typed stays right in the form, and pasting text is never blocked." },
     ],
   },
   "known-limitations": {
-    intro: "Three limitations are disclosed rather than hidden, and none of them is a capability.",
+    intro: "A few helpful details to keep in mind when exporting files or working with video:",
     items: [
-      { title: "A tab prefix inside an exported cell", body: "A CSV export prefixes a tab inside any quoted field whose first character is =, +, - or @, or the full-width equivalent, so a spreadsheet does not evaluate the cell as a formula. The tab is part of the value and persists if the file is reimported." },
-      { title: "Container timestamps after a video copy-remux", body: "A video copy-remux can retain the container's creation and modification timestamps. Descriptive tags are verified absent before the rendition is served, and an asset that still reports one is rejected." },
-      { title: "Performance observations describe one environment", body: "The published figures — a filtered gifts page and a full 100,000-row export, measured over a workload of 10,000 partners and 100,000 gifts — are observations from the environment they were measured on, not a promise about capacity elsewhere." },
+      { title: "Spreadsheet-safe CSV exports", body: "Cells starting with =, +, -, or @ are prefixed with a tab inside quotes so spreadsheets don’t accidentally run them as formulas." },
+      { title: "Video container timestamps", body: "Locally processed videos strip descriptive metadata tags before preview, though container timestamps may remain." },
+      { title: "Local sample performance", body: "Speed in this local development workspace reflects your own machine and sample dataset rather than production hosting." },
     ],
   },
 };
@@ -258,7 +253,7 @@ const JourneySteps = ({ journey }: { readonly journey: Journey }) => (
 );
 const SimulatedEffects = () => (
   <>
-    <p className={BODY_TEXT}>{"The Development data label sits in the application shell on every screen, is not dismissible, and stays present on a denied, expired or unavailable surface too. Each of the five effects below is disclosed where you trigger it, and each sentence is the shared label's own."}</p>
+    <p className={BODY_TEXT}>{"The Development data badge stays visible in the header on every screen. Whenever you use one of the five simulated actions below, you’ll see a clear disclosure label:"}</p>
     <ul className="flex min-w-0 flex-col gap-5">
       {SIMULATED_EFFECTS.map((item) => (
         <li key={item.effect} className="flex min-w-0 flex-col gap-1.5">
@@ -268,7 +263,7 @@ const SimulatedEffects = () => (
         </li>
       ))}
     </ul>
-    <p className={BODY_TEXT}>{"Nothing outside this application changes: no mail leaves it, no payment is taken, and no third-party copy exists. A withdrawal stops this application serving an edition; it does not recall a copy that has already been seen."}</p>
+    <p className={BODY_TEXT}>{"Nothing leaves this local workspace — no real emails are sent, no payments are charged, and nothing is published publicly on the internet."}</p>
   </>
 );
 const ProseBody = ({ section }: { readonly section: ProseSection }) => (
@@ -312,10 +307,10 @@ function sectionBody(section: SectionEntry) {
 function unhandledSection(section: never): never {
   throw new Error(`The Help page has no content for the section "${String(section)}".`);
 }
-/** The Help screen: one `h1`, the in-page contents, then every section in the one order the contents lists. */ export default function HelpPage() {
+/** Help & guide screen: practical walkthroughs, searchable topics, simulated-action disclosures, and accessibility notes. */ export default function HelpPage() {
   return (
     <article className="flex min-w-0 flex-col gap-6 text-start">
-      <header className="flex min-w-0 flex-col gap-3">
+      <header className="flex min-w-0 flex-col gap-2">
         <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
         <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{INTRODUCTION}</p>
       </header>

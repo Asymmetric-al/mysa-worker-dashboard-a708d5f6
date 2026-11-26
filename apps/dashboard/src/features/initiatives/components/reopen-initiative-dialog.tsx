@@ -18,31 +18,31 @@ type InitiativeEnvelope = Extract<Awaited<ReturnType<typeof reads.outreach.readI
 type InitiativeDetail = InitiativeEnvelope["data"];
 type WorkingListEntry = InitiativeDetail["workingList"]["items"][number];
 const REOPEN_COPY = {
-  reviewHeading: "Review this reopen",
-  evidenceHeading: "What reopening keeps",
-  earlierClosureTerm: "Earlier closure",
-  exclusionCountSuffix: "on the working list. Each one stays as it stands and does not rejoin the working list.",
-  noExclusions: "No partner is marked not eligible right now, so no exclusion is at stake and none is added.",
-  exclusionsKept: "A partner marked not eligible before the initiative closed stays not eligible: reopening does not put them back on the working list.",
-  excludedListLabel: "Partners marked not eligible, with the recorded instant of that decision",
-  recordedInstantNote: "Recorded when the exclusion was decided, exactly as the read supplies it.",
-  noReason: "No reason given, and none is required.",
-  reasonTerm: "Reason given",
-  noSolicitation: "Reopening creates no new solicitation: it creates no Request and no presentation, it re-sends nothing and it re-asks nobody.",
-  noRecords: "It also creates no task and no message, and it leaves every recorded response and every amount of requested terms untouched.",
-  reasonLabel: "Reason",
-  reasonDescription: "Optional. Say why this initiative is reopening. Leave it empty if you have nothing to add: an empty reason is accepted, and nothing is read into it later.",
-  mismatchBody: "This dialog was given one initiative's details and another initiative's identifier, so it offers no change: submitting either one would have reopened the wrong record. Close it and reopen the initiative from its own page.",
-  discardBody: "Nothing has been sent yet, so the reason you typed is not recorded anywhere. Closing this dialog discards it.",
+  reviewHeading: "Confirm reopen",
+  evidenceHeading: "What stays preserved",
+  earlierClosureTerm: "Previous status",
+  exclusionCountSuffix: "marked ineligible — they stay excluded when reopening.",
+  noExclusions: "No ineligible partners.",
+  exclusionsKept: "Partners marked ineligible before closing stay excluded.",
+  excludedListLabel: "Ineligible partners",
+  recordedInstantNote: "Timestamp recorded when excluded.",
+  noReason: "None added.",
+  reasonTerm: "Reason",
+  noSolicitation: "Reopening doesn’t send messages, re-share requests, or create tasks.",
+  noRecords: "All previous responses and requested terms remain untouched.",
+  reasonLabel: "Reason for reopening",
+  reasonDescription: "Optional note explaining why you’re reopening this initiative.",
+  mismatchBody: "Couldn’t match this dialog to the selected initiative. Close and reopen from the initiative page.",
+  discardBody: "Your note hasn’t been saved yet. Closing now discards it.",
   keepEditingLabel: "Keep editing",
-  discardLabel: "Discard the reason",
-  reopenedStatement: "This initiative is open again. The earlier closure and its disposition stay recorded, and every partner marked not eligible stays excluded.",
+  discardLabel: "Discard note",
+  reopenedStatement: "Initiative reopened. Previous closing notes and exclusions are preserved.",
 } as const;
 const DIALOG_TITLE = CLOSURE_COPY.reopenHeading;
 const LIFECYCLE_NOTE: Readonly<Record<InitiativeDetail["initiative"]["lifecycle"], string>> = {
-  closed: "The initiative is closed now. That closure is the record this attempt adds to rather than replaces.",
-  reopened: "This initiative was closed before and reopened. That earlier closure is the history this attempt keeps.",
-  open: "The read states this initiative is already open, so reopening it has nothing to apply and the attempt will answer so.",
+  closed: "Currently closed — previous closing notes will be kept in history.",
+  reopened: "Previously closed and reopened — all earlier history stays intact.",
+  open: "Already open.",
 };
 const exclusionInstantOf = (entry: WorkingListEntry): string | null => entry.history.reduce<string | null>((at, step) => (step.state === "excluded" ? step.at : at), null);
 const EvidenceFact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-1.5", termClassName: "text-muted-foreground", valueClassName: "min-w-0 wrap-anywhere" });

@@ -14,7 +14,7 @@ export type EmptyIllustrationProps = {
  */
 export function EmptyIllustration({ variant = "inbox", className }: EmptyIllustrationProps) {
   return (
-    <div data-slot="empty-illustration" data-variant={variant} aria-hidden="true" className={cn("relative flex size-16 items-center justify-center rounded-2xl border border-border/80 bg-surface-subtle text-muted-foreground shadow-2xs", className)}>
+    <div data-slot="empty-illustration" data-variant={variant} aria-hidden="true" className={cn("pointer-events-none relative flex size-16 items-center justify-center rounded-2xl border border-border/80 bg-surface-subtle text-muted-foreground shadow-2xs select-none", className)}>
       <svg viewBox="0 0 64 64" fill="none" className="size-12">
         <rect x="10" y="14" width="44" height="36" rx="8" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.45" />
         {variant === "filter" ? (

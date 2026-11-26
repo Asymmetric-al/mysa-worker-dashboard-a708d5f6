@@ -84,26 +84,19 @@ const DEV_PANEL_ACTIONS = ["switch-scenario", "set-clock", "advance-clock", "arm
 type DevPanelAction = (typeof DEV_PANEL_ACTIONS)[number];
 type DevPanelResult = { readonly action: DevPanelAction; readonly settledHeading: string | null; readonly outcome: MutationOutcome };
 type DevPanelAttempt = { readonly action: DevPanelAction; readonly settledHeading: string | null; readonly run: () => Promise<MutationOutcome> };
-const CLOCK_BOUNDARY_SENTENCE = "Every boundary is evaluated when a read or a command runs against this instant: the referral " + "window, the coaching cutoff, notification usefulness, confirmation expiry and recurrence all " + "decide from it at the moment they are asked.";
-const CLOCK_IMMEDIATE_SENTENCE = "Nothing here is scheduled. There is no run-at time, no timer and no background job, so advancing " + "is an immediate act and the only two controls that move time are the two below.";
-const ARMED_DISARM_SENTENCE = "Disarm this plan before arming another: exactly one failure is active at a time, and the " + "development route refuses a second arming rather than replacing this one.";
+const CLOCK_BOUNDARY_SENTENCE = "Referral windows, coaching cutoffs, notification timing, and repeating tasks all evaluate against this time.";
+const CLOCK_IMMEDIATE_SENTENCE = "Time doesn’t advance in the background — only these controls move it.";
+const ARMED_DISARM_SENTENCE = "Disarm this failure before arming another (only one failure can be active at a time).";
 const CLOCK_FIELD_CLASS = "flex min-w-0 flex-col gap-2";
 const ClockFact = factFrame({ rowClassName: "flex min-w-0 flex-col gap-0.5", termClassName: "text-muted-foreground", valueClassName: "min-w-0 text-pretty" });
-const OFFSET_HINT = "Units are elapsed time: a day here is 24 hours, and no unit on this panel is a calendar day. A negative offset places the instant before the seed.";
-const ADVANCE_HINT = "Advancing moves the instant forward by elapsed time only. 24 hours reaches the notification deadline exactly; 168 hours reaches the confirmation deadline exactly, which is where both are refused.";
+const OFFSET_HINT = "Measured in elapsed time (1 day = 24 hours). Use a negative number to move before the seed time.";
+const ADVANCE_HINT = "Moves the clock forward immediately. 24 hours reaches the notification window limit; 168 hours reaches the confirmation limit.";
 const chooseClockUnit = (value: string, select: (unit: ClockUnitId) => void): void => {
   const next = clockUnitFor(value);
   if (next !== undefined) select(next.id);
 };
-const RESET_DESCRIPTION =
-  "The synthetic store is deleted and every seeded session is written again from the deterministic " +
-  "seed, so the same readable records come back and a journey can be repeated from the same starting " +
-  "point. Partners, notes, interactions, tasks, drafts, releases, audience memberships, coaching " +
-  "grants and media records you created are discarded, the clock returns to the seed instant, and an " +
-  "armed failure plan is cleared with the document that held it. Every stored session is " +
-  "discarded before the seeded ones are written, so a reset that fails part way can leave " +
-  "sessions discarded or only partly written. Running it again restores the seeded world.";
-const RESET_CONSEQUENCE = "This discards the current synthetic store and cannot be undone from the interface. Nothing is " + "sent, published or charged: the reset replaces this application's own data only.";
+const RESET_DESCRIPTION = "Clears local edits and restores the default sample dataset (contacts, notes, activity, tasks, updates, pages, coaching shares, clock, and failure plans).";
+const RESET_CONSEQUENCE = "This resets local sample data and cannot be undone. No emails, payments, or external systems are affected.";
 type ClockFieldCopy = { readonly legend: string; readonly field: string; readonly hint: string; readonly action: string };
 type ClockFieldState = { readonly idBase: string; readonly value: string; readonly unit: ClockUnitId; readonly error: string | null; readonly minimum?: number };
 type ClockFieldHandlers = { readonly onChange: (value: string) => void; readonly onUnit: (unit: ClockUnitId) => void; readonly onAction: () => void; readonly disabled: boolean };
@@ -232,19 +225,18 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
           Development runtime
         </h2>
         <p id={introId} className="type-supporting text-pretty">
-          The scenario, the clock, one armed failure and the reset for this development session. These are development controls: the namespaced development route refuses them on the server outside a development session, so hiding this panel is not what protects them. The Development data label stays visible beside it,
-          and nothing here is a production feature.
+          Switch scenarios, move the test clock, simulate a failure, or reset local sample data. Development-only tools — disabled outside development sessions.
         </p>
       </div>
       {plan.armed && plan.mode !== null && plan.target !== null ? (
         <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/40 p-3">
           <Badge variant="outline">Armed</Badge>
           <p className="min-w-0 flex-1 type-supporting text-pretty">
-            {plan.modeLabel} is armed on <bdi className="mono-identifier wrap-anywhere">{plan.target.name}</bdi>, so any request to that {plan.target.kind} answers with the injected outcome. Disarm it before you judge any other behaviour.
+            {plan.modeLabel} is armed on <bdi className="mono-identifier wrap-anywhere">{plan.target.name}</bdi> ({plan.target.kind}). Disarm it when you finish testing.
           </p>
         </div>
       ) : null}
-      {busy ? <output className="block type-supporting text-pretty">{"Applying that change to this development session and waiting for the answer."}</output> : null}
+      {busy ? <output className="block type-supporting text-pretty">{"Updating development session…"}</output> : null}
       {result === null ? null : (
         <div data-slot="dev-panel-result" data-action={result.action} className="min-w-0">
           <OperationResult outcome={result.outcome} heading={receiptHeading ?? undefined} headingLevel={3} onRetrySameWork={result !== null && mayReplay(result.outcome) ? retryLastAttempt : undefined} />
@@ -256,12 +248,12 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
             <CardTitle>
               <h3 className="type-subsection-title">Scenario</h3>
             </CardTitle>
-            <CardDescription>The seeded world this session runs in. A scenario decides which source is unavailable, so a demonstration proves something; switching it loads a different world and changes no record on its own.</CardDescription>
+            <CardDescription>Choose which sample dataset and outage state this development session loads.</CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-4">
             <div className="flex min-w-0 flex-col gap-1 text-pretty">
               <p className="type-body">
-                Running now: <span className="font-medium">{scenario.label}</span> <bdi className="mono-identifier wrap-anywhere text-muted-foreground">{scenario.id}</bdi>
+                Active: <span className="font-medium">{scenario.label}</span> <bdi className="mono-identifier wrap-anywhere text-muted-foreground">{scenario.id}</bdi>
               </p>
               <p className="type-supporting">{scenario.description}</p>
             </div>
@@ -280,7 +272,7 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
                 </Button>
               </div>
               <p id={scenarioHintId} className="type-supporting text-pretty">
-                {chosenScenario !== undefined && scenarioChangePending ? `This session runs ${scenario.label} now. Switching loads ${chosenScenario.label}: ${chosenScenario.description}` : "Choosing a scenario changes nothing until you switch to it."}
+                {chosenScenario !== undefined && scenarioChangePending ? `Ready to switch from ${scenario.label} to ${chosenScenario.label}: ${chosenScenario.description}` : "Pick a scenario and click Switch scenario to apply it."}
               </p>
             </div>
           </CardContent>
@@ -290,36 +282,36 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
             <CardTitle>
               <h3 className="type-subsection-title">Clock</h3>
             </CardTitle>
-            <CardDescription>The scenario instant every boundary is measured against. It is an offset from one fixed seed instant rather than a second clock, and the only ways to move it are on this panel.</CardDescription>
+            <CardDescription>Simulated date and time for this session, measured as an offset from the fixed seed time.</CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-4">
             <dl className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/80 bg-surface-subtle p-3.5 text-sm">
-              <ClockFact term="Scenario instant">
+              <ClockFact term="Current test time">
                 {derivedWords === null ? null : `${derivedWords}. `}
                 <bdi className="mono-identifier wrap-anywhere">{clock.derivedInstant}</bdi>
               </ClockFact>
-              <ClockFact term="Seed instant">
+              <ClockFact term="Seed time">
                 {seedWords === null ? null : `${seedWords}. `}
                 <bdi className="mono-identifier wrap-anywhere">{clock.seedInstant}</bdi>
               </ClockFact>
-              <ClockFact term="Offset from the seed instant">
+              <ClockFact term="Offset">
                 {describeOffset(clock.offsetMilliseconds)} <bdi className="mono-identifier tabular-figures text-muted-foreground">({String(clock.offsetMilliseconds)} ms)</bdi>
               </ClockFact>
             </dl>
             <p className="type-supporting text-pretty">{CLOCK_BOUNDARY_SENTENCE}</p>
             <p className="type-supporting text-pretty">{CLOCK_IMMEDIATE_SENTENCE}</p>
             <Separator />
-            <ClockField legend="Set the offset from the seed instant" field="Offset" idBase={`${idPrefix}-offset`} value={offsetValue} unit={offsetUnit} error={offsetError} hint={OFFSET_HINT} action="Set the clock offset" onChange={setOffsetValue} onUnit={setOffsetUnit} onAction={applyClockOffset} disabled={busy} />
-            <ClockField legend="Advance the clock" field="Advance by" idBase={`${idPrefix}-advance`} minimum={1} value={advanceValue} unit={advanceUnit} error={advanceError} hint={ADVANCE_HINT} action="Advance the clock" onChange={setAdvanceValue} onUnit={setAdvanceUnit} onAction={advanceClock} disabled={busy} />
+            <ClockField legend="Set offset from seed time" field="Offset" idBase={`${idPrefix}-offset`} value={offsetValue} unit={offsetUnit} error={offsetError} hint={OFFSET_HINT} action="Set clock offset" onChange={setOffsetValue} onUnit={setOffsetUnit} onAction={applyClockOffset} disabled={busy} />
+            <ClockField legend="Advance clock" field="Advance by" idBase={`${idPrefix}-advance`} minimum={1} value={advanceValue} unit={advanceUnit} error={advanceError} hint={ADVANCE_HINT} action="Advance clock" onChange={setAdvanceValue} onUnit={setAdvanceUnit} onAction={advanceClock} disabled={busy} />
           </CardContent>
         </Card>
       </div>
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle>
-            <h3 className="type-subsection-title">Failure plan</h3>
+            <h3 className="type-subsection-title">Failure simulator</h3>
           </CardTitle>
-          <CardDescription>One simulated failure, injected into one named read or mutation. Exactly one plan is active at a time, so a demonstration cannot confuse which failure it is watching.</CardDescription>
+          <CardDescription>Simulate one error on a specific read or action to test how the UI handles failures. Only one failure can be armed at a time.</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
           {plan.armed && plan.target !== null && plan.mode !== null ? (
@@ -349,11 +341,11 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
             </div>
           ) : (
             <>
-              <p className="type-supporting text-pretty">{"No failure is armed, so every read and every mutation answers from the application's own behaviour."}</p>
+              <p className="type-supporting text-pretty">{"No failure is armed — all reads and actions behave normally."}</p>
               <fieldset className="flex min-w-0 flex-col gap-4">
-                <legend className="text-sm font-medium">Failure to arm</legend>
+                <legend className="text-sm font-medium">Failure to simulate</legend>
                 <fieldset className="flex min-w-0 flex-col gap-2">
-                  <legend className="text-sm text-muted-foreground">Outcome to inject</legend>
+                  <legend className="text-sm text-muted-foreground">Error type</legend>
                   <RadioGroup
                     value={mode}
                     onValueChange={(next: unknown) => {
@@ -419,14 +411,14 @@ function ClockField(props: ClockFieldCopy & ClockFieldState & ClockFieldHandlers
         </CardContent>
       </Card>
       {devState.reset.available ? (
-        <ActionReview title="Reset the development data" headingLevel={3} consequential confirmLabel="Reset and re-seed" input={reset.input} submit={reset.submit} description={<p className="type-supporting">{RESET_DESCRIPTION}</p>} consequence={<p className="type-supporting">{RESET_CONSEQUENCE}</p>} />
+        <ActionReview title="Reset sample data" headingLevel={3} consequential confirmLabel="Reset and re-seed" input={reset.input} submit={reset.submit} description={<p className="type-supporting">{RESET_DESCRIPTION}</p>} consequence={<p className="type-supporting">{RESET_CONSEQUENCE}</p>} />
       ) : (
         <Card className="min-w-0">
           <CardHeader>
             <CardTitle>
               <h3 className="type-subsection-title">Reset</h3>
             </CardTitle>
-            <CardDescription>A deterministic reset is not available in this session, so no control is offered that could not be honoured.</CardDescription>
+            <CardDescription>Reset isn’t available in this session.</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="type-supporting text-pretty">{devState.reset.statement}</p>

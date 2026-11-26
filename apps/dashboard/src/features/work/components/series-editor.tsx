@@ -64,23 +64,23 @@ const HEADING_TAG: Readonly<Record<2 | 3 | 4, "h2" | "h3" | "h4">> = { 2: "h2", 
 const END_KIND_ORDER = ["on-date", "after-count", "ongoing-personal-policy"] as const satisfies readonly SeriesEnd["kind"][];
 const INTERVAL_UNIT_OF_PROFILE: Readonly<Record<RepeatProfile, "weeks" | "months" | null>> = { none: null, weekly: null, everyNWeeks: "weeks", monthlyOnDay: null, everyNMonths: "months" };
 const DEFAULT_END_KIND: SeriesEnd["kind"] = "on-date";
-const HEADINGS = { create: "New repeating plan", revise: "Revise this plan from a boundary", receiptCreate: "Creating this plan", receiptRevise: "Revising the plan", currentRule: "The rule in force now", stopped: "This plan is stopped" } as const;
+const HEADINGS = { create: "New repeating plan", revise: "Update future occurrences", receiptCreate: "Creating repeating plan", receiptRevise: "Updating repeating plan", currentRule: "Current schedule", stopped: "This plan is stopped" } as const;
 const HELP = {
-  create: "A plan needs a title, a first due date and the timezone it is planned in. Choose how it repeats and when it ends; the category and the note are optional.",
-  revise: "This change revises the plan from the boundary above onward. The dates before that boundary, and every completed date, keep the rule they were planned under.",
+  create: "Give your plan a title, start date, time zone, repeat schedule, and end condition.",
+  revise: "Updates this plan from the start date above onward — completed history and earlier occurrences stay untouched.",
 } as const;
-const LABELS = { title: "Title", category: "Category", note: "Note", profiles: "How this plan repeats", ends: "When this plan ends" } as const;
+const LABELS = { title: "Title", category: "Category", note: "Note", profiles: "How often it repeats", ends: "When it ends" } as const;
 const DESCRIPTIONS = {
-  title: "The work this plan repeats, in a few words.",
-  category: "Your own short label for finding similar plans; it is not a shared taxonomy and not a stage.",
-  note: "A short reminder about this plan, kept with it. Writing it sends nothing and changes no other record.",
-  profiles: "This is a closed set: there is no custom interval beyond these profiles, and only a profile that reads an interval or a day of the month shows that field.",
-  ends: "Every plan states when it stops, so an end is always chosen: an end date, a number of occurrences, or — only where the policy applies — no end at all.",
-  endDate: "The last calendar date this plan may produce. It is a civil date, so it stays that date wherever you are.",
-  endCount: "How many dates this plan may produce in total, counted from the first due date.",
+  title: "What this repeating reminder is for.",
+  category: "Optional short label for grouping similar reminders.",
+  note: "Optional reminder note kept with this plan.",
+  profiles: "Choose a repeat schedule below.",
+  ends: "Choose when this repeating plan should finish.",
+  endDate: "Last calendar date this plan can schedule.",
+  endCount: "Total number of times this plan should occur.",
 } as const;
 const EFFECTIVE_BOUNDARY_LABEL = "Takes effect from";
-const NOT_STATED_TEXT = "Not stated";
+const NOT_STATED_TEXT = "Not set";
 const FIELD_NAMES = { title: "title", category: "category", note: "note", firstDueOn: "firstDueOn", planningTimeZone: "planningTimeZone", profile: "profile", interval: "interval", dayOfMonth: "dayOfMonth", end: "end", endOn: "end.on", endCount: "end.count" } as const;
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
   [FIELD_NAMES.title]: LABELS.title,
@@ -206,9 +206,7 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
           <StatedDate value={effectiveFrom} className="tabular-figures" />
         </RuleFact>
       </dl>
-      <p className="type-supporting text-pretty">{"The dates before that boundary keep the rule they were planned under, and completed history is untouched."}</p>
-      <p className="type-supporting text-pretty">{"Completed dates are never rewritten by this change: a revision only shapes the dates from the boundary onward."}</p>
-      <p className="type-supporting text-pretty">{"The first due date belongs to the plan itself, so a prospective revision keeps it: only the rule from the boundary onward changes."}</p>
+      <p className="type-supporting text-pretty">{"Earlier dates and completed history stay untouched — changes apply only from the date above onward."}</p>
     </section>
   );
 }
@@ -293,7 +291,7 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
           <AlertTitle>{HEADINGS.stopped}</AlertTitle>
           <AlertDescription className="flex flex-col gap-2">
             <p>{STOPPED_NOTE}</p>
-            <p>{"A stopped plan admits no further date and cannot be resumed, so there is no later rule for this change to revise. The rule it last used is shown above, unchanged."}</p>
+            <p>{"Stopped plans can’t be edited or resumed. Create a new repeating plan if you want to restart."}</p>
           </AlertDescription>
         </Alert>
       ) : (
@@ -334,8 +332,8 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
                   {receipt === null || receipt.outcome === "invalid" ? null : (
                     <FormReceipt outcome={receipt} heading={revising ? HEADINGS.receiptRevise : HEADINGS.receiptCreate} headingLevel={receiptHeadingLevel} dataSlot="series-editor-result" fieldLabels={FIELD_LABELS} onCheckResult={onCheckResult} onRetrySameWork={retryReceipt} onReapply={reapplyReceipt} />
                   )}
-                  {pending ? <output className="block type-supporting">{"Working: nothing else is submitted while this change is in flight."}</output> : null}
-                  <FormFooter pending={pending} applied={applied} submitLabel={revising ? "Apply this revision" : "Create plan"} onCancel={onCancel} onDismiss={onCancel} />
+                  {pending ? <output className="block type-supporting">{"Saving your plan…"}</output> : null}
+                  <FormFooter pending={pending} applied={applied} submitLabel={revising ? "Save changes" : "Create plan"} onCancel={onCancel} onDismiss={onCancel} />
                 </div>
               );
             }}
@@ -346,7 +344,7 @@ function CurrentRule({ current, effectiveFrom }: { readonly current: SeriesEdito
         <>
           <Separator />
           <div className="flex min-w-0 flex-col gap-1">
-            <p className="type-group-title">{"Paused and stopped are not the same:"}</p>
+            <p className="type-group-title">{"Pause vs. stop"}</p>
             <p className="type-supporting text-pretty">{PAUSED_NOTE}</p>
             <p className="type-supporting text-pretty">{STOPPED_NOTE}</p>
           </div>

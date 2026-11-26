@@ -33,12 +33,12 @@ function resolutionSentence(resolution: DisclosedMonthDayResolution, displayLoca
 export default function SeriesPreview({ state, rule, planningTimeZone, reading, displayLocale, className }: SeriesPreviewProps): ReactElement {
   const previewLabelId = useId();
   if (reading.status === "unavailable")
-    return <StateNotice kind="unavailable" title="The next dates could not be read" description="This series is still here; the dates its rule produces are not shown because the data behind them could not be read, so nothing stands in for them." source={reading.source} retry={reading.retry} className={className} />;
+    return <StateNotice kind="unavailable" title="Couldn’t load upcoming dates" description="Your repeating plan is safe, but we couldn’t load its upcoming dates right now." source={reading.source} retry={reading.retry} className={className} />;
   if (reading.status === "unknown")
-    return <StateNotice kind="unknown" title="The next dates are not confirmed" description="Whether the rule produced new dates after this change is not known yet, so no date is shown in place of the answer." operationId={reading.operationId} retry={reading.retry} className={className} />;
+    return <StateNotice kind="unknown" title="Upcoming dates aren’t confirmed yet" description="We haven’t confirmed the updated dates after your last change yet." operationId={reading.operationId} retry={reading.retry} className={className} />;
   const stopped = state === "stopped";
   const dates = reading.dates.slice(0, 3);
-  if (!stopped && dates.length === 0) return <StateNotice kind="empty" title="No further dates on this plan" description="The series has reached the end its rule states, so the rule produces no further date to preview." className={className} />;
+  if (!stopped && dates.length === 0) return <StateNotice kind="empty" title="No more scheduled dates" description="This repeating plan has reached its end condition." className={className} />;
   const actionableKey = serialiseCivilDate(reading.actionableDueOn);
   const resolutionByDate = new Map<string, DisclosedMonthDayResolution>(reading.monthDayResolutions.map((resolution): [string, DisclosedMonthDayResolution] => [serialiseCivilDate(resolution.dueOn), resolution]));
   const displayedKeys = new Set(dates.map(serialiseCivilDate));

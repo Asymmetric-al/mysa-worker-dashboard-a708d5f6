@@ -22,6 +22,7 @@ type ShortcutRow = {
 export function ShortcutsSheet({ open, onOpenChange }: ShortcutsSheetProps): ReactElement {
   const paletteHint = useShortcutHint("mod+k");
   const railHint = useShortcutHint("mod+b");
+  const submitHint = useShortcutHint("mod+enter");
   const boldHint = useShortcutHint("mod+b");
   const italicHint = useShortcutHint("mod+i");
   const underlineHint = useShortcutHint("mod+u");
@@ -35,26 +36,27 @@ export function ShortcutsSheet({ open, onOpenChange }: ShortcutsSheetProps): Rea
 
   const groups: readonly { readonly heading: string; readonly rows: readonly ShortcutRow[] }[] = [
     {
-      heading: "Workspace navigation",
+      heading: "Navigation",
       rows: [
-        { action: "Open command palette", keys: [paletteHint.text] },
-        { action: "Toggle sidebar rail", keys: [railHint.text] },
+        { action: "Open quick search", keys: [paletteHint.text] },
+        { action: "Toggle sidebar", keys: [railHint.text] },
         { action: "Open keyboard shortcuts", keys: ["?"] },
-        { action: "Close active dialog or popover", keys: ["Esc"] },
+        { action: "Close dialog or menu", keys: ["Esc"] },
       ],
     },
     {
-      heading: "Data Grids, Inbox & Split Panes",
+      heading: "Tables, forms & panes",
       rows: [
-        { action: "Move focus across grid controls", keys: ["Tab", "Shift+Tab"] },
+        { action: "Submit form from a text area", keys: [submitHint.text] },
+        { action: "Move across table controls", keys: ["Tab", "Shift+Tab"] },
         { action: "Expand or collapse row details", keys: ["Enter", "Space"] },
         { action: "Next / previous inbox message", keys: ["j", "k"] },
-        { action: "Resize split pane separator", keys: ["←", "→"] },
-        { action: "Jump split pane to min / max", keys: ["Home", "End"] },
+        { action: "Resize split pane", keys: ["←", "→"] },
+        { action: "Jump split pane to start / end", keys: ["Home", "End"] },
       ],
     },
     {
-      heading: "Prose editor",
+      heading: "Writing editor",
       rows: [
         { action: "Bold", keys: [boldHint.text] },
         { action: "Italic", keys: [italicHint.text] },
@@ -69,7 +71,7 @@ export function ShortcutsSheet({ open, onOpenChange }: ShortcutsSheetProps): Rea
       <SheetContent side="right" className="gap-0 overflow-y-auto p-0 sm:max-w-md" data-slot="shortcuts-sheet">
         <SheetHeader className="border-b border-border/80">
           <SheetTitle>Keyboard shortcuts</SheetTitle>
-          <SheetDescription>Every shortcut mirrors a visible control in the workspace so nothing is keyboard-only or pointer-only.</SheetDescription>
+          <SheetDescription>Every keyboard shortcut also has a visible button or control on screen.</SheetDescription>
         </SheetHeader>
         <div className="flex flex-col gap-5 p-6">
           {groups.map((group, groupIndex) => (

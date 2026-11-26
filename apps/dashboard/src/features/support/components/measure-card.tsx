@@ -12,7 +12,7 @@ import { AS_OF_TEMPLATE, COVERAGE_TEMPLATES, IN_PROGRESS_NOTE, MEASURE_LABELS, f
 import AmountValue from "./amount-value";
 export type MeasureCardProps = { measure: SupportMeasure; money: Money; valueState: ValueState; unit: string; period: { from: string; to: string } | null; coverage: Coverage; asOf: string; isCurrentPeriod: boolean; locale: string; emphasis?: "primary" | "secondary"; detail?: ReactNode; className?: string };
 const REPORTS_RECEIVED_CASH: Readonly<Record<SupportMeasure, boolean>> = { "received-gifts": true, "recurring-collection-outcomes": true, commitments: false, "monthly-equivalent-support": false, "support-goal": false };
-const FACT_LABELS = { period: "Period", coverage: "Coverage", asOf: "As of" } as const;
+const FACT_LABELS = { period: "Period", coverage: "Coverage", asOf: "Updated" } as const;
 const Fact = factFrame({ rowClassName: "flex flex-wrap items-baseline gap-x-1.5", termClassName: "font-medium text-foreground/80", valueClassName: "min-w-0 break-words" });
 /** Presents one measure with its exact amount, unit, period, coverage and as-of; never combines it with another measure. */ export function MeasureCard({ measure, money, valueState, unit, period, coverage, asOf, isCurrentPeriod, locale, emphasis = "primary", detail, className }: MeasureCardProps): ReactElement {
   const secondary = emphasis === "secondary";

@@ -30,7 +30,7 @@ const DETAIL_KIND = "Check-in";
 const STATE_SR_PREFIX = "Check-in state";
 const NO_DATE_RECORDED = "No date recorded";
 const MUTED_LINE_CLASS = "text-xs text-muted-foreground";
-const COLUMN_LABELS = { date: "Date", questions: "Questions captured", state: "State", shared: "Shared" } as const;
+const COLUMN_LABELS = { date: "Date", questions: "Questions", state: "Status", shared: "Shared" } as const;
 const STATE_TONE: Readonly<Record<CheckInState, StatusTone>> = { "private-draft": "muted", shared: "positive", withdrawn: "caution", unavailable: "danger" };
 function offeredPageSize(requested: number): number {
   if (!Number.isFinite(requested)) return DEFAULT_PAGE_SIZE;
@@ -48,10 +48,10 @@ function checkInDayLabelOf(row: CheckInRow): string {
 }
 function sharingStatementOf(row: CheckInRow): string {
   const { shared } = row;
-  if (shared === null) return "No shared revision: a coach reads nothing here yet.";
+  if (shared === null) return "Not shared yet — your coach can’t see this check-in.";
   const sharedOn = storedDayText(shared.sharedAt);
-  if (shared.withdrawnAt === null) return `Shared revision shared on ${sharedOn}.`;
-  return `Shared revision shared on ${sharedOn} and withdrawn on ${storedDayText(shared.withdrawnAt)}.`;
+  if (shared.withdrawnAt === null) return `Shared on ${sharedOn}.`;
+  return `Shared on ${sharedOn}; withdrawn on ${storedDayText(shared.withdrawnAt)}.`;
 }
 function CheckInDateCell({ row }: { readonly row: CheckInRow }): ReactElement {
   const instant = checkInInstantOf(row);
@@ -78,18 +78,18 @@ const QuestionSetsCell = ({ row }: { readonly row: CheckInRow }): ReactElement =
   <span className="flex min-w-0 flex-col gap-0.5">
     {row.privateDraft === null ? null : <QuestionSetCount count={row.privateDraft.questions.length} where="draft" />}
     {row.shared === null ? null : <QuestionSetCount count={row.shared.questions.length} where="shared" />}
-    {row.privateDraft === null && row.shared === null ? <span className="text-muted-foreground">No captured question set</span> : null}
+    {row.privateDraft === null && row.shared === null ? <span className="text-muted-foreground">No questions yet</span> : null}
   </span>
 );
 const StateCell = ({ row }: { readonly row: CheckInRow }): ReactElement => (
   <span className="flex min-w-0 flex-col gap-1">
     <StatusBadge label={CHECK_IN_STATE_COPY[row.state].label} tone={STATE_TONE[row.state]} srPrefix={STATE_SR_PREFIX} />
-    {row.draftAndSharedDiffer ? <span className={MUTED_LINE_CLASS}>{"Your private draft and the shared revision hold different text."}</span> : null}
+    {row.draftAndSharedDiffer ? <span className={MUTED_LINE_CLASS}>{"Draft has changes not yet shared."}</span> : null}
   </span>
 );
 function SharedCell({ row }: { readonly row: CheckInRow }): ReactElement {
   const { shared } = row;
-  if (shared === null) return <span className="text-muted-foreground">{"Not shared with a coach"}</span>;
+  if (shared === null) return <span className="text-muted-foreground">{"Not shared"}</span>;
   return (
     <span className="flex min-w-0 flex-col gap-0.5">
       <time dateTime={shared.sharedAt} className="tabular-figures">
@@ -219,8 +219,8 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
               <span className="text-pretty text-foreground">{sharingStatementOf(row)}</span>
             </div>
             <div className="flex flex-col gap-1">
-              <span className="font-medium text-muted-foreground">Privacy guardrail</span>
-              <span className="text-pretty text-muted-foreground">Draft and shared writing stay inside the check-in detail panel and are never previewed in this list.</span>
+              <span className="font-medium text-muted-foreground">Privacy</span>
+              <span className="text-pretty text-muted-foreground">Your check-in answers stay private inside the editor and aren’t previewed in this table.</span>
             </div>
           </div>
         )}
@@ -232,8 +232,8 @@ export default function CheckInList({ initialQuery, scope, locale, onOpen }: Che
       />
       <Separator />
       <div className="flex min-w-0 flex-col gap-1">
-        <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{"A check-in's writing is not reproduced in this list: a row states the day, the captured question set and whether a revision is shared, and the words themselves are read only in the check-in itself."}</p>
-        <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{"Every date here is the calendar day in UTC, the zone this application's coaching records are dated in, and the exact recorded instant is attached to each one."}</p>
+        <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{"Check-in answers aren’t previewed in this list — open a check-in to read or edit its contents."}</p>
+        <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{"Dates are shown as UTC calendar days."}</p>
       </div>
     </>
   );

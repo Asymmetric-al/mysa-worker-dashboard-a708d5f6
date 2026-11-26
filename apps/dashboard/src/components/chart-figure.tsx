@@ -144,8 +144,8 @@ const readServerReducedMotion = (): boolean => true;
 const usePrefersReducedMotion = (): boolean => useSyncExternalStore(subscribeToReducedMotion, readReducedMotion, readServerReducedMotion);
 const SUMMARY_CLAUSE_KEYS = ["zero", "gap", "unknown", "withheld", "unavailable"] as const;
 type SummaryClauseKey = (typeof SUMMARY_CLAUSE_KEYS)[number];
-const SUMMARY_CLAUSE_PHRASE: Readonly<Record<SummaryClauseKey, string>> = { zero: "a recorded zero in", gap: "no recorded value in", unknown: "unknown in", withheld: "withheld in", unavailable: "the source could not be read for" };
-const SUMMARY_LEAD = "Buckets the chart does not draw are named here rather than filled in: none of them is treated as " + "a zero and none is estimated from a neighbouring bucket. A recorded zero is drawn at zero and " + "named as a zero.";
+const SUMMARY_CLAUSE_PHRASE: Readonly<Record<SummaryClauseKey, string>> = { zero: "recorded zero in", gap: "no data recorded in", unknown: "unknown in", withheld: "withheld in", unavailable: "unavailable for" };
+const SUMMARY_LEAD = "Periods without recorded data are left blank instead of filled with zero or estimated. Recorded zeros are drawn at zero.";
 type SummaryClause = { readonly key: SummaryClauseKey; readonly phrase: string; readonly buckets: readonly string[] };
 function summaryClauses(member: PlottedSeries): readonly SummaryClause[] {
   const buckets: Record<SummaryClauseKey, string[]> = { zero: [], gap: [], unknown: [], withheld: [], unavailable: [] };
@@ -210,17 +210,17 @@ function CoverageLine({ coverage, partialFigures }: { readonly coverage: Coverag
   if (state !== "complete") {
     return (
       <span className="text-sm text-muted-foreground">
-        {`Coverage: ${state}`}
+        {state === "unknown" ? "Coverage unknown" : "Partial coverage"}
         {range}
-        {state === "unknown" ? " — the source stated no covered range, so no subtotal drawn here is a total of the period." : " only, so every subtotal drawn here is an incomplete subtotal of that part of the period."}
+        {state === "unknown" ? " — totals shown are incomplete subtotals." : " — totals shown cover only this part of the period."}
       </span>
     );
   }
   return (
     <span className="text-sm text-muted-foreground">
-      {"Coverage: complete"}
-      {range ?? ", with no boundary dates stated"}
-      {partialFigures ? ". A figure drawn here covers only part of the period, so it is an incomplete subtotal." : "."}
+      {"Full coverage"}
+      {range ?? ""}
+      {partialFigures ? " — one or more periods shown are still in progress." : "."}
     </span>
   );
 }
@@ -244,7 +244,7 @@ function ChartTooltip({ group, active, label }: ChartTooltipProps): ReactElement
   });
   if (entries.length === 0) return null;
   return (
-    <div className="flex min-w-44 flex-col gap-1.5 rounded-2xl border border-border/90 bg-popover px-3.5 py-2.5 text-sm text-popover-foreground shadow-xl ring-1 ring-foreground/5 dark:ring-foreground/10">
+    <div className="flex min-w-44 flex-col gap-1.5 rounded-2xl border border-border/90 bg-popover px-3.5 py-2.5 text-sm text-popover-foreground shadow-overlay">
       <bdi className="border-b border-border/70 pb-1 font-medium">{bucket}</bdi>
       <ul className="flex flex-col gap-1">
         {entries.map(({ member, point }) => (
@@ -426,9 +426,9 @@ function everyPointUnavailable(group: ChartGroup): boolean {
   return points.length > 0 && points.every((point) => point.state === "unavailable");
 }
 function UnplottableNotice({ group }: { readonly group: ChartGroup }): ReactElement {
-  const subject = group.currency === undefined ? "This series" : `The ${group.currency} series`;
-  if (everyPointUnavailable(group)) return <StateNotice kind="unavailable" title={`${subject} could not be read`} description="Every bucket in this series reports that its source could not be read, so no point is drawn. Nothing is filled in with a zero, and the table below states each bucket's own state." />;
-  return <StateNotice kind="empty" title={`${subject} has no figure to draw`} description="Every bucket in this series is a gap, an unknown value or a withheld one, so there is nothing to plot. None is treated as a zero, and the table below names each bucket's own state." />;
+  const subject = group.currency === undefined ? "this series" : `the ${group.currency} series`;
+  if (everyPointUnavailable(group)) return <StateNotice kind="unavailable" title={`Couldn’t load ${subject}`} description="The data source couldn’t be reached for these periods, so nothing is plotted or replaced with zero. See the table below for details." />;
+  return <StateNotice kind="empty" title={`No chart data for ${subject}`} description="Every period here is missing, unknown, or withheld, so nothing is plotted or treated as zero. See the table below for each period’s status." />;
 }
 type ChartGroupFigureProps = { readonly group: ChartGroup; readonly kind: ChartKind; readonly caption: string; readonly height: number; readonly describedBy: string; readonly locale: string; readonly animate: boolean; readonly reference: ChartReference | undefined };
 // `jsx-a11y/prefer-tag-over-role` is suppressed for this component and only this component: the marks are SVG the chart library draws, with no `src` an `img` could carry, so the element the rule prefers would leave the plot with no accessible name at all.
@@ -485,13 +485,15 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
                 </IconTile>
                 <span className="font-heading text-base font-medium text-foreground">{title}</span>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{units}</Badge>
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+                <Badge variant="outline" className="h-auto max-w-full py-1 text-start whitespace-normal text-pretty">
+                  {units}
+                </Badge>
                 {hasPlottableSeries ? <SegmentedTabs label={`Chart view for ${title}`} value={activeKind} onValueChange={(chosen) => setKindOverride({ base: kind, chosen })} options={CHART_KIND_OPTIONS} /> : null}
               </div>
             </div>
             {hasPlottableSeries ? (
-              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5 text-xs">
                 <Badge variant="secondary" className="tabular-figures">
                   {`${String(totalPlottedPoints)} plotted`}
                 </Badge>
@@ -501,7 +503,9 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
                   </Badge>
                 ) : null}
                 {reference !== undefined ? (
-                  <Badge variant="info-light">{reference.label}</Badge>
+                  <Badge variant="info-light" className="h-auto max-w-full py-0.5 text-start whitespace-normal">
+                    {reference.label}
+                  </Badge>
                 ) : null}
               </div>
             ) : null}
@@ -511,7 +515,7 @@ export function ChartFigure({ title, summary, caption, kind, height = DEFAULT_CH
         </FrameHeader>
         <FramePanel className="flex flex-col gap-5">
           {groups.length === 0 ? (
-            <StateNotice kind="empty" title="This chart has no series" description="No series was supplied, so there is nothing to draw. None is invented in its place, and the summary and the table below state what this figure holds." />
+            <StateNotice kind="empty" title="No data series to chart" description="No series was returned for this view. Check the summary and data table below." />
           ) : (
             groups.map((group, index) => <ChartGroupFigure key={group.currency ?? `counts-${String(index)}`} group={group} kind={activeKind} caption={caption} height={height} describedBy={`${summaryId} ${tableId}`} locale={locale} animate={!reducedMotion} reference={reference} />)
           )}

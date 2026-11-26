@@ -21,9 +21,9 @@ type ReadRefusal = Exclude<ReadResult<ReadEnvelope<unknown>>, { readonly kind: "
 /** Called once the service accepts a started edition, so the route can re-read the index it owns. */
 export type PagesIndexProps = { readonly pages: PagesIndexAnswer<readonly PageIndexRow[]>; readonly catalogues: PagesIndexAnswer<readonly FamilyCatalogueView[]>; readonly onStarted?: (documentId: string) => void; readonly className?: string };
 const FAMILIES_ANCHOR = "pages-index-families";
-const EMPTY_DESCRIPTION = `${copy.states.emptyPages} Both families are described below — what a Worker Page holds and what a Project Page holds — and a Page is started from its own catalogue. Starting one releases nothing and notifies nobody.`;
-const DENIED_DESCRIPTION = "The answer is the same whether or not a Page exists here, so nothing on this surface states a Page, a family, an edition or how many of either there are.";
-const MISSING_CATALOGUE_TITLE = "This family's catalogue was not supplied";
+const EMPTY_DESCRIPTION = `${copy.states.emptyPages} Explore Missionary pages and Project pages below to start a draft — nothing is published or emailed until you choose to.`;
+const DENIED_DESCRIPTION = "We don’t disclose whether pages exist when you don’t have permission to view them.";
+const MISSING_CATALOGUE_TITLE = "Section catalogue unavailable";
 const EDITIONS_LABEL = copy.editions.heading;
 const EDITION_LOCALE_LABEL = copy.editions.localeLabel;
 const NOTE_CLASS = "type-supporting text-pretty wrap-anywhere";
@@ -32,16 +32,16 @@ const PAGE_LINK_CLASS = "inline-flex min-h-6 max-w-full min-w-0 items-center tex
 const envelopeOf = <T,>(answer: PagesIndexAnswer<T>): ReadEnvelope<T> | undefined => ("kind" in answer ? (answer.kind === "envelope" ? answer.envelope : undefined) : answer);
 const refusalOf = <T,>(answer: PagesIndexAnswer<T>): ReadRefusal | undefined => ("kind" in answer && answer.kind !== "envelope" ? answer : undefined);
 const reviewHrefOf = (edition: PageIndexEdition): string | undefined => ((edition.candidateId ?? "").trim() === "" ? undefined : `${"/pages/review/"}${encodeURIComponent(edition.candidateId ?? "")}`);
-const builderLinkHintOf = (family: PageFamily): string => `Open the ${copy.families[family].label} builder`;
-const missingCatalogueDescriptionOf = (family: PageFamily): string => `The catalogue read answered without a ${copy.families[family].label} catalogue, so this family lists no section type here. None is invented in its place, and the other family is unaffected.`;
+const builderLinkHintOf = (family: PageFamily): string => `Open ${copy.families[family].label} builder`;
+const missingCatalogueDescriptionOf = (family: PageFamily): string => `No section catalogue was returned for ${copy.families[family].label.toLowerCase()}s, so section types aren’t listed here.`;
 function RefusalNotice({ answer, headingLevel, unavailableTitle }: { readonly answer: ReadRefusal; readonly headingLevel: NoticeHeadingLevel; readonly unavailableTitle: string }): ReactElement {
   switch (answer.kind) {
     case "denied":
-      return <StateNotice kind="denied" headingLevel={headingLevel} title={"You do not have access to these Pages"} description={DENIED_DESCRIPTION} reasonCode={answer.denied.reasonCode} />;
+      return <StateNotice kind="denied" headingLevel={headingLevel} title={"You don’t have access to these pages"} description={DENIED_DESCRIPTION} reasonCode={answer.denied.reasonCode} />;
     case "unavailable":
       return <StateNotice kind="unavailable" headingLevel={headingLevel} title={unavailableTitle} description={answer.unavailable.guidance} source={answer.unavailable.source} />;
     case "refused":
-      return <StateNotice kind="refused" headingLevel={headingLevel} title={"This index's own request was refused"} description={"The request this index was read with is not one the read admits, so nothing was read here and nothing stands in its place."} />;
+      return <StateNotice kind="refused" headingLevel={headingLevel} title={"Page list request refused"} description={"This page list request wasn’t accepted, so nothing could be loaded."} />;
   }
 }
 const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
@@ -59,7 +59,7 @@ const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
     {row.editions.length === 0 ? (
       <p className={NOTE_CLASS}>{copy.states.emptyEditions}</p>
     ) : (
-      <ul aria-label={EDITIONS_LABEL} className={"grid min-w-0 gap-2.5 sm:grid-cols-2"}>
+      <ul aria-label={EDITIONS_LABEL} className={"grid min-w-0 gap-2.5 @2xl/main:grid-cols-2"}>
         {row.editions.map((edition, position) => {
           const reviewHref = reviewHrefOf(edition);
           return (
@@ -70,7 +70,7 @@ const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
                   {": "}
                   <bdi>{edition.locale}</bdi>
                 </span>
-                {edition.reach === undefined ? null : <StatusBadge label={copy.reach[edition.reach].label} tone={statusBadgeProps(REACH_STATUS, edition.reach).tone} srPrefix={"Reach"} />}
+                {edition.reach === undefined ? null : <StatusBadge label={copy.reach[edition.reach].label} tone={statusBadgeProps(REACH_STATUS, edition.reach).tone} srPrefix={"Visibility"} />}
                 {reviewHref === undefined ? null : (
                   <Link href={reviewHref} data-slot="pages-index-review" className={PAGE_LINK_CLASS}>
                     {copy.review.openCandidate}
@@ -98,13 +98,13 @@ const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
     <div data-slot="pages-index" className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
       <section aria-labelledby={headingId} className={"flex min-w-0 flex-col gap-4"}>
         <div className="flex min-w-0 flex-col gap-1">
-          <h2 {...{ id: headingId, className: "type-section-title text-pretty wrap-anywhere" }}>{"Your Pages"}</h2>
-          <p className={NOTE_CLASS}>{"Every Page this ministry admits, with the language editions each one carries. A row opens that Page's builder, where an edition is composed as a draft and nothing is released."}</p>
+          <h2 {...{ id: headingId, className: "type-section-title text-pretty wrap-anywhere" }}>{"Your ministry pages"}</h2>
+          <p className={NOTE_CLASS}>{"Open any page to edit drafts, add language editions, and manage public visibility. Opening a page doesn’t publish anything."}</p>
         </div>
         {pagesEnvelope === undefined ? null : <SimulationLabel effect={"publication-reach"} />}
-        {pagesRefusal === undefined ? null : <RefusalNotice answer={pagesRefusal} headingLevel={3} unavailableTitle={"Your Pages could not be read"} />}
+        {pagesRefusal === undefined ? null : <RefusalNotice answer={pagesRefusal} headingLevel={3} unavailableTitle={"Couldn’t load your ministry pages"} />}
         {pagesEnvelope === undefined ? null : pagesEnvelope.data.length === 0 ? (
-          <StateNotice kind="empty" headingLevel={3} title={"No Pages yet"} description={EMPTY_DESCRIPTION} action={{ label: "Choose a Page family", href: `#${FAMILIES_ANCHOR}` }} />
+          <StateNotice kind="empty" headingLevel={3} title={"No ministry pages yet"} description={EMPTY_DESCRIPTION} action={{ label: "Choose a page type", href: `#${FAMILIES_ANCHOR}` }} />
         ) : (
           <ul aria-labelledby={headingId} className={"flex min-w-0 flex-col gap-4"}>
             {pagesEnvelope.data.map((row) => (
@@ -117,7 +117,7 @@ const PageRow = ({ row }: { readonly row: PageIndexRow }): ReactElement => (
         <>
           <Separator />
           <div id={FAMILIES_ANCHOR} className={"flex min-w-0 flex-col gap-6"}>
-            {cataloguesRefusal === undefined ? null : <RefusalNotice answer={cataloguesRefusal} headingLevel={2} unavailableTitle={"The Page catalogues could not be read"} />}
+            {cataloguesRefusal === undefined ? null : <RefusalNotice answer={cataloguesRefusal} headingLevel={2} unavailableTitle={"Couldn’t load page catalogues"} />}
             {cataloguesEnvelope === undefined ? null : (
               <>
                 {workerCatalogue === undefined ? (

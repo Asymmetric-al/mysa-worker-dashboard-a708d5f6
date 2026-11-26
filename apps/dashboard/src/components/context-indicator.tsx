@@ -21,12 +21,15 @@ function labelOrNull(value: string): string | null {
 const isCurrentContext = (admission: AdmittedContext, scope: Scope): boolean => admission.organizationId === scope.organizationId && admission.ministryId === scope.ministryId;
 const keyOf = (context: { readonly organizationId: string; readonly ministryId: string }): string => `${context.organizationId}::${context.ministryId}`;
 const SupportSubject = ({ reference }: { readonly reference: string }): ReactElement => (
-  <span className="flex min-w-0 items-center gap-1.5 text-xs leading-tight text-muted-foreground">
-    <span className="shrink-0">Support subject</span>
-    <Badge variant="outline" className="h-auto max-w-full min-w-0 shrink py-0 leading-tight">
-      <bdi className={cn(IDENTIFIER_CLASS, "truncate")}>{reference}</bdi>
-    </Badge>
-  </span>
+  <>
+    <span className="sr-only lg:hidden">{` Support account ${reference}`}</span>
+    <span className="hidden min-w-0 shrink-0 items-center gap-1.5 text-xs leading-tight text-muted-foreground lg:inline-flex">
+      <span className="shrink-0">Support account</span>
+      <Badge variant="outline" className="h-auto max-w-44 shrink-0 py-0 leading-tight">
+        <bdi className={cn(IDENTIFIER_CLASS, "truncate")}>{reference}</bdi>
+      </Badge>
+    </span>
+  </>
 );
 type ContextNameProps = { readonly organizationLabel: string | null; readonly organizationReference: string; readonly ministryLabel: string | null; readonly ministryReference: string; readonly truncate: boolean; readonly markCurrent?: boolean; readonly srPrefix?: string; readonly supportSubject?: string };
 function ContextName({ organizationLabel, organizationReference, ministryLabel, ministryReference, truncate, markCurrent = false, srPrefix, supportSubject }: ContextNameProps): ReactElement {
@@ -73,9 +76,9 @@ function ContextChooser({ admissions, current, scope, onRequestContext, supportS
                 <IconTile variant="soft" size="xs" className="hidden sm:inline-flex">
                   <Building2Icon />
                 </IconTile>
-                <span className="sr-only">Active context: </span>
+                <span className="sr-only">Active ministry: </span>
                 {children}
-                <span className="sr-only">. Change context.</span>
+                <span className="sr-only">. Switch ministry.</span>
                 <ChevronsUpDownIcon aria-hidden="true" className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
               </DropdownMenuTrigger>
             }
@@ -89,26 +92,34 @@ function ContextChooser({ admissions, current, scope, onRequestContext, supportS
               <span className="shrink-0">Organization</span>
               <span className="break-words">{organizationName ?? scope.organizationId}</span>
             </span>
-            {supportSubject === undefined ? null : ( // The header states the support subject on the ministry's own line, where a narrow viewport truncates it; this tooltip is where the whole reference stays readable, so a truncated chip never hides the scope a financial read ran under.
+            {supportSubject === undefined ? null : (
               <span className="flex w-full min-w-0 items-start gap-1">
-                <span className="shrink-0">Support subject</span>
+                <span className="shrink-0">Support account</span>
                 <bdi className={IDENTIFIER_CLASS}>{supportSubject}</bdi>
               </span>
             )}
             <Separator className="my-0.5" />
             <span className="flex w-full min-w-0 items-start gap-1">
-              <span className="shrink-0">Ministry reference</span>
+              <span className="shrink-0">Ministry ID</span>
               <bdi className={IDENTIFIER_CLASS}>{scope.ministryId}</bdi>
             </span>
             <span className="flex w-full min-w-0 items-start gap-1">
-              <span className="shrink-0">Organization reference</span>
+              <span className="shrink-0">Organization ID</span>
               <bdi className={IDENTIFIER_CLASS}>{scope.organizationId}</bdi>
             </span>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <DropdownMenuContent align="start" className="w-64 max-w-[calc(100vw-2rem)]">
-        <DropdownMenuLabel>Admitted contexts</DropdownMenuLabel>
+        <DropdownMenuLabel>Your ministries</DropdownMenuLabel>
+        {supportSubject === undefined ? null : (
+          <div className="flex items-center justify-between gap-2 px-3 pb-2 text-xs text-muted-foreground">
+            <span className="shrink-0">Support account</span>
+            <Badge variant="outline" className="h-auto max-w-36 py-0 leading-tight">
+              <bdi className={cn(IDENTIFIER_CLASS, "truncate")}>{supportSubject}</bdi>
+            </Badge>
+          </div>
+        )}
         <DropdownMenuSeparator />
         {admissions.map((admission) => {
           const atCurrent = keyOf(admission) === currentKey;
@@ -151,9 +162,9 @@ function ContextChooser({ admissions, current, scope, onRequestContext, supportS
           <ContextName {...nameProps} />
         </ContextChooser>
       ) : (
-        <ContextName {...nameProps} markCurrent srPrefix="Active context. " />
+        <ContextName {...nameProps} markCurrent srPrefix="Active ministry. " />
       )}
-      {current === null ? <span className="max-w-full break-words text-xs text-muted-foreground">This context is not among the memberships this session admits, so no names are available for it. The references above identify what was read.</span> : null}
+      {current === null ? <span className="max-w-full break-words text-xs text-muted-foreground">This ministry isn’t listed in your current session memberships, so its reference IDs are shown above.</span> : null}
       {notice === null ? null : <SwitchNotice summary={notice} />}
     </div>
   );

@@ -25,9 +25,9 @@ const ROOT_CLASS = "flex min-w-0 flex-col gap-4",
   SENTENCE_CLASS = "type-supporting text-pretty";
 const REVIEW_BODY_CLASS = "flex min-w-0 flex-col gap-2";
 const STATEMENTS_CLASS = "flex min-w-0 flex-col gap-3";
-const SOURCE_WORK_KEPT = "The source work is not deleted: the task, the check-in draft, the target history and your private preparation all stay yours, and they keep working exactly as they do now.";
-const NOTHING_RECALLED = "Nothing a coach has already read can be recalled, and no message is taken back: this stops what can be read from now on, and it cannot undo what has already been seen.";
-const OTHER_ROLE_NOTE: Readonly<Record<StopRole, string>> = { worker: "Leaving belongs to the coach, so no control for it is offered here.", coach: "Only the worker can take this step, so no control for it is offered here." };
+const SOURCE_WORK_KEPT = "Your underlying work isn’t deleted: tasks, check-in drafts, targets, and private notes remain intact.";
+const NOTHING_RECALLED = "Stops future access only — anything already viewed cannot be recalled.";
+const OTHER_ROLE_NOTE: Readonly<Record<StopRole, string>> = { worker: "Only your coach can leave this relationship.", coach: "Only the missionary can make this change." };
 function assertUnreachable(effect: never): never {
   throw new Error(`Unhandled stop effect: ${String(effect)}`);
 }
@@ -118,9 +118,9 @@ function EffectReview<P>({ effect, targetIdentity, input, submit, headingLevel, 
 }
 const EffectRefused = ({ effect, messages }: { readonly effect: StopEffect; readonly messages: readonly string[] }): ReactElement => (
   <Alert variant="destructive" data-slot="stop-effect-refused" data-outcome="invalid" data-effect={effect}>
-    <AlertTitle>{STOP_EFFECT_COPY[effect].title} cannot be sent</AlertTitle>
+    <AlertTitle>{STOP_EFFECT_COPY[effect].title} unavailable</AlertTitle>
     <AlertDescription className="flex min-w-0 flex-col gap-2">
-      <p>{"This effect names an identity the surface was not given, so nothing is sent. Reopen the relationship from its own page, choose the module, check-in or task summary there, and act on that record instead of this one."}</p>
+      <p>{"Required record details are missing on this screen. Open the coaching relationship directly and try again."}</p>
       {messages.length === 0 ? null : (
         <ul className="flex min-w-0 flex-col gap-1">
           {messages.map((message) => (
@@ -143,10 +143,10 @@ function EndedStatements({ state, role }: { readonly state: GrantLifecycleState;
         <AlertTitle>{standing.label}</AlertTitle>
         <AlertDescription>
           <p>{standing.description}</p>
-          <p>{"Beginning again takes a new invitation from the worker, naming the modules and the duration; no later action here can reopen the episode."}</p>
+          <p>{"Starting again requires a new invitation from the missionary — ended relationships can’t be reopened."}</p>
         </AlertDescription>
       </Alert>
-      <p className={cn(SENTENCE_CLASS, "text-foreground")}>{"This effect can no longer be applied: the episode has ended, so there is nothing left here to stop and no control is shown."}</p>
+      <p className={cn(SENTENCE_CLASS, "text-foreground")}>{"This relationship has ended, so there is nothing left to stop."}</p>
       <dl className={STATEMENTS_CLASS}>
         {STOP_EFFECTS.map((effect) => (
           <div key={effect} data-slot="stop-effect-statement" data-effect={effect} className="flex min-w-0 flex-col gap-1">
@@ -257,7 +257,7 @@ export function StopActions({ available, target, scope, expectedRevision, role, 
           {!terminal && (chosen === null || kept) ? (
             <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3">
               {offered.length === 0 ? (
-                <p className={SENTENCE_CLASS}>{"No stop-type effect applies to this relationship right now. What is shared stays readable exactly as the invitation named it."}</p>
+                <p className={SENTENCE_CLASS}>{"No stop actions apply right now."}</p>
               ) : (
                 <ul className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                   {offered.map((effect) => (

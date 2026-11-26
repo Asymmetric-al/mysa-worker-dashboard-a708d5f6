@@ -14,16 +14,17 @@ export const metadata: Metadata = { title: PAGE_TITLE };
 const SELF_HREF = "/settings";
 const SECTION_HEADING_LEVEL = 2;
 const COPY = {
-  displayTimeZone: "The display time zone above changes only how dates and times are shown to you. It never rebases a stored civil date, and a recurring task series keeps the planning time zone it was created with, so no date a series admits moves because of this setting.",
-  resetDenied: "The destructive reset is a development-only operation, and this session is not admitted to the development runtime that performs it. No reset control is offered here rather than one that could not act.",
-  resetUnavailable: "Until the session store answers, the reset is unavailable rather than absent, so no control is offered that could not confirm an effect.",
-  resetRefused: "This page's request for the development state was refused, so nothing was read and no reset control is offered in its place.",
-  resetReloadLabel: "Reload this page",
+  subtitle: "Manage your display preferences, time zone, publishing defaults, and workspace data.",
+  displayTimeZone: "Your display time zone only changes how timestamps appear on screen — calendar due dates and repeating task schedules keep their original dates.",
+  resetDenied: "Resetting sample data is only available in development sessions with development access.",
+  resetUnavailable: "Couldn’t reach the local session store, so reset isn’t available right now.",
+  resetRefused: "Couldn’t load development settings for this request.",
+  resetReloadLabel: "Reload page",
 } as const;
 const SETTINGS_SECTIONS = [
-  { id: "settings-preferences", label: "Appearance & locale" },
-  { id: "settings-source-status", label: "Source status" },
-  { id: "settings-dev-reset", label: "Development reset" },
+  { id: "settings-preferences", label: "Display & defaults" },
+  { id: "settings-source-status", label: "Data & source status" },
+  { id: "settings-dev-reset", label: "Reset sample data" },
 ] as const;
 function refusalDescription(fields: Readonly<Record<string, readonly string[]>>): string {
   const messages = Object.values(fields).flat();
@@ -41,13 +42,16 @@ function ResetSection({ development }: { readonly development: Awaited<ReturnTyp
       return <StateNotice kind="refused" headingLevel={SECTION_HEADING_LEVEL} title={RESET_COPY.title} description={refusalDescription(development.refused.fields)} />;
   }
 }
-/** The Settings screen: appearance, interface language, display time zone, source status and the destructive development reset, framed with a Shadcn Space `forms-04` sticky section rail on desktop. */
+/** Settings screen: appearance, formatting, time zone, update publishing default, data status, and local sample reset. */
 export default async function SettingsPage(): Promise<ReactElement> {
   const [sourceStatus, development] = await Promise.all([reads.context.readAdmissionState(), reads.dev.readDevState()]);
   const developmentState = development.kind === "envelope" ? development.envelope.data : null;
   return (
     <PageColumn>
-      <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
+      <header className="flex min-w-0 flex-col gap-1.5">
+        <h1 className="type-page-title text-pretty wrap-anywhere">{PAGE_TITLE}</h1>
+        <p className="type-supporting text-pretty wrap-anywhere">{COPY.subtitle}</p>
+      </header>
       <div className="grid min-w-0 gap-6 lg:grid-cols-[12.5rem_minmax(0,1fr)] lg:items-start">
         <ScrollspyNav label="Settings sections" sections={SETTINGS_SECTIONS} orientation="vertical" className="hidden lg:sticky lg:top-20 lg:flex" />
         <div className="flex min-w-0 flex-col gap-6">

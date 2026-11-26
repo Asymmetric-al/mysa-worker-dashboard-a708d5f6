@@ -27,76 +27,76 @@ type ReviewInput<P> = Omit<MutationInput<P>, "operationId">;
 type SubmitReviewPayload = Parameters<ReturnType<typeof useSubmitForReview>["submit"]>[0]["payload"];
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's utility for each level, so every heading this surface renders takes the measure of the level it lands at rather than one fixed size. */ const HEADING_SCALE: Readonly<Record<2 | 3 | 4, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
-const SIBLING_NOTE = "Each edition below states its own published revision, and a release attempt that fails for one edition leaves every other edition's published revision standing. Nothing here is a rollback, no sibling's release is removed, and the editions are never added up into one status for the whole Update.";
-const FACT_LABEL = { draft: "Saved draft", candidate: "Submitted for review", release: "Published revision", translation: "Translation" } as const;
-const ABSENT = { draft: "No draft is saved for this edition yet, so there is nothing to submit for review.", candidate: "No revision of this edition is frozen for review.", release: "This edition publishes nothing yet, so no reader is served a revision of it." } as const;
+const SIBLING_NOTE = "Each edition publishes independently — if one fails, the others remain published without rolling back.";
+const FACT_LABEL = { draft: "Saved draft", candidate: "In review", release: "Published version", translation: "Translation" } as const;
+const ABSENT = { draft: "No draft saved yet.", candidate: "Nothing submitted for review.", release: "Not published yet." } as const;
 const RELEASE_COPY = {
   revision: "Revision",
-  publishedFor: "Published for",
+  publishedFor: "Audience & language",
   publishedAt: "Published",
-  publication: "Publication",
-  noInstant: "No instant was stated",
-  withdrawn: "Withdrawn",
-  superseded: "Replaced by a later release of this edition",
-  withdrawnNote: "A withdrawn publication is no longer served: its address answers with a short notice that carries no identifying content. The record that it was once published stays.",
-  supersededNote: "A later release of this edition is what a reader is served now; this revision is no longer the head.",
-  noindexNote: "No search engine is asked to index this edition.",
+  publication: "Release ID",
+  noInstant: "Not recorded",
+  withdrawn: "Unpublished",
+  superseded: "Replaced by a newer release",
+  withdrawnNote: "No longer visible to readers. History that it was published remains recorded.",
+  supersededNote: "Readers now see the newer release.",
+  noindexNote: "Hidden from search engines (noindex).",
 } as const;
 const CANDIDATE_COPY = {
-  awaitngDecision: "Frozen and waiting for its one review step.",
-  frozenAt: "Frozen",
-  checksum: "Checksum of the frozen revision",
-  reading: "Reading the frozen candidate…",
-  deniedTitle: "The frozen candidate cannot be shown here",
-  deniedDescription: "This context may read the edition's pointers but not the frozen revision itself, so nothing about what a reviewer would approve is stated here.",
-  unavailableTitle: "The frozen candidate could not be read",
-  unavailableDescription: "Its source could not be read, so the frozen revision and checksum are not stated. Retry the same read: an outage is never presented as a candidate that does not exist.",
-  refusedTitle: "The frozen candidate was refused",
-  refusedDescription: "The request for this candidate was refused before anything was read, so no revision is stated here.",
-  invalidTitle: "The frozen candidate cannot be read as content",
-  invalidDescription: "The stored revision it names could not be read as content, so what a reviewer would approve cannot be stated.",
-  decision: { approved: "A reviewer approved this candidate.", "changes-requested": "A reviewer asked for changes, so a further round is a new submission.", rejected: "A reviewer ended this candidate." },
+  awaitngDecision: "Submitted and waiting for review.",
+  frozenAt: "Submitted",
+  checksum: "Checksum",
+  reading: "Loading review details…",
+  deniedTitle: "Review details unavailable",
+  deniedDescription: "Your session doesn’t have permission to view this review submission.",
+  unavailableTitle: "Couldn’t load review details",
+  unavailableDescription: "Couldn’t reach the content service right now. Try again in a moment.",
+  refusedTitle: "Couldn’t load review details",
+  refusedDescription: "The review request wasn’t accepted.",
+  invalidTitle: "Submitted copy can’t be displayed",
+  invalidDescription: "This revision doesn’t meet content requirements.",
+  decision: { approved: "Approved by reviewer — ready to publish.", "changes-requested": "Changes requested — update your draft and submit again.", rejected: "Rejected by reviewer." },
 } as const;
-const TRANSLATION_COPY = { unresolved: "This edition was written from another edition, and the source revision it names is no longer in the store, so whether it is current cannot be stated. Nothing was withdrawn for it.", direction: { ltr: "written left to right", rtl: "written right to left" } } as const;
+const TRANSLATION_COPY = { unresolved: "The source edition couldn’t be loaded, so translation freshness is unknown.", direction: { ltr: "left-to-right", rtl: "right-to-left" } } as const;
 const ACTION_COPY = {
-  editor: "Open the editor",
-  preview: "Open the preview",
+  editor: "Edit draft",
+  preview: "Preview",
   submit: "Submit for review",
-  restore: "Restore the published revision as a new draft",
-  withdrawLocale: "Withdraw this language edition",
-  withdrawUpdate: "Withdraw the whole Update",
-  noPreview: "There is no draft, candidate or publication of this edition to preview yet.",
+  restore: "Restore published version to draft",
+  withdrawLocale: "Unpublish edition",
+  withdrawUpdate: "Unpublish entire update",
+  noPreview: "Save a draft or publish first to preview.",
   withheldReasons: {
-    submit: "This edition has no saved draft, so there is nothing to freeze for review yet.",
-    restore: "This edition publishes no revision, so there is none to restore as a draft.",
-    withdrawLocale: "This edition publishes no revision, or its publication is already withdrawn, so there is nothing to withdraw.",
-    withdrawUpdate: "No edition of this Update holds a publication that is still served, so there is nothing to withdraw.",
+    submit: "Save a draft first to submit for review.",
+    restore: "Publish this edition first before restoring it to a draft.",
+    withdrawLocale: "Nothing currently published to unpublish.",
+    withdrawUpdate: "No editions are currently live to unpublish.",
   },
 } as const;
 const REVIEW_COPY = {
-  submit: { title: "Submit this edition for its review", confirm: "Submit for review", what: "This freezes the exact saved revision as the candidate its one review step answers. It publishes nothing and notifies nobody: a release is a separate step, and a notice is a separate outcome again." },
-  restore: { title: "Restore the published revision as a new draft", confirm: "Restore as a new draft", what: "The revision restored is the one this edition publishes today. It becomes a new draft to edit, with its own identity, and the published revision keeps standing until a later release replaces it." },
-  withdrawLocale: { title: "Withdraw this language edition", confirm: "Withdraw this edition", consequence: "It stops being served as soon as you confirm it. Every other edition of this Update is left exactly as it is." },
-  withdrawUpdate: { title: "Withdraw the whole Update", confirm: "Withdraw every edition", consequence: "Every edition of this Update stops being served as soon as you confirm it, in every language and for every audience." },
+  submit: { title: "Submit edition for review", confirm: "Submit for review", what: "Freezes your current draft for one review step without publishing or emailing partners yet." },
+  restore: { title: "Restore published version as a new draft", confirm: "Restore to draft", what: "Copies the live version into a new draft so you can make edits without affecting what partners see now." },
+  withdrawLocale: { title: "Unpublish this edition", confirm: "Unpublish edition", consequence: "Immediately stops serving this edition. Other language and audience editions stay live." },
+  withdrawUpdate: { title: "Unpublish entire update", confirm: "Unpublish all editions", consequence: "Immediately stops serving every audience and language edition of this update." },
 } as const;
-const PUBLISHED_ACTION_LABELS: Readonly<Record<string, string>> = { "create-variant": "Add an edition", "open-draft": "Open a saved draft", "review-candidate": "Review a submitted edition", "publish-variants": "Publish a frozen candidate" };
-const PERMITS_INTRO = "These are the actions the read states for this Update, with the read's own reason wherever one is withheld. An action this screen offers below is re-checked by the service when it is submitted, so a screen that has gone stale answers that the change is not permitted rather than making it.";
-const PERMITS_WITHHELD = "withheld";
+const PUBLISHED_ACTION_LABELS: Readonly<Record<string, string>> = { "create-variant": "Add edition", "open-draft": "Edit draft", "review-candidate": "Review submission", "publish-variants": "Publish approved editions" };
+const PERMITS_INTRO = "Actions available for this update in your current ministry context.";
+const PERMITS_WITHHELD = "unavailable";
 const REVIEW_OFFER = {
-  heading: "Editions waiting for a release",
-  intro: "An edition is listed here while it holds a frozen candidate that is not yet the revision it publishes: a candidate still waiting for its one review step, and a candidate its review has approved and no release has taken up yet. A candidate is not a release, so none of these editions is shown as published.",
-  none: "No edition of this Update holds a frozen candidate waiting for a release.",
-  link: "Open the review",
-  countNoun: "editions awaiting a release",
-  singularCountNoun: "edition awaiting a release",
+  heading: "Waiting for review or publish",
+  intro: "Editions submitted for review or approved and waiting to be published.",
+  none: "No editions are currently waiting for review or publish.",
+  link: "Open review",
+  countNoun: "editions waiting",
+  singularCountNoun: "edition waiting",
 } as const;
 const READ_STATE = {
-  reading: { title: "Reading this Update's editions", description: "The editions, their candidates and their published revisions are being read under the selected context." },
-  denied: { title: "These editions cannot be read here", description: "The selected context is not permitted to read this Update's editions, so no edition, revision, candidate or count is stated here." },
-  unavailable: { title: "The editions could not be read", description: "The source holding this Update could not be read, so no edition, revision or candidate is stated. Retry the same read: an outage is never presented as an Update with no editions." },
-  refused: { title: "The read was refused", description: "The request for this Update was refused before anything was read, so nothing about its editions is stated here." },
-  empty: { title: "This Update has no editions yet", description: "An Update carries one edition per audience and content language, and none exists for this one yet. Nothing here can be drafted, reviewed or released until an edition exists." },
-  stale: { title: "This Update is being read again", description: "The context changed since this Update was read, so the previous context's editions are not shown under the current one." },
+  reading: { title: "Loading editions…", description: "Loading drafts, reviews, and published versions for this update." },
+  denied: { title: "Update isn’t available in this context", description: "Your current session doesn’t have permission to view this update’s editions." },
+  unavailable: { title: "Couldn’t load editions", description: "Couldn’t reach the content service right now. Try again in a moment." },
+  refused: { title: "Couldn’t open update", description: "That update request wasn’t valid." },
+  empty: { title: "No editions yet", description: "Add an audience and language edition to start writing." },
+  stale: { title: "Refreshing update…", description: "Reloading editions for your new ministry context." },
 } as const;
 const NOTE_CLASS = "type-supporting text-pretty";
 const SENTENCE_CLASS = "type-body text-pretty";
@@ -478,7 +478,7 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
   return (
     <div data-slot="variant-overview" data-document-id={data.document.documentId} data-edition-count={String(editions.length)} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <header className="flex min-w-0 flex-col gap-2">
-        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-start text-pretty") }}>{"Editions, candidates and releases"}</Heading>
+        <Heading {...{ id: headingId, className: cn(HEADING_SCALE[headingLevel], "text-start text-pretty") }}>{"Editions & publishing"}</Heading>
         <p className={NOTE_CLASS}>{`${DRAFT_VS_RELEASED.draftIsNotWhatReadersSee} ${DRAFT_VS_RELEASED.releaseIsWhatRecipientsReceive}`}</p>
         <p className={NOTE_CLASS}>{SIBLING_NOTE}</p>
       </header>
@@ -530,13 +530,13 @@ export function VariantOverview({ scope, documentId, initialResult, initialDataU
         )}
       </section>
       <section aria-labelledby={`${headingId}-permits`} className="flex min-w-0 flex-col gap-3">
-        <SectionHeading {...{ id: `${headingId}-permits`, className: cn(HEADING_SCALE[nestedLevel(headingLevel)], "text-start text-pretty") }}>{"What this Update permits here"}</SectionHeading>
+        <SectionHeading {...{ id: `${headingId}-permits`, className: cn(HEADING_SCALE[nestedLevel(headingLevel)], "text-start text-pretty") }}>{"Permissions in this context"}</SectionHeading>
         <p className={NOTE_CLASS}>{PERMITS_INTRO}</p>
         <ul className="flex min-w-0 list-none flex-col gap-2 p-0">
           {envelope.actions.map((action) => (
             <li key={action.name} className="flex min-w-0 flex-col gap-1">
               <span className="text-sm font-medium wrap-anywhere">{PUBLISHED_ACTION_LABELS[action.name] ?? action.name}</span>
-              <span className={NOTE_CLASS}>{action.available ? "offered in this context" : `${PERMITS_WITHHELD}: ${action.reason ?? "no reason was stated for withholding it"}`}</span>
+              <span className={NOTE_CLASS}>{action.available ? "available" : `${PERMITS_WITHHELD}: ${action.reason ?? "not permitted in this context"}`}</span>
             </li>
           ))}
         </ul>

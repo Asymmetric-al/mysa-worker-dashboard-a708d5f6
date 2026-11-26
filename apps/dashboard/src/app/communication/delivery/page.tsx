@@ -7,15 +7,15 @@ import { PageColumn, PageHeading, pageRefusalOf, paramOf, wholeNumberOf, type Re
 const PAGE_HEADING_LEVEL = 1;
 const SECTION_HEADING_LEVEL = 2;
 const PARAM = { intentId: "intentId", page: "page", pageSize: "pageSize" } as const;
-const EMPTY_ACTION = { label: "Open the Updates list", href: "/communication" } as const;
+const EMPTY_ACTION = { label: "Back to Updates", href: "/communication" } as const;
 const PAGE_COPY = {
-  title: "Delivery",
-  lede: "This screen reports the outcomes the application recorded for one submitted notice. Accepted means the simulated submission step took that copy for that recipient, which is neither an arrival nor a reading. Failed is definite and repeatable only inside the notice's usefulness window, and unknown means the effect may have happened while its acknowledgement was lost, so that row is recovered by reading this notice again rather than by submitting anything twice.",
-  unnamed: { title: "No submitted notice is named", description: "This screen reports the recorded outcomes of one submitted notice, under that notice's own identity. " + "Nothing is counted and no notice is guessed until one is named, because a guess would report " + "whichever notice was submitted last." },
-  denied: { title: "These results are not available in this session", description: "This session may not read the recorded outcomes for this notice, so no recipient, count, copy or " + "window is stated here: a refusal is not an empty result." },
-  unavailable: { title: "The recorded outcomes could not be read" },
-  refused: { title: "This screen's request was refused" },
-  retry: "Try this read again",
+  title: "Send history",
+  lede: "Per-recipient results for a notification send. Accepted means the simulated email was queued (not that it was read). Failed sends can be retried while the send window is open; Unknown results should be refreshed rather than sent twice.",
+  unnamed: { title: "No send selected", description: "Open a published update and choose View send history to inspect results for a specific email send." },
+  denied: { title: "Send history isn’t available in this session", description: "Your current session doesn’t have permission to view send results for this notification." },
+  unavailable: { title: "Couldn’t load send results" },
+  refused: { title: "Couldn’t open send results" },
+  retry: "Try again",
 } as const;
 export const metadata: Metadata = { title: PAGE_COPY.title };
 function queryOf(intentId: string, searchParams: SearchParams): NonNullable<Parameters<typeof reads.audience.readSendResult>[0]> {

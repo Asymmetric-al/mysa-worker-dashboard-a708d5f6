@@ -3,12 +3,12 @@ import { Info } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/cn";
 /** The closed set of simulated external effects: one member per boundary that would leave the application in production. */ export type SimulatedEffect = "mail-submission" | "publication-reach" | "giving-destination" | "importer-safety" | "media-preparation";
-/** The exact sentence each simulated boundary states, in the specification's own words (AAP 0.7.2). */ export const SIMULATION_LABELS = Object.freeze({
-  "mail-submission": "simulated — no mail leaves this application",
-  "publication-reach": "simulated publication; reach is demonstrated in the receiving preview",
-  "giving-destination": "simulated giving destination; no payment is taken",
-  "importer-safety": "synthetic files only; a successful local parse is not a safety qualification",
-  "media-preparation": "local processing; not production scanning or transcoding",
+/** Clear, honest disclosure for each simulated boundary. */ export const SIMULATION_LABELS = Object.freeze({
+  "mail-submission": "Simulated — no email leaves this workspace.",
+  "publication-reach": "Simulated publishing — preview how readers see it in Reader preview.",
+  "giving-destination": "Simulated giving link — no payment is taken.",
+  "importer-safety": "Sample import only — files are parsed locally and not virus-scanned.",
+  "media-preparation": "Processed locally — not production media scanning or transcoding.",
 } as const satisfies Record<SimulatedEffect, string>);
 export type SimulationLabelContext = "inline" | "block";
 export type SimulationLabelProps = Omit<ComponentPropsWithoutRef<"div">, "children" | "style" | "role" | "hidden" | "aria-hidden" | "aria-live" | "aria-atomic" | "dangerouslySetInnerHTML"> & { effect: SimulatedEffect; context?: SimulationLabelContext };

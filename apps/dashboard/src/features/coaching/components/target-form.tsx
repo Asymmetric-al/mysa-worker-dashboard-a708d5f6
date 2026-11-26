@@ -36,32 +36,32 @@ const PERIOD_END_FIELD = "periodEnd";
 const PRIVATE_LABEL_FIELD = "privateLabel";
 const HOME_PLACEMENT_FIELD = "homePlacement";
 const FIELD_LABELS: Readonly<Record<string, string>> = {
-  [MEASURE_FIELD]: "What to count",
-  [QUANTITY_FIELD]: "How many in each period",
-  [PERIOD_FIELD]: "Period",
-  [CALENDAR_START_FIELD]: "First day",
-  [PERIOD_END_FIELD]: "Last day",
-  [PRIVATE_LABEL_FIELD]: "Your name for this target",
-  [HOME_PLACEMENT_FIELD]: "Show it on Home",
+  [MEASURE_FIELD]: "Activity to track",
+  [QUANTITY_FIELD]: "Target per period",
+  [PERIOD_FIELD]: "Cadence",
+  [CALENDAR_START_FIELD]: "Start date",
+  [PERIOD_END_FIELD]: "End date",
+  [PRIVATE_LABEL_FIELD]: "Private label",
+  [HOME_PLACEMENT_FIELD]: "Show on Home",
 };
 type PlanTextField = { readonly name: typeof QUANTITY_FIELD | typeof CALENDAR_START_FIELD | typeof PERIOD_END_FIELD | typeof PRIVATE_LABEL_FIELD; readonly type: "number" | "date" | "text"; readonly description: string; readonly className: string };
 const FIELD_ORDER = [MEASURE_FIELD, QUANTITY_FIELD, PERIOD_FIELD, CALENDAR_START_FIELD, PERIOD_END_FIELD, PRIVATE_LABEL_FIELD, HOME_PLACEMENT_FIELD] as const;
 const PERIOD_KINDS: readonly PeriodKind[] = ["weekly", "monthly", "custom"];
-const PLAN_HEADING = "The plan";
+const PLAN_HEADING = "Target settings";
 const PLAN_PURPOSE = COACHING_COPY.targets.purpose;
-const MEASURE_DESCRIPTION = "A target counts one measure at a time, and nothing is counted that you have not recorded as an activity.";
-const QUANTITY_DESCRIPTION = "A positive whole number of the measure you chose. A zero, a negative number, a fraction or an empty entry is refused with the reason rather than turned into a number you did not type.";
-const PERIOD_DESCRIPTION = "The stretch of time each count is compared over. A new target uses the weekly period.";
-const HOME_PLACEMENT_DESCRIPTION = "Placement changes only what you see on Home. It creates no commitment, no reminder and no notification, and no coach can read it. The target counts the same whether it is placed or not.";
+const MEASURE_DESCRIPTION = "Tracks one activity type at a time based on what you log.";
+const QUANTITY_DESCRIPTION = "Enter a positive whole number.";
+const PERIOD_DESCRIPTION = "How often the count resets. Defaults to weekly.";
+const HOME_PLACEMENT_DESCRIPTION = "Only changes what appears on your Home page — never shared with your coach and doesn’t create reminders.";
 const QUANTITY_INPUT: PlanTextField = { name: QUANTITY_FIELD, type: "number", description: QUANTITY_DESCRIPTION, className: "w-full tabular-figures sm:max-w-40" };
-const CALENDAR_START_INPUT: PlanTextField = { name: CALENDAR_START_FIELD, type: "date", description: "The first day of the one-off period, as a calendar day with no time of day behind it. An empty first day is refused rather than filled in with today's date.", className: "w-full sm:max-w-60" };
-const PERIOD_END_INPUT: PlanTextField = { name: PERIOD_END_FIELD, type: "date", description: "The last day of the one-off period, inclusive. An empty last day is refused rather than filled in with today's date.", className: "w-full sm:max-w-60" };
-const PRIVATE_LABEL_INPUT: PlanTextField = { name: PRIVATE_LABEL_FIELD, type: "text", description: "A name only you see. It is never disclosed to a coach, never exported and never part of what a coach can read; choosing one changes nothing about what is counted.", className: "w-full sm:max-w-96" };
+const CALENDAR_START_INPUT: PlanTextField = { name: CALENDAR_START_FIELD, type: "date", description: "First calendar date of this custom period.", className: "w-full sm:max-w-60" };
+const PERIOD_END_INPUT: PlanTextField = { name: PERIOD_END_FIELD, type: "date", description: "Last calendar date of this custom period (inclusive).", className: "w-full sm:max-w-60" };
+const PRIVATE_LABEL_INPUT: PlanTextField = { name: PRIVATE_LABEL_FIELD, type: "text", description: "Only visible to you — never shared with your coach or included in exports.", className: "w-full sm:max-w-96" };
 const isPeriodKind = (value: string): value is PeriodKind => PERIOD_KINDS.some((kind) => kind === value);
 const isTargetMeasure = (value: string): value is TargetMeasure => TARGET_MEASURES.some((measure) => measure === value);
 const WRITTEN_NUMBER = /^-?\d+(?:\.\d+)?$/u;
 const quantityOf = (entry: string): number => (WRITTEN_NUMBER.test(entry.trim()) ? Number(entry.trim()) : Number.NaN);
-const quantityTextOf = (quantity: number): string => (Number.isSafeInteger(quantity) && quantity > 0 ? String(quantity) : "a whole number you have not entered yet");
+const quantityTextOf = (quantity: number): string => (Number.isSafeInteger(quantity) && quantity > 0 ? String(quantity) : "not entered yet");
 function initialValuesOf(target: TargetView | null): TargetFormValues {
   if (target === null) return { measure: TARGET_MEASURES[0], quantity: "", period: DEFAULT_TARGET_PERIOD.kind, calendarStart: "", periodEnd: "", privateLabel: "", homePlacement: false };
   return {
@@ -86,7 +86,7 @@ function rangeIssueOf(values: TargetFormValues): readonly string[] {
   const start = parseCivilDate(values.calendarStart.trim());
   const end = parseCivilDate(values.periodEnd.trim());
   if (start.status !== "parsed" || end.status !== "parsed") return [];
-  return end.date.until(start.date).sign > 0 ? ["The last day of a one-off period must be on or after its first day."] : [];
+  return end.date.until(start.date).sign > 0 ? ["End date must be on or after start date."] : [];
 }
 function refusalOf(values: TargetFormValues, target: TargetView | null): FieldErrorLookup | null {
   const plan = planOf(values);
@@ -113,7 +113,7 @@ function planSentence(plan: TargetSavePayload): string {
     case "custom": {
       const from = plan.calendarStart?.trim() ?? "";
       const to = plan.periodEnd?.trim() ?? "";
-      const range = from === "" || to === "" ? "over a one-off period whose two dates are not both entered yet" : `over the one-off period from ${from} to ${to}`;
+      const range = from === "" || to === "" ? "over a custom period (enter both dates)" : `from ${from} to ${to}`;
       return `${counted} ${range}`;
     }
   }
@@ -129,17 +129,17 @@ const heldPlanOf = (target: TargetView): TargetSavePayload => ({
 });
 function privateLabelText(label: string | null): string {
   const stated = label?.trim() ?? "";
-  return stated === "" ? "No name chosen yet" : stated;
+  return stated === "" ? "None" : stated;
 }
 const placementText = (placed: boolean): string => (placed ? "Shown on Home" : "Not shown on Home");
-const REVIEWING_NOTE = "The plan above is ready to review. Changing an entry begins the review again with the new entries, and nothing is sent until you confirm.";
-const PAUSED_PAUSE_REASON = "This target is already paused, so there is nothing to pause. Its history stays as it is, and this release offers no separate resume action.";
-const ENDED_PAUSE_REASON = "This target has ended, so it cannot be paused. Ending closed it for good, and its history is kept either way.";
-const END_ALREADY_ENDED_REASON = "This target has ended already. Its history and the versions its closed periods were measured against stay exactly as they are.";
+const REVIEWING_NOTE = "Review your target below before saving. Changing any field updates the preview — nothing is saved until you confirm.";
+const PAUSED_PAUSE_REASON = "Already paused. Your past periods stay recorded.";
+const ENDED_PAUSE_REASON = "Ended targets can’t be paused. Your history remains intact.";
+const END_ALREADY_ENDED_REASON = "Already ended. All past periods and versions stay intact.";
 type LifecycleAction = { readonly key: "pause" | "end"; readonly title: string; readonly description: string; readonly consequence: string; readonly confirmLabel: string };
 /** The two lifecycle changes this form offers, each with the words it states and the payload it sends, so the review and the held control beside it are written once. */ const LIFECYCLE_ACTIONS: readonly LifecycleAction[] = [
-  { key: "pause", title: "Pause this target", description: TARGET_STATE_COPY.paused.description, consequence: "Pausing changes only whether this target admits recorded progress. It sends no notice, creates no task and no commitment, and it deletes nothing.", confirmLabel: "Pause target" },
-  { key: "end", title: "End this target", description: TARGET_STATE_COPY.ended.description, consequence: "Ending closes the target for good: a later change to its plan is refused rather than applied. It deletes no activity record, sends no notice, and leaves every other target untouched.", confirmLabel: "End target" },
+  { key: "pause", title: "Pause target", description: TARGET_STATE_COPY.paused.description, consequence: "Stops tracking new progress without deleting your activity history or sending any notification.", confirmLabel: "Pause target" },
+  { key: "end", title: "End target", description: TARGET_STATE_COPY.ended.description, consequence: "Closes this target permanently so it can no longer be edited. Activity history stays intact and nothing is sent.", confirmLabel: "End target" },
 ];
 const heldReasonOf = (action: LifecycleAction["key"], state: TargetState): string | null => (action === "pause" ? (state === "paused" ? PAUSED_PAUSE_REASON : state === "ended" ? ENDED_PAUSE_REASON : null) : state === "ended" ? END_ALREADY_ENDED_REASON : null);
 const labelOf = (field: string): string => FIELD_LABELS[field] ?? "";
@@ -217,14 +217,14 @@ const InputField = ({ name, label, description, error, type, className, value, o
     }
   </FormField>
 );
-const CivilDateText = ({ value }: { readonly value: string | undefined }): ReactElement => ((value ?? "").trim() === "" ? <span className="text-muted-foreground">a day you have not entered yet</span> : <bdi className="wrap-anywhere">{(value ?? "").trim()}</bdi>);
+const CivilDateText = ({ value }: { readonly value: string | undefined }): ReactElement => ((value ?? "").trim() === "" ? <span className="text-muted-foreground">not entered yet</span> : <bdi className="wrap-anywhere">{(value ?? "").trim()}</bdi>);
 function StateStatement({ state }: { readonly state: TargetState }): ReactElement {
   const copy = TARGET_STATE_COPY[state];
   return (
     <div className="flex min-w-0 flex-col items-start gap-2">
       <Badge variant={state === "active" ? "secondary" : "outline"}>{copy.label}</Badge>
       <p className="type-supporting text-pretty">{copy.description}</p>
-      {state === "paused" || state === "ended" ? <p className="type-supporting text-pretty">{"Pausing and ending both keep the history: the periods that have already closed keep the version they were measured against, and no activity record is deleted."}</p> : null}
+      {state === "paused" || state === "ended" ? <p className="type-supporting text-pretty">{"Past periods keep the target version they were measured against, and no logged activities are deleted."}</p> : null}
     </div>
   );
 }
@@ -249,8 +249,8 @@ const PlanRows = ({ className, rows }: { readonly className: string; readonly ro
   </dl>
 );
 const PLAN_ROWS_CLASS = "flex min-w-0 flex-col gap-3 text-sm";
-const privateRow = (label: string | null): PlanRow => ({ term: labelOf(PRIVATE_LABEL_FIELD), value: <PlanNote text={privateLabelText(label)} suffix={"— never disclosed to a coach"} /> });
-const placementRow = (placed: boolean): PlanRow => ({ term: labelOf(HOME_PLACEMENT_FIELD), value: <PlanNote text={placementText(placed)} suffix={"— changes only what you see"} /> });
+const privateRow = (label: string | null): PlanRow => ({ term: labelOf(PRIVATE_LABEL_FIELD), value: <PlanNote text={privateLabelText(label)} suffix={"— private to you"} /> });
+const placementRow = (placed: boolean): PlanRow => ({ term: labelOf(HOME_PLACEMENT_FIELD), value: <PlanNote text={placementText(placed)} suffix={"— only affects your Home page"} /> });
 const planFactsRowsOf = (target: TargetView): readonly PlanRow[] => {
   const plan = heldPlanOf(target);
   return [
@@ -276,7 +276,7 @@ const planSummaryRowsOf = (plan: TargetSavePayload): readonly PlanRow[] => [
   privateRow(plan.privateLabel),
   placementRow(plan.homePlacement),
 ];
-const comparisonRowsOf = (plan: TargetSavePayload, target: TargetView): readonly PlanRow[] => [{ term: "The plan now", value: planSentence(heldPlanOf(target)) }, { term: "This change", value: planSentence(plan) }, privateRow(plan.privateLabel), placementRow(plan.homePlacement)];
+const comparisonRowsOf = (plan: TargetSavePayload, target: TargetView): readonly PlanRow[] => [{ term: "Current target", value: planSentence(heldPlanOf(target)) }, { term: "Updated target", value: planSentence(plan) }, privateRow(plan.privateLabel), placementRow(plan.homePlacement)];
 const PlanFacts = ({ target }: { readonly target: TargetView }): ReactElement => <PlanRows className={"grid min-w-0 gap-3 text-sm"} rows={planFactsRowsOf(target)} />;
 const PlanSummary = ({ plan }: { readonly plan: TargetSavePayload }): ReactElement => <PlanRows className={PLAN_ROWS_CLASS} rows={planSummaryRowsOf(plan)} />;
 const PlanComparison = ({ plan, target }: { readonly plan: TargetSavePayload; readonly target: TargetView }): ReactElement => <PlanRows className={PLAN_ROWS_CLASS} rows={comparisonRowsOf(plan, target)} />;
@@ -397,7 +397,7 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
           {textField(PERIOD_END_INPUT)}
         </>
       ) : (
-        <p className="type-supporting text-pretty">{"A weekly or monthly period starts on the calendar day the target is recorded, so this form asks for no start date for it. A one-off period asks for both of its dates."}</p>
+        <p className="type-supporting text-pretty">{"Weekly and monthly targets start on the day you save them. Custom periods require start and end dates."}</p>
       )}
       {textField(PRIVATE_LABEL_INPUT)}
       <form.Field name={HOME_PLACEMENT_FIELD}>
@@ -418,13 +418,13 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
   return (
     <section id="target-form" dir={dir} aria-labelledby={headingId} aria-busy={busy ? true : undefined} data-slot="target-form" data-interface-locale={locale} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 {...{ id: headingId, className: "type-section-title" }}>{creating ? "Set a target" : "Change this target"}</h2>
+        <h2 {...{ id: headingId, className: "type-section-title" }}>{creating ? "Set a target" : "Edit target"}</h2>
         <p className="type-supporting text-pretty">{PLAN_PURPOSE}</p>
-        <p className="type-supporting text-pretty">{"A target is your own plan. A period with nothing recorded states a count of zero and says nothing about the effort you made at it, and it creates no commitment to anyone. Only the modules you switch on are ever readable by a coach."}</p>
+        <p className="type-supporting text-pretty">{"Your personal rhythm — a period with zero logged activities doesn’t judge effort or create an obligation. Your coach only sees targets if you turn on the Targets module."}</p>
       </div>
       {target === null ? null : <StateStatement state={target.state} />}
       {ended && target !== null ? (
-        <Panel titleId={planHeadingId} headingLevel={3} title={PLAN_HEADING} description="This target has ended, so its plan is shown here rather than offered for change: a change to an ended target is refused instead of applied." cardClassName="min-w-0">
+        <Panel titleId={planHeadingId} headingLevel={3} title={PLAN_HEADING} description="This target has ended and can no longer be edited." cardClassName="min-w-0">
           <PlanFacts target={target} />
         </Panel>
       ) : (
@@ -440,16 +440,16 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
                     <Separator />
                     <p className="type-supporting text-pretty">{TARGET_VERSION_GUARANTEE}</p>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Button {...{ type: "submit", disabled: busy, "aria-describedby": reviewNoteId, className: "min-h-target max-w-full whitespace-normal" }}>{creating ? "Review and save" : "Review the change"}</Button>
+                      <Button {...{ type: "submit", disabled: busy, "aria-describedby": reviewNoteId, className: "min-h-target max-w-full whitespace-normal" }}>{creating ? "Review & save" : "Review changes"}</Button>
                     </div>
-                    <p {...{ id: reviewNoteId, className: "type-supporting text-pretty" }}>{reviewing ? REVIEWING_NOTE : "Nothing is saved until you confirm it in the next step, and confirming applies this one change once."}</p>
+                    <p {...{ id: reviewNoteId, className: "type-supporting text-pretty" }}>{reviewing ? REVIEWING_NOTE : "Nothing is saved until you confirm below."}</p>
                   </form>
                 </Panel>
                 {reviewing && target === null ? (
                   <ActionReview<TargetSavePayload>
-                    title="Review this target"
+                    title="Confirm new target"
                     description={<PlanSummary plan={plan} />}
-                    consequence={<p className="type-supporting">{"Saving records the first version of this plan. The target counts only the activity you record, it creates no commitment and sends no reminder, and no coach can read it unless you switch the Targets module on."}</p>}
+                    consequence={<p className="type-supporting">{"Saves this target. Tracks only activities you log, creates no reminders, and stays private unless you share the Targets module."}</p>}
                     confirmLabel="Save target"
                     input={settledPlanInput?.kind === "create" ? settledPlanInput.input : { scope, expectedRevision, payload: plan }}
                     submit={savePlan}
@@ -461,7 +461,7 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
                 ) : null}
                 {reviewing && target !== null ? (
                   <ActionReview<TargetEditPayload>
-                    title="Review this change"
+                    title="Confirm target changes"
                     description={<PlanComparison plan={plan} target={target} />}
                     consequence={<p className="type-supporting">{TARGET_VERSION_GUARANTEE}</p>}
                     confirmLabel="Save changes"
@@ -480,8 +480,8 @@ export default function TargetForm({ target, scope, expectedRevision, locale, di
       )}
       {target === null ? null : (
         <section aria-labelledby={lifecycleHeadingId} className="flex min-w-0 flex-col gap-3">
-          <h3 {...{ id: lifecycleHeadingId, className: "type-subsection-title" }}>{"Pause or end this target"}</h3>
-          <p className="type-supporting text-pretty">{"Pausing and ending are separate changes with different effects. Pausing stops the target admitting recorded progress; ending closes it for good. Neither deletes an activity record, sends a notice or creates a task."}</p>
+          <h3 {...{ id: lifecycleHeadingId, className: "type-subsection-title" }}>{"Pause or end target"}</h3>
+          <p className="type-supporting text-pretty">{"Pausing stops tracking progress; ending closes the target permanently. Neither deletes your logged activities."}</p>
           {LIFECYCLE_ACTIONS.map((action) => {
             const held = heldReasonOf(action.key, target.state);
             const submitted = settledLifecycleInput(action.key);

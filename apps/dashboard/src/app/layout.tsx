@@ -13,10 +13,13 @@ import "@/styles/globals.css";
 const INTERFACE_DIRECTION = "ltr";
 const NO_AUTHORITY_SCOPE: Scope = { organizationId: "" as Scope["organizationId"], ministryId: "" as Scope["ministryId"], supportSubjectId: "" as Scope["supportSubjectId"], principalId: "" as Scope["principalId"] };
 const NO_ADMISSIONS: readonly AdmittedContext[] = [];
+/** Pre-paint theme bootstrap: resolves the stored appearance preference before first paint so reloads in dark mode never flash light. */
+const THEME_HYDRATION_SCRIPT =
+  '(function(){try{var raw=localStorage.getItem("dashboard:viewer-preferences");var pref=raw?JSON.parse(raw):null;var mode=pref&&typeof pref.appearance==="string"?pref.appearance:"system";var dark=mode==="dark"||(mode==="system"&&window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",dark);}catch(e){}})();';
 export const metadata: Metadata = {
   applicationName: APPLICATION_NAME,
   title: { default: APPLICATION_NAME, template: `%s · ${APPLICATION_NAME}` },
-  description: "A daily workspace for seeing who needs attention, reading the financial evidence of support " + "honestly, writing and publishing ministry communication, and completing the follow-through.",
+  description: "Your missionary workspace for staying close to partners, following monthly support honestly, sharing ministry updates, and keeping up with follow-through.",
 };
 export const dynamic = "force-dynamic";
 function recoveryStateOf(reasonCode: DenialReason | undefined): AdmissionState {
@@ -48,6 +51,9 @@ async function readContextAdmissions(): Promise<readonly AdmittedContext[]> {
   const developmentControls = isDevelopment();
   return (
     <html lang="en" dir={INTERFACE_DIRECTION} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_HYDRATION_SCRIPT }} />
+      </head>
       <body className="min-h-svh bg-background text-foreground antialiased">
         <DirectionProvider direction={INTERFACE_DIRECTION}>
           <ViewerPreferencesProvider>

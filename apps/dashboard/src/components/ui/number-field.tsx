@@ -66,7 +66,7 @@ export function SteppedNumberField({
       data-slot="number-field"
       className={cn("inline-flex w-full items-stretch sm:max-w-48", className)}
     >
-      <BaseNumberField.Group className="flex w-full items-stretch overflow-hidden rounded-4xl border border-input bg-input/30 shadow-2xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 aria-invalid:border-destructive">
+      <BaseNumberField.Group className="flex w-full items-stretch overflow-hidden rounded-4xl border border-input bg-control-surface shadow-2xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 aria-invalid:border-invalid-border">
         <BaseNumberField.Decrement
           type="button"
           aria-label={decrementLabel}
@@ -75,7 +75,7 @@ export function SteppedNumberField({
             event.preventDefault();
             stepBy(-step);
           }}
-          className="inline-flex min-h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center border-e border-border/80 bg-surface-subtle text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+          className="inline-flex min-h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center border-e border-border/80 bg-surface-subtle text-muted-foreground transition-colors duration-150 ease-out hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
         >
           <MinusIcon aria-hidden="true" className="size-3.5" />
         </BaseNumberField.Decrement>
@@ -96,7 +96,7 @@ export function SteppedNumberField({
           aria-required={ariaRequired}
           onChange={(event) => onValueChange(event.currentTarget.value)}
           onBlur={onBlur}
-          className="h-9 w-full min-w-0 bg-transparent px-3 text-center text-sm tabular-figures text-foreground outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="h-9 w-full min-w-0 bg-transparent px-3 text-center text-base tabular-figures text-foreground outline-none md:text-sm [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
         <BaseNumberField.Increment
           type="button"
@@ -106,7 +106,7 @@ export function SteppedNumberField({
             event.preventDefault();
             stepBy(step);
           }}
-          className="inline-flex min-h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center border-s border-border/80 bg-surface-subtle text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
+          className="inline-flex min-h-9 min-w-9 shrink-0 cursor-pointer items-center justify-center border-s border-border/80 bg-surface-subtle text-muted-foreground transition-colors duration-150 ease-out hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
         >
           <PlusIcon aria-hidden="true" className="size-3.5" />
         </BaseNumberField.Increment>

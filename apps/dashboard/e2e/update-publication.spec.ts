@@ -15,20 +15,20 @@ const EXIF_SOURCE_STRINGS = ["Exif", "Harbour Test Body", "Synthetic Camera Co."
 const DISPLAY_EDGE_PX = 2000;
 const ALT_TEXT = "The youth group gathered in the church hall after a Friday meal.";
 const CAPTION = "A Friday meal this term.";
-const MAIL_SIMULATION = "simulated — no mail leaves this application"; // The sentence every simulated mail boundary states: a publish-only submission involves no notice, so this is stated only where one is submitted.
-const LOCAL_PROCESSING = "local processing; not production scanning or transcoding"; // What the picker states about its own processing, so local work is never presented as production scanning.
+const MAIL_SIMULATION = "Simulated — no email leaves this workspace."; // The sentence every simulated mail boundary states: a publish-only submission involves no notice, so this is stated only where one is submitted.
+const LOCAL_PROCESSING = "Processed locally — not production media scanning or transcoding."; // What the picker states about its own processing, so local work is never presented as production scanning.
 const PUBLISH_ONLY_BADGE = "Publish only"; // The author's choice the review surface states as a fact, and the sentence that it cannot be flipped.
-const REVIEWER_CANNOT_FLIP = "A reviewer cannot turn Publish only into Publish and notify now";
-const NOTIFY_NOW_CHOICE = "Publish and notify now"; // The other choice the editor offers: the two journeys that publish only never record it, and the third records it deliberately.
+const REVIEWER_CANNOT_FLIP = "Reviewers can’t switch between Publish only and Publish and notify partners";
+const NOTIFY_NOW_CHOICE = "Publish and notify partners"; // The other choice the editor offers: the two journeys that publish only never record it, and the third records it deliberately.
 const CEILING_HEADING = "Who a notice could reach"; // The heading and the count label the release review states for the audience the notice it would submit could reach.
-const NOTICE_RESULTS_LINK = "Open the recorded results for this notice";
+const NOTICE_RESULTS_LINK = "View send history";
 const NOTICE_LINK_LABEL = "Open the update";
-const RELEASE_ACTION = "Release these editions"; // The one release step the overview route composes, the confirmation inside its dialog, and the receipt it renders.
+const RELEASE_ACTION = "Publish selected editions"; // The one release step the overview route composes, the confirmation inside its dialog, and the receipt it renders.
 const RELEASE_RECEIPT = '[data-slot="publish-review-result"]';
 const ENGLISH_LOCALE_NAME = "English"; // The locale name the release review and its receipt state for the edition this file releases, and what a receipt rows a release under.
-const RELEASE_RESULT = "Release result";
-const ONE_DECISION_ONCE = "One decision, given once."; // What a release of an edition whose submission is still unanswered is refused with, in the service's words.
-const CANDIDATE_APPROVED = "This candidate is approved";
+const RELEASE_RESULT = "Publishing results";
+const ONE_DECISION_ONCE = "Decisions are final for this submission. Any revisions require a new submission."; // What a release of an edition whose submission is still unanswered is refused with, in the service's words.
+const CANDIDATE_APPROVED = "This revision is approved.";
 const PUBLISHED_PROSE = "This term the Friday group met every week, and six new faces joined us at the long table."; // The prose this file publishes, and the later draft text that must never reach a reader.
 const LATER_DRAFT_PROSE = "A later draft paragraph that no reader has been served, written after the release.";
 const editorPath = (variantId: string): string => `/communication/${encodeURIComponent(UPDATE_DOCUMENT)}/${encodeURIComponent(variantId)}`;
@@ -101,8 +101,8 @@ async function pressRelease(page: Page): Promise<void> {
   await page.getByRole("alertdialog").getByRole("button", { name: RELEASE_ACTION, exact: true }).click();
 }
 async function publicationIdentityOf(page: Page, variantId: string): Promise<string> {
-  const stated = (await editionFactOf(page, variantId, "Published revision").innerText()).trim(); // The publication identity one edition's own release facts name, which changes exactly once per release of it.
-  const publication = /Publication\s+(\S+)/u.exec(stated);
+  const stated = (await editionFactOf(page, variantId, "Published version").innerText()).trim(); // The publication identity one edition's own release facts name, which changes exactly once per release of it.
+  const publication = /Release ID\s+(\S+)/u.exec(stated);
   if (publication === null || publication[1] === undefined) throw new Error(`The ${variantId} edition stated no publication identity, so nothing could be compared with it: ${stated.slice(0, 300)}`);
   return publication[1];
 }
@@ -110,7 +110,7 @@ async function noticeOfResultRow(row: Locator): Promise<{ readonly intentId: str
   const notice = row.locator('[data-slot="publish-edition-notice"]'); // The notice one released edition's result row states: the identity it was submitted under and the address the row renders for the outcomes recorded under it.
   await expect(notice, "One released edition's row states the notice that went with it").toHaveCount(1);
   await expect(notice).toHaveAttribute("data-notice-state", "accepted");
-  await expect(notice).toContainText("Notice submitted");
+  await expect(notice).toContainText("Accepted (not delivered)");
   const stated = notice.locator(".mono-identifier").first();
   await expect(stated).toBeVisible();
   const intentId = (await stated.innerText()).trim();
@@ -133,15 +133,15 @@ test("an Update is composed with an image, previewed, reviewed once and released
   expect(fieldAt(inboxBefore.body, "data", "messages"), "The seeded world puts no message in this reader's inbox").toHaveLength(0);
   await page.goto(editorPath(PUBLIC_ENGLISH_EDITION));
   const editor = editorOf(page);
-  await expect(editor.getByRole("heading", { name: "Write this Update edition", exact: true })).toBeVisible();
+  await expect(editor.getByRole("heading", { name: "Edit update", exact: true })).toBeVisible();
   await expect(page.getByText("Development data", { exact: true })).toBeVisible();
-  for (const said of ["Nothing has been saved for this edition yet.", "A saved draft is not a release, and a release is not a message"]) await expect(editor).toContainText(said);
+  for (const said of ["No draft saved yet — start writing to create one. Nothing is published until you release it.", "Saved drafts and review copies aren’t visible to partners until published."]) await expect(editor).toContainText(said);
   const prose = proseOf(page);
   await prose.click();
   await page.keyboard.type(PUBLISHED_PROSE);
   await expect(autosaveOf(page)).toHaveAttribute("data-autosave-state", "saved");
   expect(await draftRevisionOnEditor(page), "The first save records a revision of its own").not.toBe("");
-  await page.locator('[data-slot="editor-media-pane"]').getByRole("button", { name: "Add an image", exact: true }).click();
+  await page.locator('[data-slot="editor-media-pane"]').getByRole("button", { name: "Add image", exact: true }).click();
   const picker = page.locator('[data-slot="media-picker"][data-kind="image"]');
   await expect(picker).toHaveAttribute("data-phase", "choosing");
   for (const said of ["No more than 10 MiB.", "No more than 8,000 pixels on either side.", LOCAL_PROCESSING]) await expect(picker).toContainText(said);
@@ -149,9 +149,9 @@ test("an Update is composed with an image, previewed, reviewed once and released
   await picker.locator('input[type="file"]').setInputFiles(fixturePathOf(EXIF_FIXTURE));
   await expect(picker).toHaveAttribute("data-phase", "described");
   await picker.getByRole("button", { name: "Add this image", exact: true }).click();
-  await expect(picker.getByText("Describe what this image shows. It is read aloud in place of the picture.", { exact: true })).toBeVisible();
+  await expect(picker.getByText("Describe what this image shows for screen readers.", { exact: true }).first()).toBeVisible();
   await expect(picker).toHaveAttribute("data-phase", "described");
-  await picker.getByRole("textbox", { name: "Alternative text", exact: true }).fill(ALT_TEXT);
+  await picker.getByRole("textbox", { name: "Alt text", exact: true }).fill(ALT_TEXT);
   await picker.getByRole("textbox", { name: /^Caption/u }).fill(CAPTION);
   await picker.getByRole("button", { name: "Add this image", exact: true }).click();
   await expect(picker.locator('[data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted");
@@ -168,7 +168,7 @@ test("an Update is composed with an image, previewed, reviewed once and released
   await expect(placement).not.toContainText(EXIF_FIXTURE);
   await expect(editor).not.toContainText(EXIF_FIXTURE);
   const submitStep = editor.locator('[data-slot="action-review"]');
-  await expect(submitStep, "--- the exact candidate is previewed, inertly ---------------------------------------------").toContainText("Submit this edition for review");
+  await expect(submitStep, "--- the exact candidate is previewed, inertly ---------------------------------------------").toContainText("Submit edition for review");
   const submittedDraft = await draftRevisionOnEditor(page);
   await expect(submitStep, "The step names the exact revision it freezes, so the submission is a stated identity rather than a guess").toContainText(submittedDraft);
   const releaseChoice = submitStep.locator('[data-slot="submission-release-mode"]');
@@ -178,7 +178,7 @@ test("an Update is composed with an image, previewed, reviewed once and released
   await submitStep.getByRole("button", { name: "Submit for review", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Submit for review", exact: true }).click();
   await expect(submitStep.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
-  await page.getByRole("link", { name: "Preview this edition", exact: true }).click();
+  await page.getByRole("link", { name: "Preview edition", exact: true }).click();
   const frame = page.locator('[data-slot="preview-frame"]');
   await expect(frame).toHaveAttribute("data-preview-status", "authorised");
   const revision = (await frame.getAttribute("data-preview-revision"))?.trim() ?? "";
@@ -189,11 +189,11 @@ test("an Update is composed with an image, previewed, reviewed once and released
   await expect(frame).toContainText(revision);
   await expect(frame.locator('[data-slot="preview-inert"]')).toBeVisible();
   await expect(frame.getByRole("button", { name: /publish|notify|send|subscribe|pay|donate/iu })).toHaveCount(0);
-  await expect(frame.getByText("simulated publication; reach is demonstrated in the receiving preview", { exact: true })).toBeVisible();
+  await expect(frame.getByText("Simulated publishing — preview how readers see it in Reader preview.", { exact: true })).toBeVisible();
   const unseenByReviewer = await getAs(page, REVIEWER_SESSION, `/api/review?variantId=${encodeURIComponent(PUBLIC_ENGLISH_EDITION)}`); // --- one review step, then the release of exactly that revision ---------------------------- A seeded session holds its own copy of the world (AAP 0.7.2: a session sees only its own files), so a candidate written here is this session's to answer and not another seat's: the reviewer identity answers the seeded candidate in the second test of this file, and this journey's review step is opened where the candidate lives. That isolation is asserted rather than assumed, so a reader sees why one seat writes, reviews and releases here instead of handing the submission to a second seat.
   expect(fieldAt(unseenByReviewer.body, "data", "status"), "Another session holds its own copy of the world, so this candidate is not its frozen revision").toBe("none");
   await page.goto(reviewPath(PUBLIC_ENGLISH_EDITION));
-  await expect(page.getByRole("heading", { name: "Review this Update", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review update", level: 1 })).toBeVisible();
   const panel = page.locator('[data-slot="review-panel"]');
   const frozen = panel.locator('[data-slot="review-frozen-revision"]');
   await expect(frozen).toHaveCount(1);
@@ -205,11 +205,11 @@ test("an Update is composed with an image, previewed, reviewed once and released
   await expect(decision).toHaveCount(1);
   await expect(decision).toContainText(ONE_DECISION_ONCE);
   await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await page.getByRole("button", { name: "Approve revision", exact: true }).click();
   const recorded = page.locator('[data-slot="review-recorded-decision"]');
   await expect(recorded).toHaveAttribute("data-decision", "approved");
   await expect(recorded).toContainText(CANDIDATE_APPROVED);
-  await expect(recorded).toContainText("Decided by");
+  await expect(recorded).toContainText("Reviewed by");
   const releaseState = await devStateOf(page.request, CONTRIBUTOR_SESSION); // The release is the separate act the approval is not. The mode a release may take is the mode the submission recorded, and no composed control can name another, so that refusal is asserted at the boundary that enforces it — the one attempt in this file a press cannot make.
   const flipped = await postRelease(page, CONTRIBUTOR_SESSION, { operationId: newAttemptId(), state: releaseState, variants: [{ variantId: PUBLIC_ENGLISH_EDITION, revisionId: revision, mode: "publish-and-notify-now" }] });
   expect(outcomeOf(flipped), "A release cannot take a mode the submission never asked for").toBe("invalid");
@@ -237,7 +237,7 @@ test("an Update is composed with an image, previewed, reviewed once and released
   await expect(releasedRow).toHaveAttribute("data-edition-state", "released");
   await expect(releasedRow).toContainText(ENGLISH_LOCALE_NAME);
   await page.goto(overviewPath());
-  expect(await identityOfFact(page, PUBLIC_ENGLISH_EDITION, "Published revision"), "The release publishes exactly the revision the submission froze").toBe(revision);
+  expect(await identityOfFact(page, PUBLIC_ENGLISH_EDITION, "Published version"), "The release publishes exactly the revision the submission froze").toBe(revision);
   const releaseId = await publicationIdentityOf(page, PUBLIC_ENGLISH_EDITION);
   expect(releaseId, "The release is a publication of its own rather than the seeded one").not.toBe(SEEDED_NOTICE_RELEASE);
   const noticeAfter = await getAs(page, CONTRIBUTOR_SESSION, `${NOTIFY_API}?intentId=${encodeURIComponent(SEEDED_NOTICE_INTENT)}`);
@@ -263,7 +263,7 @@ test("an Update is composed with an image, previewed, reviewed once and released
   expect(laterDraft, "A later save is a different revision from the one that was published").not.toBe(revision);
   await page.goto(overviewPath());
   expect(await identityOfFact(page, PUBLIC_ENGLISH_EDITION, "Saved draft"), "The new draft stands on its own identity").toBe(laterDraft);
-  expect(await identityOfFact(page, PUBLIC_ENGLISH_EDITION, "Published revision"), "The release head did not move with the draft").toBe(revision);
+  expect(await identityOfFact(page, PUBLIC_ENGLISH_EDITION, "Published version"), "The release head did not move with the draft").toBe(revision);
   await actAs(page, PUBLIC_READER_SESSION);
   await page.goto(`/preview/${encodeURIComponent(UPDATE_DOCUMENT)}?locale=en`);
   const post = page.locator('[data-slot="receiving-post"]');
@@ -296,7 +296,7 @@ test("an Update is composed with an image, previewed, reviewed once and released
 test("a frozen candidate is answered by one review step and is not a release, so an unreviewed submission cannot be published", async ({ page }) => {
   await actAs(page, REVIEWER_SESSION);
   await page.goto(reviewPath(FROZEN_ARABIC_EDITION));
-  await expect(page.getByRole("heading", { name: "Review this Update", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review update", level: 1 })).toBeVisible();
   const panel = page.locator('[data-slot="review-panel"]');
   const frozen = panel.locator('[data-slot="review-frozen-revision"]');
   await expect(frozen, "The seeded candidate is the revision the review answers, and it is the only one here").toHaveCount(1);
@@ -316,7 +316,7 @@ test("a frozen candidate is answered by one review step and is not a release, so
   await expect(refusal).toHaveAttribute("data-outcome", "invalid");
   await expect(refusal).toContainText("This edition is still awaiting its one review, so it cannot be released yet.");
   await page.goto(overviewPath());
-  await expect(editionFactOf(page, FROZEN_ARABIC_EDITION, "Published revision")).toContainText("This edition publishes nothing yet");
+  await expect(editionFactOf(page, FROZEN_ARABIC_EDITION, "Published version")).toContainText("Not published yet.");
 });
 test("an edition whose author chose Publish and notify now is released through the same control, and the notice its result names opens on the delivery screen with both renderings of its message", async ({ page }) => {
   await actAs(page, CONTRIBUTOR_SESSION);
@@ -343,7 +343,7 @@ test("an edition whose author chose Publish and notify now is released through t
   await page.getByRole("alertdialog").getByRole("button", { name: "Submit for review", exact: true }).click();
   await expect(submitStep.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
   await page.goto(reviewPath(PUBLIC_ENGLISH_EDITION));
-  await expect(page.getByRole("heading", { name: "Review this Update", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review update", level: 1 })).toBeVisible();
   const panel = page.locator('[data-slot="review-panel"]');
   const frozen = panel.locator('[data-slot="review-frozen-revision"]');
   await expect(frozen).toHaveCount(1);
@@ -355,7 +355,7 @@ test("an edition whose author chose Publish and notify now is released through t
   await expect(authorIntent.getByText(MAIL_SIMULATION, { exact: true }), "A notice is part of this release, so the simulated mail boundary is labelled where the choice is read").toBeVisible();
   await expect(panel.locator('[data-slot="review-decision"]')).toContainText(ONE_DECISION_ONCE);
   await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await page.getByRole("button", { name: "Approve revision", exact: true }).click();
   const recordedDecision = page.locator('[data-slot="review-recorded-decision"]');
   await expect(recordedDecision).toHaveAttribute("data-decision", "approved");
   await expect(recordedDecision).toContainText(CANDIDATE_APPROVED);
@@ -371,11 +371,11 @@ test("an edition whose author chose Publish and notify now is released through t
   await expect(ceilingBlock, "The ceiling the notice is acknowledged against is the count the audience read stated, and the number a person can read beside that label is the number the release would carry").toHaveAttribute("data-state", "stated");
   const eligible = (await ceilingBlock.getAttribute("data-eligible"))?.trim() ?? "";
   if (!/^\d+$/u.test(eligible)) throw new Error(`The release review stated no eligible ceiling for the notice it would submit, so nothing could be acknowledged: ${JSON.stringify(eligible)}`);
-  for (const said of [CEILING_HEADING, "Eligible recipients"]) await expect(ceilingBlock).toContainText(said);
+  for (const said of [CEILING_HEADING, "Eligible partners"]) await expect(ceilingBlock).toContainText(said);
   await expect(ceilingBlock.locator("bdi").first()).toHaveText(eligible);
   const noticeTarget = review.locator('[data-slot="publish-notice"]');
   await expect(noticeTarget, "The notice's own target is read before the release is pressed: the edition it points at and the simulated boundary it crosses").toHaveAttribute("data-notice-edition", PUBLIC_ENGLISH_EDITION);
-  await expect(noticeTarget).toContainText("The notice links to");
+  await expect(noticeTarget).toContainText("Email link");
   await expect(noticeTarget.getByText(MAIL_SIMULATION, { exact: true })).toBeVisible();
   await pressRelease(page);
   const receipt = page.locator(RELEASE_RECEIPT);
@@ -408,7 +408,7 @@ test("an edition whose author chose Publish and notify now is released through t
   const noticeBlock = delivery.locator('[data-slot="delivery-notice"]');
   await expect(noticeBlock, "Exactly one notice accompanies this publication's outcomes; --- the message itself, in both renderings the one notice presentation carries --------------").toHaveCount(1);
   await expect(noticeBlock).toHaveAttribute("data-notice-state", "stated");
-  await expect(noticeBlock.getByRole("heading", { name: "The message this notice carries", level: 3 })).toBeVisible();
+  await expect(noticeBlock.getByRole("heading", { name: "Email message sent", level: 3 })).toBeVisible();
   const presentation = noticeBlock.locator('[data-slot="notice-presentation"]');
   await expect(presentation).toHaveAttribute("data-notice-rendering", "both");
   const messageLink = presentation.getByRole("link", { name: NOTICE_LINK_LABEL, exact: true });
@@ -423,5 +423,5 @@ test("an edition whose author chose Publish and notify now is released through t
   expect(fieldAt(noticeAfter.body, "data", "releaseId")).toBe(SEEDED_NOTICE_RELEASE);
   expect(fieldAt(noticeAfter.body, "data", "counts")).toEqual(fieldAt(noticeBefore.body, "data", "counts"));
   await page.goto(overviewPath());
-  await expect(editionFactOf(page, PUBLIC_ENGLISH_EDITION, "Published revision"), "The release published the exact revision the submission froze").toContainText(submittedDraft);
+  await expect(editionFactOf(page, PUBLIC_ENGLISH_EDITION, "Published version"), "The release published the exact revision the submission froze").toContainText(submittedDraft);
 });

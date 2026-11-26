@@ -23,8 +23,8 @@ import EditionTombstone from "./edition-tombstone";
 import { ServerHtml } from "./message-reader";
 type ReadingData = ReceivingPageEnvelope["data"];
 type PageRendition = ReadingData["renditions"][number];
-const FIELD_LABELS = { reach: "Reach", language: "Language", designate: "Designation" } as const;
-const NOTICE_TITLES = { denied: "This address cannot be read", refused: "This address is not one this view serves", unavailable: "This edition could not be read", noText: "This edition carries no readable text" } as const;
+const FIELD_LABELS = { reach: "Visibility", language: "Language", designate: "Giving designation" } as const;
+const NOTICE_TITLES = { denied: "This page isn’t available", refused: "Page not found", unavailable: "Couldn’t load this page", noText: "No page content yet" } as const;
 const NOTE_CLASS = "text-xs text-muted-foreground text-pretty wrap-anywhere";
 function languageLabelOf(tag: string): string {
   const trimmed = tag.trim();
@@ -53,7 +53,7 @@ const GivePlacement = ({ giving }: { readonly giving: NonNullable<ReadingData["g
           <span className="sr-only">{`${FIELD_LABELS.designate}: `}</span>
           <bdi>{giving.label}</bdi>
         </p>
-        <p className={NOTE_CLASS}>The release names the one designation it was approved to give to. No other fund stands in for it, and no payment is taken in this reading view.</p>
+        <p className={NOTE_CLASS}>Shows the approved giving designation for this page. Preview only — no payments are processed here.</p>
         <SimulationLabel effect={GIVING_SIMULATION_EFFECT} />
       </CardContent>
     </Card>

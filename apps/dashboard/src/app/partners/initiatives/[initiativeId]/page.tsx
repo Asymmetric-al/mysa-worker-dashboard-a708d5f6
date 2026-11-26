@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import type { NoticeAction } from "@/components/state-notice";
 import InitiativeDetail, { type InitiativeDetailProps } from "@/features/initiatives/components/initiative-detail";
 import { INITIATIVE_COPY, STATE_NOTICE_COPY } from "@/features/initiatives/copy";
-import { isSharedRecord } from "@/features/partners/record-class";
+import { isSharedRecord, SHARED_RECORD_FACET_SELECTION } from "@/features/partners/record-class";
 import { reads } from "@/modules/data-service";
 import { ReadNotices, type ReadNoticeCopy } from "../../../page-frame";
 export const dynamic = "force-dynamic";
@@ -19,13 +19,19 @@ const CANDIDATE_PAGE_SIZE = 200;
 const CANDIDATES_UNCOMPOSED: CandidateRead = { state: "unavailable", source: { system: "page-composition", reference: "eligible-partner-candidates" } };
 const membershipByPartner = (members: readonly MemberRow[]): ReadonlyMap<string, NonNullable<Extract<CandidateRead, { readonly state: "available" }>["partners"][number]["membership"]>> => new Map(members.map((member) => [member.partnerId, { memberId: member.memberId, state: member.state }] as const));
 async function eligibleCandidatesOf(initiative: InitiativeEnvelope): Promise<CandidateRead> {
-  const roster = await reads.partners.findPartners({ page: { index: CANDIDATE_PAGE_INDEX, size: CANDIDATE_PAGE_SIZE } });
+  const roster = await reads.partners.findPartners({ applied: SHARED_RECORD_FACET_SELECTION, page: { index: CANDIDATE_PAGE_INDEX, size: CANDIDATE_PAGE_SIZE } });
   if (roster.kind === "unavailable") return { state: "unavailable", source: roster.unavailable.source };
   if (roster.kind !== "envelope") return CANDIDATES_UNCOMPOSED;
   const { rows, total } = roster.envelope.data;
-  if (rows.length < total) return CANDIDATES_UNCOMPOSED;
   const membership = membershipByPartner(initiative.data.workingList.items);
-  return { state: "available", partners: rows.filter((row) => isSharedRecord(row.partner)).map((row) => ({ partnerId: row.partner.partnerId, displayName: row.partner.displayName, membership: membership.get(row.partner.partnerId) ?? null })) };
+  const sharedRows = rows.filter((row) => isSharedRecord(row.partner));
+  return {
+    state: "available",
+    partners: sharedRows.map((row) => ({ partnerId: row.partner.partnerId, displayName: row.partner.displayName, membership: membership.get(row.partner.partnerId) ?? null })),
+    total,
+    paged: rows.length < total,
+    existingMemberIds: initiative.data.workingList.items.map((member) => member.partnerId),
+  };
 }
 const initiativeHrefOf = (initiativeId: string): string => `${INITIATIVES_ROUTE}/${encodeURIComponent(initiativeId)}`;
 const retryOf = (initiativeId: string): NoticeAction => ({ label: "Try again", href: initiativeHrefOf(initiativeId) });

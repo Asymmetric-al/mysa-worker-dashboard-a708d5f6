@@ -20,7 +20,7 @@ type TaskTransitionPayload = CompleteTaskPayload | ReopenTaskPayload | CancelTas
 type TaskTransitionName = TaskTransitionPayload["operation"];
 const ACTION_LABELS: Readonly<Record<TaskActionName, string>> = { completeTask: "Complete", reopenTask: "Reopen", editTask: "Edit", cancelTask: "Cancel" };
 const WORKING_SUFFIX = " — working";
-const CANCEL_CONFIRM_LABEL = "Cancel the task";
+const CANCEL_CONFIRM_LABEL = "Cancel task";
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { operation: "Action", taskId: "Task", confirmed: "Confirmation" };
 export const TASK_STATUS_TONES: Readonly<Record<TaskRecordStatus, StatusTone>> = { open: "info", completed: "positive", reopened: "caution", cancelled: "muted" };
 const ACTION_VARIANTS: Readonly<Record<TaskActionName, "default" | "outline" | "destructive">> = { completeTask: "default", reopenTask: "outline", editTask: "outline", cancelTask: "destructive" };
@@ -41,10 +41,10 @@ export interface TaskActionsProps {
   readonly onCheckResult?: () => void;
   readonly className?: string;
 }
-const factOf = (actions: readonly ReadAction[], name: TaskActionName): ReadAction => actions.find((entry) => entry.name === name) ?? { name, available: false, reason: "This view did not report this action, so it is not offered here; open the task again to see what it allows." };
+const factOf = (actions: readonly ReadAction[], name: TaskActionName): ReadAction => actions.find((entry) => entry.name === name) ?? { name, available: false, reason: "Not available from this view." };
 function reasonOf(fact: ReadAction): string {
   const stated = (fact.reason ?? "").trim();
-  return stated === "" ? "This action is not available from this view." : stated;
+  return stated === "" ? "Not available from this view." : stated;
 }
 function titleTextOf(title: string, taskId: string): string {
   const stated = title.trim();
@@ -71,16 +71,14 @@ export function TaskActionResult({ receipt, headingLevel = 3 }: TaskActionResult
   if (receipt === null) return null;
   return (
     <div ref={resultRef} tabIndex={-1} data-slot="task-action-result" data-outcome={receipt.outcome.outcome} data-task-id={receipt.taskId} className={RECEIPT_CLASS}>
-      {/* The task the attempt named: read at the list's width the receipt is no longer beside the row it came from, so it states which task's change it records rather than leaving the outcome to stand on its own. */}
       <p className="type-supporting max-w-prose text-pretty">
-        {"This receipt records the change to "}
+        {"Updated task: "}
         <bdi className="font-medium">{titleTextOf(receipt.title, receipt.taskId)}</bdi>
-        {"."}
       </p>
       <OperationResult outcome={receipt.outcome} headingLevel={headingLevel} onCheckResult={receipt.onCheckResult} onRetrySameWork={receipt.onRetrySameWork} onReapply={receipt.onReapply} fieldLabels={FIELD_LABELS} />
       {hasSettled(receipt.outcome) ? (
         <Button type="button" variant="outline" size="sm" onClick={receipt.onDismiss} className={BUTTON_WRAP_CLASS}>
-          {"Dismiss this result"}
+          {"Dismiss"}
         </Button>
       ) : null}
     </div>
@@ -272,7 +270,7 @@ export function TaskActionResult({ receipt, headingLevel = 3 }: TaskActionResult
             <span className="text-muted-foreground">{"Status"}</span>
             <StatusBadge label={TASK_STATUS_LABELS[status]} tone={TASK_STATUS_TONES[status]} srPrefix="Task status" />
           </p>
-          {settled ? <p className="text-sm text-pretty text-muted-foreground">{"This action is complete for this attempt, and the receipt the surface renders is its record; dismiss that receipt to work with the task again."}</p> : <div className="flex min-w-0 flex-wrap items-center gap-2">{bodyControls}</div>}
+          {settled ? <p className="text-sm text-pretty text-muted-foreground">{"Done — dismiss the result above to make another change to this task."}</p> : <div className="flex min-w-0 flex-wrap items-center gap-2">{bodyControls}</div>}
           <p id={noteId} className="text-xs text-pretty text-muted-foreground">
             {COMPLETION_MEANS_NOTHING_NOTE}
           </p>
@@ -296,11 +294,11 @@ export function TaskActionResult({ receipt, headingLevel = 3 }: TaskActionResult
             <AlertDialogTitle>{"Cancel this task?"}</AlertDialogTitle>
             <AlertDialogDescription className="flex flex-col gap-2">
               <bdi className="font-medium text-foreground">{titleText}</bdi>
-              <span>{"A cancelled task stays cancelled: it is neither completed nor reopened afterwards, cancelling performs none of the work it describes, and it records no contact, payment, fulfilment or message."}</span>
+              <span>{"Cancelled tasks can’t be reopened later. Cancelling closes the reminder without logging an interaction, gift, or email."}</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{"Keep the task"}</AlertDialogCancel>
+            <AlertDialogCancel>{"Keep task"}</AlertDialogCancel>
             <AlertDialogAction confirmVariant="destructive" disabled={pending} onClick={confirmCancel}>
               {pending ? `${CANCEL_CONFIRM_LABEL}${WORKING_SUFFIX}` : CANCEL_CONFIRM_LABEL}
             </AlertDialogAction>

@@ -4,7 +4,7 @@ import { ReceivingPost } from "@/features/audience/components/receiving-post";
 import { reads, type Scope } from "@/modules/data-service";
 type SearchParams = Record<string, string | string[] | undefined>;
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Receiving preview" };
+export const metadata: Metadata = { title: "Reader preview" };
 const MAX_LOCALE_TAG_LENGTH = 35;
 // A variant identity is one opaque reference naming a document, an audience and a language tag, so a stated value longer than this cannot name an edition of this application.
 const MAX_VARIANT_REFERENCE_LENGTH = 200;
@@ -36,5 +36,5 @@ export default async function ReceivingPostPage({ params, searchParams }: { para
   const variant = requestedVariantFrom(stated);
   const [post, development] = await Promise.all([reads.audience.readReceivingPost({ updateId, locale, variant }), reads.dev.readDevState()]);
   const scope = post.kind === "envelope" ? post.envelope.scope : NO_AUTHORITY_SCOPE;
-  return <ReceivingPost scope={scope} params={{ updateId, locale, variant }} initialEnvelope={post} persona={personaLabelOf(development) ?? "this session's admitted reader"} />;
+  return <ReceivingPost scope={scope} params={{ updateId, locale, variant }} initialEnvelope={post} persona={personaLabelOf(development) ?? "your current session"} />;
 }

@@ -1,63 +1,45 @@
-/** Measures the repository's tracked line count with the request's own pipeline — `git ls-files`, with `bun.lock` as its only exclusion, piped through `xargs wc -l` — and exits by the 100,000-line limit. */ import path from "node:path";
-const MEASURE_COMMAND = "git ls-files | grep -v -e '^bun.lock$' | xargs wc -l";
+/** Counts newline bytes in tracked files, excluding bun.lock, and exits by the 100,000-line limit. */
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 const LIMIT = 100000;
 const USAGE = "usage: bun scripts/count-lines.ts\n";
 const ROOT = path.join(import.meta.dir, "..");
-class UsageError extends Error {}
-type WcReport = { tracked: number; totals: number[] };
-/** The command line takes no arguments: what this command runs is the request's verbatim pipeline and the 100,000-line limit is fixed, so there is no option to accept — `--help` included. */ function parseArguments(argv: readonly string[]): void {
-  if (argv.length > 0) throw new UsageError(`count-lines takes no arguments, and received: ${argv.join(" ")}`);
+function countNewlines(bytes: Uint8Array): number {
+  let count = 0;
+  for (let index = 0; index < bytes.byteLength; index += 1) if (bytes[index] === 10) count += 1;
+  return count;
 }
-function readWcReport(stdout: string): WcReport {
-  const report: WcReport = { tracked: 0, totals: [] };
-  for (const line of stdout.split("\n")) {
-    const total = /^\s*(\d+)\s+total$/.exec(line);
-    const value = total === null ? null : Number(total[1]);
-    if (value !== null && Number.isSafeInteger(value)) report.totals.push(value);
-    else if (value === null && /^\s*\d+\s+\S/.test(line)) report.tracked += 1;
-  }
-  return report;
+async function listTrackedFiles(): Promise<readonly string[]> {
+  const run = Bun.spawn(["git", "ls-files", "-z"], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+  const [rawList, stderr, exitStatus] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited]);
+  if (exitStatus !== 0) throw new Error(`git ls-files exited with status ${String(exitStatus)}: ${stderr.trim()}`);
+  return rawList.split("\0").filter((entry) => entry !== "" && entry !== "bun.lock");
 }
 async function main(): Promise<number> {
-  try {
-    parseArguments(process.argv.slice(2));
-  } catch (error) {
-    if (!(error instanceof UsageError)) throw error; // The parser refuses with UsageError only, so any other failure stays a defect rather than being reported as a usage verdict.
-    process.stderr.write(`${error.message}\n`);
+  const arguments_ = process.argv.slice(2);
+  if (arguments_.length > 0) {
+    process.stderr.write(`count-lines takes no arguments, and received: ${arguments_.join(" ")}\n`);
     process.stderr.write(USAGE);
-    return 2; // A refused invocation measured nothing, so it carries the measurement-failure status (2), never the over-limit verdict (1) or a pass (0).
+    return 2;
   }
-  let stdout: string;
-  let stderr: string;
-  let exitStatus: number;
+  let tracked: number;
+  let total = 0;
   try {
-    const run = Bun.spawn(["/bin/sh", "-c", MEASURE_COMMAND], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
-    [stdout, stderr, exitStatus] = await Promise.all([new Response(run.stdout).text(), new Response(run.stderr).text(), run.exited]);
+    const files = await listTrackedFiles();
+    tracked = files.length;
+    if (tracked === 0) throw new Error(`no tracked files in ${ROOT}`);
+    const lines: string[] = [];
+    for (const file of files) {
+      const count = countNewlines(await readFile(path.join(ROOT, file)));
+      total += count;
+      lines.push(`${String(count).padStart(7, " ")} ${file}`);
+    }
+    process.stdout.write(`${lines.join("\n")}\n${String(total).padStart(7, " ")} total\n`);
   } catch (error) {
-    process.stderr.write(`failed to run the pipeline: ${String(error)}\n`); // A pipeline that cannot be started is a measurement failure (2), never the over-limit verdict (1).
+    process.stderr.write(`failed to count tracked lines: ${String(error)}\n`);
     return 2;
   }
-  process.stdout.write(stdout);
-  if (exitStatus !== 0) {
-    process.stderr.write(stderr);
-    process.stdout.write(`\ncommand failed with exit status ${String(exitStatus)}; nothing was measured\n`);
-    return 2;
-  }
-  const { tracked, totals } = readWcReport(stdout);
-  // An empty tracked tree and a directory that is not a git work tree both reach here: git fails on stderr while the pipeline still exits 0 and prints a bare count, so neither may be read as a pass.
-  if (tracked === 0 && totals.length === 0) {
-    process.stderr.write(stderr);
-    process.stdout.write(`\nno tracked files were measured in ${ROOT}: the tracked tree is empty or this is not a git work tree\n`);
-    return 2;
-  }
-  if (totals.length === 0) {
-    process.stderr.write(stderr);
-    process.stdout.write("\nwc printed no total line; refusing to infer a number\n");
-    return 2;
-  }
-  const total = totals.reduce((sum, value) => sum + value, 0);
-  const batches = totals.length > 1 ? ` (summed across ${String(totals.length)} wc batches)` : "";
-  process.stdout.write(`\ncommand: ${MEASURE_COMMAND}\n` + `tracked files counted: ${String(tracked)}\n` + `TOTAL ${String(total)}${batches}\n` + `LIMIT ${String(LIMIT)}\n` + `STATUS ${total < LIMIT ? "PASS" : "FAIL"}\n`);
+  process.stdout.write(`\ntracked files counted: ${String(tracked)}\nTOTAL ${String(total)}\nLIMIT ${String(LIMIT)}\nSTATUS ${total < LIMIT ? "PASS" : "FAIL"}\n`);
   if (total < LIMIT) return 0;
   process.stdout.write(`OVERAGE ${String(total - LIMIT)}\n`);
   return 1;

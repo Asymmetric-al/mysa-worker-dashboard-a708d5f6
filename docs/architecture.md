@@ -250,15 +250,15 @@ Four configuration decisions belong beside that table.
 - `jsx-a11y/no-noninteractive-tabindex` admits a focusable `section` in `src/components/scroll-region.tsx` and nowhere else. WCAG 2.2 SC 2.1.1 requires the application's single horizontally scrollable region to take focus so a keyboard user can scroll it, and the rule otherwise refuses `tabIndex` on the `section` that carries the region landmark.
 - `.oxfmtrc.json` sets `printWidth` to 320 rather than Oxfmt 0.79.0's default of 100, with `objectWrap: "collapse"`, and the tracked tree is written to that width. No task in the workspace's task graph runs `oxfmt --check`, so the width is a stated choice about the tree's canonical form rather than a gate a build fails on; the README's verification record reports the check as its own command, the deviations record carries both measures, and the proportion between them does not change as the tree does.
 
-Five invariants no supported rule can express, and which therefore stand as review discipline:
+Five additional invariants enforced by `scripts/check-invariants.ts` alongside code review:
 
-- boundary arithmetic goes through `src/modules/time` only, so calendar-day and elapsed-second windows cannot be re-derived by hand;
-- no component derives a financial total; it formats a value it was given, and a total comes from `runReport`;
-- no original media filename and no original media bytes reach a consumer — only a prepared rendition, through a route that re-authorises;
-- no bidi control character is saved into content, so direction stays a document property rather than a byte in the text;
-- there is exactly one Tiptap configuration, one document schema and one renderer.
+- boundary arithmetic goes through `src/modules/time` only, so calendar-day and elapsed-second windows cannot be re-derived by hand (`time-boundary-*`);
+- no component, feature, or route derives a financial total — it formats a value it was given, and totals come from `runReport` (`ui-financial-total-*`);
+- no original media filename and no original media bytes reference escapes the ingestion/storage boundary — only prepared renditions reach consumers (`media-original-*`);
+- no Unicode bidi control character (`U+061C`, `U+200E`, `U+200F`, `U+202A`–`U+202E`, `U+2066`–`U+2069`) is saved into content or embedded in application source, keeping direction a document property (`bidi-*`);
+- there is exactly one Tiptap editor configuration (`src/components/prose-editor.tsx`), one document schema (`src/modules/content/document.ts`), and one static renderer (`src/modules/content/render.ts`) (`tiptap-single-owner`).
 
-Each is checked in review against the concern list in section 3, which is the list that names the one owner of every concern these invariants protect.
+Each is verified automatically on `bun run lint` and checked in review against the concern list in section 3, which names the one owner of every concern these invariants protect.
 
 ## 7. Future-connection seam map
 

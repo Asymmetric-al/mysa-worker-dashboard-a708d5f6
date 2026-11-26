@@ -44,18 +44,18 @@ const CANCEL_LABEL = "Cancel";
 const DISPOSITION_LABEL = CLOSURE_COPY.dispositionLabel;
 const NOTE_MAX_LENGTH = 500;
 const DISPOSITION_MAX_LENGTH = 200;
-const COVERING_LEGEND = "Unfinished work";
-const COVERING_NOTE_LABEL = "How the disposition covers this work";
-const RECIPIENT_LABEL = "Person taking over";
-const HANDOFF_NOTE_LABEL = "What is being handed over";
+const COVERING_LEGEND = "Open tasks";
+const COVERING_NOTE_LABEL = "How this outcome covers open tasks";
+const RECIPIENT_LABEL = "Hand off to";
+const HANDOFF_NOTE_LABEL = "Hand-off notes";
 const HANDOFF_OPTIONS: readonly { readonly choice: HandoffChoice; readonly label: string; readonly description: string }[] = [
-  { choice: "covering", label: "The disposition above covers this work", description: "You state that the closure you are recording also settles this work, and say how in your own words. The work is not completed by closing." },
-  { choice: "eligible-handoff", label: "Hand this work to someone else", description: "The person you name becomes responsible for the unfinished work. Handing it over neither completes it nor asks anyone to accept it in this application." },
+  { choice: "covering", label: "Covered by closing outcome", description: "Explain how closing covers these open tasks (tasks stay open until completed in Tasks)." },
+  { choice: "eligible-handoff", label: "Hand off to a teammate", description: "Assign an eligible teammate to follow up on these open tasks." },
 ];
-const NO_OWNED_WORK_BODY = "Nothing is handed over, because the read states no open work for this initiative. The closure records that no handoff was needed.";
-const DISCARD_BODY = "The entries you typed are held only in this dialog, so closing it discards them. Nothing has been sent to the source.";
-export const NO_OWNED_WORK_REASON = "No unfinished work was recorded as owned by this initiative, so nothing was handed over.";
-const CLOSING_STATEMENTS: readonly string[] = [CLOSURE_COPY.closeHelp, CLOSURE_COPY.lateResponseNote, CLOSURE_COPY.handoffNote, INITIATIVE_STATE_COPY.closed.description, "Closing sends nothing and recalls nothing: no message leaves this application in this release, so there is no third-party copy to withdraw."];
+const NO_OWNED_WORK_BODY = "No open tasks are linked to this initiative, so no hand-off is needed.";
+const DISCARD_BODY = "Your entries haven’t been saved yet — closing now discards them.";
+export const NO_OWNED_WORK_REASON = "No open tasks were linked to this initiative.";
+const CLOSING_STATEMENTS: readonly string[] = [CLOSURE_COPY.closeHelp, CLOSURE_COPY.lateResponseNote, CLOSURE_COPY.handoffNote, INITIATIVE_STATE_COPY.closed.description];
 const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", disposition: DISPOSITION_LABEL, handoff: COVERING_LEGEND, "handoff.reason": COVERING_NOTE_LABEL, "handoff.note": HANDOFF_NOTE_LABEL, "handoff.toPrincipalId": RECIPIENT_LABEL };
 const FIELD_ORDER = ["disposition", "handoff", "handoff.toPrincipalId", "handoff.reason", "handoff.note", "initiativeId"] as const;
 function fieldMessagesOf(error: ZodError): Readonly<Record<string, readonly string[]>> {
@@ -75,14 +75,14 @@ export function buildClosePayload(initiativeId: string, values: CloseInitiativeF
 }
 /** Whether the worker may go back to the entries. Never offered for an unconfirmed result, which would invite a second close. */ export type CloseSettlement = { readonly note: string; readonly initiativeClosed: boolean; readonly offersDone: boolean; readonly offersRevision: boolean };
 const CLOSE_SETTLEMENTS: Readonly<Record<MutationOutcome["outcome"], CloseSettlement>> = {
-  accepted: { note: "This initiative is closed. The disposition is recorded, the surface that read it now states the closure, and every item of work it owns that was still open stays outstanding.", initiativeClosed: true, offersDone: true, offersRevision: false },
-  alreadyAccepted: { note: "This attempt was already accepted, so the stored result is shown and nothing was closed a second time.", initiativeClosed: true, offersDone: true, offersRevision: false },
-  unchanged: { note: "This initiative already stood closed, so this attempt recorded no change and no second closure.", initiativeClosed: true, offersDone: true, offersRevision: false },
-  conflict: { note: "This initiative moved since this page read it. Your entries are kept exactly as you wrote them, beside the current record, so you can compare before deciding.", initiativeClosed: false, offersDone: false, offersRevision: true },
-  denied: { note: "Nothing was recorded, and this answer names no record, count or title: a refusal reveals nothing about the initiative.", initiativeClosed: false, offersDone: true, offersRevision: false },
-  invalid: { note: "Nothing was sent. Correct the field named above and review the closure again; every entry you made is kept.", initiativeClosed: false, offersDone: false, offersRevision: true },
-  unavailable: { note: "The source could not answer, so no closure was recorded. Your entries are kept, and the same work can be tried again under this attempt's own identity.", initiativeClosed: false, offersDone: false, offersRevision: true },
-  unknown: { note: "The closure may or may not have been recorded, and this application cannot know which. Check the result for this operation rather than closing again.", initiativeClosed: false, offersDone: true, offersRevision: false },
+  accepted: { note: "Initiative closed. Your closing outcome is saved, and any open tasks remain in Tasks.", initiativeClosed: true, offersDone: true, offersRevision: false },
+  alreadyAccepted: { note: "Already closed by an earlier attempt.", initiativeClosed: true, offersDone: true, offersRevision: false },
+  unchanged: { note: "This initiative was already closed.", initiativeClosed: true, offersDone: true, offersRevision: false },
+  conflict: { note: "This initiative was updated elsewhere. Review the current details before trying again.", initiativeClosed: false, offersDone: false, offersRevision: true },
+  denied: { note: "You don’t have permission to close this initiative.", initiativeClosed: false, offersDone: true, offersRevision: false },
+  invalid: { note: "Fix the highlighted fields and try again — your entries are kept.", initiativeClosed: false, offersDone: false, offersRevision: true },
+  unavailable: { note: "The service didn’t respond, so the initiative wasn’t closed. Your entries are kept — try again in a moment.", initiativeClosed: false, offersDone: false, offersRevision: true },
+  unknown: { note: "Couldn’t confirm closure. Check the result before trying again.", initiativeClosed: false, offersDone: true, offersRevision: false },
 };
 export const closeSettlement = (outcome: MutationOutcome["outcome"]): CloseSettlement => CLOSE_SETTLEMENTS[outcome];
 type OwnedWorkRow = { readonly taskId: string; readonly title: string; readonly dueOn: string | null; readonly status: string };
@@ -106,7 +106,7 @@ const ownedWorkOf = (value: unknown): readonly OwnedWorkRow[] => (isObject(value
 const ownedWorkTotalOf = (value: unknown, rows: readonly OwnedWorkRow[]): number => (isObject(value) && typeof value.total === "number" && Number.isFinite(value.total) && value.total > rows.length ? value.total : rows.length);
 const refusalOf = (actions: readonly ReadAction[]): string | null => {
   const action = actions.find((entry) => entry.name === "closeInitiative");
-  return action === undefined || action.available ? null : action.reason?.trim() || "This read does not state that a closure is available.";
+  return action === undefined || action.available ? null : action.reason?.trim() || "This initiative can’t be closed right now.";
 };
 function viewOf(envelope: ReadEnvelope<CloseInitiativeEnvelopeData>): CloseDialogView | null {
   const data: unknown = envelope.data;
@@ -294,7 +294,7 @@ export default function CloseInitiativeDialog({ open, onOpenChange, initiativeId
           <Separator />
           {view.refusal === null ? null : (
             <Alert variant="destructive" role={undefined}>
-              <AlertTitle>{"Closing is not on offer in this read"}</AlertTitle> <AlertDescription>{view.refusal}</AlertDescription>
+              <AlertTitle>{"Closing unavailable"}</AlertTitle> <AlertDescription>{view.refusal}</AlertDescription>
             </Alert>
           )}
           {view.state === "open" ? null : (

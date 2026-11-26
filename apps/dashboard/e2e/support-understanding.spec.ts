@@ -50,7 +50,7 @@ async function readWholeResult(page: Page): Promise<readonly CurrencyFigure[]> {
     const text = (await lines.nth(index).innerText()).replace(/\s+/gu, " ").trim();
     const currency = /^([A-Z]{2,8})\s/u.exec(text);
     if (currency === null) throw new Error(`The whole-result line ${JSON.stringify(text)} does not begin with the currency it states, so this file cannot read its partition.`);
-    const count = /and\s+([\d,]+)\s+gifts?\b/u.exec(text);
+    const count = /·\s+([\d,]+)\s+gifts?\b/u.exec(text);
     if (count === null) throw new Error(`The whole-result line ${JSON.stringify(text)} states no gift count, so the grain of the figure it carries cannot be checked.`);
     const amount = amountIn(text);
     figures.push({ currency: currency[1] ?? "", minorUnits: amount === null ? null : amount.minorUnits, giftCount: Number((count[1] ?? "").replace(/,/gu, "")), text });
@@ -92,7 +92,7 @@ async function statedGoalFacts(goal: ReturnType<Page["locator"]>): Promise<strin
   return (await facts.innerText()).replace(/\s+/gu, " ").trim();
 }
 /** The revision the goal panel states a change must present, with the note the panel states it by. */ function statedRevision(facts: string, subject: string): string {
-  const matched = /Revision\s+(\S+)\s+\(the revision a change must present/u.exec(facts); // The revision one statement of the goal panel's facts names, refusing a statement that names none.
+  const matched = /Revision\s+(\S+)\s+\(checked on save to prevent accidental overwrites/u.exec(facts); // The revision one statement of the goal panel's facts names, refusing a statement that names none.
   if (matched === null) throw new Error(`${subject} states no revision a change must present, so nothing is compared with it: ${JSON.stringify(facts)}.`);
   return matched[1] ?? "";
 }
@@ -144,14 +144,13 @@ test("the overview states five separate measures, cash first, and never one comb
   await monthlyTab.click();
   const monthlyPanel = page.getByRole("tabpanel", { name: "Monthly equivalents" });
   await expect(monthlyPanel).toBeVisible();
-  await expect(monthlyPanel.getByRole("heading", { name: "The source supplies no monthly equivalent here" }), "The panel states the measure's own absence: an empty monthly-equivalent list is not a statement that no commitment exists").toBeVisible();
+  await expect(monthlyPanel.getByRole("heading", { name: "No monthly equivalents supplied" }), "The panel states the measure's own absence: an empty monthly-equivalent list is not a statement that no commitment exists").toBeVisible();
   await expect(
-    monthlyPanel.getByText(/reports \d+ commitments — its own standing count of the commitments it holds, taken over the coverage stated above rather than over this period/u),
-    "The panel states how many commitments the source does report, and states that count as the source's own standing count taken over the coverage rather than as a period subtotal",
+    monthlyPanel.getByText(/Your giving source reports \d+ commitments but doesn’t provide a monthly-equivalent figure for them\./u),
+    "The panel states how many commitments the source does report, and states that no monthly-equivalent figure is supplied for them",
   ).toBeVisible();
-  await expect(monthlyPanel.getByText(/supplies no monthly equivalent for any of them/u), "The panel states that the source supplies no monthly equivalent for any of those commitments, so nothing stands in the measure's place").toBeVisible();
-  await expect(monthlyPanel.getByText(/never averaged, summed, or derived from received gifts/u), "A monthly equivalent is the qualified source's own calculation for one commitment, so the panel states that no figure here is derived from gifts or from a per-occurrence amount").toBeVisible();
-  await expect(page.getByText(/Commitments, committed amounts and the goal are measures of their own/u)).toBeVisible();
+  await expect(monthlyPanel.getByText(/Mysa displays source-calculated equivalents only and doesn’t estimate them\./u), "A monthly equivalent is the qualified source's own calculation for one commitment, so the panel states that no figure here is estimated or derived").toBeVisible();
+  await expect(page.getByText(/Commitments and monthly equivalents are tracked alongside received cash and never combined with it\./u)).toBeVisible();
   expect(await page.getByText(/total support/iu).count(), "The overview names no combined 'total support', because the five measures are never one figure.").toBe(0);
   const chart = page.locator('[data-slot="chart-figure"]').first();
   await expect(chart, "The one chart reads the same report result as the table beneath it, and carries that table as its alternative: a figure that states its unit, coverage and as-of time can be checked without reading a picture").toBeVisible();
@@ -159,41 +158,41 @@ test("the overview states five separate measures, cash first, and never one comb
   const chartTable = chart.locator("table").first();
   await expect(chartTable).toBeVisible();
   await expect(chartTable.locator("caption")).toContainText("by month");
-  await expect(chartTable.locator("caption"), "The table states the gap rule in its own caption: a month the source recorded nothing in is named rather than stated as a zero").toContainText("a month the source recorded nothing in states that rather than a zero");
+  await expect(chartTable.locator("caption"), "The table states the gap rule in its own caption: a month the source recorded nothing in is named rather than stated as a zero").toContainText("Months without recorded gifts are shown as gaps, not zeros.");
   await expect(chartTable.getByRole("columnheader", { name: "Month" })).toBeVisible();
-  await expect(chart.locator("figcaption")).toContainText("Amounts are in");
-  for (const link of ["Read the whole gifts ledger", "Read the commitments", "Period comparison"]) await expect(page.getByRole("link", { name: link })).toBeVisible();
+  await expect(chart.locator("figcaption")).toContainText("Amounts in");
+  for (const link of ["View all received gifts", "View commitments", "Period comparison"]) await expect(page.getByRole("link", { name: link }).first()).toBeVisible();
 });
 test("the received report compares equal-elapsed periods and a month with no gift is a gap", async ({ page }) => {
   await page.goto(`${RECEIVED_REPORT_HREF}?period=this-year`); // Four of the five measures are stated on the overview under their own names; the fifth — monthly-equivalent support — is read on its own view rather than as a monthly version of the received total.
   await expect(page.getByRole("heading", { name: "Received support", level: 1, exact: true })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
   await expect(page.getByText(/^Period: In progress$/u).first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Compared with the preceding equal-elapsed period" }).first(), "The comparison is the equal-elapsed period before this one, stated with its own name, and the difference is stated with the direction it has").toBeVisible();
-  for (const value of ["Earlier equal-elapsed period", "Difference (this period minus the earlier one)", "Higher than the earlier period"]) await expect(page.getByText(value).first()).toBeVisible();
-  expect(await page.getByText("Not like-for-like").count(), "The two spans are the same length, so the report states an equal-elapsed comparison rather than a mis-matched one.").toBe(0);
-  await expect(page.getByText("No gift recorded — a gap, not a zero").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Compared with prior equal period" }).first(), "The comparison is the equal-elapsed period before this one, stated with its own name, and the difference is stated with the direction it has").toBeVisible();
+  for (const value of ["Prior equal period", "Difference", "Higher than prior period"]) await expect(page.getByText(value).first()).toBeVisible();
+  expect(await page.getByText("Different period lengths").count(), "The two spans are the same length, so the report states an equal-elapsed comparison rather than a mis-matched one.").toBe(0);
+  await expect(page.getByText("No gifts recorded (gap, not zero)").first()).toBeVisible();
   expect(await page.getByText("0.00 USD", { exact: true }).count(), "A month with no gift is a gap rather than a zero, so no month of the period is printed at 0.00 USD.").toBe(0);
-  for (const text of ["Currency not identified", /Amount — Unknown/u, /No comparison is stated for this currency, because an amount of a currency with no minor-unit exponent cannot be differenced\./u] as const) await expect(page.getByText(text).first()).toBeVisible();
+  for (const text of ["Currency not identified", /Amount — Unknown/u, /No comparison available for this currency because its decimal precision isn’t configured\./u] as const) await expect(page.getByText(text).first()).toBeVisible();
 });
 test("a zero-baseline comparison states its difference and no percentage at all", async ({ page }) => {
   await page.goto(`/support/reports/comparison?from=2026-06-01&to=2026-06-30`);
   await expect(page.getByRole("heading", { name: "Period comparison", level: 1, exact: true })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Amounts in USD", exact: true }), "One currency is stated in this period, one is stated in the earlier period, and the difference is stated as a signed amount").toBeVisible();
-  const difference = await page.locator("dt").filter({ hasText: "Difference (this period minus the earlier one)" }).first().locator("xpath=following-sibling::dd[1]").innerText(); // The difference this card states, read from the term that names its convention rather than from a direction word the signed amount already carries.
+  const difference = await page.locator("dt").filter({ hasText: "Difference" }).first().locator("xpath=following-sibling::dd[1]").innerText(); // The difference this card states, read from the term that names its convention rather than from a direction word the signed amount already carries.
   expect(requiredAmount(difference, "The comparison's difference").minorUnits, "The earlier period holds no gift, so the whole of this period's support is the difference.").toBeGreaterThan(0);
   expect(difference, "The amount states the direction once: no direction word repeats it beside the figure.").not.toMatch(/Increased by|Decreased by/u);
-  await expect(page.getByText(/No percentage is shown, because a percentage needs a compatible numerator and a positive, known denominator\./u), "A zero earlier period is no denominator: the surface states no percentage rather than 0% or ∞").toBeVisible();
+  await expect(page.getByText(/No percentage is shown without a matching figure and a known positive baseline\./u), "A zero earlier period is no denominator: the surface states no percentage rather than 0% or ∞").toBeVisible();
   expect(await page.getByText("0%", { exact: true }).count(), "A zero baseline yields no percentage, so 0% is never stated for it.").toBe(0);
   expect(await page.getByText("∞", { exact: true }).count(), "A zero baseline yields no percentage, so an infinite share is never stated for it.").toBe(0);
-  expect(await page.getByText("Not like-for-like").count(), "Both spans are 30 days, so the difference is stated as an equal-elapsed one.").toBe(0);
+  expect(await page.getByText("Different period lengths").count(), "Both spans are 30 days, so the difference is stated as an equal-elapsed one.").toBe(0);
 });
 test("every currency is stated on its own and the unidentified amount is never summed", async ({ page }) => {
   await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}`);
   await expect(page.getByRole("heading", { name: "Received gifts", level: 1 })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("Whole-result support, by currency")).toBeVisible();
+  await expect(page.getByText("Totals by currency")).toBeVisible();
   const figures = await readWholeResult(page);
   // One partition per currency the source reports, and one for the currency it never identified. The order is the summary's own, so the partitions can be compared as a whole rather than searched.
   const currencies = figures.map((figure) => figure.currency);
@@ -214,7 +213,7 @@ test("every currency is stated on its own and the unidentified amount is never s
   const unidentified = figureFor(figures, "UNKNOWN");
   expect(unidentified.minorUnits, "The amount whose currency the source never identified carries no amount this surface can state.").toBeNull();
   expect(unidentified.text).toContain(UNKNOWN_AMOUNT_WORD);
-  await expect(page.getByText(/nothing here is added across currencies and no combined total is stated\./u)).toBeVisible();
+  await expect(page.getByText(/Currencies are kept separate and never combined\./u)).toBeVisible();
   const rows = await readLedgerRows(page);
   expect(usdFigure.minorUnits, "The USD partition states an amount.").not.toBeNull();
   expect(usdFigure.minorUnits, "The USD subtotal is exactly the sum of the USD rows the same result returns.").toBe(rowTotalOf(rows, "USD"));
@@ -229,41 +228,41 @@ test("a split gift counts once at its own grain and a refund is explained rather
   const splitRows = rows.filter((row) => row.giftId === SPLIT_GIFT_ID);
   expect(splitRows.length, "The split gift is one row in this result: the gift-grain row is replaced by the one allocation this read is authorised to see, rather than shown beside it.").toBe(1);
   const split = splitRows[0];
-  expect(split?.text, "The row states the grain it is reported at.").toContain("One allocation of a split gift");
+  expect(split?.text, "The row states the grain it is reported at.").toContain("Split allocation");
   expect(split?.amount?.minorUnits, "Only the authorised allocation of the split gift is counted, so the row states the allocation rather than the whole gift.").toBe(4_000);
   expect(await page.getByText("100.00 USD", { exact: false }).count(), "The whole gift's amount is nowhere in this view, because the gift is counted once at its allocation grain.").toBe(0);
   const refund = rows.find((row) => row.giftId === "gift-harbour-0010");
-  expect(refund?.text, "The refund row names the row it corrects.; The refund is a row of its own, naming the row it corrects, and the original it corrects is still in the result: a correction explains itself instead of replacing what it corrects").toContain(`A refund of ${CORRECTED_GIFT_ROW_ID}`);
+  expect(refund?.text, "The refund row names the row it corrects.; The refund is a row of its own, naming the row it corrects, and the original it corrects is still in the result: a correction explains itself instead of replacing what it corrects").toContain(`Refund of ${CORRECTED_GIFT_ROW_ID}`);
   expect(refund?.amount?.minorUnits, "The refund is stated as the negative amount the source recorded.").toBeLessThan(0);
   const correctedRowKept = rows.some((row) => row.text.includes(CORRECTED_GIFT_ROW_ID));
   expect(correctedRowKept, "The row the refund corrects is still in the result, so the correction did not erase it.").toBe(true);
   await page.getByRole("link", { name: `Open gift ${SPLIT_GIFT_ID}` }).click();
-  await expect(page.getByRole("heading", { name: "Gift record", level: 1 })).toBeVisible();
-  await expect(page.getByText(/This row is one authorised allocation of a gift/u)).toBeVisible();
-  for (const heading of ["What this row is", "Provenance", "Basis, coverage and as-of"]) await expect(page.getByRole("heading", { name: heading })).toBeVisible();
-  await expect(page.getByText("Entered in the source on")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Gift details", level: 1 })).toBeVisible();
+  await expect(page.getByText(/This row is one authorised allocation of a split gift/u)).toBeVisible();
+  for (const heading of ["How this row is counted", "Source provenance", "Snapshot & coverage"]) await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+  await expect(page.getByText("Recorded on")).toBeVisible();
   await expect(page.locator('[data-grain="allocation"]')).toBeVisible();
   await expect(page.locator(`[data-gift-row-id="gift-row-harbour-0003"]`), "The record is the allocation row itself, not the gift-grain row the split replaced: the row the gift is counted at is named on the record by its own identifier").toBeVisible();
   await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}`);
   await page.getByRole("link", { name: `Open gift gift-harbour-0010` }).click();
-  await expect(page.getByRole("heading", { name: "Gift record", level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "This row is a correction" })).toBeVisible();
-  await expect(page.getByText(/This row records a refund or correction against another row/u)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Gift details", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Correction or refund" })).toBeVisible();
+  await expect(page.getByText(/Adjusts row/u)).toBeVisible();
   await expect(page.getByText(CORRECTED_GIFT_ROW_ID, { exact: true })).toBeVisible();
-  await expect(page.getByText(/it is never netted into the row it corrects/u)).toBeVisible();
-  expect(await page.getByText(/whole gift that carries no allocation/u).count(), "The record states what the row is once: the correction is never also called a whole gift that carries no allocation.").toBe(0);
-  await expect(page.getByText(/This row is a correction that carries no allocation/u), "The grain section states the correction itself, so the record describes the row the same way in both sections.").toBeVisible();
+  await expect(page.getByText(/never silently netted out/u)).toBeVisible();
+  expect(await page.getByText(/complete unsplit gift/u).count(), "The record states what the row is once: the correction is never also called a complete unsplit gift.").toBe(0);
+  await expect(page.getByText(/This row is a separate correction or refund entry linked to the original row below/u), "The grain section states the correction itself, so the record describes the row the same way in both sections.").toBeVisible();
   expect(requiredAmount(await page.locator('[data-slot="gift-detail"] p[data-value-state]').first().innerText(), "The refund record's amount").minorUnits, "The record states the amount the source recorded, sign included.").toBeLessThan(0);
 });
 test("the recurring outcomes stay five and stale evidence stays outside them", async ({ page }) => {
   await page.goto("/support/commitments");
   await expect(page.getByRole("heading", { name: "Commitments", level: 1 })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
-  await expect(page.getByText(/A commitment is not received cash: these rows state the source's own cadence, currency and occurrence state, and none is counted in a received-support figure\./u)).toBeVisible();
-  await expect(page.getByText("Commitments are read-only")).toBeVisible();
-  for (const label of ["Received", "Processing", "Upcoming", "Recovery — needs attention", "Not received"] as const) await expect(page.getByText(`Recurring outcome: ${label}`, { exact: true }).first(), `The ${label} outcome is stated by name.`).toBeVisible();
+  await expect(page.getByText(/Commitments aren’t counted as received cash — in-flight collections stay separate until settled\./u)).toBeVisible();
+  await expect(page.getByText("Commitments are read-only", { exact: true })).toBeVisible();
+  for (const label of ["Received", "Processing", "Upcoming", "Recovery — needs attention", "Not received"] as const) await expect(page.getByText(`Recurring status: ${label}`, { exact: true }).first(), `The ${label} outcome is stated by name.`).toBeVisible();
   await expect(page.getByText(OUTSIDE_PARTITION_LABEL).first(), "And the sixth value is not an outcome: it is where evidence that is unknown or stale is kept, so no occurrence is guessed into one of the five").toBeVisible();
-  await expect(page.getByText(/it is counted in none of them, is never guessed into one, and is never presented as a sixth outcome\./u).first()).toBeVisible();
+  await expect(page.getByText(/stays outside the five status buckets rather than being guessed\./u).first()).toBeVisible();
   expect(await page.getByText(OUTSIDE_PARTITION_LABEL).count(), "The stale occurrence is stated outside the five outcomes, in the partition and on its row.").toBeGreaterThan(1);
 });
 test("a goal save against a stale revision is a conflict that keeps the caller's input", async ({ page, request }) => {
@@ -271,23 +270,23 @@ test("a goal save against a stale revision is a conflict that keeps the caller's
   const goal = page.getByRole("region", { name: "Support goal" });
   await expect(goal).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
-  await expect(goal.getByRole("button", { name: "Change the goal" }), "The established worker holds the goal-editing capability, so the panel offers the change.").toBeVisible(); // The capability is present for this identity, so the panel offers the change, and the goal it holds is read off the panel itself — the amount in its own currency and the revision a change must present — rather than from the read behind it.
+  await expect(goal.getByRole("button", { name: "Edit goal" }), "The established worker holds the goal-editing capability, so the panel offers the change.").toBeVisible(); // The capability is present for this identity, so the panel offers the change, and the goal it holds is read off the panel itself — the amount in its own currency and the revision a change must present — rather than from the read behind it.
   const statedBefore = await statedGoalFacts(goal);
   const held = requiredAmount(statedBefore, "The goal panel's statement of the goal it holds");
   expect(held.minorUnits, "The seeded goal states its exact amount.").toBe(HARBOUR_GOAL_CURRENT_MINOR);
   expect(held.currency, "The seeded goal states the currency it is held in.").toBe("USD");
   await setFailurePlan(request, { mode: "conflict", target: { kind: "mutation", name: "saveGoal" } }, SESSION.sessionId); // Arm the changed-revision failure on this one mutation, then save through the surface. The save presents the revision the panel opened with, so the answer is a genuine conflict rather than a fabricated one.
-  await goal.getByRole("button", { name: "Change the goal" }).click();
+  await goal.getByRole("button", { name: "Edit goal" }).click();
   await goal.getByLabel("Amount").fill("26000.00");
   await goal.getByRole("button", { name: "Save goal" }).click();
   const receipt = page.locator('[data-slot="operation-result"][data-outcome="conflict"]');
   await expect(receipt).toBeVisible();
-  await expect(receipt.getByRole("heading", { name: "Someone else changed this" })).toBeVisible();
-  await expect(receipt.getByText(/Your input is kept exactly as you entered it, beside the value the record holds now/u)).toBeVisible();
-  await expect(receipt.getByRole("button", { name: "Re-apply my input" })).toBeVisible();
+  await expect(receipt.getByRole("heading", { name: "Updated elsewhere" })).toBeVisible();
+  await expect(receipt.getByText(/Your edits are kept alongside the latest saved version below — nothing was overwritten\./u)).toBeVisible();
+  await expect(receipt.getByRole("button", { name: "Re-apply my changes" })).toBeVisible();
   const receiptText = (await receipt.innerText()).replace(/\s+/gu, " ");
-  expect(receiptText, "The value the record holds is stated on the receipt.").toContain("The value the record holds now");
-  expect(receiptText, "The caller's input is preserved on the receipt.").toContain("Your input, kept as you entered it");
+  expect(receiptText, "The value the record holds is stated on the receipt.").toContain("Saved version");
+  expect(receiptText, "The caller's input is preserved on the receipt.").toContain("Your changes");
   expect(receiptText, "The current goal's own minor units are stated beside the preserved input.").toContain(String(HARBOUR_GOAL_CURRENT_MINOR));
   expect(receiptText, "The amount the caller typed is preserved exactly as it was sent.").toContain(String(HARBOUR_GOAL_INPUT_MINOR));
   expect(receiptText.match(/Current revision/gu)?.length ?? 0, "The receipt states one current revision and no second one, so the record's own revision field is not restated beside it.").toBe(1);
@@ -306,7 +305,7 @@ test("an accepted goal save replays to its stored result and advances no second 
   await expect(goal).toBeVisible();
   const before = await readGoal(request, SESSION.sessionId); // The attempt this test replays is the one the panel submits: the revision it presents is the one the panel states a change must present, and its identity is the review step's own. The scope is the one member of that attempt no surface states, so it is read from the named read the panel renders.
   const openedRevision = statedRevision(await statedGoalFacts(goal), "The goal panel");
-  await goal.getByRole("button", { name: "Change the goal" }).click();
+  await goal.getByRole("button", { name: "Edit goal" }).click();
   await goal.getByLabel("Amount").fill("26000.00");
   await goal.getByRole("button", { name: "Save goal" }).click();
   await expect(page.locator('[data-slot="operation-result"][data-outcome="accepted"]')).toBeVisible();
@@ -328,37 +327,37 @@ test("a missing goal states no percentage and a goal met above 100% is stated ex
   await page.goto(SUPPORT_HREF);
   const goal = page.getByRole("region", { name: "Support goal" });
   await expect(goal).toBeVisible();
-  await expect(goal.getByText("No support goal is set", { exact: true })).toBeVisible();
-  await expect(goal.getByText(/No percentage is shown because no support goal is set\. A missing goal and a goal of zero are different facts, and neither is a denominator\./u)).toBeVisible();
+  await expect(goal.getByText("No support goal set", { exact: true })).toBeVisible();
+  await expect(goal.getByText(/No percentage is shown because no support goal is set yet\./u)).toBeVisible();
   expect(await goal.getByText("0%", { exact: true }).count(), "A subject with no goal states no percentage at all, so 0% is never shown for it.").toBe(0);
-  await goal.getByRole("button", { name: "Set a goal" }).click();
+  await goal.getByRole("button", { name: "Set goal" }).click();
   await expect(goal.getByLabel("Amount")).toBeVisible();
   await expect(goal.getByLabel("Currency"), "One stated currency is stated rather than offered as a choice, so no currency control is rendered.").toHaveCount(0); // This subject's source reports one currency, so the panel states that currency as the fact it is instead of offering a choice of one, and the amount takes the precision that currency carries rather than one this file assumes.
-  await expect(goal.getByText(/The currency is EUR and is not a free choice/u)).toBeVisible();
+  await expect(goal.getByText(/Currency: EUR \(from your giving source\)\./u)).toBeVisible();
   await goal.getByLabel("Amount").fill("87.50");
   await goal.getByLabel("Effective from").fill(STUDENTS_GOAL_EFFECTIVE_FROM);
   const review = goal.locator('[data-slot="action-review"]');
-  await expect(review.getByRole("heading", { name: "Review this goal change", level: 3 }), "The review step states the change before it is applied: the goal the record holds now, the amount and currency this change states, and the day it takes effect on").toBeVisible();
-  await expect(review.getByText("No goal is set", { exact: true })).toBeVisible();
+  await expect(review.getByRole("heading", { name: "Review goal change", level: 3 }), "The review step states the change before it is applied: the goal the record holds now, the amount and currency this change states, and the day it takes effect on").toBeVisible();
+  await expect(review.getByText("None set", { exact: true })).toBeVisible();
   await expect(review.getByText(/^87\.50\s+EUR$/u)).toBeVisible();
   await expect(review.getByText(STUDENTS_GOAL_EFFECTIVE_FROM, { exact: true })).toBeVisible();
   await review.getByRole("button", { name: "Save goal" }).click();
   await expect(page.locator('[data-slot="operation-result"][data-outcome="accepted"]'), "The goal is created once, in the currency the subject reports in.").toBeVisible();
-  await goal.getByRole("button", { name: "Close" }).click();
-  await expect(goal.getByRole("button", { name: "Change the goal" }), "A goal met above 100% is stated exactly as it was computed, with the amount, currency and revision the panel states the created goal holds").toBeVisible();
+  await goal.getByRole("button", { name: "Done" }).click();
+  await expect(goal.getByRole("button", { name: "Edit goal" }), "A goal met above 100% is stated exactly as it was computed, with the amount, currency and revision the panel states the created goal holds").toBeVisible();
   const stated = await statedGoalFacts(goal);
   const createdGoal = requiredAmount(stated, "The goal panel's statement of the goal it holds");
   expect(createdGoal.minorUnits, "The panel states the goal in the exact minor units this journey set.").toBe(8_750);
   expect(createdGoal.currency, "The panel states the goal in the currency the subject reports in.").toBe("EUR");
   expect(statedRevision(stated, "The goal panel"), "A created goal starts at the first revision.").toBe("1");
   await expect(goal.getByText("120%", { exact: true })).toBeVisible();
-  await expect(goal.getByText(/The goal is 120% met over/u)).toBeVisible();
-  await expect(goal.getByText(/A figure above 100% is stated exactly as it was computed and is never capped\./u)).toBeVisible();
+  await expect(goal.getByText(/120% of your received gifts goal met for/u)).toBeVisible();
+  await expect(goal.getByText(/Percentages over 100% are shown as computed\./u)).toBeVisible();
   await expect(goal.getByText("87.50 EUR", { exact: false }).first()).toBeVisible();
 });
 test("a recorded zero, an unknown amount and an incomplete subtotal are told apart in words", async ({ page }) => {
   await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}`);
-  await expect(page.getByText("How an amount on this page is stated")).toBeVisible();
+  await expect(page.getByText("Amount status key")).toBeVisible();
   await expect(page.getByText(UNKNOWN_AMOUNT_WORD, { exact: true }).first(), "The amount whose currency the source never identified is unknown, and the legend states that in words: a state is never carried by colour, position or an adjacent heading alone").toBeVisible();
   await expect(page.getByText(new RegExp("The source did not establish a value, so this must not be read as zero or as an absence of giving.".replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u")).first()).toBeVisible();
   const wholeResult = page.locator('[data-slot="whole-result-summary"]');
@@ -373,22 +372,22 @@ test("a recorded zero, an unknown amount and an incomplete subtotal are told apa
   await page.goto(SUPPORT_HREF); // And that month is never drawn at zero: with nothing recorded in it for this subject, the one chart invents no series at all and says so. The month-by-month naming of a gap is the received report's table, asserted above, because a single-month overview has no second month to leave out.
   const chart = page.locator('[data-slot="chart-figure"]').first();
   await expect(chart).toBeVisible();
-  await expect(chart.getByText("This chart has no series", { exact: true })).toBeVisible();
-  await expect(chart.getByText(/None is invented in its place/u)).toBeVisible();
+  await expect(chart.getByText("No data series to chart", { exact: true })).toBeVisible();
+  await expect(chart.getByText(/No series was returned for this view\./u)).toBeVisible();
 });
 test("an unavailable financial source is stated as unavailable while other work continues", async ({ page, request }) => {
   await operateDevControl(request, "setScenario", { scenarioId: "financial-source-unavailable" }, SESSION.sessionId);
   await page.goto(SUPPORT_HREF);
   await expect(page.getByRole("heading", { name: "Support", level: 1 }), "The page keeps its own title above the outage, so the notice is stated inside a named surface rather than in place of its heading").toBeVisible();
-  await expect(page.getByRole("heading", { name: "The support overview could not be read", level: 2 }), "The surface reports the outage as its own state, with the source it could not read — never as an overview of zeroes and never as an empty period").toBeVisible();
+  await expect(page.getByRole("heading", { name: "Couldn’t load Support", level: 2 }), "The surface reports the outage as its own state, with the source it could not read — never as an overview of zeroes and never as an empty period").toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
-  expect(await page.getByText(/No gift is in this result/u).count(), "An outage is not an empty result.").toBe(0);
+  expect(await page.getByText(/No gifts match these filters/u).count(), "An outage is not an empty result.").toBe(0);
   expect(await page.getByText(/\b0\.00\b/u).count(), "An outage is not a zero.").toBe(0);
   expect(await page.getByText(/^Unknown amount$/u).count(), "An outage states the source's unavailability rather than an unknown figure.").toBe(0);
   await page.goto(`${GIFTS_HREF}${LEDGER_YEAR_QUERY}`);
-  await expect(page.getByRole("heading", { name: "The gifts ledger could not be read", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Couldn’t load Gifts", level: 1 })).toBeVisible();
   await page.goto("/work?list=overdue"); // Work that does not depend on the financial source is unaffected: the same session still reads its own tasks, including the one the seed makes overdue. The five lists are shown one at a time and the address names the one on screen, so the overdue list is opened at its own address, and its own
-  await expect(page.getByRole("heading", { name: "Work", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Tasks", level: 1 })).toBeVisible();
   const overdue = page.getByRole("table", { name: "Overdue tasks" });
   await expect(overdue).toBeVisible();
   await expect(overdue.getByText("Send the thank-you note").first()).toBeVisible();
@@ -404,8 +403,8 @@ test.describe("the goal without the edit capability", () => {
     expect(read.canEditGoal, "The reviewer's session holds no goal-editing capability.").toBe(false);
     expect(read.minorUnits, "The goal is still stated to an identity that may read it.").toBe(HARBOUR_GOAL_CURRENT_MINOR);
     await expect(goal.getByText("25,000.00 USD", { exact: false }).first()).toBeVisible();
-    expect(await goal.getByRole("button", { name: "Change the goal" }).count(), "A session without the capability is offered no way to change the goal: no control is offered — not a disabled one, and not one hidden by styling").toBe(0);
-    expect(await goal.getByRole("button", { name: "Set a goal" }).count(), "A session without the capability is offered no way to set one either.").toBe(0);
+    expect(await goal.getByRole("button", { name: "Edit goal" }).count(), "A session without the capability is offered no way to change the goal: no control is offered — not a disabled one, and not one hidden by styling").toBe(0);
+    expect(await goal.getByRole("button", { name: "Set goal" }).count(), "A session without the capability is offered no way to set one either.").toBe(0);
     expect(await goal.getByLabel("Amount").count(), "No amount field is rendered, so nothing invites an edit that would be refused.").toBe(0);
     await expect(goal.getByText(/no edit control is offered and a save would be refused\./u)).toBeVisible();
   });

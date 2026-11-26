@@ -28,19 +28,18 @@ export type InboxListProps = {
   readonly className?: string;
 };
 const EMPTY_MESSAGES: readonly InboxMessage[] = [];
-const COLUMNS = { sender: "Sender", subject: "Subject", audience: "Audience", language: "Language", noticeBody: "Notice body", intendedAt: "Intended at", recordedAt: "Recorded at", sendState: "Send outcome" } as const;
+const COLUMNS = { sender: "Sender", subject: "Subject", audience: "Audience", language: "Language", noticeBody: "Privacy", intendedAt: "Sent at", recordedAt: "Recorded at", sendState: "Status" } as const;
 const CLOSE_LABEL = "Close";
-const HONESTY_NOTE =
-  "An outcome recorded as accepted states that this application took the submission. It is not a delivered message and not a read one. An outcome recorded as unknown says the acknowledgement never arrived rather than that the submission failed: it is checked against the same operation, which returns the result already recorded, and no control on this page repeats a submission under a new one.";
-const ORDER_NOTE = "Messages are ordered by the instant the notice was intended, newest first, and then by message identity. " + "This read takes no ordering parameter, so no column is sortable and the order above the list is the order " + "the read applied.";
-const STATE_HEADINGS = { loading: "Reading this inbox", unavailable: "The inbox could not be read", denied: "This inbox is not permitted here", refused: "The inbox request was not admitted", partialCoverage: "The source covers only part of the period this inbox records" } as const;
-const BEYOND_LAST_PAGE = { title: "This page of the inbox holds no message", action: "Go to the last page" } as const;
+const HONESTY_NOTE = "Accepted means the simulated email was queued — not that it was delivered or read. Unknown outcomes should be refreshed rather than sent twice.";
+const ORDER_NOTE = "Ordered newest first.";
+const STATE_HEADINGS = { loading: "Loading Test inbox…", unavailable: "Couldn’t load Test inbox", denied: "Test inbox isn’t available in this session", refused: "Couldn’t open Test inbox", partialCoverage: "Partial inbox coverage" } as const;
+const BEYOND_LAST_PAGE = { title: "No messages on this page", action: "Go to last page" } as const;
 const DUPLICATE_DEFECT = {
-  title: "Two messages share one recipient and one notification intent",
-  lead: "One intent must produce one message for one recipient, so this is a defect in the recorded send results rather than a second message to read. No copy here has been dropped, merged or hidden: both are shown as recorded, and the fix belongs where the results were recorded.",
+  title: "Duplicate messages detected for one send",
+  lead: "Each notification should produce at most one message per recipient. Both copies are shown transparently below.",
 } as const;
-const UNRESOLVED_NOTE = { title: "Some intents produced no readable message", lead: "They are recorded for this recipient and could not be resolved into a message, so this inbox is incomplete rather than empty, and nothing is reconstructed in their place." } as const;
-const READING_UNAVAILABLE = { title: "The edition this message points at cannot be rendered now", lead: "The message itself is shown as it was recorded. The edition it links to is not readable at this instant, so nothing of it is reproduced here and no cached copy stands in its place." } as const;
+const UNRESOLVED_NOTE = { title: "Some notifications couldn’t be displayed", lead: "Those notifications were recorded for this subscriber but couldn’t be rendered as messages." } as const;
+const READING_UNAVAILABLE = { title: "Linked update isn’t available right now", lead: "The email preview is shown as recorded, though the update it links to can’t be loaded right now." } as const;
 const AUDIENCE_DISPLAY: Readonly<Record<NonNullable<InboxMessage["audience"]>, { readonly label: string; readonly tone: StatusTone }>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
 const NOTICE_BODY_DISPLAY: Readonly<Record<"protected" | "public", { readonly label: string; readonly tone: StatusTone }>> = { protected: { label: "Protected notice", tone: "caution" }, public: { label: "Public notice", tone: "neutral" } };
 const SEND_STATE_ORDER: readonly SendStatus[] = ["accepted", "failed", "unknown"];
@@ -149,7 +148,7 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
     selectedMessage === undefined ? null : (
       <section id={readerRegionId} ref={readerRef} tabIndex={-1} aria-labelledby={readerHeadingId} data-slot="inbox-reader" className="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
-          <h3 {...{ id: readerHeadingId, className: "type-subsection-title text-pretty wrap-anywhere" }}>{"The message as it was produced for this recipient"}</h3>
+          <h3 {...{ id: readerHeadingId, className: "type-subsection-title text-pretty wrap-anywhere" }}>{"Email preview"}</h3>
           <div className="flex items-center gap-2">
             <span aria-hidden="true" className="hidden items-center gap-1 text-xs text-muted-foreground sm:inline-flex">
               <Kbd>j</Kbd>
@@ -232,8 +231,8 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
       <>
         <Frame spacing="sm">
           <FramePanel className="flex min-w-0 flex-col gap-3">
-            <p className="text-sm font-medium text-pretty wrap-anywhere">{data.page.total === 1 ? "One message has been produced for this membership." : `${formatCount.format(data.page.total)} messages have been produced for this membership.`}</p>
-            <ul aria-label="Send outcomes recorded in this inbox" className="grid min-w-0 gap-2.5 sm:grid-cols-3">
+            <p className="text-sm font-medium text-pretty wrap-anywhere">{data.page.total === 1 ? "1 simulated email" : `${formatCount.format(data.page.total)} simulated emails`}</p>
+            <ul aria-label="Send statuses" className="grid min-w-0 gap-2.5 @xl/main:grid-cols-3">
               {SEND_STATE_ORDER.map((state) => (
                 <li key={state} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-surface-subtle px-3 py-2.5">
                   <StatusBadge {...statusBadgeProps(SEND_STATUS, state)} srPrefix={COLUMNS.sendState} />
@@ -243,9 +242,8 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
             </ul>
             <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">{HONESTY_NOTE}</p>
             <p className="max-w-prose text-xs text-muted-foreground text-pretty wrap-anywhere">
-              {`${"Read at"} `}
+              {`${"Updated"} `}
               <bdi className="tabular-figures">{envelope.asOf}</bdi>
-              {` — ${"the scenario instant this inbox was evaluated at, so a message recorded after it does not appear here."}`}
             </p>
           </FramePanel>
         </Frame>
@@ -283,7 +281,7 @@ export function InboxList({ scope, locale, initialEnvelope, className }: InboxLi
     <section data-slot="inbox-list" aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-1">
         <h2 {...{ id: headingId, className: "type-section-title text-pretty wrap-anywhere" }}>{INBOX_HEADING}</h2>
-        <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{"Every message this membership's notification purpose has produced, at the copy the recipient was pinned to: " + "the sender, the subject, the body as HTML and as plain text, and the outcome this application recorded for it."}</p>
+        <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{"Simulated update emails produced for this subscriber, with both HTML and plain-text previews."}</p>
       </div>
       <SimulationLabel effect={INBOX_SIMULATION_EFFECT} />
       <p className="max-w-prose type-supporting text-pretty wrap-anywhere">{ONE_COPY_STATEMENT}</p>

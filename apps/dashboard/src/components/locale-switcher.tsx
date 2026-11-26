@@ -60,7 +60,7 @@ function optionTextOf(edition: LocaleEdition): string {
   }, [servedDirection]);
   let servedSentence: ReactNode;
   if (servedEdition === undefined) {
-    servedSentence = isUnavailable ? null : <span className="min-w-0 text-muted-foreground text-pretty wrap-anywhere">{fallbackOccurred ? "A language other than the one requested is being shown; choose the edition to read below." : "No language is being read yet."}</span>;
+    servedSentence = isUnavailable ? null : <span className="min-w-0 text-muted-foreground text-pretty wrap-anywhere">{fallbackOccurred ? "Showing a fallback language; choose another edition below." : "No language selected."}</span>;
   } else {
     servedSentence = (
       <>
@@ -96,7 +96,7 @@ function optionTextOf(edition: LocaleEdition): string {
       >
         {servedTag === "" ? (
           <NativeSelectOption value="" disabled>
-            {isUnavailable ? "No edition in the requested language" : "No language selected"}
+            {isUnavailable ? "Not available in requested language" : "Select a language"}
           </NativeSelectOption>
         ) : null}
         {locales.map((edition) => (
@@ -112,7 +112,7 @@ function optionTextOf(edition: LocaleEdition): string {
         <StateNotice
           kind="language-unavailable"
           title={requestedName === "" ? "Language unavailable" : `Language unavailable: ${requestedName}`}
-          description={hasEditions ? "Choose another language from the list to read this edition in one you are permitted to read." : "No edition you are permitted to read exists in the language you asked for, and there is no other language to offer here."}
+          description={hasEditions ? "Choose another available language from the list above." : "No editions are available in the requested language."}
         />
       ) : null}
     </div>

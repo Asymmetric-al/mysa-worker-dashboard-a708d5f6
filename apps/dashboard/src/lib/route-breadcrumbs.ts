@@ -11,15 +11,15 @@ const EXACT_TRAILS: Readonly<Record<string, StaticTrail>> = {
   "/partners/import": [{ label: "Partners", href: "/partners" }, { label: "Import contacts" }],
   "/partners/initiatives": [{ label: "Partners", href: "/partners" }, { label: "Initiatives" }],
   "/partners/referrals": [{ label: "Partners", href: "/partners" }, { label: "Referrals" }],
-  "/work/agenda": [{ label: "Work", href: "/work" }, { label: "Agenda" }],
+  "/work/agenda": [{ label: "Tasks", href: "/work" }, { label: "Agenda" }],
   "/support/gifts": [{ label: "Support", href: "/support" }, { label: "Gifts" }],
   "/support/commitments": [{ label: "Support", href: "/support" }, { label: "Commitments" }],
-  "/communication/audience": [{ label: "Communication", href: "/communication" }, { label: "Audience" }],
-  "/communication/delivery": [{ label: "Communication", href: "/communication" }, { label: "Delivery" }],
-  "/communication/inbox": [{ label: "Communication", href: "/communication" }, { label: "Inbox" }],
-  "/preview": [{ label: "Communication", href: "/communication" }, { label: "Receiving preview" }],
-  "/preview/pages": [{ label: "Communication", href: "/communication" }, { label: "Published pages" }],
-  "/preview/preferences": [{ label: "Communication", href: "/communication" }, { label: "Your preferences" }],
+  "/communication/audience": [{ label: "Updates", href: "/communication" }, { label: "Email audience" }],
+  "/communication/delivery": [{ label: "Updates", href: "/communication" }, { label: "Send history" }],
+  "/communication/inbox": [{ label: "Updates", href: "/communication" }, { label: "Test inbox" }],
+  "/preview": [{ label: "Updates", href: "/communication" }, { label: "Reader preview" }],
+  "/preview/pages": [{ label: "Updates", href: "/communication" }, { label: "Public pages" }],
+  "/preview/preferences": [{ label: "Updates", href: "/communication" }, { label: "Reader preferences" }],
   "/coaching/targets": [{ label: "Coaching", href: "/coaching" }, { label: "Targets" }],
   "/coaching/check-ins": [{ label: "Coaching", href: "/coaching" }, { label: "Check-ins" }],
   "/coaching/sharing": [{ label: "Coaching", href: "/coaching" }, { label: "Sharing" }],
@@ -54,37 +54,37 @@ export function buildRouteBreadcrumbs(rawPath: string): readonly ShellBreadcrumb
       return [
         { label: "Partners", href: "/partners" },
         { label: "Initiatives", href: "/partners/initiatives" },
-        { label: "Initiative detail" },
+        { label: "Initiative details" },
       ];
     }
     if (second === "referrals" && third !== undefined) {
       return [
         { label: "Partners", href: "/partners" },
         { label: "Referrals", href: "/partners/referrals" },
-        { label: "Referral detail" },
+        { label: "Referral details" },
       ];
     }
     if (second !== undefined && third === "edit") {
       return [
         { label: "Partners", href: "/partners" },
-        { label: "Partner record", href: `/partners/${encodeURIComponent(second)}` },
+        { label: "Partner profile", href: `/partners/${encodeURIComponent(second)}` },
         { label: "Edit contact" },
       ];
     }
     if (second !== undefined && third === "interactions" && fourth === "new") {
       return [
         { label: "Partners", href: "/partners" },
-        { label: "Partner record", href: `/partners/${encodeURIComponent(second)}` },
-        { label: "Log interaction" },
+        { label: "Partner profile", href: `/partners/${encodeURIComponent(second)}` },
+        { label: "Log activity" },
       ];
     }
     if (second !== undefined) {
-      return [{ label: "Partners", href: "/partners" }, { label: "Partner record" }];
+      return [{ label: "Partners", href: "/partners" }, { label: "Partner profile" }];
     }
   }
 
   if (root === "work" && second === "series" && third !== undefined) {
-    return [{ label: "Work", href: "/work" }, { label: "Repeating series" }];
+    return [{ label: "Tasks", href: "/work" }, { label: "Repeating plan" }];
   }
 
   if (root === "support") {
@@ -92,14 +92,14 @@ export function buildRouteBreadcrumbs(rawPath: string): readonly ShellBreadcrumb
       return [
         { label: "Support", href: "/support" },
         { label: "Gifts", href: "/support/gifts" },
-        { label: "Gift detail" },
+        { label: "Gift details" },
       ];
     }
     if (second === "commitments" && third !== undefined) {
       return [
         { label: "Support", href: "/support" },
         { label: "Commitments", href: "/support/commitments" },
-        { label: "Commitment detail" },
+        { label: "Commitment details" },
       ];
     }
     if (second === "reports" && third !== undefined) {
@@ -109,40 +109,40 @@ export function buildRouteBreadcrumbs(rawPath: string): readonly ShellBreadcrumb
 
   if (root === "communication") {
     if (second === "review" && third !== undefined) {
-      return [{ label: "Communication", href: "/communication" }, { label: "Review candidate" }];
+      return [{ label: "Updates", href: "/communication" }, { label: "Review update" }];
     }
     if (second !== undefined && third !== undefined && fourth === "preview") {
       return [
-        { label: "Communication", href: "/communication" },
+        { label: "Updates", href: "/communication" },
         { label: "Update", href: `/communication/${encodeURIComponent(second)}` },
         { label: "Edition preview" },
       ];
     }
     if (second !== undefined && third !== undefined) {
       return [
-        { label: "Communication", href: "/communication" },
+        { label: "Updates", href: "/communication" },
         { label: "Update", href: `/communication/${encodeURIComponent(second)}` },
-        { label: "Edition editor" },
+        { label: "Edit edition" },
       ];
     }
     if (second !== undefined) {
-      return [{ label: "Communication", href: "/communication" }, { label: "Update" }];
+      return [{ label: "Updates", href: "/communication" }, { label: "Update" }];
     }
   }
 
   if (root === "pages") {
     if (second === "review" && third !== undefined) {
-      return [{ label: "Pages", href: "/pages" }, { label: "Page review" }];
+      return [{ label: "Ministry pages", href: "/pages" }, { label: "Page review" }];
     }
     if (second !== undefined && third !== undefined && fourth === "preview") {
       return [
-        { label: "Pages", href: "/pages" },
+        { label: "Ministry pages", href: "/pages" },
         { label: "Page builder", href: `/pages/${encodeURIComponent(second)}` },
         { label: "Preview" },
       ];
     }
     if (second !== undefined) {
-      return [{ label: "Pages", href: "/pages" }, { label: "Page builder" }];
+      return [{ label: "Ministry pages", href: "/pages" }, { label: "Page builder" }];
     }
   }
 
@@ -150,22 +150,22 @@ export function buildRouteBreadcrumbs(rawPath: string): readonly ShellBreadcrumb
     return [
       { label: "Coaching", href: "/coaching" },
       { label: "Coach view", href: "/coaching/coach" },
-      { label: "Shared subject" },
+      { label: "Shared workspace" },
     ];
   }
 
   if (root === "preview") {
     if (second === "pages" && third !== undefined) {
       return [
-        { label: "Communication", href: "/communication" },
-        { label: "Published pages", href: "/preview/pages" },
-        { label: "Public reading" },
+        { label: "Updates", href: "/communication" },
+        { label: "Public pages", href: "/preview/pages" },
+        { label: "Public page" },
       ];
     }
     if (second !== undefined) {
       return [
-        { label: "Communication", href: "/communication" },
-        { label: "Receiving preview", href: "/preview" },
+        { label: "Updates", href: "/communication" },
+        { label: "Reader preview", href: "/preview" },
         { label: "Published update" },
       ];
     }

@@ -18,10 +18,9 @@ const COACHING_DEFAULT_PAGE_SIZE = 25;
 const COACHING_MAX_PAGE_SIZE = 100;
 const COACHING_PAGE_SIZES: readonly number[] = [COACHING_DEFAULT_PAGE_SIZE, COACHING_MAX_PAGE_SIZE];
 const FIRST_PAGE = 1;
-const COLUMN_LABELS = { worker: "Worker", ministry: "Ministry", modules: "Shared with you", access: "Access", ends: "Access ends" } as const;
+const COLUMN_LABELS = { worker: "Missionary", ministry: "Ministry", modules: "Shared with you", access: "Access", ends: "Access ends" } as const;
 const MUTED_TEXT_CLASS = "type-supporting text-pretty";
-const IDENTITY_STATEMENT =
-  "A row names the worker by the identity this read reports and by nothing else: a matching name, address or email establishes neither identity nor authority. No private note, check-in answer, task description, amount or donor appears on this page, and no relationship is compared with another.";
+const IDENTITY_STATEMENT = "Each missionary is identified by their verified account record. No private notes, check-in drafts, task details, or donor records appear here.";
 function windowOf<T>(items: readonly T[], page: number, pageSize: number): { readonly items: readonly T[]; readonly page: number } {
   const current = Number.isFinite(page) ? Math.min(Math.max(FIRST_PAGE, Math.trunc(page)), Math.max(1, Math.ceil(items.length / pageSize))) : FIRST_PAGE;
   const firstIndex = (current - FIRST_PAGE) * pageSize;
@@ -42,7 +41,7 @@ const SubjectCell = ({ subject, onOpen }: { readonly subject: PortfolioSubject; 
 );
 function ModulesCell({ subject }: { readonly subject: PortfolioSubject }): ReactElement {
   const keys = moduleKeysOf(subject);
-  if (keys.length === 0) return <span className={MUTED_TEXT_CLASS}>{"No module is switched on for this relationship yet, so nothing is readable under it."}</span>;
+  if (keys.length === 0) return <span className={MUTED_TEXT_CLASS}>{"No modules shared yet."}</span>;
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {keys.map((key) => (
@@ -60,7 +59,7 @@ function AccessCell({ subject }: { readonly subject: PortfolioSubject }): ReactE
 }
 function AccessEndsCell({ subject }: { readonly subject: PortfolioSubject }): ReactElement {
   const { duration } = subject;
-  if (duration.boundInstant === null) return <span className={MUTED_TEXT_CLASS}>{"This relationship reports no end instant, so this row states none."}</span>;
+  if (duration.boundInstant === null) return <span className={MUTED_TEXT_CLASS}>{"No end date set."}</span>;
   return (
     <span className="flex min-w-0 flex-col gap-1">
       <bdi className="mono-identifier">{duration.boundInstant}</bdi>
@@ -76,7 +75,7 @@ function AccessEndsCell({ subject }: { readonly subject: PortfolioSubject }): Re
           <bdi className="mono-identifier">{duration.shareThroughDate}</bdi>
         </span>
       )}
-      {duration.boundedBy === "source" ? <span className="text-xs text-pretty text-muted-foreground">{"An end set earlier by the source decides this one."}</span> : null}
+      {duration.boundedBy === "source" ? <span className="text-xs text-pretty text-muted-foreground">{"An earlier organization limit applies."}</span> : null}
     </span>
   );
 }
@@ -131,7 +130,7 @@ export default function CoachPortfolio({ initialQuery, scope, locale, onOpen }: 
     const visiblePage = windowOf(subjects, queryState.page, queryState.pageSize);
     content = (
       <>
-        <p className="max-w-prose type-supporting text-pretty">{"Each relationship is listed by the ministry it covers and then by the grant's own identity, in the order this read answers with: nothing on this page re-orders, narrows or adds the relationships together."}</p>
+        <p className="max-w-prose type-supporting text-pretty">{"Listed by ministry and grant in the order returned by the service."}</p>
         <RecordList
           label={heading}
           columns={columns}
@@ -152,7 +151,7 @@ export default function CoachPortfolio({ initialQuery, scope, locale, onOpen }: 
     <section aria-labelledby={headingId} dir={directionOfLocale(locale)} className="min-w-0">
       <Panel titleId={headingId} headingLevel={2} title={heading} description={COACHING_COPY.coachPortfolio.purpose} cardClassName="min-w-0" titleClassName="text-pretty" contentClassName="flex min-w-0 flex-col gap-4">
         <p className="max-w-prose rounded-xl border border-border/80 bg-surface-subtle px-3.5 py-2.5 type-supporting text-pretty">
-          {"This view is read-only: a coach can read what the worker switched on, and cannot edit, assign, remind, complete, reopen, export or impersonate anything. Stopping a share never recalls what was already read."}
+          {"Read-only view: you can see only the modules the missionary turned on and cannot edit, assign, complete, or export their work. Ending sharing doesn’t recall anything already read."}
         </p>
         <Separator />
         {content}

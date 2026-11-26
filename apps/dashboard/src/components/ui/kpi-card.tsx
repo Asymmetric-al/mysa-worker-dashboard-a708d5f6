@@ -7,8 +7,8 @@ import { cn } from "@/lib/cn";
 
 /** Responsive KPI grid adapted from Shadcn Space `statistics-01` and Shadcn Studio `statistics-component-12`/`13`. */
 function KpiGrid({ className, columns = 3, ...props }: React.ComponentProps<"div"> & { readonly columns?: 2 | 3 | 4 }) {
-  const colsClass = columns === 2 ? "sm:grid-cols-2" : columns === 4 ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-3";
-  return <div data-slot="kpi-grid" className={cn("grid min-w-0 grid-cols-1 gap-4", colsClass, className)} {...props} />;
+  const colsClass = columns === 2 ? "@xl/main:grid-cols-2" : columns === 4 ? "@xl/main:grid-cols-2 @4xl/main:grid-cols-4" : "@xl/main:grid-cols-2 @3xl/main:grid-cols-3";
+  return <div data-slot="kpi-grid" className={cn("grid min-w-0 grid-cols-1 items-stretch gap-4", colsClass, className)} {...props} />;
 }
 
 export type KpiCardProps = {
@@ -27,7 +27,7 @@ export type KpiCardProps = {
 /** Metric card combining Shadcn Space `statistics-01` hierarchy with Shadcn Studio `statistics-component-12` status accents and `statistics-component-13` action footer. */
 function KpiCard({ label, value, detail, badge, icon, iconVariant = "soft", footer, href, actionLabel, className }: KpiCardProps) {
   return (
-    <Card data-slot="kpi-card" size="sm" className={cn("justify-between gap-0 p-0", className)}>
+    <Card data-slot="kpi-card" size="sm" className={cn("h-full justify-between gap-0 p-0", className)}>
       <CardContent className="flex min-w-0 flex-1 flex-col justify-between gap-3 p-4">
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2.5">
