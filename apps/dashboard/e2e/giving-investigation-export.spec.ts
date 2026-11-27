@@ -650,6 +650,11 @@ test("a record visit returns to the same filtered view, at the same place in it"
   const firstGiftBefore = await firstGiftLink(page).getAttribute("aria-label");
   const giftRecordLink = firstGiftLink(page); // The place the reader leaves at is read with the row's link in view, because the click scrolls the link into view itself: the offset the wheel reached is one the reader only passes through.
   const placeBefore = await scrollPlaceOfRow(page, giftRecordLink, "The gifts ledger");
+  const clientRecordReads: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/support/gifts" && url.searchParams.has("record")) clientRecordReads.push(url.pathname);
+  });
   await giftRecordLink.click(); // The visit: the row's own link is the only route to the record, and it names the gift it opens.
   await expect(page.getByRole("heading", { name: "Gift details", level: 1 })).toBeVisible();
   await expect(page, "The record is a destination of its own, so the visit is a navigation rather than a panel over the list.").toHaveURL(new RegExp(`${GIFTS_HREF}/gift-[^?]+`, "u"));
@@ -661,6 +666,7 @@ test("a record visit returns to the same filtered view, at the same place in it"
   await expect(table.locator("tbody tr").first()).toBeVisible();
   expect(await firstGiftLink(page).getAttribute("aria-label"), "The same rows are in the same order after the return.").toBe(firstGiftBefore);
   await expectRestoredScrollPlace(page, placeBefore, "The gifts ledger's return"); // The return restores the offset the reader actually left at rather than bounding it by a document that is still filling: the shell's development panels grow the document across a visit, so the return is held to the offset within the tolerance on a document at least as tall as the one left.
+  expect(clientRecordReads, "The gift record renders from the server's read without repeating it in the browser.").toEqual([]);
   const restoredOffset = await page.evaluate(() => window.scrollY);
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first(), "The returned view is still labelled as development data, so no surface of this application can be mistaken for production.").toBeVisible();
   recordEvidence(

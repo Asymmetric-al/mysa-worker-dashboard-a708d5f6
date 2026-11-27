@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import type { ReactElement } from "react";
 import { GiftDetail } from "@/features/support/components/gift-detail";
 import { reads } from "@/modules/data-service";
-import { pageRefusalOf, searchSuffixOf, type ReadNoticeCopy, type SearchParams } from "../../../page-frame";
-import { giftQueryOf, statedPageOf } from "../gifts-query";
+import { invalid } from "@/modules/data-service/outcome";
+import { READ_ATTEMPT } from "../../../api/read";
+import { supportQueryFromSearch } from "../../../api/support/query";
+import { pageRefusalOf, searchSuffixOf, wireFormOf, type ReadNoticeCopy, type SearchParams } from "../../../page-frame";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Gift" };
 const LEDGER_HREF = "/support/gifts";
@@ -23,7 +25,15 @@ export default async function GiftDetailPage({ params, searchParams }: { readonl
   const { giftId } = await params;
   const stated = await searchParams;
   const carried = searchSuffixOf(stated);
-  const result = await reads.support.readGifts({ ...giftQueryOf(stated, statedPageOf(stated)), record: giftId });
-  if (result.kind !== "envelope") return pageRefusalOf(result, noticeCopyOf(giftId, carried), 4, { title: "Gift details" });
-  return <GiftDetail scope={result.envelope.scope} giftId={giftId} locale="en-GB" />;
+  const notice = noticeCopyOf(giftId, carried);
+  const heading = { title: "Gift details" };
+  const query = supportQueryFromSearch(new URLSearchParams(carried));
+  if (!query.ok) {
+    const refused = invalid({ operationId: READ_ATTEMPT, fields: query.error });
+    const body = Object.values(refused.fields).flat().join(" ");
+    return pageRefusalOf({ kind: "refused", refused }, { ...notice, refused: { ...notice.refused, body } }, 4, heading);
+  }
+  const result = await reads.support.readGifts({ ...query.value, record: giftId });
+  if (result.kind !== "envelope") return pageRefusalOf(result, notice, 4, heading);
+  return <GiftDetail scope={result.envelope.scope} giftId={giftId} locale="en-GB" initialEnvelope={wireFormOf(result.envelope)} />;
 }

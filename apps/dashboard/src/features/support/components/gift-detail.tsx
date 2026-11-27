@@ -108,8 +108,8 @@ function CurrencyPrecision({ currency }: { readonly currency: string }): ReactEl
     </>
   );
 }
-export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly ledgerQuery?: GiftsQuery; readonly className?: string };
-/** One gift or allocation, its grain, its correction and provenance, its coverage, and the one follow-up it may lead to. */ export function GiftDetail({ scope, giftId, locale, dir, ledgerQuery, className }: GiftDetailProps): ReactElement {
+export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly ledgerQuery?: GiftsQuery; readonly initialEnvelope?: GiftsEnvelope; readonly className?: string };
+/** One gift or allocation, its grain, its correction and provenance, its coverage, and the one follow-up it may lead to. */ export function GiftDetail({ scope, giftId, locale, dir, ledgerQuery, initialEnvelope, className }: GiftDetailProps): ReactElement {
   const search = useSearchParams();
   const recordHeadingId = useId();
   const grainHeadingId = useId();
@@ -125,7 +125,7 @@ export type GiftDetailProps = { readonly scope: Scope; readonly giftId: string; 
   const [lastOutcome, setLastOutcome] = useState<MutationOutcome | null>(null);
   const followUp = useFollowUpTask();
   const carriedQuery = useMemo<GiftsQuery>(() => ledgerQuery ?? parseGiftsQuery(search), [ledgerQuery, search]);
-  const gifts = useGifts({ scope, query: carriedQuery, record: giftId });
+  const gifts = useGifts({ scope, query: carriedQuery, record: giftId, initialEnvelope });
   const returnHref = useMemo(() => ledgerHrefOf(carriedQuery), [carriedQuery]);
   const settle = useCallback((outcome: MutationOutcome): void => {
     setLastOutcome(outcome);
