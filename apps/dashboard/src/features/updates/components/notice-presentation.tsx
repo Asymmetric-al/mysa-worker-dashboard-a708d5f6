@@ -16,13 +16,13 @@ export type NoticePosterFacts = { readonly admitted: NoticeVideoPoster; readonly
 export type NoticePresentationProps = { readonly notice: Notice; readonly recipient?: NoticeRecipientDisplay; readonly poster?: NoticePosterFacts; readonly className?: string };
 const AUDIENCE_TONES: Readonly<Record<Notice["pinned"]["audience"], StatusTone>> = { public: "neutral", "approved-supporter": "info" };
 const NOTICE_TAB_LABELS = { html: "HTML", plain: "Plain text" } as const;
-const FIELD_LABELS = { from: "From", to: "To", subject: "Subject", language: "Message language", pinned: "Pinned copy", link: "Link target", revision: "revision" } as const;
-const ABSENCE_WORDING = { sender: "This notice carries no sending identity, so no sender can be shown.", recipientName: "No recipient name is attached to this notice.", link: "This notice carries no link, so there is nothing to open from it." } as const;
+const FIELD_LABELS = { from: "From", to: "To", subject: "Subject", language: "Language", pinned: "Pinned release", link: "Link", revision: "revision" } as const;
+const ABSENCE_WORDING = { sender: "No sender specified.", recipientName: "No recipient attached.", link: "No link included." } as const;
 const MISSING_RENDERING = {
-  html: "This notice carries no HTML rendering; the plain text below is the copy it carries.",
-  plain: "This notice carries no plain-text alternative; the HTML above is the copy it carries.",
-  both: "This notice carries neither an HTML rendering nor a plain-text alternative, so there is no copy here to inspect.",
-  neitherReconstructed: "Nothing has been reconstructed to stand in for what is missing.",
+  html: "No HTML version included — showing plain text below.",
+  plain: "No plain-text version included — showing HTML above.",
+  both: "No HTML or plain-text body is included in this message.",
+  neitherReconstructed: "Nothing was synthesized in its place.",
 } as const;
 const RENDERED_MESSAGE = cn(
   "min-w-0 type-body break-words [overflow-wrap:anywhere]",
@@ -62,15 +62,12 @@ function admittedPosterOf(notice: Notice, facts: NoticePosterFacts | undefined):
   return { path, alt: alt.length === 0 ? "Poster image for the video in the linked edition" : alt, captionLanguages: facts.captionLanguages === undefined ? undefined : languages, transcriptAvailable: facts.transcriptAvailable };
 }
 const omissionItemsOf = (input: { readonly protectedCopy: boolean; readonly posterShown: boolean; readonly ancillaryAvailable: boolean }): readonly string[] => [
-  input.protectedCopy ? "No protected prose: no title, no excerpt, no body text, no summary and no subject detail beyond the generic subject the message states." : "No Update prose: the message carries its generic wording and a link, not the published body, so the copy a reader reads is the edition at the link.",
-  input.posterShown ? "No image other than the one admitted poster shown on this notice: no further picture, no thumbnail and no embedded media travels with the message." : "No image at all: no portrait, no poster, no thumbnail and no embedded media, so nothing from the edition is previewed here.",
-  "No location: no address, region, map, coordinate or travel detail appears in the message.",
-  input.ancillaryAvailable ? "No transcript and no caption text: the linked edition offers them, and both stay at the link rather than travelling in the message." : "No transcript and no caption: neither the text of either nor the track file itself travels with the message.",
-  input.protectedCopy
-    ? "No hidden alternative: no preview snippet, no alternative text describing protected content and no subject line detail that would disclose something the body withholds."
-    : "No hidden alternative: nothing about the edition travels beyond the wording the sender wrote and the one poster the notice admits, if it admits one.",
-  "No attachment of any kind: no document, no calendar invitation, no archive and no second file.",
-  "No per-recipient credential of any kind: the message carries no bearer token, no signed or personalised link and no tracking pixel, so nothing in it reports whether, when or by whom it was opened, and following the link reveals nothing about anyone else.",
+  input.protectedCopy ? "No protected text — no title, excerpt, body, or sensitive subject detail." : "No full update text — readers open the link to view the published update.",
+  input.posterShown ? "No additional images beyond the single approved video poster shown above." : "No images or embedded media.",
+  "No locations, addresses, maps, or travel details.",
+  input.ancillaryAvailable ? "No transcripts or captions in the email — both stay on the linked update page." : "No transcripts or caption files.",
+  "No hidden preview snippets or attachments.",
+  "No personalised tracking links, bearer tokens, or open-tracking pixels.",
 ];
 const MissingRendering = ({ which }: { readonly which: "html" | "plain" | "both" }): ReactElement => (
   <Alert variant="default" role={undefined} data-notice-missing-rendering={which}>
@@ -142,7 +139,7 @@ function AdmittedPosterBlock({ poster }: { readonly poster: AdmittedPoster }): R
 }
 const OmissionsBlock = ({ items, hasLink }: { readonly items: readonly string[]; readonly hasLink: boolean }): ReactElement => (
   <Alert variant="default" role={undefined} data-slot="notice-omissions">
-    <AlertTitle>{"What this notice does not carry"}</AlertTitle>
+    <AlertTitle>{"Excluded from email for privacy"}</AlertTitle>
     <AlertDescription>
       <ul className="flex list-disc flex-col gap-1 text-start ps-5">
         {items.map((item) => (
@@ -151,7 +148,7 @@ const OmissionsBlock = ({ items, hasLink }: { readonly items: readonly string[];
           </li>
         ))}
       </ul>
-      <p className="mt-3 break-words">{hasLink ? "Opening the link checks the reader's current access at that moment, so access is decided where the edition is served rather than taken from the message that carried it. The message itself confers no access on whoever receives it." : ABSENCE_WORDING.link}</p>
+      <p className="mt-3 break-words">{hasLink ? "Opening the link checks the reader’s current access each time — the email itself never grants access." : ABSENCE_WORDING.link}</p>
     </AlertDescription>
   </Alert>
 );

@@ -10,13 +10,13 @@ const UPDATE_FAMILY = ["update"] as const;
 const PAGE_HEADING_LEVEL = 1;
 const PAGE_COPY = {
   denied: {
-    title: "The Updates are not available in the current context",
-    description: "This session may not read the content this context's ministry holds, so no Update, edition, count or title is stated here: a refusal is not an empty list. Another context, if this session holds one, can be chosen from the shell.",
+    title: "Updates aren’t available in this ministry context",
+    description: "Your current session doesn’t have permission to view updates here. Switch ministry context from the sidebar if you have access to another one.",
   },
-  unavailable: { title: "The Updates could not be read", retry: "Read this list again" },
+  unavailable: { title: "Couldn’t load Updates", retry: "Try again" },
   refused: {
-    title: "This page's request was not one the Updates read admits",
-    description: "The read that answers this page refused the request this route made, so nothing was read and nothing is shown in its place. The source did not fail and no permission was refused, and a surface that reported either would describe a condition this read never stated.",
+    title: "Couldn’t load Updates",
+    description: "The page parameters weren’t accepted. Return to Updates to start from page 1.",
   },
 } as const;
 const NOTICE_COPY: ReadNoticeCopy = {

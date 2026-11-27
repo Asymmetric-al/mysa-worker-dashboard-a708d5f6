@@ -1,50 +1,50 @@
 import { PERMISSION_FACT_COPY } from "./facets";
 export type Copy = { readonly title: string; readonly body: string };
 export const PRIVATE_RECORD_COPY: Readonly<Record<"preparationIsPrivate" | "noteIsPrivate" | "remainsPrivate" | "linkingIsDeliberate" | "linkingCopiesNothing" | "exportExcludesPrivate", Copy>> = {
-  preparationIsPrivate: { title: "Your own preparation", body: "This record holds preparation you wrote, it may exist without any shared identity, and it is not a contact record for anyone else." },
-  noteIsPrivate: { title: "A note you wrote", body: "It records what you observed or decided, and its audience is private." },
-  remainsPrivate: { title: "Private text stays where you wrote it", body: "A private note or a private preparation record never appears in a shared projection, in an export, or in another record's audience." },
-  linkingIsDeliberate: { title: "Linking is your decision", body: "Connecting a private preparation record to a shared identity is a deliberate act of yours, and it never happens because a name or an address looked the same." },
-  linkingCopiesNothing: { title: "Linking copies nothing", body: "Linking leaves every private word in the preparation record; nothing is copied into the shared record." },
-  exportExcludesPrivate: { title: "Exports carry shared facts only", body: "A roster export contains no private text, so the file you download is not a copy of your preparation." },
+  preparationIsPrivate: { title: "Private contact", body: "This contact belongs to you alone — it doesn’t create a shared partner record or give anyone else access." },
+  noteIsPrivate: { title: "Only visible to you", body: "Your notes stay private and are never shared with partners or teammates." },
+  remainsPrivate: { title: "Private notes stay private", body: "Private contacts and notes never appear in shared partner records, exports, or email audiences." },
+  linkingIsDeliberate: { title: "Linking is always your choice", body: "Connecting a private contact to a shared partner only happens when you choose it — never automatically by matching names or emails." },
+  linkingCopiesNothing: { title: "Linking copies nothing", body: "Your private notes stay on your private contact and are never copied into the shared partner record." },
+  exportExcludesPrivate: { title: "Exports include shared fields only", body: "Downloaded partner exports never include your private contacts or notes." },
 };
 export const AUDIENCE_LABEL_COPY: Readonly<Record<"private" | "shared", { readonly label: string; readonly description: string }>> = {
-  private: { label: "Private", description: "Only you can read this line; it is not part of the shared record." },
-  shared: { label: "Shared", description: "Other people who can see this record may read this line, so treat it as shared and not as private." },
+  private: { label: "Private", description: "Only visible to you — not part of the shared partner record." },
+  shared: { label: "Shared", description: "Visible to anyone on your team who can view this partner." },
 };
 export const IDENTITY_COPY: Readonly<Record<"distinctKinds" | "equalLooking" | "noIdentityFromMatching" | "householdIsNotPerson" | "representativeIsSeparate" | "noJoinKey", Copy>> = {
-  distinctKinds: { title: "Six record kinds", body: "A person, a household, a church, an organization, an organization's representative and a private preparation record are six distinct record kinds, and each keeps its own identity." },
-  equalLooking: { title: "Look-alike details", body: "Records that share a name, an email address or a postal address stay separate records." },
-  noIdentityFromMatching: { title: "What a match does not establish", body: "A match on a name or an address establishes neither identity nor authority." },
-  householdIsNotPerson: { title: "Consent and giving are a person's", body: "A household is not a person's consent or giving identity." },
-  representativeIsSeparate: { title: "A representative stands apart", body: "An organization's representative is a separate record from the organization." },
-  noJoinKey: { title: "How records link", body: "Records are linked by their own identifiers, never by the details written on them." },
+  distinctKinds: { title: "Separate partner records", body: "People, households, churches, organizations, representatives, and private contacts each keep their own separate record." },
+  equalLooking: { title: "Similar details stay separate", body: "Two records with the same name, email, or address remain separate records." },
+  noIdentityFromMatching: { title: "Matching details aren’t merged", body: "A shared name or address never merges two records or transfers permissions." },
+  householdIsNotPerson: { title: "Consent and giving belong to the individual", body: "A household record doesn’t carry an individual person’s consent or giving identity." },
+  representativeIsSeparate: { title: "Representatives stay separate", body: "An organization’s representative has their own separate record." },
+  noJoinKey: { title: "Linked by ID, never guessed", body: "Records are only linked by explicit IDs, never by matching names or contact details." },
 };
 export const INTERACTION_COPY: Readonly<Record<"whatCounts" | "whatDoesNot" | "precisionDate" | "precisionApproximate" | "precisionUnknown" | "provesNothing" | "recordedOnce", Copy>> = {
-  whatCounts: { title: "What an interaction records", body: "An interaction records something that actually happened, with its date or an honest precision, an outcome and the people who took part." },
-  whatDoesNot: { title: "What is not an interaction", body: "A gift, a scheduled task or opening a mail or dialer app is not an interaction." },
-  precisionDate: { title: "You know the day", body: "The interaction is recorded against the day it happened." },
-  precisionApproximate: { title: "You know roughly when", body: "The interaction is recorded as approximate, because a nearer day would be invented rather than known." },
-  precisionUnknown: { title: "You do not know when", body: "The interaction is recorded without a date, and nothing is guessed to fill one in." },
+  whatCounts: { title: "What counts as activity", body: "Log calls, visits, conversations, meetings, and written messages that actually happened." },
+  whatDoesNot: { title: "What isn’t logged here", body: "Gifts, scheduled tasks, and opening your mail or phone app aren’t logged as activity." },
+  precisionDate: { title: "Exact date", body: "You know the specific day this happened." },
+  precisionApproximate: { title: "Approximate date", body: "Recorded as approximate so an uncertain date isn’t treated as exact." },
+  precisionUnknown: { title: "Date unknown", body: "Saved without a date rather than guessing." },
   provesNothing: {
-    title: "What a logged interaction does not prove",
-    body: `Recording an interaction is not proof of a gift, a payment or a promise kept, and it does not mean work was completed. ${PERMISSION_FACT_COPY.communicationConsent.label} is a separate fact: ${PERMISSION_FACT_COPY.communicationConsent.explanation}`,
+    title: "Activity doesn’t record consent or gifts",
+    body: `Logging a conversation doesn’t record a gift, commitment, or completed task. ${PERMISSION_FACT_COPY.communicationConsent.label} is tracked separately: ${PERMISSION_FACT_COPY.communicationConsent.explanation}`,
   },
-  recordedOnce: { title: "Recorded once", body: "An event a source already recorded appears once, and logging it again would record it twice." },
+  recordedOnce: { title: "Recorded once", body: "Imported or synced activity already appears once — avoid logging the same contact twice." },
 };
-export const CONTACT_HANDOFF_COPY: Readonly<Record<"recordsNothing", Copy>> = { recordsNothing: { title: "A handoff writes nothing to the record", body: "Opening a mail or dialer app from this record records nothing on it: no interaction is logged, no note is written and its revision does not move." } };
+export const CONTACT_HANDOFF_COPY: Readonly<Record<"recordsNothing", Copy>> = { recordsNothing: { title: "Opening mail or phone apps doesn’t log activity", body: "Clicking Email or Call opens your app without logging activity or editing the partner record." } };
 export const ARCHIVE_COPY: Readonly<Record<"archiveIsNotDelete" | "restore" | "leavesSharedAlone" | "scope", Copy>> = {
-  archiveIsNotDelete: { title: "Archiving hides, it does not delete", body: "Archiving takes a private preparation record out of your working lists and deletes nothing, so the record and its text are still there." },
-  restore: { title: "Restoring brings it back", body: "Restoring returns the record to your working lists with its content as you left it." },
-  leavesSharedAlone: { title: "Nothing else moves", body: "Archiving never touches a shared record, an open task, an interaction or any other independent obligation." },
-  scope: { title: "Private preparation only", body: "Archive and restore apply to private preparation records and to nothing else." },
+  archiveIsNotDelete: { title: "Archiving hides without deleting", body: "Archiving hides this private contact from your active lists while keeping all of your notes intact." },
+  restore: { title: "Restore any time", body: "Restoring returns this private contact to your active lists with all notes as you left them." },
+  leavesSharedAlone: { title: "Nothing else changes", body: "Archiving never changes shared partner records, open tasks, or logged activity." },
+  scope: { title: "Private contacts only", body: "Only your private contacts can be archived or restored here." },
 };
 export const SAVED_VIEW_COPY: Readonly<Record<"save" | "update" | "rename" | "delete" | "drift" | "repair" | "leavesRecordsAlone", Copy>> = {
-  save: { title: "Save this view", body: "Stores your current search, filters, sort, columns and page size under a name you choose; the records themselves are untouched." },
-  update: { title: "Update this view", body: "Replaces what the view stores with the choices on screen now, without writing to any record." },
-  rename: { title: "Rename this view", body: "Changes the view's name and nothing else; the choices it stores stay as they are." },
-  delete: { title: "Delete this view", body: "Removes the stored view; every record, tag and note stays as it was." },
-  drift: { title: "This view has drifted", body: "This saved view refers to a filter that is no longer available; the view and every record are otherwise unchanged." },
-  repair: { title: "Repair this view", body: "Saves the selection again so the view matches what is available now; only the view's stored choices change." },
-  leavesRecordsAlone: { title: "Views store choices, not records", body: "No saved-view action writes to a partner record." },
+  save: { title: "Save view", body: "Save your current search, filters, sort order, columns, and page size so you can return to them anytime." },
+  update: { title: "Update view", body: "Replace this saved view’s filters and columns with what’s currently on screen." },
+  rename: { title: "Rename view", body: "Change this saved view’s name without altering its filters." },
+  delete: { title: "Delete view", body: "Remove this saved view. Your partners, tags, and notes aren’t affected." },
+  drift: { title: "Saved view needs repair", body: "One or more filters or columns in this saved view are no longer available in this ministry." },
+  repair: { title: "Repair view", body: "Remove unavailable filters from this saved view so you can use it again." },
+  leavesRecordsAlone: { title: "Views only save filters", body: "Saving or deleting a view never edits any partner record." },
 };

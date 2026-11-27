@@ -8,9 +8,9 @@ const PAGE_TITLE = "Support";
 export const metadata: Metadata = { title: PAGE_TITLE };
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 1,
-  denied: { title: "Support is not available in this context", body: "This session may not read received support in the context it is working in, so no amount, count, period or coverage is stated here — a refusal is not an empty overview. Another context, if this session holds one, can be chosen from the shell." },
-  unavailable: { title: "The support overview could not be read", action: { label: "Try this read again", href: "/support" } },
-  refused: { title: "This overview's request was refused", body: "The overview states no filter of its own, so the request this page makes is the read's own default one; a request the read refuses is answered here rather than thrown, and the source behind it did not fail." },
+  denied: { title: "Support isn’t available in this ministry context", body: "Your current session doesn’t have permission to view support figures here. Switch ministry context from the sidebar if you have access to another one." },
+  unavailable: { title: "Couldn’t load Support", action: { label: "Try again", href: "/support" } },
+  refused: { title: "Couldn’t process this request", body: "The support service couldn’t accept this request. Your underlying giving records weren’t affected." },
 };
 /** The Support overview: one read, one snapshot, and an honest notice in place of the figures when the read does not answer with an envelope. */ export default async function SupportOverviewPage(): Promise<ReactElement> {
   return readPageOf(

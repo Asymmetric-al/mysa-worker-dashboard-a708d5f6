@@ -31,10 +31,10 @@ export type ReportReceivedProps = { readonly result: ReportResult; readonly loca
 /** The sentence a bounded contributor list carries: how many changes it states, how many the report counted, and that the rest are not listed while the difference and its reconciliation cover every one. Its counts are written by the family's one whole-number helper, so they read the way every other count on this surface reads. */
 function notAllListedNote(listed: number, whole: number, currency: string, locale: string): string {
   const rest = whole - listed;
-  return `The report counted ${countTextOf(whole, locale)} contributor changes in ${currency} and this list states ${countTextOf(listed, locale)} of them, the ones with the largest amounts. The other ${countTextOf(rest, locale)} ${rest === 1 ? "is" : "are"} not listed here, while the difference and its reconciliation are computed over all ${countTextOf(whole, locale)} rather than over this list.`;
+  return `Showing the ${countTextOf(listed, locale)} largest partner changes in ${currency} out of ${countTextOf(whole, locale)} total. The remaining ${countTextOf(rest, locale)} ${rest === 1 ? "is" : "are"} omitted here, while the total difference above includes all ${countTextOf(whole, locale)}.`;
 }
-const CHANGE_WORDS: Readonly<Record<ComparisonResult["perCurrency"][number]["direction"], string>> = { increase: "Higher than the earlier period", decrease: "Lower than the earlier period", unchanged: "Unchanged from the earlier period" };
-const UNATTRIBUTED_WORD = "Unattributed source support";
+const CHANGE_WORDS: Readonly<Record<ComparisonResult["perCurrency"][number]["direction"], string>> = { increase: "Higher than prior period", decrease: "Lower than prior period", unchanged: "Unchanged from prior period" };
+const UNATTRIBUTED_WORD = "Unattributed";
 const civilDateText = (date: PeriodState["from"]): string => String(date);
 const periodText = (from: PeriodState["from"], to: PeriodState["to"]): string => `${civilDateText(from)} – ${civilDateText(to)}`;
 const AmountsIn = ({ currency }: { readonly currency: string }): ReactElement => (
@@ -59,14 +59,14 @@ function contributorName(delta: ContributorChange): ReactNode {
       </>
     );
   }
-  return attribution.kind === "anonymous" ? "Anonymous support" : UNATTRIBUTED_WORD;
+  return attribution.kind === "anonymous" ? "Anonymous" : UNATTRIBUTED_WORD;
 }
 const contributorKey = (delta: ContributorChange): string => `${delta.currency}:${delta.attribution === undefined ? "unstated" : delta.attribution.kind === "partner" ? `${delta.attribution.kind}:${delta.attribution.partnerId}` : delta.attribution.kind}`;
 function ComparisonBlock({ comparison, currency, locale, headingId }: { readonly comparison: ComparisonResult | undefined; readonly currency: string; readonly locale: string; readonly headingId: string }): ReactElement {
-  const heading = <h3 {...{ id: headingId, className: "type-subsection-title" }}>{"Compared with the preceding equal-elapsed period"}</h3>;
+  const heading = <h3 {...{ id: headingId, className: "type-subsection-title" }}>{"Compared with prior equal period"}</h3>;
   const change = comparison === undefined ? undefined : comparison.perCurrency.find((entry) => entry.currency === currency);
   if (comparison === undefined || !comparison.equalElapsed || change === undefined) {
-    const reason = comparison === undefined || change === undefined ? "No comparison is stated for this currency, because an amount of a currency with no minor-unit " + "exponent cannot be differenced." : "The two spans this result compared are not the same length, so no difference is drawn from them.";
+    const reason = comparison === undefined || change === undefined ? "No comparison available for this currency because its decimal precision isn’t configured." : "These two periods aren’t the same length, so no difference is shown.";
     return (
       <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
         {heading}
@@ -82,11 +82,11 @@ function ComparisonBlock({ comparison, currency, locale, headingId }: { readonly
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
       {heading}
       <dl className="grid gap-2">
-        <Fact term="Earlier equal-elapsed period">
+        <Fact term="Prior equal period">
           <bdi className="text-sm text-muted-foreground">{periodText(comparison.baseline.from, comparison.baseline.to)}</bdi>
           <AmountValue money={{ currency, minorUnits: change.baselineMinor }} valueState={change.valueState} locale={locale} />
         </Fact>
-        <Fact term="Difference (this period minus the earlier one)">
+        <Fact term="Difference">
           <AmountValue money={{ currency, minorUnits: change.differenceMinor }} valueState={change.valueState} locale={locale} emphasis="headline" />
           <StatusBadge label={CHANGE_WORDS[change.direction]} />
         </Fact>
@@ -94,20 +94,20 @@ function ComparisonBlock({ comparison, currency, locale, headingId }: { readonly
       {percentage === undefined ? null : <p className="type-supporting">{percentage}</p>}
       {contributors.length === 0 ? null : (
         <div className="flex min-w-0 flex-col gap-2">
-          <p className="type-group-title">Contributors that changed</p>
+          <p className="type-group-title">Partner changes</p>
           <ul className="flex min-w-0 flex-col gap-2">
             {contributors.map((delta) => (
               <li key={contributorKey(delta)} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <span className="min-w-0 break-words">{contributorName(delta)}</span>
                 <span className="flex min-w-0 flex-wrap items-baseline gap-2">
                   <AmountValue money={{ currency, minorUnits: delta.minorUnits }} valueState={contributorState} locale={locale} />
-                  <span className="text-sm text-muted-foreground">{delta.minorUnits > 0 ? "gave more in this period than in the earlier one." : "gave less in this period, or gave only in the earlier one — neither is a judgement about them."}</span>
+                  <span className="text-sm text-muted-foreground">{delta.minorUnits > 0 ? "higher than prior period" : "lower than prior period (or prior period only — reflects gift timing, not donor intent)"}</span>
                 </span>
               </li>
             ))}
           </ul>
           {countedContributors > contributors.length ? <p className="type-supporting">{notAllListedNote(contributors.length, countedContributors, currency, locale)}</p> : null}
-          <p className="type-supporting">{comparison.reconciles ? "The contributor changes add up exactly to this difference." : "The contributor changes do not add up to this difference, and no balancing entry is invented to " + "hide it."}</p>
+          <p className="type-supporting">{comparison.reconciles ? "Partner changes reconcile exactly with the total difference." : "Partner changes don’t reconcile exactly with the total difference; no balancing entry was added."}</p>
         </div>
       )}
     </section>
@@ -115,15 +115,14 @@ function ComparisonBlock({ comparison, currency, locale, headingId }: { readonly
 }
 const MonthlyTable = ({ months, currency, locale, headingId }: { readonly months: readonly MonthPoint[]; readonly currency: string; readonly locale: string; readonly headingId: string }): ReactElement => (
   <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
-    <h3 {...{ id: headingId, className: "type-subsection-title" }}>Each month of the period</h3>
+    <h3 {...{ id: headingId, className: "type-subsection-title" }}>Month-by-month breakdown</h3>
     <Frame spacing="flush">
       <FramePanel>
         <ScrollRegion label={`${REPORT_COPY.received.title} in ${currency}, months of the period, scrollable`}>
           <Table>
             <TableCaption className="px-4 pb-3 text-start">
-              {`${REPORT_COPY.received.title} — `}
-              <bdi>{currency}</bdi>
-              {` — one row per month of the period, in the order the months occur, at the authorised-allocation grain; a month the source does not cover is a gap rather than a zero.`}
+              {`${REPORT_COPY.received.title} (${currency}) — `}
+              {`monthly totals in chronological order. Months without coverage appear as gaps, not zeros.`}
             </TableCaption>
             <TableHeader>
               <TableRow>
@@ -134,7 +133,7 @@ const MonthlyTable = ({ months, currency, locale, headingId }: { readonly months
             <TableBody>
               {months.length === 0 ? (
                 <TableRow>
-                  <TableCell {...{ colSpan: 2, className: "whitespace-normal text-muted-foreground" }}>{"No month of this period is stated in this currency — each one is a gap, not a zero"}</TableCell>
+                  <TableCell {...{ colSpan: 2, className: "whitespace-normal text-muted-foreground" }}>{"No monthly figures recorded in this currency (shown as gaps, not zeros)."}</TableCell>
                 </TableRow>
               ) : (
                 months.map((point) => (
@@ -142,7 +141,7 @@ const MonthlyTable = ({ months, currency, locale, headingId }: { readonly months
                     <TableCell className="whitespace-normal">
                       <bdi>{periodText(point.bucketStart, point.bucketEnd)}</bdi>{" "}
                     </TableCell>
-                    <TableCell className="text-end">{point.gap ? <span className="text-muted-foreground">{"No gift recorded — a gap, not a zero"}</span> : <StatedFigure amount={point.value} currency={currency} locale={locale} />}</TableCell>
+                    <TableCell className="text-end">{point.gap ? <span className="text-muted-foreground">{"No gifts recorded (gap, not zero)"}</span> : <StatedFigure amount={point.value} currency={currency} locale={locale} />}</TableCell>
                   </TableRow>
                 ))
               )}
@@ -229,7 +228,7 @@ const chartPoints = (points: readonly SeriesPoint[], locale: string): readonly C
 const chartSeries = (partition: HistoryPartition, locale: string): ChartSeries => ({ key: `${partition.currency}-received`, label: SERIES_LABEL, currency: partition.currency, points: chartPoints(partition.points, locale) });
 const amountCell = (value: SeriesPoint["value"], currency: string, gap: boolean, locale: string): string => (gap && value.minorUnits === null ? "No recorded value" : formatMinor({ currency, minorUnits: value.minorUnits ?? minorUnitsOf(0) }, value.valueState, locale).text);
 const chartTable = (partition: HistoryPartition, year: number, locale: string): ChartTable => ({
-  caption: fillTemplate(`${REPORT_COPY.history.title} for {year}, amounts in {currency}: one row per month of the year, ` + "and a month the source recorded nothing in states that rather than a zero.", { year: String(year), currency: partition.currency }),
+  caption: fillTemplate(`${REPORT_COPY.history.title} for {year} ({currency}). Months without recorded gifts appear as gaps, not zeros.`, { year: String(year), currency: partition.currency }),
   columns: [
     { key: MONTH_COLUMN_KEY, label: "Month" },
     { key: AMOUNT_COLUMN_KEY, label: SERIES_LABEL },
@@ -241,8 +240,8 @@ function CurrencyHistoryFigure({ partition, year, coverage, asOf, locale }: { re
   const currency = partition.currency;
   const series = useMemo<readonly ChartSeries[]>(() => [chartSeries(partition, locale)], [partition, locale]);
   const title = fillTemplate(`${REPORT_COPY.history.title} for {year} — {currency}`, { year: yearText, currency });
-  const summary = fillTemplate(CHART_CAPTIONS.summaryOpener, { series: SERIES_LABEL, currency, takeaway: fillTemplate("each month of {year} is drawn from the amount the source recorded in it, and a month it " + "recorded nothing in is left undrawn and named below rather than drawn at zero", { year: yearText }) });
-  const caption = fillTemplate("{shape} of {series} in {currency} for each month of {year}.", { shape: CHART_SHAPE_WORD[CHART_KIND], series: SERIES_LABEL, currency, year: yearText });
+  const summary = fillTemplate(CHART_CAPTIONS.summaryOpener, { series: SERIES_LABEL, currency, takeaway: fillTemplate("monthly totals for {year}; uncovered months appear as gaps rather than zeros", { year: yearText }) });
+  const caption = fillTemplate("{shape} of {series} in {currency} by month ({year}).", { shape: CHART_SHAPE_WORD[CHART_KIND], series: SERIES_LABEL, currency, year: yearText });
   return <ChartFigure title={title} summary={summary} caption={caption} kind={CHART_KIND} series={series} units={fillTemplate(CHART_CAPTIONS.unit, { currency })} coverage={coverage} asOf={fillTemplate(CHART_CAPTIONS.asOf, { asOf })} table={chartTable(partition, year, locale)} locale={locale} />;
 }
 /** Renders fixed report 2: the year's monthly history one figure per currency, with the year the report is asked for. */ export function ReportHistory({ result, locale, dir, year, years, onSelectYear, className }: ReportHistoryProps): ReactElement {
@@ -289,8 +288,8 @@ const MONTH_HEADING_FORMAT: Intl.DateTimeFormatOptions = { month: "long", year: 
 const MONTH_COLUMN_FORMAT: Intl.DateTimeFormatOptions = { month: "short", year: "numeric" };
 const NUMERIC_CELL_CLASS = "text-end";
 const QUIET_TEXT_CLASS = "type-supporting";
-const GAP_SENTENCE = "A month the source recorded no gift in is a gap, not a zero.";
-const ABSENT_MATRIX_DESCRIPTION = "The partners-by-month matrix is computed for that one report, so a result from another report has " + "no cells to show here. Nothing is substituted for it, because a table that looked like this one " + "while describing different records would be worse than no table at all.";
+const GAP_SENTENCE = "Months with no recorded gifts appear as gaps, not zeros.";
+const ABSENT_MATRIX_DESCRIPTION = "This result doesn’t include a partner-by-month matrix. Open the Partners by month report to view it.";
 /** What the pager counts: the partner and attribution rows the matrix is made of, never the money in them. */ const ITEM_NOUN = "rows";
 /** The derived values above an absent matrix are empty rather than absent, so no hook is called after that return. */ const NO_MONTHS: readonly MonthColumn[] = [];
 const NO_PARTITIONS: readonly MatrixPartition[] = [];
@@ -340,13 +339,13 @@ const WideMatrix = ({ currency, months, rows, locale, drilldownHref }: MatrixCom
       <ScrollRegion label={`${REPORT_COPY.matrix.title} in ${currency}, scrollable`}>
         <Table>
           <TableCaption className="px-4 pb-3 text-start">
-            {`${REPORT_COPY.matrix.title} in `}
+            {`${REPORT_COPY.matrix.title} (`}
             <bdi className="mono-identifier">{currency}</bdi>
-            {` — ${"one row is one partner or support attribution, one column is one month, and every cell states " + "the authorised allocations the source recorded in it"}. ${GAP_SENTENCE}`}
+            {`) — select any amount to view the underlying gifts. ${GAP_SENTENCE}`}
           </TableCaption>
           <TableHeader>
             <TableRow>
-              <TableHead scope="col">Partner or support</TableHead>
+              <TableHead scope="col">Partner</TableHead>
               {months.map((month) => (
                 <TableHead key={month.key} scope="col" className={NUMERIC_CELL_CLASS}>
                   <bdi>{month.shortLabel}</bdi>
@@ -386,7 +385,7 @@ const PeriodFirstMatrix = ({ currency, months, rows, locale, drilldownHref }: Ma
         <div key={month.key} className="flex min-w-0 flex-col gap-2.5 rounded-2xl border border-border/80 bg-card p-4 shadow-2xs">
           <h3 className="type-subsection-title">{month.longLabel}</h3>
           {stated.length === 0 ? (
-            <p className={QUIET_TEXT_CLASS}>{"No amount is stated for this month: either the source recorded no gift, or it did not establish " + "the value. Neither is a zero."}</p>
+            <p className={QUIET_TEXT_CLASS}>{"No gifts recorded for this month (gap, not zero)."}</p>
           ) : (
             <ul className="flex min-w-0 flex-col gap-1.5 divide-y divide-border/60">
               {stated.map(({ row, cell }) => (
@@ -455,14 +454,14 @@ const PeriodFirstMatrix = ({ currency, months, rows, locale, drilldownHref }: Ma
 }
 export type ReportComparisonProps = { result: ReportResult; locale: string; dir?: "ltr" | "rtl"; className?: string };
 type ComparisonContributorChange = ComparisonResult["contributorDeltas"][number];
-const ATTRIBUTION_LABELS: Readonly<Record<NonNullable<ComparisonContributorChange["attribution"]>["kind"], string>> = { partner: "A partner the report names only by reference", anonymous: "Anonymous support", unresolved: "Support with no attribution stated" };
-const NOT_LIKE_FOR_LIKE = { badge: "Not like-for-like", text: "The two periods are not the same number of days, so this difference sets a longer span against " + "a shorter one. The report states that rather than presenting the figures as an equal-elapsed " + "comparison." } as const;
+const ATTRIBUTION_LABELS: Readonly<Record<NonNullable<ComparisonContributorChange["attribution"]>["kind"], string>> = { partner: "Partner (reference only)", anonymous: "Anonymous", unresolved: "Unattributed" };
+const NOT_LIKE_FOR_LIKE = { badge: "Different period lengths", text: "These two periods span different numbers of days, so this isn’t an equal-length comparison." } as const;
 const NOT_RECONCILED = {
-  badge: "Contributors do not add up",
-  text: "The contributor changes below and the difference do not agree exactly for at least one currency " + "in this comparison. The report says so instead of adding a balancing entry, so no figure on " + "this surface has been adjusted to make the list add up.",
+  badge: "Doesn’t reconcile exactly",
+  text: "The partner changes below don’t add up exactly to the total difference for at least one currency. No balancing entry was added.",
 } as const;
 const CHANGE_MEANING_NOTE =
-  "A change here is a fact about the records of two periods, not about anyone's intention. A " + "contributor who gave in the earlier period and not in this one is an earlier-only contributor, " + "not a lost partner: this report names nobody as lost, ranks nobody and infers no motive from a " + "figure.";
+  "Differences reflect gift timing between these two periods — never a ranking or judgment of any partner.";
 function ContributorLabel({ change }: { readonly change: ComparisonContributorChange }): ReactElement {
   if (change.partnerId !== undefined) {
     return (
@@ -503,28 +502,27 @@ function ComparisonPartition({ entry, current, baseline, deltas, counts, reconci
             </dd>
           </Fragment>
         ))}
-        <dt className="font-medium">Difference (this period minus the earlier one)</dt>
+        <dt className="font-medium">Difference</dt>
         <dd className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
           <AmountValue money={{ currency: entry.currency, minorUnits: entry.differenceMinor }} valueState={entry.valueState} locale={locale} emphasis="headline" />
         </dd>
       </dl>
       {percentageReason === null ? null : <p className="min-w-0 break-words text-xs text-muted-foreground">{NO_PERCENTAGE[percentageReason]}</p>}
       {contributors.length === 0 ? (
-        <p className="type-supporting min-w-0 break-words">{"The report states no contributor change in this currency: a contributor whose amount is the same " + "in both periods is left out of this list rather than shown as a zero."}</p>
+        <p className="type-supporting min-w-0 break-words">{"No partner amounts changed between these two periods in this currency."}</p>
       ) : (
         <Frame spacing="flush">
           <FramePanel>
-            <ScrollRegion label={`${REPORT_COPY.comparison.title} in ${entry.currency}, contributor changes, scrollable`}>
+            <ScrollRegion label={`${REPORT_COPY.comparison.title} in ${entry.currency}, partner changes, scrollable`}>
               <Table>
                 <TableCaption className="px-4 pb-3 text-start">
-                  {REPORT_COPY.comparison.title}
-                  {" — contributor changes in "}
+                  {`${REPORT_COPY.comparison.title} — partner changes in `}
                   <bdi>{entry.currency}</bdi>
-                  {", one row per attribution this table states."}
+                  {"."}
                 </TableCaption>
                 <TableHeader>
                   <TableRow>
-                    <TableHead scope="col">Contributor</TableHead>
+                    <TableHead scope="col">Partner</TableHead>
                     <TableHead {...{ scope: "col", className: "text-end" }}>Change</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -546,7 +544,7 @@ function ComparisonPartition({ entry, current, baseline, deltas, counts, reconci
         </Frame>
       )}
       {countedContributors > contributors.length ? <p className="min-w-0 break-words text-sm text-muted-foreground">{notAllListedNote(contributors.length, countedContributors, entry.currency, locale)}</p> : null}
-      {reconciles ? <p className="min-w-0 break-words text-sm text-muted-foreground">{"The contributor changes add up exactly to this difference."}</p> : null}
+      {reconciles ? <p className="min-w-0 break-words text-sm text-muted-foreground">{"Partner changes reconcile exactly with the total difference."}</p> : null}
     </SectionCard>
   );
 }

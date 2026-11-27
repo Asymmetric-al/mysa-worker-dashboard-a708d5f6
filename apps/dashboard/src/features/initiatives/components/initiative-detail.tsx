@@ -38,21 +38,21 @@ const FIRST_TAB = "overview";
 const TAB_KEYS = ["overview", "working-list", "requests", "results", "history"] as const;
 type TabKey = (typeof TAB_KEYS)[number];
 const TAB_COPY: Readonly<Record<TabKey, { readonly label: string; readonly panel: string; readonly announced: string }>> = {
-  overview: { label: "Overview", panel: "Overview of this initiative", announced: "Overview section selected" },
-  "working-list": { label: INITIATIVE_COPY.membersHeading, panel: "The reviewed working list of this initiative", announced: "Working list section selected" },
-  requests: { label: INITIATIVE_COPY.requestsHeading, panel: "The Requests recorded for this initiative", announced: "Requests section selected" },
-  results: { label: RESULTS_COPY.heading, panel: "The results recorded for this initiative", announced: "Results section selected" },
-  history: { label: INITIATIVE_COPY.historyHeading, panel: "The dated history of this initiative", announced: "History section selected" },
+  overview: { label: "Overview", panel: "Initiative overview", announced: "Overview tab selected" },
+  "working-list": { label: INITIATIVE_COPY.membersHeading, panel: "Initiative working list", announced: "Working list tab selected" },
+  requests: { label: INITIATIVE_COPY.requestsHeading, panel: "Initiative requests", announced: "Requests tab selected" },
+  results: { label: RESULTS_COPY.heading, panel: "Initiative results", announced: "Results tab selected" },
+  history: { label: INITIATIVE_COPY.historyHeading, panel: "Initiative history", announced: "History tab selected" },
 };
 const BREADCRUMB = [{ label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE }] as const;
-const WORK_LINK_SUFFIX = "opens the Work surface, where this task is owned";
-const NOT_RECORDED_WORD = "Not recorded";
-const NEXT_WORK_EMPTY_BODY = "The read answers no open or reopened task for this initiative, so nothing is listed here. A task created with this initiative as its context appears on the Work surface first.";
-/** The noun each paged list of this record states its window with, so a pager never says "items". */ const DRAFT_REQUEST_LABEL = "Draft a Request";
-const DRAFT_REQUEST_ABSENT_BODY = "Drafting is not on offer in this read.";
-const REQUESTS_EMPTY_BODY = "A Request is one independently answerable invitation: who is asked, the organization that person represents, why, and the terms version they would answer. Answering it creates no gift, pledge, task or message of its own.";
-const RESULTS_NOT_READ_BODY = "The results read was not part of the answer this page composed, so the counts it would state are unavailable here rather than empty or zero. Nothing stands in for them.";
-const MEMBERSHIP_CHANGE_LABEL = "Working-list state recorded";
+const WORK_LINK_SUFFIX = "opens Tasks";
+const NOT_RECORDED_WORD = "Not set";
+const NEXT_WORK_EMPTY_BODY = "No open tasks linked to this initiative yet. Tasks linked to this initiative are managed in Tasks.";
+/** The noun each paged list of this record states its window with, so a pager never says "items". */ const DRAFT_REQUEST_LABEL = "Draft request";
+const DRAFT_REQUEST_ABSENT_BODY = "Drafting new requests isn’t available right now.";
+const REQUESTS_EMPTY_BODY = "A Request tracks one partnership invitation — who you’re asking, why, the requested terms, and their response.";
+const RESULTS_NOT_READ_BODY = "Results couldn’t be loaded right now, so counts aren’t shown.";
+const MEMBERSHIP_CHANGE_LABEL = "Working list updated";
 const RESPONSE_RECORDED_LABEL = "Response recorded";
 const NO_REASON_WORD = REQUESTED_TERMS_COPY.notStated;
 type InitiativeResponseKind = Extract<InitiativeHistoryRow, { readonly kind: "request-response" }>["responseKind"];
@@ -113,10 +113,9 @@ function OverviewPanel({ envelope, onRequestClose, onRequestReopen, onWindowChan
           </CardTitle>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-3">
-          <p className="type-supporting text-pretty">{"Only work this initiative still owns is listed: the tasks its read answered as open or reopened."}</p>
-          <p className="type-supporting text-pretty">{"This initiative never completes, edits, reopens or cancels its work. Each task below is owned on the Work surface, and its link opens that surface."}</p>
+          <p className="type-supporting text-pretty">{"Open tasks linked to this initiative. Complete or edit them in Tasks."}</p>
           {nextWork.total === 0 ? (
-            <StateNotice kind="empty" headingLevel={3} title={"Work this initiative owns"} description={NEXT_WORK_EMPTY_BODY} action={{ label: "Open Work", href: WORK_ROUTE }} />
+            <StateNotice kind="empty" headingLevel={3} title={"No open tasks"} description={NEXT_WORK_EMPTY_BODY} action={{ label: "Open Tasks", href: WORK_ROUTE }} />
           ) : (
             <>
               <ul className="flex min-w-0 flex-col gap-2">
@@ -145,11 +144,11 @@ function RequestsPanel({ initiativeId, envelope, onChanged, onWindowChange, isFe
   return (
     <div className="flex min-w-0 flex-col gap-4">
       <h2 className="type-section-title text-pretty">{INITIATIVE_COPY.requestsHeading}</h2>
-      <p className="type-supporting text-pretty">{"Shown in the order the read supplied them — this initiative's Requests by their recorded identifier — so a Request keeps its place while its state changes."}</p>
+      <p className="type-supporting text-pretty">{"Track each invitation you’ve drafted, shared, or received a response to."}</p>
       {draftAdmitted ? (
         <div className="flex min-w-0 flex-col gap-2">
           <div>
-            <Button {...{ type: "button", variant: "outline", "aria-expanded": composerOpen, "aria-controls": composerRegionId, onClick: toggleComposer }}>{composerOpen ? "Hide the draft form" : DRAFT_REQUEST_LABEL}</Button>
+            <Button {...{ type: "button", variant: "outline", "aria-expanded": composerOpen, "aria-controls": composerRegionId, onClick: toggleComposer }}>{composerOpen ? "Hide draft form" : DRAFT_REQUEST_LABEL}</Button>
           </div>
           <div id={composerRegionId} hidden={!composerOpen} className="min-w-0">
             <RequestComposer initiativeId={initiativeId} envelope={envelope} onDrafted={onChanged} onCheckResult={onChanged} headingLevel={3} />
@@ -162,7 +161,7 @@ function RequestsPanel({ initiativeId, envelope, onChanged, onWindowChange, isFe
       )}
       <Separator />
       {requests.total === 0 ? (
-        <StateNotice kind="empty" headingLevel={3} title={"No Request is recorded yet"} description={REQUESTS_EMPTY_BODY} action={draftAdmitted ? { label: DRAFT_REQUEST_LABEL, onClick: openComposer } : { label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE }} />
+        <StateNotice kind="empty" headingLevel={3} title={"No requests yet"} description={REQUESTS_EMPTY_BODY} action={draftAdmitted ? { label: DRAFT_REQUEST_LABEL, onClick: openComposer } : { label: INITIATIVE_COPY.listHeading, href: INITIATIVES_ROUTE }} />
       ) : (
         <>
           <ul className="flex min-w-0 flex-col gap-4">
@@ -182,7 +181,7 @@ function RequestsPanel({ initiativeId, envelope, onChanged, onWindowChange, isFe
 type ResultsPanelProps = { readonly initiativeId: string; readonly resultsEnvelope: NonNullable<InitiativeResultsProps["initialEnvelope"]> | undefined };
 const ResultsPanel = ({ initiativeId, resultsEnvelope }: ResultsPanelProps): ReactElement => (
   <div className="flex min-w-0 flex-col gap-4">
-    <h2 className="type-section-title text-pretty">{"How this initiative's Requests were answered"}</h2>
+    <h2 className="type-section-title text-pretty">{"Response summary"}</h2>
     {resultsEnvelope === undefined ? <StateNotice kind="unavailable" headingLevel={3} title={STATE_NOTICE_COPY.unavailable.title} description={RESULTS_NOT_READ_BODY} /> : <InitiativeResults initiativeId={initiativeId} initialEnvelope={resultsEnvelope} />}
   </div>
 );
@@ -235,9 +234,9 @@ function HistoryPanel({ envelope }: { readonly envelope: InitiativeEnvelope }): 
           </CardContent>
         </Card>
       ) : null}
-      <p className="type-supporting text-pretty">{"Newest first: the read orders these entries by the time it recorded for each one."}</p>
+      <p className="type-supporting text-pretty">{"Newest first."}</p>
       {history.length === 0 ? (
-        <StateNotice kind="empty" headingLevel={3} title={"No dated history is recorded"} description={"Nothing is recorded for this initiative with a time attached — no working-list change and no recorded response. Closing or reopening is a state of the initiative itself, and the state above is the current one."} />
+        <StateNotice kind="empty" headingLevel={3} title={"No activity history yet"} description={"Working-list changes and partner responses will appear here as they’re recorded."} />
       ) : (
         <ActivityTimeline label={INITIATIVE_COPY.historyHeading} entries={history.map((entry, index) => historyTimelineEntryOf(entry, index))} />
       )}

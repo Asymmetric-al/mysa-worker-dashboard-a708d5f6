@@ -12,6 +12,7 @@ import { BUCKET_LABELS, COMMITMENT_KINDS, OUTSIDE_PARTITION, PARTITION_BUCKETS, 
 import type { SupportProjection } from "@/modules/support/basis";
 import { GOAL_CAPABILITY, GOAL_MEASURE, formatPercentageBasisPoints, goalProgress, type GoalProgress } from "@/modules/support/goal";
 import { CSV_ALL_CURRENCIES, snapshotMetadata, toCsv, type SnapshotFact } from "@/modules/export/csv";
+import { WHOLE_QUERY_PRINT_MAX_ROWS } from "@/modules/export/print";
 import { PERIOD_PRESETS, REPORT_IDS, SORT_DIRECTIONS, SORT_FIELDS, buildReportQuery, clampPageSize, runReport } from "@/modules/support/report";
 import type { CurrencySelection, FacetsReportResult, PeriodPreset, PeriodState, ReportId, ReportFacets, ReportPartnerSelection, ReportPeriod, ReportQuery, ReportQueryProblem, ReportSections, ReportResult, ReportScope, Snapshot, SortDirection, SortField } from "@/modules/support/report";
 import { serialiseCivilDate, type CivilDate } from "@/modules/time/civil";
@@ -49,11 +50,14 @@ const REPORT_DEFAULT_PERIOD: Readonly<Record<ReportId, ReportPeriod>> = Object.f
   "partner-month-matrix": { kind: "preset", preset: "this-year" },
   "period-comparison": { kind: "preset", preset: "this-month" },
 });
+export { WHOLE_QUERY_PRINT_MAX_ROWS };
 export type SupportPeriodInput = { readonly kind: "preset"; readonly preset: string } | { readonly kind: "explicit"; readonly from: string; readonly to: string } | { readonly kind: "year"; readonly year: number };
 export type SupportPartnerInput = { readonly kind: "partner"; readonly partnerId: string } | { readonly kind: "anonymous" } | { readonly kind: "unresolved" };
 export type SupportQuery = { readonly period?: SupportPeriodInput; readonly currency?: string } & { readonly amountRange?: { readonly minMinor: number; readonly maxMinor: number }; readonly designation?: string } & { readonly partner?: SupportPartnerInput; readonly method?: string; readonly search?: string } & {
   readonly sort?: { readonly field?: string; readonly direction?: string };
   readonly page?: { readonly index?: number; readonly size?: number };
+  /** When true on `readReport`, requests all matching rows unpaged for optional whole-query browser printing (bounded by {@link WHOLE_QUERY_PRINT_MAX_ROWS}). */
+  readonly wholeQuery?: boolean;
 } & { readonly timeZone?: string; readonly reportId?: ReportId } & {
   /** The record this address names: one gift row or one gift, by the identifier the source states for it. The gifts ledger then covers the days that record's own evidence sits on rather than the period the ledger defaults to, so a record opened from a direct route is read in the period it was given in even where that is not the period the ledger would assume. */
   readonly record?: string;
@@ -538,11 +542,17 @@ export async function readReport(reportId: ReportId, query: SupportQuery = {}, s
   const outcome = await readContext(JOB_REPORT, source);
   if (!outcome.ok) return outcome.result;
   const { context } = outcome;
-  const built = buildSupportQuery(query, context.scope, { reportId, period: REPORT_DEFAULT_PERIOD[reportId], paged: true });
+  const wholeQuery = query.wholeQuery === true;
+  const built = buildSupportQuery(query, context.scope, { reportId, period: REPORT_DEFAULT_PERIOD[reportId], paged: !wholeQuery });
   if (!built.ok) return built.refusal;
   const report = reportOf(JOB_REPORT, built.query, context);
   if (!report.ok) return { kind: "unavailable", unavailable: report.error };
   const result = report.value;
+  if (wholeQuery && result.total > WHOLE_QUERY_PRINT_MAX_ROWS) {
+    return refusedRead(READ_ATTEMPT_ID, {
+      wholeQuery: [`This query matches ${String(result.total)} rows, which exceeds the ${String(WHOLE_QUERY_PRINT_MAX_ROWS)}-row limit for whole-query browser printing. Export the CSV for the complete result, or print the current page.`],
+    });
+  }
   return envelopeOf({ data: result, context, coverage: financialCoverageOf(context.projection, result.snapshot.query), revision: context.revision, valueStates: recordedStatesOf(result), actions: [exportAction(canExport(context.session, context.scope))] });
 }
 /** Takes the whole query out of the application: the same report in CSV form, computed as the report the query itself names so the file's own provenance states the query that produced it; the printed page renders its model from the same result the browser already holds. Answers `envelope`, or the read's own refusal: `refused` when the query states a filter the report engine will not apply, `denied` when the caller may not read it and `unavailable` when the records cannot be read. */

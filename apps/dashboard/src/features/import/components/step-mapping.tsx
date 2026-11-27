@@ -14,7 +14,7 @@ import { MAPPING_COPY, TABLE_LABELS } from "../copy";
 import ImportTable from "./import-table";
 export type ImportMappingProposal = ImportProposalRecord & { readonly suggestion: ImportSuggestedMapping };
 export type StepMappingProps = { readonly proposal: ReadEnvelope<ImportMappingProposal>; readonly confirmedMapping: ImportConfirmedMapping | null; readonly onConfirm: (mapping: ImportConfirmedMapping) => void; readonly submitting: boolean; readonly fieldErrors: FieldErrorLookup | null };
-const MAPPING_HEADINGS: readonly string[] = ["Column", "Heading in the file", "Suggested field", "Field to import", "Status and reason"];
+const MAPPING_HEADINGS: readonly string[] = ["Column", "CSV header", "Suggested match", "Import as", "Status"];
 /** The mapping table's five column widths, fixed so every row's field selector is the width stated here instead of the width its own longest option needs. Stated in scale steps rather than percentages: a narrow content column shrinks a percentage set until the headings and the selector's closed value no longer fit, where a stated width keeps both readable and leaves the table's own labelled scroll region to take the difference. */
 const MAPPING_HEADING_WIDTHS: readonly (string | undefined)[] = ["w-20", "w-40", "w-32", "w-64", "w-60"];
 type ColumnChoice = "suggestion" | "ignore" | ImportFieldId;
@@ -61,16 +61,16 @@ type BlockedIgnoreReason = "blank-header" | "consent-preserved-as-data" | "exclu
 type ColumnStatusKind = "blocked" | "refusal" | "chosen" | "ignored" | "suggested";
 type ColumnStatus = { readonly kind: ColumnStatusKind; readonly label: string; readonly variant: "default" | "secondary" | "outline" | "destructive" };
 const BLOCKED_STATUS: Readonly<Record<BlockedIgnoreReason, ColumnStatus>> = {
-  "consent-preserved-as-data": { kind: "blocked", label: "Kept as data, not interpreted", variant: "secondary" },
+  "consent-preserved-as-data": { kind: "blocked", label: "Kept as data (not consent)", variant: "secondary" },
   "excluded-topic": { kind: "blocked", label: "Not imported", variant: "outline" },
-  "blank-header": { kind: "blocked", label: "No heading, not mapped", variant: "outline" },
+  "blank-header": { kind: "blocked", label: "Blank header (skipped)", variant: "outline" },
 };
-const AMBIGUOUS_STATUS: ColumnStatus = { kind: "refusal", label: "Ambiguous — choose one", variant: "destructive" };
-const CONFLICT_STATUS: ColumnStatus = { kind: "refusal", label: "Needs a different choice", variant: "destructive" };
+const AMBIGUOUS_STATUS: ColumnStatus = { kind: "refusal", label: "Ambiguous — pick one", variant: "destructive" };
+const CONFLICT_STATUS: ColumnStatus = { kind: "refusal", label: "Choose a different field", variant: "destructive" };
 const SUGGESTED_STATUS: ColumnStatus = { kind: "suggested", label: "Suggested", variant: "secondary" };
-const CHOSEN_STATUS: ColumnStatus = { kind: "chosen", label: "Chosen by you", variant: "default" };
-const NOT_USED_STATUS: ColumnStatus = { kind: "ignored", label: "Not used", variant: "outline" };
-const UNMAPPED_STATUS: ColumnStatus = { kind: "ignored", label: "Not mapped", variant: "outline" };
+const CHOSEN_STATUS: ColumnStatus = { kind: "chosen", label: "Selected", variant: "default" };
+const NOT_USED_STATUS: ColumnStatus = { kind: "ignored", label: "Skipped", variant: "outline" };
+const UNMAPPED_STATUS: ColumnStatus = { kind: "ignored", label: "Unmapped", variant: "outline" };
 type ColumnView = { readonly column: ImportColumnMapping; readonly choice: ColumnChoice; readonly occurrenceLabel: string | null; readonly suggestedLabel: string; readonly status: ColumnStatus; readonly reason: string | null; readonly note: string | null; readonly errors: readonly string[] };
 const buildColumnViews = (input: { readonly suggestion: ImportSuggestedMapping; readonly ignored: readonly ImportIgnoredColumn[]; readonly refusals: ReadonlyMap<number, readonly ImportMappingRefusal[]>; readonly choiceOf: (columnIndex: number) => ColumnChoice }): readonly ColumnView[] =>
   input.suggestion.columns.map((column) => {
@@ -238,7 +238,13 @@ export default function StepMapping({ proposal, confirmedMapping, onConfirm, sub
         )}
       </div>
       <Separator />
-      <FormField label="Confirm the column mapping" name="confirmedMapping" description={mapping === null ? MAPPING_COPY.confirmBlocked : mapping.assignments.length === 0 ? MAPPING_COPY.confirmNeedsField : MAPPING_COPY.confirmNote} error={fieldErrors === null ? undefined : fieldErrors.byField["confirmedMapping"]}>
+      <FormField
+        label={submitting ? MAPPING_COPY.confirmingLabel : confirmedMapping === null ? MAPPING_COPY.confirmLabel : MAPPING_COPY.reconfirmLabel}
+        hideLabel
+        name="confirmedMapping"
+        description={mapping === null ? MAPPING_COPY.confirmBlocked : mapping.assignments.length === 0 ? MAPPING_COPY.confirmNeedsField : MAPPING_COPY.confirmNote}
+        error={fieldErrors === null ? undefined : fieldErrors.byField["confirmedMapping"]}
+      >
         {({ id, describedBy }) => (
           <Button id={id} aria-describedby={describedBy} type="button" disabled={!(mapping !== null && mapping.assignments.length > 0 && !submitting)} onClick={handleConfirm}>
             {submitting ? MAPPING_COPY.confirmingLabel : confirmedMapping === null ? MAPPING_COPY.confirmLabel : MAPPING_COPY.reconfirmLabel}

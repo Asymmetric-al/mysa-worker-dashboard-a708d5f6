@@ -75,7 +75,7 @@ export const usePageLocales = (scope: Scope, documentId: string | undefined): Us
 export type PageCataloguesEnvelope = Extract<PageCataloguesAnswer, { readonly kind: "envelope" }>["envelope"];
 /** The catalogue payload — two family catalogues, the admitted section types and their bounded presentation choices. Mirrors the service's payload, which remains authoritative for it. */ export type PageCataloguesData = PageCataloguesEnvelope["data"];
 export type PageCataloguesRead = ReadResult<ReadEnvelope<PageCataloguesData>>;
-const CATALOGUES_TRANSPORT_GUIDANCE = "The catalogue request did not reach the application, so the family catalogues are unavailable rather than empty. Reload this surface to read them again.";
+const CATALOGUES_TRANSPORT_GUIDANCE = "Couldn’t load the page catalogues right now. Reload the page to try again.";
 const isAdmittedValueSet = (value: unknown, admitted: readonly string[]): boolean => Array.isArray(value) && value.length > 0 && value.every((member: unknown) => typeof member === "string" && admitted.includes(member));
 function isPresentationChoices(value: unknown): boolean {
   if (!isRecord(value)) return false;

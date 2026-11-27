@@ -56,12 +56,11 @@ const PREVIEW_HEADING = "Preview";
 const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const NOTE_CLASS = "min-w-0 type-supporting text-pretty wrap-anywhere";
 const FIELD_LABELS = { revision: "Revision", language: "Language" } as const;
-const RETRY_LABEL = "Try reading this preview again";
+const RETRY_LABEL = "Reload preview";
 const DIRECTION_WORDS: Readonly<Record<PreviewDirection, string>> = { ltr: "left to right", rtl: "right to left" };
-const INERT_STATEMENT =
-  "This preview is inert. It cannot publish the edition, it cannot submit a notification to any recipient, it cannot subscribe a reader, and it cannot start giving. The read that authorised it offers no action of any kind, so nothing on this surface changes the edition, its audience or its giving destination.";
+const INERT_STATEMENT = "Preview only — nothing here publishes updates, sends emails, subscribes anyone, or starts a payment.";
 const MEDIA_HEADING = "Media in this preview";
-const MEDIA_NOT_READY_TITLE: Readonly<Record<PreviewPlacement["kind"], string>> = { image: "This image is unavailable", video: "This video is unavailable" };
+const MEDIA_NOT_READY_TITLE: Readonly<Record<PreviewPlacement["kind"], string>> = { image: "Image unavailable", video: "Video unavailable" };
 function Heading({ level, className, children }: { readonly level: NoticeHeadingLevel; readonly className?: string; readonly children: ReactNode }): ReactElement {
   const Tag = NOTICE_HEADING_TAG[level];
   return <Tag className={cn(HEADING_SCALE[level], className)}>{children}</Tag>;
@@ -129,7 +128,7 @@ function MediaNotes({ preview, headingLevel, onRetry }: { readonly preview: Prev
               </li>
             ))}
           </ul>
-          <p className="min-w-0 text-xs text-muted-foreground text-pretty wrap-anywhere">{"Each transcript is the video's own admitted rendition, requested from the address this read named, and that request is authorised again when it is made."}</p>
+          <p className="min-w-0 text-xs text-muted-foreground text-pretty wrap-anywhere">{"Transcripts are loaded directly from the video’s authorised media file."}</p>
         </div>
       )}
       {unready.map((placement) => (
@@ -138,14 +137,14 @@ function MediaNotes({ preview, headingLevel, onRetry }: { readonly preview: Prev
     </section>
   );
 }
-const LOADING = { title: "Reading this preview", description: "A preview is authorised per request, so nothing is shown until the read answers. An empty frame never stands in for one." } as const;
-const NOT_ACKNOWLEDGED = { title: "This revision is not one this edition serves", description: "The preview was asked for a revision this edition does not stand on, so nothing is rendered in its place and no newer revision is substituted for it." } as const;
-const LANGUAGE_ABSENT = { title: "Language unavailable", description: "The language requested is not the language this edition is written in, so nothing is rendered in its place: a preview never re-renders an edition into another language and never names a sibling edition to fall back to." } as const;
-const UNRELEASED = { title: "This revision is not a readable release of this edition", description: "No readable release of this edition stands on the revision the preview acknowledged, so nothing is rendered in its place. A draft is not a publication, and a preview does not stand in for one." } as const;
-const WITHDRAWN = { title: "This edition was withdrawn", description: `${WITHDRAWAL_WORDING.whatItDoes} ${WITHDRAWAL_WORDING.whatItDoesNotDo}` } as const;
-const UNAVAILABLE = { title: "This preview could not be read", description: "The source behind this preview could not be read, so this surface reports the outage instead of an empty page or a newer revision." } as const;
-const INVALID = { title: "This revision cannot be rendered", description: "The stored revision is not one the content profile can read, so nothing is shown in its place and no substitute is invented for it." } as const;
-const EMPTY_BODY = { title: "This revision carries no readable content", description: "The acknowledged revision rendered to nothing, so there is no reading to show. Nothing has been substituted for what the revision does not carry." } as const;
+const LOADING = { title: "Loading preview…", description: "Verifying access and rendering this revision." } as const;
+const NOT_ACKNOWLEDGED = { title: "Revision not available", description: "This preview link points to a different revision. Reopen preview from the draft or review page." } as const;
+const LANGUAGE_ABSENT = { title: "Language not available", description: "This edition isn’t written in the requested language, and no other language was substituted." } as const;
+const UNRELEASED = { title: "Not published yet", description: "This revision hasn’t been published yet." } as const;
+const WITHDRAWN = { title: "Edition unpublished", description: `${WITHDRAWAL_WORDING.whatItDoes} ${WITHDRAWAL_WORDING.whatItDoesNotDo}` } as const;
+const UNAVAILABLE = { title: "Couldn’t load preview", description: "Couldn’t reach the content service right now. Try again in a moment." } as const;
+const INVALID = { title: "Revision can’t be displayed", description: "This saved revision doesn’t meet content requirements and can’t be rendered." } as const;
+const EMPTY_BODY = { title: "No content yet", description: "This saved revision doesn’t have any body text yet." } as const;
 type AuthorisedPreviewProps = {
   readonly preview: PreviewAuthorised;
   readonly requestedLocale: string | undefined;
@@ -190,24 +189,23 @@ function AuthorisedPreview({ preview, requestedLocale, headingLevel, locales, on
         ) : null}
       </dl>
       {switcher}
-      <p className={NOTE_CLASS}>{"A preview shows an edition in the language it is written in and never re-renders it in another, so no fallback is disclosed or concealed here."}</p>
+      <p className={NOTE_CLASS}>{"Shows this exact saved revision in its own language — later draft edits won’t appear until saved and reopened."}</p>
       {requested.length === 0 || sameTag(requested, tag) ? null : (
         <p className={NOTE_CLASS}>
           {"Requested "}
           <bdi>{languageLabelOf(requested)}</bdi>
-          {" — this edition is written in "}
+          {" — showing this edition’s language ("}
           <bdi>{languageLabelOf(tag)}</bdi>
-          {", and that is the language shown here."}
+          {")."}
         </p>
       )}
-      <p className={NOTE_CLASS}>{"This is the exact revision this preview acknowledged: the markup below is the one renderer's output for it. A later draft edit cannot change what is shown here, and a preview never follows the edition forward to a newer revision."}</p>
       <Alert role={undefined} data-slot="preview-inert">
         <AlertDescription>{INERT_STATEMENT}</AlertDescription>
       </Alert>
       <SimulationLabel effect={SIMULATED_EFFECT_BY_TRIGGER.publish} />
       {body}
       <MediaNotes preview={preview} headingLevel={headingLevel} onRetry={onRetry} />
-      <p className={NOTE_CLASS}>{"Every request this preview makes is authorised again when it is made, including each image, video, poster, caption track and transcript. A copied address or a switched language therefore admits nothing the reader could not already open."}</p>
+      <p className={NOTE_CLASS}>{"Access is verified fresh for this page and every image, video, caption, and transcript it loads."}</p>
     </div>
   );
 }

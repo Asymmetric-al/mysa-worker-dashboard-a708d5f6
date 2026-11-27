@@ -85,8 +85,8 @@ export const contentDocumentSchema: z.ZodType<ContentDocumentJson> = z.strictObj
   content: blockSequenceSchema,
   sections: z.array(sectionSchema),
 });
-const BIDI_CONTROL_PATTERN = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
-const BIDI_CONTROL_PATTERN_GLOBAL = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+const BIDI_CONTROL_PATTERN = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
+const BIDI_CONTROL_PATTERN_GLOBAL = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 const bidiControlIndex = (text: string): number | undefined => BIDI_CONTROL_PATTERN.exec(text)?.index;
 const codePointLabel = (codeUnit: number): string => `U+${codeUnit.toString(16).toUpperCase().padStart(4, "0")}`;
 const stripBidiControls = (text: string): string => text.replace(BIDI_CONTROL_PATTERN_GLOBAL, "");

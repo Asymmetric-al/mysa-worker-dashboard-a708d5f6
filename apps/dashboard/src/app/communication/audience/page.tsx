@@ -5,24 +5,24 @@ import MembershipTable from "@/features/audience/components/membership-table";
 import { NOT_CONSENT_STATEMENT, PURPOSE_LABEL } from "@/features/audience/copy/membership";
 import { reads } from "@/modules/data-service";
 import { firstValueOf, type SearchParams } from "../../page-frame";
-export const metadata: Metadata = { title: "Audience" };
+export const metadata: Metadata = { title: "Email audience" };
 type AudienceRead = typeof reads.audience.readAudience;
 const AUDIENCE_HREF = "/communication/audience";
 const HEADING_ID = "communication-audience-heading";
 const PARAM = { page: "page", pageSize: "pageSize" } as const;
 const PAGE_COPY = {
-  heading: `${PURPOSE_LABEL["update-email"]} audience`,
-  lede: "The people this publisher may reach with its Update email for this purpose, the state each membership stands in, and the reason each excluded membership is excluded. Every count, state and reason below is the read's own, and no membership on this page is contact permission, proof of an address, or a choice this view may change.",
+  heading: "Email audience",
+  lede: `Who will receive your ${PURPOSE_LABEL["update-email"].toLowerCase()}, their current consent status, and why excluded contacts won’t be emailed.`,
   denied: {
-    title: "This publisher's audience is not available in the current context",
-    body: "This session may not read the memberships of the publisher this context belongs to, so no count, state, name or size is stated here — a refusal is not an empty audience. Another context, if this session holds one, can be chosen from the shell.",
+    title: "Email audience isn’t available in this ministry context",
+    body: "Your current session doesn’t have permission to view this audience list. Switch ministry context from the sidebar if you have access to another one.",
   },
-  unavailable: { title: "This publisher's audience could not be read", retry: "Try this read again" },
+  unavailable: { title: "Couldn’t load Email audience", retry: "Try again" },
   refused: {
-    title: "This page's request was not one the audience read admits",
-    body: "The read that answers this page refused the request this route made, so nothing was read and nothing is shown in its place. The source did not fail and no permission was refused: this route states only the page and the page size the read declares.",
+    title: "Couldn’t load Email audience",
+    body: "The page parameters weren’t accepted. Reload Email audience to view from page 1.",
   },
-  unrecognised: { title: "This publisher's audience could not be read", body: "The read answered with a result this page does not recognise, so it is reported as the outage it may be rather than as an audience with nobody in it." },
+  unrecognised: { title: "Couldn’t load Email audience", body: "Received an unexpected response from the audience service. Try again in a moment." },
 } as const;
 function audienceQueryOf(searchParams: SearchParams): NonNullable<Parameters<AudienceRead>[0]> {
   const page = firstValueOf(searchParams[PARAM.page]);

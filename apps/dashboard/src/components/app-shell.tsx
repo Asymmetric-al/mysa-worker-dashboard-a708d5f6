@@ -16,6 +16,7 @@ import { IconTile } from "@/components/ui/icon-tile";
 import { Kbd } from "@/components/ui/kbd";
 import { Separator } from "@/components/ui/separator";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
 import { buildRouteBreadcrumbs } from "@/lib/route-breadcrumbs";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger, useShortcutHint } from "@/lib/ui-sdk";
@@ -37,6 +38,7 @@ export type AppShellProps = {
   readonly devScenarioId?: string;
   readonly contextAdmissions?: readonly AdmittedContext[];
   readonly contextSwitch?: AppShellContextSwitch;
+  readonly onToggleTheme?: () => void;
   readonly direction?: "ltr" | "rtl";
   readonly children: ReactNode;
   readonly className?: string;
@@ -46,33 +48,32 @@ type RecoveryCopy = { readonly noticeKind: StateNoticeProps["kind"]; readonly re
 const RECOVERY_COPY: Readonly<Record<Exclude<AdmissionState, "signed-in">, RecoveryCopy>> = {
   unavailable: {
     noticeKind: "unavailable",
-    title: "This workspace could not be read",
-    description: "The application could not read this session's context, so the workspace is not shown at all " + "rather than shown partially or filled in from a guess. Nothing here has been changed, and " + "anything already saved is still saved.",
-    actionLabel: "Try this page again",
+    title: "We couldn’t load your workspace",
+    description: "We couldn’t reach your session information right now, so nothing is shown rather than guessing or showing partial data. Nothing has been changed and your saved work is safe.",
+    actionLabel: "Try again",
     actionKind: "refresh",
   },
   denied: {
     noticeKind: "denied",
     reasonCode: "not-admitted",
-    title: "This workspace is not available to this session",
-    description:
-      "The session this page resolved does not admit the organisation and ministry it asked for. " + "Nothing about that context is shown — not a count, not a name and not whether a record " + "exists — and this page offers no way to choose another one, so Open Help explains what an " + "admitted session needs.",
+    title: "You don’t have access to this workspace",
+    description: "Your current session isn’t authorized for this organization and ministry. No names, counts, or records are shown here. Open Help to see how workspace access works.",
     actionLabel: "Open Help",
     actionKind: "help",
   },
   expired: {
     noticeKind: "denied",
     reasonCode: "session-expired",
-    title: "This session has expired",
-    description: "A read from this point would not be authorised, so the workspace is closed instead of being " + "shown from a session that has ended. Nothing you saved has been discarded — an ended session " + "changes no stored record — and Open Help explains what each admission state means.",
+    title: "Your session has expired",
+    description: "Your session has ended, so this workspace is closed until you return with a fresh session. Everything you saved before the session ended is still saved.",
     actionLabel: "Open Help",
     actionKind: "help",
   },
   "no-access": {
     noticeKind: "denied",
     reasonCode: "no-membership",
-    title: "No admitted identity for this session",
-    description: "There is no account for this session, so there is no workspace to show and nothing has been " + "changed. Recovering the account is the only outcome that would help, and this release carries " + "no authenticator to start it with, so Open Help explains what an admitted session needs.",
+    title: "No ministry workspace is linked to this account",
+    description: "This account doesn’t currently have access to a ministry workspace, so there’s nothing to show here yet. Ask your sending organization to confirm your access, or open Help for guidance.",
     actionLabel: "Open Help",
     actionKind: "help",
   },
@@ -101,17 +102,19 @@ const useStickyOffset = (headerRef: RefObject<HTMLElement | null>): void =>
       root.style.removeProperty("scroll-padding-top");
     };
   }, [headerRef]);
-const SKIP_LINK_CLASS = cn("absolute start-3 top-3 z-50 -translate-y-[200%] rounded-md border border-border bg-background", "px-3 py-2 text-sm font-medium text-foreground", "focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]", "print:hidden");
+const SKIP_LINK_CLASS = cn("absolute start-3 top-3 z-(--z-skip-link) -translate-y-[200%] rounded-md border border-border bg-background", "px-3 py-2 text-sm font-medium text-foreground", "focus:translate-y-0 focus:outline-2 focus:outline-offset-2 focus:outline-[color:var(--ring)]", "print:hidden");
 /** The shell: the chrome every route renders inside. Every region of it is screen-only, so print media keeps the page's own content and drops the skip link, the navigation column, the sticky banner and the development region from paper. `Sidebar` puts a caller's class on its fixed inner container alone, which leaves the column's width-reserving wrapper in the printed layout, so the provider hides that whole column from print. */
 export const AppShell = ({ className, ...chrome }: AppShellProps): ReactElement => (
-  <SidebarProvider className={cn("relative", "print:[&>[data-slot=sidebar]]:hidden", className)}>
-    <a href={`#${MAIN_CONTENT_ID}`} className={SKIP_LINK_CLASS}>
-      {"Skip to main content"}
-    </a>
-    <ShellChrome {...chrome} />
-  </SidebarProvider>
+  <TooltipProvider delay={200} timeout={400}>
+    <SidebarProvider className={cn("relative", "print:[&>[data-slot=sidebar]]:hidden", className)}>
+      <a href={`#${MAIN_CONTENT_ID}`} className={SKIP_LINK_CLASS}>
+        {"Skip to main content"}
+      </a>
+      <ShellChrome {...chrome} />
+    </SidebarProvider>
+  </TooltipProvider>
 );
-function ShellChrome({ scope, admissionState, currentPath: suppliedPath, developmentRegion, devScenarioId, contextAdmissions, contextSwitch, direction, children }: Omit<AppShellProps, "className">): ReactElement {
+function ShellChrome({ scope, admissionState, currentPath: suppliedPath, developmentRegion, devScenarioId, contextAdmissions, contextSwitch, onToggleTheme, direction, children }: Omit<AppShellProps, "className">): ReactElement {
   const { setOpenMobile } = useSidebar();
   const headerRef = useRef<HTMLElement | null>(null);
   const [pending, setPending] = useState<{ readonly request: ContextRequest; readonly scope: Scope } | null>(null);
@@ -188,7 +191,7 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
             </IconTile>
             <div className="flex min-w-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
               <span className="truncate font-heading text-sm font-semibold tracking-tight text-sidebar-foreground">MYSA</span>
-              <span className="truncate text-xs text-muted-foreground">Worker workspace</span>
+              <span className="truncate text-xs text-muted-foreground">Missionary workspace</span>
             </div>
           </div>
         </SidebarHeader>
@@ -203,24 +206,24 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
           >
             <span className="inline-flex items-center gap-1.5 truncate">
               <KeyboardIcon aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="truncate">Shortcuts</span>
+              <span className="truncate">Keyboard shortcuts</span>
             </span>
             <Kbd aria-hidden="true">?</Kbd>
           </button>
           <div aria-hidden="true" className="flex items-center justify-between gap-2 rounded-xl border border-sidebar-border/80 bg-card/70 px-2.5 py-1.5 text-xs text-muted-foreground">
-            <span className="truncate">Toggle rail</span>
+            <span className="truncate">Collapse sidebar</span>
             <Kbd>{sidebarShortcut.text}</Kbd>
           </div>
         </SidebarFooter>
       </Sidebar>
       <SidebarInset>
-        <header ref={headerRef} className="sticky top-0 z-20 flex flex-col gap-1.5 border-b border-border/80 bg-background/95 px-3 py-2 backdrop-blur-md md:rounded-t-2xl sm:px-5 print:hidden">
+        <header ref={headerRef} className="sticky top-0 z-(--z-header) flex flex-col gap-1.5 border-b border-border/80 bg-background/95 px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-md md:rounded-t-2xl sm:px-5 print:hidden">
           <div className="flex min-w-0 items-center gap-2">
             <SidebarTrigger aria-keyshortcuts={sidebarShortcut.ariaKeyshortcuts} />
             <Separator orientation="vertical" className="h-5" />
             <ContextIndicator scope={scope} admissions={visibleAdmissions} onRequestContext={requestContext} showSupportSubject={showsFinancialFacts(currentPath)} lastResult={pending === null ? lastSwitch : null} className="min-w-0 flex-1" />
             {breadcrumbs.length > 0 ? (
-              <nav aria-label="Workspace trail" data-slot="shell-breadcrumb" className="hidden min-w-0 items-center gap-1 text-xs text-muted-foreground xl:flex">
+              <nav aria-label="Breadcrumb" data-slot="shell-breadcrumb" className="hidden min-w-0 items-center gap-1 text-xs text-muted-foreground xl:flex">
                 {breadcrumbs.map((crumb, index) => (
                   <Fragment key={`${crumb.label}-${String(index)}`}>
                     {index > 0 ? <ChevronRightIcon aria-hidden="true" className="size-3 shrink-0 text-muted-foreground/70 rtl:rotate-180" /> : null}
@@ -251,7 +254,7 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
               className="h-8 min-h-8 shrink-0 gap-2 rounded-4xl px-2.5 text-xs text-muted-foreground hover:text-foreground"
             >
               <SearchIcon aria-hidden="true" className="size-3.5 shrink-0" />
-              <span className="sr-only sm:not-sr-only">Jump to…</span>
+              <span className="sr-only sm:not-sr-only">Search…</span>
               <Kbd aria-hidden="true" className="hidden sm:inline-flex">
                 {commandShortcut.text}
               </Kbd>
@@ -259,7 +262,7 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
           </div>
           <DevBanner scenarioId={devScenarioId} />
         </header>
-        <main id={MAIN_CONTENT_ID} tabIndex={-1} className="min-w-0 flex-1">
+        <main id={MAIN_CONTENT_ID} tabIndex={-1} className="@container/main min-w-0 flex-1">
           <div className="mx-auto w-full max-w-6xl px-3 py-5 sm:px-6 sm:py-6">
             {recovery === null ? (
               children
@@ -278,7 +281,7 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
                       <IconTile variant="outline" size="xs">
                         <WrenchIcon />
                       </IconTile>
-                      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Development session drawer</span>
+                      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Development tools</span>
                     </div>
                     <CollapsibleTrigger className="inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-4xl border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)] [&[data-open]_svg]:rotate-180">
                       <span>Toggle controls</span>
@@ -308,7 +311,7 @@ function ShellChrome({ scope, admissionState, currentPath: suppliedPath, develop
           onSaveAndSwitch={contextSwitch.saveUnsavedWork === undefined ? undefined : saveAndSwitch}
         />
       )}
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onOpenShortcuts={() => setShortcutsOpen(true)} currentPath={currentPath} />
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onOpenShortcuts={() => setShortcutsOpen(true)} onToggleTheme={onToggleTheme} currentPath={currentPath} />
       <ShortcutsSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </>
   );

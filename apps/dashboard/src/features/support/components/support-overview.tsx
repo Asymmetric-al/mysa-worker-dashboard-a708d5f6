@@ -31,30 +31,30 @@ type CurrencySummaryView = SupportOverviewReport["summary"][number];
 type StatedAmount = CurrencySummaryView["received"];
 type RecurringPointView = SupportOverviewReport["series"][number];
 type PeriodText = { readonly from: string; readonly to: string };
-const GOAL_STATED_ELSEWHERE = "A progress figure exists for this period and is stated in the Support goal section below, exactly as the goal's own read computed it.";
+const GOAL_STATED_ELSEWHERE = "Goal progress for this period is shown in the Support goal section below.";
 const GOAL_STATE_SENTENCE: Readonly<Record<NonNullable<SupportOverviewReport["goal"]>["state"], string>> = {
   value: GOAL_STATED_ELSEWHERE,
   zero: GOAL_STATED_ELSEWHERE,
   "no-goal": NO_PERCENTAGE["no-goal"],
   "no-percentage": NO_PERCENTAGE.default,
   incompatible: NO_PERCENTAGE["incompatible-measure"],
-  paused: "The goal is paused, so no progress figure is stated for it and nothing is put in its place.",
-  ended: "The goal has ended, so no progress figure is stated for it; an ended goal never rewrites an earlier period.",
-  unavailable: "The source behind the goal could not be read, so no comparison is stated here. This is not a goal of zero and no figure stands in its place.",
+  paused: "Your support goal is paused, so no progress percentage is shown.",
+  ended: "Your support goal has ended, so no progress percentage is shown.",
+  unavailable: "Couldn’t load goal progress from the source right now — shown as unavailable rather than zero.",
 };
 const SERIES_LABEL: string = MEASURE_LABELS["received-gifts"];
-const RECEIVED_CASH_UNIT = "received cash, one row per authorised allocation";
-const MONTHLY_EQUIVALENT_DESCRIPTION = "Each monthly equivalent is the qualified source's own calculation for one commitment, in the currency the source states it in. They are stated one by one and are never averaged or summed into one figure.";
+const RECEIVED_CASH_UNIT = "received cash (per authorised allocation)";
+const MONTHLY_EQUIVALENT_DESCRIPTION = "Source-calculated monthly equivalent for each commitment, kept in its own currency and never averaged or combined.";
 const MONTH_COLUMN_KEY = "month";
 const CURRENCY_COLUMN_PREFIX = "currency:";
-const GAP_CELL_WORD = "No recorded value";
+const GAP_CELL_WORD = "No recorded gifts";
 function civilDateText(value: unknown): string {
   if (typeof value === "string") return value;
   if (value !== null && typeof value === "object") {
     const text = String(value);
     if (text !== "[object Object]") return text;
   }
-  return "a date this read did not state";
+  return "an unspecified date";
 }
 const monthText = (bucketStart: unknown): string => {
   const text = civilDateText(bucketStart);
@@ -85,7 +85,7 @@ function chartTable(partitions: readonly ChartPartition[], locale: string): Char
     }
     return row;
   });
-  return { caption: `${SERIES_LABEL} by month, one row per month and one column per currency: a month the source recorded nothing in states that rather than a zero.`, columns, rows };
+  return { caption: `${SERIES_LABEL} by month (one column per currency). Months without recorded gifts are shown as gaps, not zeros.`, columns, rows };
 }
 function overviewReadOf(candidate: ReadEnvelope<unknown> | undefined): SupportOverviewRead | undefined {
   if (candidate === undefined) return undefined;
@@ -122,12 +122,12 @@ function CashCounts({ envelope, entry }: { readonly envelope: SupportOverviewEnv
   const path = `summary.${entry.currency}`;
   return (
     <div className="flex flex-col gap-2">
-      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <dl className="grid grid-cols-1 gap-2 @lg/main:grid-cols-3">
         <CountRow label="Gifts" count={entry.giftCount.count} state={stateOf(envelope, `${path}.giftCount`, entry.giftCount.valueState)} />
         <CountRow label="Allocations" count={entry.allocationCount.count} state={stateOf(envelope, `${path}.allocationCount`, entry.allocationCount.valueState)} />
         <CountRow label="Donors" count={entry.donorCount.count} state={stateOf(envelope, `${path}.donorCount`, entry.donorCount.valueState)} />
       </dl>
-      <p className="type-supporting">{"Each count is stated at its own grain and the three are never added together: a gift split between two allocations is one gift, two allocations and one donor, and a view that legitimately holds both grain levels counts the amount once."}</p>
+      <p className="type-supporting">{"Gifts, allocations, and donors are counted separately. A split gift counts as one gift, its authorised allocations, and one donor."}</p>
     </div>
   );
 }
@@ -153,7 +153,7 @@ function CashSummary({ envelope, locale }: { readonly envelope: SupportOverviewE
   const period = periodOf(report);
   const isCurrentPeriod = isCurrentPeriodOf(report);
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className={cn("grid min-w-0 grid-cols-1 gap-4", report.summary.length > 1 && "@2xl/main:grid-cols-2")}>
       {report.summary.map((entry) => {
         const money = moneyOf(entry.currency, entry.received);
         const valueState = stateOf(envelope, `summary.${entry.currency}.received`, entry.received.valueState);
@@ -169,7 +169,7 @@ function CashSummary({ envelope, locale }: { readonly envelope: SupportOverviewE
     </div>
   );
 }
-const RECURRING_OUTCOMES_DESCRIPTION = "These are not received cash. Each occurrence the source reports sits in one of the five outcomes and is counted at its own state, so a collection in flight is not cash, an absent receipt is not donor debt, and no outcome here is added to an amount.";
+const RECURRING_OUTCOMES_DESCRIPTION = "Tracked separately from received cash. Each recurring occurrence sits in its current source status — in-flight payments aren’t counted as cash, and absent receipts aren’t donor debt.";
 const RECURRING_BUCKET_TONE: Readonly<Record<string, MeterSegmentTone>> = {
   succeeded: "positive",
   "in-flight": "info",
@@ -188,7 +188,7 @@ const RecurringOutcomes = ({ envelope }: { readonly envelope: SupportOverviewEnv
     <SectionCard title={MEASURE_LABELS["recurring-collection-outcomes"]} headingLevel={3} description={RECURRING_OUTCOMES_DESCRIPTION} contentClassName="flex flex-col gap-3">
       <PeriodNote period={periodOf(envelope.data.report)} coverage={envelope.coverage.state} />
       <SegmentedMeter segments={segments} label="Recurring collection outcomes distribution" />
-      <dl className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <dl className="grid gap-2 @lg/main:grid-cols-2 @3xl/main:grid-cols-3">
         {envelope.data.buckets.map((bucket) => (
           <CountRow key={bucket.bucket} label={bucket.label} count={bucket.count} state={stateOf(envelope, `buckets.${bucket.bucket}.count`, bucket.valueState)} />
         ))}
@@ -198,8 +198,8 @@ const RecurringOutcomes = ({ envelope }: { readonly envelope: SupportOverviewEnv
   );
 };
 const CommitmentKinds = ({ envelope, period }: { readonly envelope: SupportOverviewEnvelope; readonly period: PeriodText }): ReactElement => (
-  <MeasureSection title={MEASURE_LABELS.commitments} description="Commitments are facts the source reports and this application never writes. Each is counted in its own kind and in its own outcome bucket, and no commitment is counted as cash." period={period} coverage={envelope.coverage.state}>
-    <dl className="grid gap-2 sm:grid-cols-3">
+  <MeasureSection title={MEASURE_LABELS.commitments} description="Read-only commitments from your giving source, grouped by type and never counted as received cash." period={period} coverage={envelope.coverage.state}>
+    <dl className="grid gap-2 @lg/main:grid-cols-3">
       {envelope.data.commitmentKinds.map((kind) => (
         <CountRow key={kind.kind} label={COMMITMENT_KIND_LABELS[kind.kind]} count={kind.count} state={stateOf(envelope, `commitmentKinds.${kind.kind}.count`, kind.valueState)} />
       ))}
@@ -221,7 +221,7 @@ const MonthlyEquivalents = ({ envelope, period, locale }: { readonly envelope: S
         </div>
       ))}
     </dl>
-    <p className="text-xs text-muted-foreground">{"No combined monthly figure is stated: these equivalents belong to individual commitments, in the currencies the source states them in, and summing them would state a number no source computed."}</p>
+    <p className="text-xs text-muted-foreground">{"Shown individually per commitment in its own currency rather than summed into an estimated monthly total."}</p>
   </MeasureSection>
 );
 function CommittedSupport({ envelope, locale }: { readonly envelope: SupportOverviewEnvelope; readonly locale: string }): ReactElement {
@@ -236,13 +236,13 @@ function CommittedSupport({ envelope, locale }: { readonly envelope: SupportOver
   return (
     <Tabs defaultValue="committed" className="min-w-0 gap-4">
       <TabsList aria-label="Committed support and monthly equivalents" className="max-w-full">
-        <TabsTrigger value="committed">Committed</TabsTrigger>
+        <TabsTrigger value="committed">Commitments</TabsTrigger>
         <TabsTrigger value="monthly">Monthly equivalents</TabsTrigger>
       </TabsList>
-      <TabsContent value="committed" aria-label="Committed versus goal" className="flex flex-col gap-3">
+      <TabsContent value="committed" aria-label="Commitments and goal" className="flex flex-col gap-3">
         {hasCommitments ? <CommitmentKinds envelope={envelope} period={period} /> : commitmentsEmpty}
-        <p className="max-w-prose type-supporting">{"The goal is compared with received support on the goal's own read, and its progress figure is stated once, in the Support goal section below. It is never recomputed, re-rounded or capped here."}</p>
-        <p className="max-w-prose type-body">{report.goal === undefined ? "This read states no goal, so there is no committed-versus-goal comparison to state and none is invented." : GOAL_STATE_SENTENCE[report.goal.state]}</p>
+        <p className="max-w-prose type-supporting">{"Your support goal is compared against received cash in the Support goal section below."}</p>
+        <p className="max-w-prose type-body">{report.goal === undefined ? "No support goal is set for this account yet." : GOAL_STATE_SENTENCE[report.goal.state]}</p>
       </TabsContent>
       <TabsContent value="monthly" aria-label="Monthly equivalents" className="flex flex-col gap-3">
         {hasMonthlyEquivalents ? <MonthlyEquivalents envelope={envelope} period={period} locale={locale} /> : monthlyEquivalentsEmpty}
@@ -254,17 +254,17 @@ function MonthlyHistory({ report, locale }: { readonly report: SupportOverviewRe
   const partitions = useMemo(() => chartPartitions(report.series), [report]); // The partitions and the series drawn from them are derived once per answered report, so a re-render for another reason redraws nothing.
   const series = useMemo(() => partitions.map(chartSeriesOf), [partitions]);
   const partitionText = partitions.length === 0 ? "no currency stated" : partitions.map((partition) => partition.currency).join(", ");
-  const summary = fillTemplate(CHART_CAPTIONS.summaryOpener, { series: SERIES_LABEL, currency: partitionText, takeaway: "each month is drawn from the amount the source recorded in it, and a month it recorded nothing in is left undrawn and named below rather than drawn at zero" });
+  const summary = fillTemplate(CHART_CAPTIONS.summaryOpener, { series: SERIES_LABEL, currency: partitionText, takeaway: "each bar shows recorded cash for that month; uncovered months appear as gaps, not zeros" });
   const units = fillTemplate(CHART_CAPTIONS.unit, { currency: partitionText });
   const asOf = fillTemplate(CHART_CAPTIONS.asOf, { asOf: report.snapshot.asOf });
-  return <ChartFigure title="Received support by month" summary={summary} caption="Monthly received support, one plot per currency." kind="bar" series={series} units={units} coverage={report.snapshot.coverage} asOf={asOf} table={chartTable(partitions, locale)} locale={locale} />;
+  return <ChartFigure title="Received support by month" summary={summary} caption="Monthly received support, plotted separately by currency." kind="bar" series={series} units={units} coverage={report.snapshot.coverage} asOf={asOf} table={chartTable(partitions, locale)} locale={locale} />;
 }
 function Destinations(): ReactElement {
-  const links = [{ href: "/support/gifts", label: "Read the whole gifts ledger" }, { href: "/support/commitments", label: "Read the commitments" }, ...REPORT_ORDER.map((id) => ({ href: reportHref(id), label: REPORT_CATALOG[id].title }))];
+  const links = [{ href: "/support/gifts", label: "View all received gifts" }, { href: "/support/commitments", label: "View commitments" }, ...REPORT_ORDER.map((id) => ({ href: reportHref(id), label: REPORT_CATALOG[id].title }))];
   return (
-    <section aria-label="Destinations" className="flex flex-col gap-3">
-      <h3 className="type-subsection-title">Read the whole ledger, the commitments and the four reports</h3>
-      <ul className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+    <section aria-label="Reports and ledgers" className="flex flex-col gap-3">
+      <h3 className="type-subsection-title">Ledgers &amp; reports</h3>
+      <ul className="grid gap-2.5 @lg/main:grid-cols-2 @3xl/main:grid-cols-3">
         {links.map((link) => (
           <li key={link.href}>
             <SpotlightCard className="rounded-2xl">
@@ -283,7 +283,7 @@ function Destinations(): ReactElement {
           </li>
         ))}
       </ul>
-      <p className="max-w-prose text-xs text-muted-foreground">Each destination reads the same report result as this overview, so a figure there repeats the figure stated here rather than computing a second set of them.</p>
+      <p className="max-w-prose text-xs text-muted-foreground">Every ledger and report uses the same verified snapshot as this overview.</p>
     </section>
   );
 }
@@ -297,9 +297,9 @@ function OverviewFigures({ envelope, scope, locale, dir }: { readonly envelope: 
         <CashSummary envelope={envelope} locale={locale} />
       </section>
       <RecurringOutcomes envelope={envelope} />
-      <section aria-label="Committed support and the goal it is read beside" className="flex min-w-0 flex-col gap-3">
+      <section aria-label="Committed support" className="flex min-w-0 flex-col gap-3">
         <h3 className="type-subsection-title">Committed support</h3>
-        <p className="type-supporting max-w-prose">{"Commitments, committed amounts and the goal are measures of their own. They are read beside received support and are never added to it, divided by it, or presented as one combined figure."}</p>
+        <p className="type-supporting max-w-prose">{"Commitments and monthly equivalents are tracked alongside received cash and never combined with it."}</p>
         <CommittedSupport envelope={envelope} locale={locale} />
       </section>
       <MonthlyHistory report={report} locale={locale} />
@@ -310,18 +310,18 @@ function OverviewFigures({ envelope, scope, locale, dir }: { readonly envelope: 
   );
 }
 function OverviewAnswer({ result, error, retry, scope, locale, dir }: { readonly result: SupportOverviewRead | undefined; readonly error: Error | null; readonly retry: () => void; readonly scope: Scope; readonly locale: string; readonly dir: "ltr" | "rtl" | undefined }): ReactElement {
-  const retryAction = { label: "Read this period again", onClick: retry };
+  const retryAction = { label: "Try again", onClick: retry };
   if (result === undefined) {
     return error === null ? (
-      <StateNotice kind="loading" title="Reading this period's support" description="One answer carries the report result, the recurring outcomes and the monthly equivalents, so no figure is shown until that answer arrives." loadingLines={6} />
+      <StateNotice kind="loading" title="Loading Support…" description="Fetching your received gifts, recurring status, and commitments together." loadingLines={6} />
     ) : (
-      <StateNotice kind="unavailable" title="The support read could not be completed" description={error.message} retry={retryAction} />
+      <StateNotice kind="unavailable" title="Couldn’t load Support" description={error.message} retry={retryAction} />
     );
   }
   if (result.kind === "denied")
-    return <StateNotice kind="denied" title="Support is not available in this scope" description="This read is refused for the context this session is acting in. The refusal is the same whether or not records exist, so nothing here states a count, a title or a size." reasonCode={result.denied.reasonCode} />;
-  if (result.kind === "unavailable") return <StateNotice kind="unavailable" title="The financial source could not be read" description={result.unavailable.guidance} source={result.unavailable.source} retry={retryAction} />;
-  return result.kind === "refused" ? <StateNotice kind="refused" title="This period's request was refused" description={refusalSummary(result.refused)} /> : <OverviewFigures envelope={result.envelope} scope={scope} locale={locale} dir={dir} />;
+    return <StateNotice kind="denied" title="Support isn’t available in this context" description="Your current session doesn’t have permission to view support figures here." reasonCode={result.denied.reasonCode} />;
+  if (result.kind === "unavailable") return <StateNotice kind="unavailable" title="Couldn’t reach the giving source" description={result.unavailable.guidance} source={result.unavailable.source} retry={retryAction} />;
+  return result.kind === "refused" ? <StateNotice kind="refused" title="Couldn’t load this period" description={refusalSummary(result.refused)} /> : <OverviewFigures envelope={result.envelope} scope={scope} locale={locale} dir={dir} />;
 }
 export function SupportOverview({ scope, locale, dir, initialEnvelope, className }: SupportOverviewProps): ReactElement {
   const initialRead = useMemo(() => overviewReadOf(initialEnvelope), [initialEnvelope]);
@@ -332,7 +332,7 @@ export function SupportOverview({ scope, locale, dir, initialEnvelope, className
       <header className="flex min-w-0 flex-col gap-2">
         <h2 className="type-section-title text-pretty wrap-anywhere">Received support</h2>
         <p className="type-supporting max-w-prose">
-          {"Cash received on the one named basis this application measures, then the recurring outcomes that are not cash and the committed measures kept separate from both. Every figure states its period, its coverage and the instant it was read at, and a currency is never combined with another."}
+          {"Your received cash, recurring collection status, and commitments — each shown separately by currency with exact period coverage."}
         </p>
       </header>
       <OverviewAnswer result={query.data} error={query.error} retry={retry} scope={scope} locale={locale} dir={dir} />

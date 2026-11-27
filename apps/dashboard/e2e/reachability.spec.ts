@@ -200,7 +200,7 @@ async function sweepTheShell(page: Page, templates: readonly string[]): Promise<
     await awaitInteractiveWorkspace(page, `The ${SEEDED_PERSONAS[persona].label} session's entry route`);
   }
   async function visitPageReview(): Promise<void> {
-    await openShellDestination(page, "Pages"); // The Page review step, which exists only once a candidate does.
+    await openShellDestination(page, "Ministry pages"); // The Page review step, which exists only once a candidate does.
     await expect(page).toHaveURL(/\/pages$/u, { timeout: DESTINATION_TIMEOUT_MS });
     await followOnly('a[href^="/pages/"]:not([href^="/pages/review/"])', "The Pages index offers no Page to open, so the review step below it cannot be reached.", "A Page row on the index", "/pages");
     const submit = page.getByRole("button", { name: PAGE_SUBMIT_LABEL }).filter({ visible: true }).first();
@@ -213,7 +213,7 @@ async function sweepTheShell(page: Page, templates: readonly string[]): Promise<
     await expect(step, "The builder offered no review step for the draft it composes.").toBeVisible();
     await step.getByRole("button", { name: PAGE_SUBMIT_LABEL }).click();
     await expect(step.locator('[data-slot="action-review-result"][data-outcome="accepted"]'), "Submitting the seeded draft for review was not accepted, so no candidate exists for the review step to answer.").toBeVisible();
-    await openShellDestination(page, "Pages"); // And the index's own answer is the second proof: the review link it renders exists only for a candidate the service holds, so a refused submission would leave the index as it was and fail here.
+    await openShellDestination(page, "Ministry pages"); // And the index's own answer is the second proof: the review link it renders exists only for a candidate the service holds, so a refused submission would leave the index as it was and fail here.
     await expect(page).toHaveURL(/\/pages$/u, { timeout: DESTINATION_TIMEOUT_MS });
     await followOnly('a[href^="/pages/review/"]', "The Pages index renders a review link once an edition carries a frozen candidate, and it grew none after the draft was submitted.", "The review link on the Pages index", "/pages");
   }
@@ -229,14 +229,14 @@ async function sweepTheShell(page: Page, templates: readonly string[]): Promise<
   record("Coach view (shell navigation)", "/coaching");
   await followOnly('a[href^="/coaching/coach/"]', "The seeded coach holds an admitted grant, so its portfolio lists at least one subject to open.", "A portfolio subject row", "/coaching/coach");
   await actAs("reviewer");
-  await openShellDestination(page, "Communication");
+  await openShellDestination(page, "Updates");
   await expect(page).toHaveURL(/\/communication$/u, { timeout: DESTINATION_TIMEOUT_MS });
   await followOnly('a[href^="/communication/review/"]', "The seeded Update awaiting review is linked from the Updates list for the reviewer who answers it, and no such link was offered.", "The review link on the Updates list", "/communication");
   await actAs("reader-public");
-  await openShellDestination(page, "Communication");
-  await openShellDestination(page, "Receiving preview");
+  await openShellDestination(page, "Updates");
+  await openShellDestination(page, "Reader preview");
   await expect(page).toHaveURL(/\/preview$/u, { timeout: DESTINATION_TIMEOUT_MS });
-  record("Receiving preview (shell navigation)", "/communication");
+  record("Reader preview (shell navigation)", "/communication");
   const post = (await navigationTargetsOn(page)).find((href) => RECEIVED_EDITION_LINK.test(href));
   expect(post, "The public reader's receiving list holds a released edition, and it offered no post to open.").toBeDefined();
   await followAnchor(page, post ?? "");

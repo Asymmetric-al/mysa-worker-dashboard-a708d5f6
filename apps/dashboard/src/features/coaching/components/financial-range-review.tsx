@@ -24,11 +24,11 @@ const isoDay = (date: CivilDate | string): string => (typeof date === "string" ?
 function coverageStatement(coverage: Coverage): ReactNode {
   switch (coverage.state) {
     case "complete":
-      return "Coverage is complete for this period, so the figure is a complete total rather than a partial subtotal.";
+      return "Complete coverage for this period.";
     case "partial":
       return COACHING_COPY.coachSubject.partial;
     case "unknown":
-      return "The source does not state how much of this range it covers, so no figure here is presented as a complete total.";
+      return "Coverage for this range is unknown, so no figure is presented as a complete total.";
   }
 }
 function coverageBounds(coverage: Coverage): ReactNode {
@@ -36,12 +36,12 @@ function coverageBounds(coverage: Coverage): ReactNode {
   if (from !== null && to !== null) {
     return (
       <>
-        Stated coverage runs from {isoValue(from)} to {isoValue(to)}.
+        Coverage: {isoValue(from)} to {isoValue(to)}.
       </>
     );
   }
-  if (from !== null) return <>Stated coverage starts at {isoValue(from)}, with no end the source states.</>;
-  if (to !== null) return <>Stated coverage ends at {isoValue(to)}, with no start the source states.</>;
+  if (from !== null) return <>Coverage starts {isoValue(from)}.</>;
+  if (to !== null) return <>Coverage ends {isoValue(to)}.</>;
   return null;
 }
 const RangeCardHeader = (): ReactElement => (
@@ -59,7 +59,7 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
         <RangeCardHeader />
         <CardContent className="flex flex-col items-start gap-2">
           <Badge variant="outline">Not shared</Badge>
-          <p className="type-supporting break-words">No financial range has been shared with a coach yet. Choose the dates and review them on this page first: nothing from your support view becomes readable to a coach until you do.</p>
+          <p className="type-supporting break-words">No financial range shared yet. Choose dates and review them here before anything from Support becomes visible to your coach.</p>
         </CardContent>
       </Card>
     );
@@ -81,7 +81,7 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
             {formatting === null ? (
               <>
                 No amount shared
-                <span className="sr-only">No amount was shared for this range. This is neither zero nor an unknown amount: the read supplied no figure at all.</span>
+                <span className="sr-only">No amount was shared for this range.</span>
               </>
             ) : (
               <>
@@ -95,10 +95,10 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
             {bounds === null ? null : <span className="block">{bounds}</span>}
           </p>
           <p className="type-supporting">
-            As of <bdi className={cn("mono-identifier", ISO_VALUE_CLASS)}>{range.asOf}</bdi>, which is when these figures were read rather than when the source last changed.
+            As of <bdi className={cn("mono-identifier", ISO_VALUE_CLASS)}>{range.asOf}</bdi>.
           </p>
         </figure>
-        {range.valueState === "unavailable" ? <StateNotice kind="unavailable" title="This financial range cannot be read" description={FINANCIAL_RANGE_COPY.unavailable} headingLevel={3} /> : null}
+        {range.valueState === "unavailable" ? <StateNotice kind="unavailable" title="Couldn’t load this financial range" description={FINANCIAL_RANGE_COPY.unavailable} headingLevel={3} /> : null}
         <Separator />
         <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
           <dt className={TERM_CLASS}>{FIELD_LABELS.from}</dt>
@@ -111,27 +111,25 @@ export function FinancialRangeReview({ range, reviewedAt, reviewedByRole, locale
           </dd>
           <dt className={TERM_CLASS}>{FIELD_LABELS.basis}</dt>
           <dd className="min-w-0 break-words">
-            <data value={SUPPORT_BASIS}>
-              <bdi className="mono-identifier">{SUPPORT_BASIS}</bdi>
-            </data>
+            <data value={SUPPORT_BASIS}>Effective cash allocation</data>
           </dd>
           {reviewed === null ? null : (
             <>
               <dt className={TERM_CLASS}>{FIELD_LABELS.reviewed}</dt>
               <dd className="min-w-0 break-words">
-                {reviewedByRole === "worker" ? "By the worker at " : "At "}
+                {reviewedByRole === "worker" ? "Reviewed by missionary at " : "Reviewed at "}
                 <bdi className={cn("mono-identifier", ISO_VALUE_CLASS)}>{reviewed}</bdi>
               </dd>
             </>
           )}
         </dl>
         <section className="flex flex-col gap-1">
-          <h3 className="type-subsection-title">What this range measures</h3>
+          <h3 className="type-subsection-title">How this figure is calculated</h3>
           <p className="type-supporting">{BASIS_DESCRIPTION}</p>
         </section>
         <p className="type-supporting">{FINANCIAL_RANGE_COPY.rangeStatement}</p>
         <Alert role={undefined}>
-          <AlertTitle>What this range does not show</AlertTitle>
+          <AlertTitle>What stays private</AlertTitle>
           <AlertDescription>{FINANCIAL_RANGE_COPY.exclusions}</AlertDescription>
         </Alert>
       </CardContent>

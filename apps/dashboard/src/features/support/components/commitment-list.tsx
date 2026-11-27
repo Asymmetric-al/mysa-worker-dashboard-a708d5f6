@@ -21,14 +21,14 @@ type CommitmentView = CommitmentsEnvelope["data"]["commitments"][number];
 type ColumnVisibility = RecordListQueryState["columnVisibility"];
 export type CommitmentListProps = { readonly scope: Scope; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly initialEnvelope?: ReadEnvelope<unknown>; readonly className?: string };
 const SURFACE_LABEL = "Commitments";
-const OUTCOME_SR_PREFIX = "Recurring outcome";
+const OUTCOME_SR_PREFIX = "Recurring status";
 const READ_ONLY_BODY = [
-  "Commitments come from the source that owns them. This screen reads them and cannot post, retry, pause, resume, cancel or correct a payment, and no control here creates a gift, a message or a task.",
-  "A commitment is not received cash. A settled occurrence is stated as the source's own outcome, a collection in flight is not counted as received, and nothing on this surface is added to a received-support figure.",
+  "Commitments are read-only and come directly from your giving source. Mysa can’t pause, edit, retry, or cancel payments.",
+  "Commitments aren’t counted as received cash — in-flight collections stay separate until settled.",
 ] as const;
 const SNAPSHOT_FRAMING =
-  "A commitment is not received cash: these rows state the source's own cadence, currency and occurrence state, and none is counted in a received-support figure. The statement below names the one received-support basis and grain this application reports on — the measure these rows are deliberately kept outside of — with the coverage of the records behind this read and the instant it was evaluated at.";
-const UNRECOGNISED_KIND = "Unrecognised commitment type";
+  "Commitments stay separate from received cash. Below is the snapshot coverage and read time for this list.";
+const UNRECOGNISED_KIND = "Other commitment type";
 const PAUSE_STATUS: Readonly<Record<CommitmentView["pause"]["state"], { readonly label: string; readonly tone: StatusTone }>> = { active: { label: "Active", tone: "positive" }, paused: { label: "Paused", tone: "neutral" } };
 const UNSTATED_VALUE_STATE: ValueState = "unknown";
 const NOTHING_HIDDEN: ColumnVisibility = {};
@@ -51,7 +51,7 @@ function seedOf(candidate: ReadEnvelope<unknown> | undefined): CommitmentsEnvelo
   return !Array.isArray(data.commitments) || typeof data.total !== "number" || !Array.isArray(data.buckets) || !Array.isArray(data.commitmentKinds) ? undefined : typeof data.page !== "object" || data.page === null ? undefined : (candidate as CommitmentsEnvelope);
 }
 function StatedDate({ value }: { readonly value: string | null }): ReactElement {
-  if (value === null) return <span className="text-muted-foreground">No date stated</span>;
+  if (value === null) return <span className="text-muted-foreground">None</span>;
   return (
     <time dateTime={value} className="tabular-figures">
       <bdi>{value}</bdi>
@@ -66,7 +66,7 @@ function PauseFigure({ pause }: { readonly pause: CommitmentView["pause"] }): Re
       {pause.state === "paused" ? (
         <span className="text-xs text-muted-foreground">
           {pause.resumeOn === null ? (
-            "No resume date stated"
+            "No resume date"
           ) : (
             <>
               Resumes <StatedDate value={pause.resumeOn} />
@@ -90,16 +90,16 @@ function PartitionFigures({ buckets, kinds, outsideMeaning }: { readonly buckets
   const groups: readonly PartitionGroup[] = [
     {
       key: "outcomes",
-      heading: "Recurring outcomes",
+      heading: "Recurring status",
       note: outsideMeaning,
       termClassName: "min-w-0",
       valueClassName: "min-w-0 tabular-figures",
       rows: buckets.map((figure) => ({ key: figure.bucket, term: <StatusBadge {...BUCKET_STATUS[figure.bucket]} srPrefix={OUTCOME_SR_PREFIX} className="h-auto min-h-5 max-w-full py-0.5 text-start whitespace-normal" />, count: figure.count, valueState: figure.valueState })),
     },
-    { key: "kinds", heading: "Commitment kinds", termClassName: "min-w-0 break-words", valueClassName: "min-w-0", rows: kinds.map((figure) => ({ key: figure.kind, term: COMMITMENT_KIND_LABELS[figure.kind] ?? UNRECOGNISED_KIND, count: figure.count, valueState: figure.valueState })) },
+    { key: "kinds", heading: "Commitment types", termClassName: "min-w-0 break-words", valueClassName: "min-w-0", rows: kinds.map((figure) => ({ key: figure.kind, term: COMMITMENT_KIND_LABELS[figure.kind] ?? UNRECOGNISED_KIND, count: figure.count, valueState: figure.valueState })) },
   ];
   return (
-    <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+    <div className="grid min-w-0 gap-4 @2xl/main:grid-cols-2">
       {groups.map((group) => (
         <section key={group.key} aria-labelledby={`${labelBase}-${group.key}`} className="flex min-w-0 flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-xs">
           <p {...{ id: `${labelBase}-${group.key}`, className: "type-group-title border-b border-border/70 pb-2" }}>{group.heading}</p>
@@ -154,9 +154,9 @@ const ReadOnlyStatement = (): ReactElement => (
           </Link>
         ),
       },
-      { id: "kind", header: "Kind", enableSorting: false, cell: ({ row }) => <>{COMMITMENT_KIND_LABELS[row.original.kind] ?? UNRECOGNISED_KIND}</> },
-      { id: "cadence", header: "Cadence", enableSorting: false, cell: ({ row }) => <bdi className="break-words">{row.original.cadence}</bdi> },
-      { id: "perOccurrence", header: "Per occurrence", enableSorting: false, cell: ({ row }) => <AmountValue money={row.original.perOccurrence} valueState={recordedState(valueStates, row.original.commitmentRowId, "perOccurrence") ?? UNSTATED_VALUE_STATE} locale={locale} /> },
+      { id: "kind", header: "Type", enableSorting: false, cell: ({ row }) => <>{COMMITMENT_KIND_LABELS[row.original.kind] ?? UNRECOGNISED_KIND}</> },
+      { id: "cadence", header: "Schedule", enableSorting: false, cell: ({ row }) => <bdi className="break-words">{row.original.cadence}</bdi> },
+      { id: "perOccurrence", header: "Amount per gift", enableSorting: false, cell: ({ row }) => <AmountValue money={row.original.perOccurrence} valueState={recordedState(valueStates, row.original.commitmentRowId, "perOccurrence") ?? UNSTATED_VALUE_STATE} locale={locale} /> },
       {
         id: "outcome",
         header: OUTCOME_SR_PREFIX,
@@ -168,9 +168,9 @@ const ReadOnlyStatement = (): ReactElement => (
           </div>
         ),
       },
-      { id: "lastSuccessful", header: "Last successful", enableSorting: false, cell: ({ row }) => <StatedDate value={row.original.lastSuccessfulOn} /> },
-      { id: "nextEligible", header: "Next eligible", enableSorting: false, cell: ({ row }) => <StatedDate value={row.original.nextEligibleOn} /> },
-      { id: "pause", header: "Pause state", enableSorting: false, cell: ({ row }) => <PauseFigure pause={row.original.pause} /> },
+      { id: "lastSuccessful", header: "Last received", enableSorting: false, cell: ({ row }) => <StatedDate value={row.original.lastSuccessfulOn} /> },
+      { id: "nextEligible", header: "Next expected", enableSorting: false, cell: ({ row }) => <StatedDate value={row.original.nextEligibleOn} /> },
+      { id: "pause", header: "Status", enableSorting: false, cell: ({ row }) => <PauseFigure pause={row.original.pause} /> },
       {
         id: "fixedTotal",
         header: "Fixed total",
@@ -181,7 +181,7 @@ const ReadOnlyStatement = (): ReactElement => (
             return (
               <>
                 <span aria-hidden="true">—</span>
-                <span className="sr-only">No fixed total on this commitment</span>
+                <span className="sr-only">No fixed total</span>
               </>
             );
           }
@@ -196,7 +196,7 @@ const ReadOnlyStatement = (): ReactElement => (
         cell: ({ row }) => {
           const monthly = row.original.monthlyEquivalent;
           const recorded = recordedState(valueStates, row.original.commitmentRowId, "monthlyEquivalent");
-          return monthly === null ? <StatusBadge label="Not stated by the source" valueState={recorded ?? UNSTATED_VALUE_STATE} srPrefix={MEASURE_LABELS["monthly-equivalent-support"]} /> : <AmountValue money={moneyOf(monthly)} valueState={recorded ?? monthly.valueState} locale={locale} />;
+          return monthly === null ? <StatusBadge label="Not supplied" valueState={recorded ?? UNSTATED_VALUE_STATE} srPrefix={MEASURE_LABELS["monthly-equivalent-support"]} /> : <AmountValue money={moneyOf(monthly)} valueState={recorded ?? monthly.valueState} locale={locale} />;
         },
       },
     ];
@@ -219,11 +219,11 @@ const ReadOnlyStatement = (): ReactElement => (
     </div>
   );
   const failure = { label: "Try again", onClick: retry };
-  if (result === undefined && read.error !== null) return surface(<StateNotice kind="unavailable" headingLevel={2} title={`${SURFACE_LABEL} could not be read`} description="The read answered in a form this surface cannot state as a result, so no commitment, count or empty list stands in its place." retry={failure} />);
+  if (result === undefined && read.error !== null) return surface(<StateNotice kind="unavailable" headingLevel={2} title={`Couldn’t load ${SURFACE_LABEL}`} description="Couldn’t reach the giving source right now. Try again in a moment." retry={failure} />);
   if (result === undefined) return surface(<RecordList label={SURFACE_LABEL} columns={columns} rows={NO_ROWS} rowCount={0} queryState={listQueryState} onQueryStateChange={handleQueryStateChange} getRowId={rowIdOf} isLoading itemNoun="commitments" />, true);
   if (result.kind === "denied") return surface(<StateNotice kind="denied" headingLevel={2} title={SURFACE_LABEL} reasonCode={result.denied.reasonCode} />);
-  if (result.kind === "unavailable") return surface(<StateNotice kind="unavailable" headingLevel={2} title={`${SURFACE_LABEL} could not be read`} description={result.unavailable.guidance} source={result.unavailable.source} retry={failure} />);
-  if (result.kind === "refused") return surface(<StateNotice kind="refused" headingLevel={2} title="This list's request was refused" description={refusalSummary(result.refused)} />);
+  if (result.kind === "unavailable") return surface(<StateNotice kind="unavailable" headingLevel={2} title={`Couldn’t load ${SURFACE_LABEL}`} description={result.unavailable.guidance} source={result.unavailable.source} retry={failure} />);
+  if (result.kind === "refused") return surface(<StateNotice kind="refused" headingLevel={2} title="Couldn’t load Commitments" description={refusalSummary(result.refused)} />);
   const { data, actions, asOf, coverage } = result.envelope;
   if (data.total === 0) return surface(<StateNotice kind="empty" headingLevel={2} title={EMPTY_STATES.commitments.title} description={EMPTY_STATES.commitments.body} action={EMPTY_STATES.commitments.action} />, true);
   const additionalTypesAction = actions.find((action) => action.name === "showAdditionalTypes");
@@ -232,21 +232,21 @@ const ReadOnlyStatement = (): ReactElement => (
       <ReadOnlyStatement />
       <Card>
         <CardHeader>
-          <CardTitle>The family basis, the coverage and the read instant</CardTitle>
+          <CardTitle>Snapshot &amp; coverage</CardTitle>
           <CardDescription>{SNAPSHOT_FRAMING}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <SnapshotStatement basis={SUPPORT_BASIS} currencies={NO_CURRENCIES} period={null} coverage={coverage} asOf={asOf} isCurrentPeriod={false} locale={locale} />
           {additionalTypesAction === undefined ? null : (
             <div className="flex flex-col gap-1.5">
-              <p className="text-sm font-medium">Show additional source-supplied commitment types</p>
-              <p className="text-xs text-muted-foreground">{additionalTypesAction.reason ?? "The read states no reason for this option, so nothing is claimed for it here: the list below states every commitment the source reports and adds no commitment type of its own."}</p>
+              <p className="text-sm font-medium">Additional commitment types</p>
+              <p className="text-xs text-muted-foreground">{additionalTypesAction.reason ?? "All commitment types reported by your giving source are already shown below."}</p>
             </div>
           )}
         </CardContent>
       </Card>
       <div className="flex min-w-0 flex-col gap-3">
-        <p className="type-supporting">Every commitment the source reports sits in exactly one of five recurring outcomes, or outside all five when the evidence behind it is unknown or stale. These figures cover the whole list rather than the page shown.</p>
+        <p className="type-supporting">Counts below cover all commitments from your giving source, grouped by recurring status and type.</p>
         <PartitionFigures buckets={data.buckets} kinds={data.commitmentKinds} outsideMeaning={BUCKET_MEANING["outside-partition"]} />
       </div>
       <RecordList
@@ -262,16 +262,16 @@ const ReadOnlyStatement = (): ReactElement => (
         renderExpandedRow={(row) => (
           <div className="grid gap-3 text-xs sm:grid-cols-3">
             <div className="flex flex-col gap-1">
-              <span className="font-medium text-muted-foreground">Outcome meaning</span>
+              <span className="font-medium text-muted-foreground">Status meaning</span>
               <p className="text-pretty text-foreground">{BUCKET_MEANING[row.bucket]}</p>
             </div>
             <div className="flex flex-col gap-1">
-              <span className="font-medium text-muted-foreground">Schedule &amp; pause</span>
+              <span className="font-medium text-muted-foreground">Schedule</span>
               <span className="text-foreground">
                 Cadence: <bdi>{row.cadence}</bdi>
               </span>
               <span className="text-muted-foreground">
-                Last successful: <StatedDate value={row.lastSuccessfulOn} /> · Next eligible: <StatedDate value={row.nextEligibleOn} />
+                Last received: <StatedDate value={row.lastSuccessfulOn} /> · Next expected: <StatedDate value={row.nextEligibleOn} />
               </span>
             </div>
             <div className="flex flex-col items-start justify-between gap-2">
@@ -280,7 +280,7 @@ const ReadOnlyStatement = (): ReactElement => (
                 <span className="text-foreground">{COMMITMENT_KIND_LABELS[row.kind] ?? UNRECOGNISED_KIND}</span>
               </div>
               <Link href={detailHref(row.commitmentRowId, query)} className="inline-link inline-flex min-h-6 items-center font-medium text-foreground">
-                Open commitment details
+                View commitment details
               </Link>
             </div>
           </div>

@@ -3,20 +3,20 @@ import { minorUnitsOf, type MinorUnits } from "@/modules/money/amount";
 import { exponentOf, isKnownCurrency, UNKNOWN_CURRENCY } from "@/modules/money/currency";
 import { GOAL_MEASURE, type GoalAmountInput } from "@/modules/support/goal";
 const MESSAGES = {
-  amountRequired: "Enter the amount you want to set as the goal.",
-  amountNotFigures: "Enter the amount in figures, such as 1200 or 1200.50 — with a full stop before the decimals and no letters or symbols.",
+  amountRequired: "Enter a goal amount.",
+  amountNotFigures: "Enter numbers only (for example, 1200 or 1200.50), with a decimal point and no currency symbols.",
   amountNotPositive: "Enter an amount greater than zero.",
-  amountTooLarge: "Enter a smaller amount, because this figure is larger than the application holds exactly.",
-  currencyRequired: "Choose a currency the services report in, so the amount has a precision the source states rather than one this form assumes.",
-  measureInvalid: "A goal is set against received gifts, so save the amount and leave the measure as it is.",
-  dateRequired: "Enter the day this takes effect on.",
-  dateInvalid: "Enter a real calendar day as year, month and day.",
-  titleRequired: "Enter what the task is for, because a title is the one thing a task needs.",
-  titleTooLong: "Shorten the title to a phrase, so it reads at a glance in a list.",
-  categoryInvalid: "A category is text, so enter a short label or leave the field empty.",
-  categoryTooLong: "Shorten the category to a few words, or leave the field empty.",
-  partnerInvalid: "Choose the person or household from the search results, so the task names a record rather than a typed value.",
-  kindInvalid: "Choose Task or Meeting as the kind of work.",
+  amountTooLarge: "That amount is too large to store accurately. Enter a smaller figure.",
+  currencyRequired: "Choose one of the currencies reported for your account.",
+  measureInvalid: "Support goals apply to received gifts only.",
+  dateRequired: "Choose the date this goal takes effect.",
+  dateInvalid: "Enter a valid calendar date (YYYY-MM-DD).",
+  titleRequired: "Enter a task title.",
+  titleTooLong: "Keep the title under 200 characters.",
+  categoryInvalid: "Enter a short label or leave Category blank.",
+  categoryTooLong: "Keep the category under 60 characters.",
+  partnerInvalid: "Select a partner from the search results.",
+  kindInvalid: "Choose Task or Meeting.",
 } as const;
 const PLAIN_DIGITS = /^\d+$/u;
 const GROUPED_DIGITS = /^\d{1,3}(?:[,\u00A0\u202F ]\d{3})+$/u;

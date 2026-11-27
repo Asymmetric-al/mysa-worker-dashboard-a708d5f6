@@ -45,8 +45,8 @@ export function LocaleEditionSwitcher({ editions, selectedLocale, onSelectLocale
         <legend {...{ id: groupLabelId, className: "pb-2 text-start text-sm font-medium" as const }}>{copy.editions.heading}</legend>
         <div className="flex min-w-0 flex-col gap-2">
           <LocaleSwitcher locales={localeEditionsOf(editions)} requested={selectedLocale} served={selectedEdition?.locale} unavailable={selectedEdition === undefined} onRequest={onSelectLocale} label={copy.editions.localeLabel} />
-          <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">Switching language edition only changes which edition you are working on. It saves nothing, so nothing in this edition is written by choosing another.</p>
-          {disabled ? <p {...{ id: disabledReasonId, className: "text-xs text-muted-foreground text-pretty wrap-anywhere" as const }}>{"The language edition cannot be changed right now."}</p> : null}
+          <p className="text-xs text-muted-foreground text-pretty wrap-anywhere">Switching languages changes which edition you’re viewing without saving any edits.</p>
+          {disabled ? <p {...{ id: disabledReasonId, className: "text-xs text-muted-foreground text-pretty wrap-anywhere" as const }}>{"Language switching isn’t available right now."}</p> : null}
         </div>
       </fieldset>
       {editions.length === 0 ? null : (

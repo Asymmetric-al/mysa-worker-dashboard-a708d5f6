@@ -2,118 +2,118 @@ import { CHECKIN_MAX_ANSWER_SCALARS, CHECKIN_MAX_QUESTION_SCALARS, CHECKIN_MAX_Q
 import type { GrantLifecycleState, ModuleKey, ModuleReadState } from "@/modules/coaching/grant";
 import type { TargetMeasure, TargetPeriod, TargetState } from "@/modules/coaching/target";
 import { TASK_SUMMARY_MAX_CODE_POINTS, type TaskShareSummaryState } from "@/modules/coaching/taskshare";
-import { BASIS_DESCRIPTION, SUPPORT_BASIS, type SupportMeasure } from "@/modules/support/basis";
+import { BASIS_DESCRIPTION, type SupportMeasure } from "@/modules/support/basis";
 export type StateCopy = { readonly label: string; readonly description: string };
 export type ModuleCopy = { readonly name: string; readonly description: string };
 export const MODULE_COPY: Readonly<Record<ModuleKey, ModuleCopy>> = {
-  "support-goal": { name: "Support goal", description: "The support goal set for this ministry and how the current period stands against it, on the one basis every figure in this application uses. Sharing the goal shares the goal and its progress, and no gift row." },
-  "support-results": { name: "Support results", description: "Received support over a fixed range of dates you review before you share it, on that same named basis. It carries no donor, gift or commitment drilldown and no way to rebuild a total." },
-  targets: { name: "Targets", description: "The targets you set and how the current period is going, counted only from activity you recorded. The name you give a target stays with you and is never shared." },
-  "check-ins": { name: "Check-ins", description: "Only the check-in revisions you deliberately share, with the questions exactly as you worded them when you started writing. Your private writing stays private until you share it." },
-  "task-summaries": { name: "Task summaries", description: "Only the task summaries you select and review: a description you wrote for this purpose, the live due date and the live status, and never the task's own title, notes, links or history." },
+  "support-goal": { name: "Support goal", description: "Your support goal and current progress percentage — never individual gift records." },
+  "support-results": { name: "Support summary", description: "Received support totals for a fixed date range you review before sharing — no donor names, gift rows, or commitment breakdowns." },
+  targets: { name: "Activity targets", description: "Your activity targets and recorded progress. Your private label for each target stays private." },
+  "check-ins": { name: "Check-ins", description: "Only the specific check-in revisions you choose to share. Private drafts stay visible only to you." },
+  "task-summaries": { name: "Task summaries", description: "Only the tasks you explicitly select, using the summary you write plus due date and status — never private notes or links." },
 };
 export const MODULE_READ_STATE_COPY: Readonly<Record<ModuleReadState, StateCopy>> = {
-  empty: { label: "Nothing recorded", description: "This module is shared and nothing has been recorded in it for the dates you were given. It is an empty period rather than a hidden one, and it is not a zero." },
-  partial: { label: "Partly covered", description: "Some of this period's records can be read and some cannot yet. What is missing is stated as missing and is never counted as zero." },
-  withheld: { label: "Held until reviewed", description: "Content in this module is held because its reviewed meaning changed. Held is not empty: it stays out of view until the worker reviews it again." },
-  unavailable: { label: "Unavailable right now", description: "The source behind this module cannot be read at the moment. This is an outage that ends on its own — not an empty module, and not the end of the relationship." },
-  ended: { label: "Has ended", description: "The dates this module was shared for have run out, so nothing new appears here. Whether the coaching relationship continues is a separate question from this share ending." },
+  empty: { label: "Nothing recorded", description: "Shared for these dates, with no activity recorded in this period." },
+  partial: { label: "Partial coverage", description: "Some records in this date range are available and others aren’t yet. Missing data isn’t counted as zero." },
+  withheld: { label: "Paused for review", description: "Hidden until you review and re-approve your updated summary." },
+  unavailable: { label: "Unavailable right now", description: "Couldn’t load this module right now. Try again shortly — your sharing permissions haven’t changed." },
+  ended: { label: "Ended", description: "The shared date window has ended, so no new data appears here." },
 };
-/** The reading the domain states as `null`: a switched-on module whose content is whole, with nothing in it held, missing or unavailable. Both sharing surfaces take the one word and one sentence from here so neither can drift from the other. */
-export const MODULE_COMPLETE_COPY: StateCopy = { label: "Shared", description: "This module is switched on and your coach can read it inside the dates you chose. Nothing in it is held, missing or unavailable." };
+/** The reading the domain states as `null`: a switched-on module whose content is whole. */
+export const MODULE_COMPLETE_COPY: StateCopy = { label: "Shared", description: "On — your coach can view this module within the dates you chose." };
 export type MeasureCopy = { readonly label: string; readonly hint: string };
 export const MEASURE_COPY: Readonly<Record<TargetMeasure, MeasureCopy>> = {
-  "calls-made": { label: "Calls made", hint: "Counts only the individual calls you record as an interaction. Opening a dialler counts nothing, and a call you planned but have not made is not a call." },
-  "personal-messages": { label: "Personal messages", hint: "Counts only the messages to one person that you record as an interaction. A broadcast, an automated reply or a message that was opened counts nothing." },
-  conversations: { label: "Conversations", hint: "Counts only the conversations you record. A planned meeting, a missed meeting and a clicked link count nothing, and five calls that hold two conversations stay five and two." },
-  "meetings-held": { label: "Meetings held", hint: "Counts only the meetings you record as held. A meeting that was planned, booked or missed counts nothing, and completing the task behind it does not make it held." },
+  "calls-made": { label: "Calls made", hint: "Counts calls you log as completed activity (planned tasks aren’t counted)." },
+  "personal-messages": { label: "Personal messages", hint: "Counts one-to-one messages you log as completed activity (excludes mass updates)." },
+  conversations: { label: "Conversations", hint: "Counts real conversations you log with partners." },
+  "meetings-held": { label: "Meetings held", hint: "Counts meetings you log as completed (scheduled or missed meetings aren’t counted)." },
 };
 export type PeriodKind = TargetPeriod["kind"];
 export type PeriodKindCopy = { readonly label: string; readonly description: string };
 export const PERIOD_COPY: Readonly<Record<PeriodKind, PeriodKindCopy>> = {
-  weekly: { label: "Weekly", description: "Seven days from the weekday the target starts on. This is the period a new target uses, and a period still running says so until it closes." },
-  monthly: { label: "Monthly", description: "One calendar month from the day of the month you chose. A month too short for that day ends on its final day, and that resolution is stated beside the dates." },
-  custom: { label: "One-off period", description: "One first date and one last date that you name. It is a single period and not a rhythm: nothing repeats when it ends." },
+  weekly: { label: "Weekly", description: "Repeats every 7 days starting on your chosen day." },
+  monthly: { label: "Monthly", description: "Repeats each calendar month (shorter months end on their last day)." },
+  custom: { label: "One-off dates", description: "A single start-to-end date range that doesn’t repeat." },
 };
 export const TARGET_STATE_COPY: Readonly<Record<TargetState, StateCopy>> = {
-  "no-target": { label: "No target", description: "No target is set for this period. Setting one asks for a measure, a quantity and a period, and nothing is counted until activity is recorded against it." },
-  active: { label: "In progress", description: "The count comes only from activity records dated inside this period. The period is still running, so the count can still change." },
-  "zero-recorded": { label: "Nothing recorded yet", description: "No activity has been recorded in this period so far. It states a count of zero and says nothing about the effort you made: a conversation you record later counts from the day it happened." },
-  paused: { label: "Paused", description: "The target keeps its history and nothing is counted against it while it is paused. Periods that closed while it was live keep the plan they were measured against." },
-  ended: { label: "Ended", description: "The target has ended. Periods that closed while it was live keep the plan they were measured against, and ending a target changes no activity record." },
-  unplaced: { label: "Not on Home", description: "The target is active and you have not placed it on Home. Placement changes only what you see there: it creates no commitment and no reminder, and no coach can read it." },
-  unavailable: { label: "Unavailable", description: "The activity source behind this target cannot be read right now, so no count is shown. Unavailable is neither a zero nor an empty period." },
+  "no-target": { label: "No target", description: "No target set yet. Choose what to count, a goal number, and a timeframe." },
+  active: { label: "In progress", description: "Counts logged activity dated inside this active period." },
+  "zero-recorded": { label: "None logged yet", description: "0 logged so far in this period. Any activity you log later counts toward the date it occurred." },
+  paused: { label: "Paused", description: "Paused — past completed periods stay in your history while new activity isn’t tracked against this target." },
+  ended: { label: "Ended", description: "Ended — past periods remain in your history and your logged activities stay untouched." },
+  unplaced: { label: "Hidden from Home", description: "Active, but not pinned to your Home page." },
+  unavailable: { label: "Unavailable", description: "Couldn’t load activity totals right now — shown as unavailable rather than zero." },
 };
 export const TASK_SHARE_STATE_COPY: Readonly<Record<TaskShareSummaryState, StateCopy>> = {
-  shared: { label: "Shared", description: "The description you reviewed is current. The task's live due date and live status sit beside it, and sharing the summary created no interaction and no task." },
-  "needs-review": { label: "Held until you review it", description: "The reviewed description changed, so the summary is withheld until you review it again. Nothing new is shown in the meantime, and the task itself keeps working as before." },
-  removed: { label: "No longer shared", description: "You stopped sharing this summary. The task itself is untouched: it keeps its title, its due date and its status." },
-  unavailable: { label: "Unavailable", description: "The task behind this summary cannot be read at the moment. This is an outage, not an empty share and not a removal." },
+  shared: { label: "Shared", description: "Your coach sees this summary along with the task’s current due date and status." },
+  "needs-review": { label: "Needs review", description: "Paused because the summary changed — review and approve it before your coach sees updates." },
+  removed: { label: "Not shared", description: "Stopped sharing with your coach. Your task itself stays unchanged in Tasks." },
+  unavailable: { label: "Unavailable", description: "Couldn’t load this task right now. Try again in a moment." },
 };
 export const CHECK_IN_STATE_COPY: Readonly<Record<CheckInState, StateCopy>> = {
-  "private-draft": { label: "Private draft", description: "Saved for you alone. Autosave keeps this draft, and a coach can read nothing until you share a revision deliberately." },
-  shared: { label: "Shared", description: "One revision is shared, with the questions as they were worded when you started writing it. Your private draft and the shared revision stay separate: changing the draft changes nothing a coach can read until you update the shared revision." },
-  withdrawn: { label: "Withdrawn", description: "You withdrew the shared revision. The check-in keeps its record and stays yours, and nothing that was already seen can be recalled." },
-  unavailable: { label: "Unavailable", description: "The check-in source cannot be read at the moment. This is an outage, not an empty check-in." },
+  "private-draft": { label: "Private draft", description: "Only visible to you. Saved automatically until you choose to share a revision." },
+  shared: { label: "Shared", description: "A snapshot is shared with your coach. Further edits stay private until you share a new revision." },
+  withdrawn: { label: "Unshared", description: "No longer visible to your coach. Your check-in stays saved in your workspace." },
+  unavailable: { label: "Unavailable", description: "Couldn’t load this check-in right now. Your saved writing is safe." },
 };
 export const GRANT_STATE_COPY: Readonly<Record<GrantLifecycleState, StateCopy>> = {
-  invited: { label: "Invitation recorded", description: "The invitation exists in this application and names the person, the ministry, the modules and the duration. No module is switched on yet and the person has not accepted." },
-  accepted: { label: "Accepted, access not yet live", description: "The person accepted deliberately and access is not live yet. When the source behind a module cannot be read, the episode is accepted but access is unavailable; the other modules stay readable." },
-  active: { label: "Active", description: "Access is live until the agreed end. Only the modules you switched on can be read, and only inside the dates the invitation named." },
-  revoked: { label: "Revoked by the worker", description: "You revoked the grant, so no further reads are allowed from now on. Revoking stops access; it does not take back what a coach already saw." },
-  expired: { label: "Reached its agreed end", description: "The share window closed at the end chosen when the episode began. A date passed: this is neither a revocation nor an ending you chose." },
-  ended: { label: "Ended by the worker", description: "You ended the coaching relationship. A later action cannot reopen it, and ending it withdraws nothing that a coach already read." },
-  left: { label: "Left by the coach", description: "The coach left the relationship. This is not an ending you chose: your own work is unchanged and only the coach's access stops." },
-  superseded: { label: "Replaced by a newer invitation", description: "A newer invitation replaced this one before it was accepted, so it can no longer be accepted. Nothing was shared under it." },
+  invited: { label: "Invitation sent", description: "Recorded with the ministry, modules, and dates you chose. Nothing is visible until your coach accepts." },
+  accepted: { label: "Accepted", description: "Your coach accepted. Access becomes active for any modules you turn on." },
+  active: { label: "Active", description: "Your coach can view the modules you turned on until the end date." },
+  revoked: { label: "Access revoked", description: "You revoked access — your coach can no longer view any modules." },
+  expired: { label: "Expired", description: "The agreed sharing period ended automatically on its end date." },
+  ended: { label: "Ended by you", description: "You ended this coaching relationship. Your own records remain untouched." },
+  left: { label: "Coach stepped away", description: "Your coach left this coaching relationship. Your own records remain untouched." },
+  superseded: { label: "Replaced", description: "Replaced by a newer invitation before it was accepted." },
 };
 export type SharingOutcomeId = "delivery" | "identity-verification" | "deliberate-acceptance" | "active-access";
 export type SharingOutcomeCopy = { readonly id: SharingOutcomeId; readonly label: string; readonly description: string };
 type SharingOutcomeAt<Id extends SharingOutcomeId> = { readonly id: Id; readonly label: string; readonly description: string };
 export const SHARING_OUTCOME_COPY = [
-  { id: "delivery", label: "Invitation recorded", description: "The invitation was written down in this application and names the person and what would be shared. This says nothing about arrival and nothing about access: no message leaves this application, and a matching email address verifies nobody." },
-  { id: "identity-verification", label: "Identity verified", description: "The person's identity was verified against the account they act in. A matching address, an existing relationship or a staff title verifies nobody on its own." },
-  { id: "deliberate-acceptance", label: "Accepted deliberately", description: "The person accepted, as a decision of their own. Opening a link or previewing an invitation accepts nothing, and accepting on its own makes no module readable." },
-  { id: "active-access", label: "Access live", description: "Access is live for the modules switched on, inside the agreed dates. It ends at the agreed end even when a stored status still looks live." },
+  { id: "delivery", label: "Invitation recorded", description: "Saved in Mysa with your chosen modules and dates. No external email is sent in this demo." },
+  { id: "identity-verification", label: "Account verified", description: "Verified against the coach’s signed-in account — never assumed from a matching email or job title." },
+  { id: "deliberate-acceptance", label: "Coach accepted", description: "The coach explicitly chose to accept. Opening a preview never accepts automatically." },
+  { id: "active-access", label: "Sharing active", description: "Only the modules you turn on are visible, and access stops automatically on the end date." },
 ] as const satisfies readonly [SharingOutcomeAt<"delivery">, SharingOutcomeAt<"identity-verification">, SharingOutcomeAt<"deliberate-acceptance">, SharingOutcomeAt<"active-access">];
 export const STOP_EFFECTS = ["stop-module", "withdraw-check-in", "remove-task-share", "end-relationship", "coach-leave", "revoke"] as const;
 export type StopEffect = (typeof STOP_EFFECTS)[number];
 export type StopEffectCopy = { readonly title: string; readonly question: string; readonly consequence: string; readonly assurance: string };
 export const STOP_EFFECT_COPY: Readonly<Record<StopEffect, StopEffectCopy>> = {
   "stop-module": {
-    title: "Stop sharing a module",
+    title: "Stop sharing module",
     question: "Stop sharing this module?",
-    consequence: "The module stops being readable from now on and is no longer part of what the invitation shares. The other modules you switched on are unaffected.",
-    assurance: "The work in the module is not deleted: your targets, check-ins and task summaries stay exactly as they are. Nothing that was already seen can be recalled.",
+    consequence: "Your coach can no longer view this module. Other modules you’ve turned on aren’t affected.",
+    assurance: "Nothing is deleted — your targets, check-ins, and tasks stay right where they are. Stopping access applies going forward and doesn’t recall what was already seen.",
   },
   "withdraw-check-in": {
-    title: "Withdraw a shared check-in",
-    question: "Withdraw the shared revision of this check-in?",
-    consequence: "The shared revision stops being readable from now on. Your private draft is a separate revision and keeps working.",
-    assurance: "The check-in is not deleted: its record stays yours, and your private draft is untouched. Nothing that was already seen can be recalled.",
+    title: "Unshare check-in",
+    question: "Stop sharing this check-in?",
+    consequence: "Removes this check-in from your coach’s view. Your private draft stays untouched.",
+    assurance: "Your check-in isn’t deleted. Unsharing stops future access and doesn’t recall anything already seen.",
   },
   "remove-task-share": {
-    title: "Stop sharing a task summary",
+    title: "Stop sharing task summary",
     question: "Stop sharing this task summary?",
-    consequence: "The summary stops being readable from now on. The task keeps its title, its due date and its status, and it stays on your list.",
-    assurance: "The task is not deleted: stopping the share changes nothing about the work itself. Nothing that was already seen can be recalled.",
+    consequence: "Your coach will no longer see this task summary. The task stays in your Tasks list.",
+    assurance: "Your task isn’t deleted or modified.",
   },
   "end-relationship": {
-    title: "End the coaching relationship",
+    title: "End coaching relationship",
     question: "End this coaching relationship?",
-    consequence: "Every module stops being readable from now on, whatever dates the invitation named, and a later action cannot reopen the episode.",
-    assurance: "Your work is not deleted: targets, check-ins, task summaries and notes stay exactly as you left them. Nothing that was already seen can be recalled.",
+    consequence: "Immediately stops your coach’s access to every module. Ended relationships can’t be reopened.",
+    assurance: "Nothing in your workspace is deleted — your targets, check-ins, tasks, and notes all stay yours.",
   },
   "coach-leave": {
-    title: "Leave the coaching relationship",
+    title: "Leave coaching relationship",
     question: "Leave this coaching relationship?",
-    consequence: "Your access to every module stops from now on. The worker's own work carries on untouched, and this is recorded as you leaving rather than as the worker ending it.",
-    assurance: "The worker's work is not deleted, and nothing in this application changes it. Nothing that was already seen can be recalled: what you have already read stays read.",
+    consequence: "Ends your read-only access immediately. Recorded as you stepping away rather than the missionary ending it.",
+    assurance: "The missionary’s workspace and records remain untouched.",
   },
   revoke: {
-    title: "Revoke the grant",
-    question: "Revoke this coach's access?",
-    consequence: "Access stops from now on for every module, and the invitation that granted it can no longer be used.",
-    assurance: "Your work is not deleted, and the work behind each module stays as it was. Nothing that was already seen can be recalled.",
+    title: "Revoke coach access",
+    question: "Revoke this coach’s access?",
+    consequence: "Immediately stops access across every module and invalidates this invitation.",
+    assurance: "Nothing in your workspace is deleted. Revoking stops access going forward.",
   },
 };
 export type LimitCopy = {
@@ -125,95 +125,94 @@ export type LimitCopy = {
 };
 export const LIMIT_COPY: LimitCopy = {
   questionSetExceeded(count: number): string {
-    return `This check-in carries ${count} questions and the limit is ${CHECKIN_MAX_QUESTIONS}. ` + "Nothing was dropped: take one question out and save again, with every other question worded exactly as you wrote it.";
+    return `You have ${count} questions (limit is ${CHECKIN_MAX_QUESTIONS}). Remove one question before saving.`;
   },
   questionTextExceeded(index: number, count: number): string {
-    return `Question ${index} is ${count} characters long and the limit is ` + `${CHECKIN_MAX_QUESTION_SCALARS}. Nothing was dropped: word it within the limit and save again.`;
+    return `Question ${index} is ${count} characters (limit is ${CHECKIN_MAX_QUESTION_SCALARS}). Shorten it before saving.`;
   },
   answerTextExceeded(index: number, count: number): string {
-    return `Answer ${index} is ${count} characters long and the limit is ` + `${CHECKIN_MAX_ANSWER_SCALARS}. Nothing was dropped: word it within the limit and save again.`;
+    return `Answer ${index} is ${count} characters (limit is ${CHECKIN_MAX_ANSWER_SCALARS}). Shorten it before saving.`;
   },
   requestSizeExceeded(bytes: number): string {
-    return `This check-in comes to ${bytes} bytes and one check-in may hold ` + `${CHECKIN_MAX_REQUEST_BYTES}. Nothing was dropped: save what belongs in this check-in, and ` + "keep anything else for a check-in of its own.";
+    return `This check-in is ${bytes} bytes (limit is ${CHECKIN_MAX_REQUEST_BYTES}). Trim it slightly or split notes into a second check-in.`;
   },
   taskDescriptionExceeded(codePoints: number): string {
-    return `The description is ${codePoints} characters long and the limit is ` + `${TASK_SUMMARY_MAX_CODE_POINTS}. Nothing was dropped: bring it within the limit and review ` + "it again before it is shared.";
+    return `This summary is ${codePoints} characters (limit is ${TASK_SUMMARY_MAX_CODE_POINTS}). Shorten it before sharing.`;
   },
 };
 export type TargetPlanRefusals = { readonly measureUnknown: string; readonly quantityNotANumber: string; readonly quantityNotWhole: string; readonly quantityBelowOne: string; readonly periodUnknown: string; readonly calendarDateNotADay: string; readonly privateLabelEmpty: string; readonly targetNotNamed: string };
-/** What a target plan refuses and why, in the words the field shows: each sentence names the field, the requirement it broke and what is accepted instead, so no validator's own wording reaches a worker. The date sentence is shared by every date this feature validates, so it states the one format they all use rather than this form's field name. */
 export const TARGET_PLAN_REFUSALS: TargetPlanRefusals = {
-  measureUnknown: "What to count is one of four measures — calls made, personal messages, conversations or meetings held — and this entry is none of them. Choose one of the four and save again.",
-  quantityNotANumber: "How many in each period is a whole number you type, and this entry holds no number at all. An empty entry is refused rather than read as zero: type the count you want and save again.",
-  quantityNotWhole: "How many in each period counts whole things, so a fraction is refused rather than rounded into a number you did not type. Type a whole number and save again.",
-  quantityBelowOne: "How many in each period is one or more, so a count of zero or below is refused. Type a count of at least one and save again.",
-  periodUnknown: "Period is weekly, monthly or a one-off custom period, and this entry is none of the three. Choose one of them and save again.",
-  calendarDateNotADay: "Every date here is a real calendar day written YYYY-MM-DD — 2026-09-12 is one — and this entry is not: check the day, the month and the year and save again.",
-  privateLabelEmpty: "Your name for this target is a name you type, and an empty one is refused rather than filled in for you. Name the target in your own words and save again.",
-  targetNotNamed: "This change belongs to one target, so reload the targets and choose the target again.",
+  measureUnknown: "Choose one of the four activity types: Calls made, Personal messages, Conversations, or Meetings held.",
+  quantityNotANumber: "Enter a target number for each period.",
+  quantityNotWhole: "Enter a whole number (no decimals).",
+  quantityBelowOne: "Enter at least 1.",
+  periodUnknown: "Choose Weekly, Monthly, or One-off dates.",
+  calendarDateNotADay: "Enter a valid calendar date (YYYY-MM-DD, for example 2026-09-12).",
+  privateLabelEmpty: "Enter a private name for this target.",
+  targetNotNamed: "Couldn’t identify which target to update. Reload Targets and try again.",
 };
 export type FinancialRangeCopy = { readonly heading: string; readonly purpose: string; readonly basisStatement: string; readonly rangeStatement: string; readonly exclusions: string; readonly measuresNote: string; readonly measures: Readonly<Record<SupportMeasure, string>>; readonly unavailable: string };
 export const FINANCIAL_RANGE_COPY: FinancialRangeCopy = {
-  heading: "Financial range you shared",
-  purpose: "A fixed range of dates that you reviewed before sharing, reported on the same basis as every other figure in this application.",
-  basisStatement: `Every figure in this range is reported on the one named basis this application measures, ` + `${SUPPORT_BASIS}, and on no other. ${BASIS_DESCRIPTION}`,
-  rangeStatement: "The range covers the first date and the last date you reviewed and nothing outside them. Sharing it is a separate decision from sharing targets, check-ins or task summaries, and it never widens to all history.",
-  exclusions: "The range carries no donor, gift or commitment drilldown, no per-record amounts and no way to rebuild a total from what is shown. A value that cannot be read is stated as unavailable and is never shown as zero.",
-  measuresNote: "The measures below are five different facts and never five parts of one total, so no two of them are added together.",
+  heading: "Shared support summary",
+  purpose: "High-level totals for a fixed date range you review before sharing.",
+  basisStatement: `Effective cash allocation — ${BASIS_DESCRIPTION}`,
+  rangeStatement: "Covers only the start and end dates you choose — never your entire giving history.",
+  exclusions: "No donor names, individual gifts, or commitment rows are shared. Unavailable figures are shown as unavailable rather than zero.",
+  measuresNote: "Each measure below is tracked separately and never combined into one figure.",
   measures: {
-    "received-gifts": "Received gifts: cash the source counted as received inside the range, and nothing else.",
-    "recurring-collection-outcomes": "Recurring collection outcomes: what happened to each scheduled collection. An occurrence still processing is not received money.",
-    commitments: "Commitments: what has been promised. A promise is never cash and never a received figure.",
-    "monthly-equivalent-support": "Monthly-equivalent support: the source's own qualification of recurring support, not an average of the gifts in the range.",
-    "support-goal": "Support goal: the goal set for the ministry. Sharing a goal is a separate decision from sharing results.",
+    "received-gifts": "Received gifts: verified cash received during this date range.",
+    "recurring-collection-outcomes": "Recurring collections: status of scheduled recurring gifts (in-flight payments aren’t counted as cash).",
+    commitments: "Commitments: standing pledges (kept separate from received cash).",
+    "monthly-equivalent-support": "Monthly equivalents: source-calculated recurring estimates (not averaged from gifts).",
+    "support-goal": "Support goal: your personal goal (shared separately from support results).",
   },
-  unavailable: "The source behind this range cannot be read right now. The range is unavailable rather than empty, and your other shared modules stay readable.",
+  unavailable: "Couldn’t load this support summary right now. Your other shared modules stay available.",
 };
 export type CoachingSurface = "overview" | "targets" | "checkIns" | "sharing" | "coachPortfolio" | "coachSubject";
 export type SurfaceCopy = { readonly heading: string; readonly purpose: string; readonly empty: string; readonly partial: string; readonly unavailable: string };
 export const COACHING_COPY: Readonly<Record<CoachingSurface, SurfaceCopy>> = {
   overview: {
     heading: "Coaching",
-    purpose: "Optional private preparation, and the one place you decide what a coach may read, for how long, and in which ministry.",
-    empty: "You have not set any coaching preparation up yet. Prepare privately first — write a check-in for yourself or set a target — and invite a coach when you are ready to share something.",
-    partial: "Part of your preparation is ready and part is not. Nothing becomes readable by a coach until you switch a module on and the person accepts.",
-    unavailable: "Some of your coaching preparation cannot be read right now. What you have already saved is untouched; try again in a moment.",
+    purpose: "Track personal ministry targets, write private check-ins, and choose exactly what to share with a coach.",
+    empty: "Nothing set up yet. Start privately with an activity target or check-in, and invite a coach whenever you’re ready.",
+    partial: "Some coaching data loaded and some is temporarily unavailable. Nothing is shared with a coach until you turn it on and they accept.",
+    unavailable: "Couldn’t load Coaching right now. Your saved work is safe — try again in a moment.",
   },
   targets: {
     heading: "Targets",
-    purpose: "Targets count only the calls, messages, conversations and meetings you actually recorded, over a weekly, monthly or one-off period.",
-    empty: "No target yet. Set one — a measure, a quantity and a period — and it will count only the activity you record from then on.",
-    partial: "Some of this period's activity can be read and some cannot yet. The part that cannot be read is stated as missing rather than counted as zero.",
-    unavailable: "The activity source behind your targets cannot be read right now. Targets are unavailable rather than empty, and nothing you recorded has changed.",
+    purpose: "Set personal weekly, monthly, or one-off goals for calls, personal messages, conversations, and meetings.",
+    empty: "No activity targets yet. Create one to track your logged ministry outreach.",
+    partial: "Some activity records couldn’t be loaded right now. Missing data isn’t counted as zero.",
+    unavailable: "Couldn’t load your activity totals right now. Your logged activities are safe.",
   },
   checkIns: {
     heading: "Check-ins",
-    purpose: "Write check-ins privately and share one revision deliberately; sharing a check-in creates no notification, no interaction and no task.",
-    empty: "No check-in yet. Start one and write as much or as little as you like; a coach reads nothing until you share a revision.",
-    partial: "Some of your check-ins can be read and some cannot yet. One that cannot be reached stays listed and is never shown as an empty check-in.",
-    unavailable: "Check-ins cannot be read right now. This is an outage rather than an empty list, and your saved writing is untouched.",
+    purpose: "Reflect privately on your ministry and share selected revisions with your coach when ready.",
+    empty: "No check-ins yet. Start a private check-in — your coach sees nothing until you choose to share it.",
+    partial: "Some check-ins couldn’t load right now. Try refreshing in a moment.",
+    unavailable: "Couldn’t load Check-ins right now. Your saved drafts are untouched.",
   },
   sharing: {
-    heading: "Who can see what",
-    purpose: "Invite one named coach, for the ministries you choose and a duration you choose, and switch on only the modules you want read.",
-    empty: "No coaching relationship is set up yet. Invite a coach by naming the person, the ministry, the modules and a duration; modules start switched off and nothing is readable until the person accepts.",
-    partial: "Some modules are switched on and some are off. Only the ones you switched on can be read, and only inside the dates you named.",
-    unavailable: "Sharing details cannot be read right now. Access follows the invitation you already recorded; nothing has widened while this is unavailable.",
+    heading: "Sharing & coach access",
+    purpose: "Invite a coach for a chosen ministry and timeframe, and toggle exactly which modules they can see.",
+    empty: "You aren’t sharing with a coach yet. Invite a coach when you’re ready — all modules start off until you turn them on.",
+    partial: "Only the modules toggled on below are visible to your coach within your chosen dates.",
+    unavailable: "Couldn’t load sharing settings right now. Existing permissions remain unchanged.",
   },
   coachPortfolio: {
-    heading: "Coaching relationships",
-    purpose: "Read-only: what workers have deliberately shared with you as their coach, and nothing else.",
-    empty: "Nothing is shared with you yet. A relationship appears here only when a worker invites you and you accept it, and then only the modules that worker switched on.",
-    partial: "Part of what was shared with you can be read and part cannot yet. The part that cannot be read is stated rather than shown as empty.",
-    unavailable: "Coaching relationships cannot be read right now. This is an outage, not an empty portfolio.",
+    heading: "Coach view",
+    purpose: "Read-only overview of missionaries who have invited you and chosen to share modules with you.",
+    empty: "No missionaries are sharing with you yet. Invitations appear here once accepted.",
+    partial: "Some shared modules couldn’t load right now and are marked unavailable.",
+    unavailable: "Couldn’t load Coach view right now. Try again in a moment.",
   },
   coachSubject: {
-    heading: "What this worker shared",
-    purpose: "Read-only: the modules this worker switched on, inside the dates they chose.",
-    empty: "This module has nothing recorded for the dates you were given. The other modules you were given stay available.",
-    partial: "Part of this module can be read and part cannot yet. What is missing is stated as missing and is never counted as zero.",
-    unavailable: "The source behind this module cannot be read right now. The other modules you were given stay available.",
+    heading: "Shared by missionary",
+    purpose: "Read-only view of the modules this missionary chose to share with you.",
+    empty: "Nothing recorded in this module for the shared dates. Other shared modules remain available.",
+    partial: "Some data in this module couldn’t load right now and isn’t counted as zero.",
+    unavailable: "Couldn’t load this module right now. Other shared modules remain available.",
   },
 };
 export const TARGET_VERSION_GUARANTEE =
-  "A change to the quantity, the measure or the calendar start begins a new version of the plan from the date it takes effect, and a period that has closed keeps the version it was measured against: no two versions cover the same day, and the period where a change landed is never split into a prorated bridge.";
+  "Changing a target’s measure, goal number, or start date creates a new version from its effective date while keeping completed past periods unchanged.";

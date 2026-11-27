@@ -62,13 +62,13 @@ function spokenNameOf(variant: VariantTab): string {
     return (
       <div data-slot="variant-switcher" data-family={family} data-no-editions="true" className={cn("flex min-w-0 flex-col gap-2", className)}>
         <span className="text-start text-sm leading-none font-medium">{label}</span>
-        <p className="type-supporting text-start text-pretty wrap-anywhere">{"No edition you are permitted to read is listed here."}</p>
+        <p className="type-supporting text-start text-pretty wrap-anywhere">{"No editions available."}</p>
       </div>
     );
   }
   let announcement: ReactNode;
   if (active === undefined) {
-    announcement = "No edition is selected here.";
+    announcement = "No edition selected.";
   } else {
     announcement = (
       <>

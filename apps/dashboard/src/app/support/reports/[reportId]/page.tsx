@@ -40,21 +40,20 @@ const PARAM = {
 } as const;
 const WHOLE_YEAR = /^[0-9]{1,4}$/u;
 const PAGE_COPY = {
-  deniedTitle: "This report is not available in this context",
-  deniedBody: "This session may not read received support in the context it is working in, so no figure, count, " + "period or coverage is stated here — a refusal is not an empty report. Another context, if this " + "session holds one, can be chosen from the shell.",
-  unavailableTitle: "This report could not be read",
-  refusedTitle: "This report's request was refused",
-  retry: "Retry this read",
-  unknownTitle: "That report is not one of the four",
-  unknownBody: "This application reports received support in four fixed ways, and this address names none of " + "them. No other report is computed and none is substituted for it, because a report that looks " + "like the one you asked for is worse than a report you know is different.",
-  unknownAction: "Open the support overview",
-  listHeading: "The four reports",
-  amountRangeNeedsBoth: "State both bounds of an amount range: one bound on its own states no range, and no report is computed from half of one.",
-  amountBound: "State an amount bound as a whole number of the selected currency's minor units. A bound that is not one is refused rather than rounded, because rounding would change which rows match.",
-  methodNotApplicable:
-    "This report's projection carries no giving-method or classification field, so a method filter cannot be applied to it. Remove the method from the address: a report read without it would be presented, on the screen, in the CSV and on the printed page, as the filtered result the address stated, which is the one thing a financial surface must never do.",
-  pageIndex: "State the page as a whole number of pages from 0, the first page.",
-  pageSize: "State the page size as a whole number of rows.",
+  deniedTitle: "This report isn’t available in this context",
+  deniedBody: "Your current session doesn’t have permission to view support reports here. Switch ministry context from the sidebar if you have access to another one.",
+  unavailableTitle: "Couldn’t load this report",
+  refusedTitle: "Some report filters aren’t valid",
+  retry: "Try again",
+  unknownTitle: "Report not found",
+  unknownBody: "That address doesn’t match one of the four support reports. Pick one of the reports below or return to Support.",
+  unknownAction: "Back to Support",
+  listHeading: "Available reports",
+  amountRangeNeedsBoth: "Enter both a minimum and maximum amount to filter by range.",
+  amountBound: "Enter amount bounds as whole minor units of the selected currency (for example, 10000 for 100.00).",
+  methodNotApplicable: "This report doesn’t support a giving-method filter. Remove the method parameter to run it accurately.",
+  pageIndex: "Enter page as a whole number starting at 0.",
+  pageSize: "Enter page size as a whole number of rows.",
 } as const;
 type AddressProblem = { readonly field: string; readonly message: string };
 const statedText = (search: SearchParams, name: string): string | undefined => firstValueOf(search[name]);

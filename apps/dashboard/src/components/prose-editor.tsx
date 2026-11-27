@@ -19,7 +19,7 @@ import { cn } from "@/lib/cn";
 import { Toolbar, ToolbarButton, ToolbarGroup, ToolbarSeparator } from "@/lib/ui-sdk";
 import { ADMITTED_HEADING_LEVELS, CONTENT_PROFILE_VERSION, admittedPasteDecision, parseDocument, type ContentBlockNode, type ContentDirection, type ContentDocumentJson, type ContentSection, type PasteDecision } from "@/modules/content/document";
 const PREVIEW_LIMIT = 600;
-const PASTE_NOTICE = "Images and video are added with the toolbar buttons, so they are prepared, placed and saved with the content. Nothing was inserted here.";
+const PASTE_NOTICE = "Add images and videos using the toolbar buttons so they’re prepared and saved with your draft.";
 const EDITOR_PROSE_CLASS = cn(
   "min-h-40 w-full px-3 py-2.5 text-sm leading-6 text-foreground outline-none",
   "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
@@ -180,21 +180,21 @@ function PasteDecisionDialog({ pending, onChoose }: PasteDecisionDialogProps) {
       <Button {...{ ref: convertRef, type: "button", variant: canConvert ? "default" : "outline", onClick: () => onChoose("convert"), disabled: !canConvert }}>Convert to supported text</Button>
     </>
   );
-  const description = "Nothing is inserted until you choose. Formatting outside this editor's text profile is dropped, and direction-control characters are removed rather than stored.";
+  const description = "Pick how to insert your clipboard content. Unsupported formatting and hidden direction characters are cleaned automatically.";
   return (
     <EditorDialog open={pending !== null} onClose={() => onChoose("cancel")} title="Choose how to paste" description={description} initialFocus={() => (canConvert ? convertRef.current : plainTextRef.current)} footer={footer}>
       {pending === null ? null : (
         <div className="grid gap-2">
           <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/40 p-3 text-xs break-words whitespace-pre-wrap">
-            <bdi>{preview === "" ? "This clipboard carries no text to preview." : preview}</bdi>
+            <bdi>{preview === "" ? "No text found in clipboard." : preview}</bdi>
           </div>
-          {pending.previewTruncated ? <p className="text-xs text-muted-foreground">The preview is shortened.</p> : null}
+          {pending.previewTruncated ? <p className="text-xs text-muted-foreground">Preview shortened.</p> : null}
           {pending.dropped.length === 0 ? null : (
             <p className="text-xs text-muted-foreground">
-              Not kept: <bdi>{pending.dropped.join(", ")}</bdi>.
+              Formatting removed: <bdi>{pending.dropped.join(", ")}</bdi>.
             </p>
           )}
-          {canConvert ? null : <p className="text-xs text-muted-foreground">Converting keeps only the supported structure, and this paste brings none of it, so it would insert nothing. Inserting it as plain text keeps the words.</p>}
+          {canConvert ? null : <p className="text-xs text-muted-foreground">Converting keeps only supported formatting, which leaves nothing here. Insert as plain text to keep the words.</p>}
         </div>
       )}
     </EditorDialog>
@@ -219,9 +219,9 @@ function LinkDestinationDialog({ open, href, error, onHrefChange, onApply, onCan
     </>
   );
   return (
-    <EditorDialog open={open} onClose={onCancel} title="Link destination" description="An absolute http or https address, or a path beginning with /. A link opens only where the content is read, never inside this editor." initialFocus={() => fieldRef.current} footer={footer}>
+    <EditorDialog open={open} onClose={onCancel} title="Add link" description="Enter a web address starting with http:// or https://, or a path starting with /. Links open for readers, not inside the editor." initialFocus={() => fieldRef.current} footer={footer}>
       <div className="grid gap-1.5">
-        <Label htmlFor={fieldId}>Web address</Label>
+        <Label htmlFor={fieldId}>Link URL</Label>
         <Input ref={fieldRef} id={fieldId} type="text" inputMode="url" autoComplete="off" spellCheck={false} value={href} onChange={changeHref} onFocus={selectHref} onKeyDown={submitOnEnter} aria-invalid={error !== null} aria-describedby={error === null ? undefined : errorId} />
         {error === null ? null : (
           <p id={errorId} className="text-xs text-destructive">
@@ -422,12 +422,12 @@ export function ProseEditor({ initialDocument, direction, label, onChange, onReq
           </Frame>
         )}
         {contentIssue === null ? null : (
-          <NoticeAlert {...{ variant: "destructive", icon: true, title: "Some content could not be read", dismissLabel: "Dismiss the content message", onDismiss: () => setContentIssue(null) }}>
+          <NoticeAlert {...{ variant: "destructive", icon: true, title: "Some formatting couldn’t be loaded", dismissLabel: "Dismiss formatting notice", onDismiss: () => setContentIssue(null) }}>
             <p>{contentIssue}</p>
-            <p>The rest of the text is here and can still be edited.</p>
+            <p>The rest of your text is intact and ready to edit.</p>
           </NoticeAlert>
         )}
-        {mediaPasteNotice ? <NoticeAlert {...{ title: "A file was pasted", dismissLabel: "Dismiss the paste message", onDismiss: () => setMediaPasteNotice(false) }}>{PASTE_NOTICE}</NoticeAlert> : null}
+        {mediaPasteNotice ? <NoticeAlert {...{ title: "Use the toolbar for media", dismissLabel: "Dismiss media notice", onDismiss: () => setMediaPasteNotice(false) }}>{PASTE_NOTICE}</NoticeAlert> : null}
         <PasteDecisionDialog pending={pendingPaste} onChoose={applyPendingPaste} />
         <LinkDestinationDialog open={linkDraft.open} href={linkDraft.href} error={linkDraft.error} onHrefChange={(href) => setLinkDraft((draft) => ({ ...draft, href, error: null }))} onApply={applyLink} onCancel={() => setLinkDraft({ open: false, href: "", error: null })} />
       </section>

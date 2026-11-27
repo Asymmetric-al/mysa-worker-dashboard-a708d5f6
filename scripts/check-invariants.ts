@@ -1,12 +1,38 @@
-/** Enforces the two invariants Oxlint 1.94.0 has no rule for, as part of `bun run lint`. */ import { readdir, readFile } from "node:fs/promises";
+/** Enforces repository invariants Oxlint 1.94.0 has no rule for, as part of `bun run lint`:
+ * 1. No raw colour literals outside `globals.css`.
+ * 2. No floating-point money arithmetic in money/support/export modules.
+ * 3. Boundary date/time arithmetic goes through `src/modules/time` only.
+ * 4. No component, feature, or route derives a financial total.
+ * 5. No original media filename or original media bytes reference escapes the ingestion/store boundary.
+ * 6. No raw Unicode bidi control character is embedded in application source, and `content/document.ts` rejects them.
+ * 7. Exactly one Tiptap editor configuration (`prose-editor.tsx`) and one static renderer (`modules/content/render.ts`).
+ */
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 const ROOT = path.join(import.meta.dir, "..");
 const APP_SOURCE = path.join(ROOT, "apps", "dashboard", "src");
 const COLOUR_DIRECTORIES = ["components", "features", "app"];
-const COLOUR_EXTENSIONS = [".ts", ".tsx"];
+const CODE_EXTENSIONS = [".ts", ".tsx"];
 const MONEY_DIRECTORIES = [path.join("modules", "money"), path.join("modules", "support"), path.join("modules", "export")];
 const MONEY_EXTENSIONS = [".ts"];
 const MONEY_MODULE_DIRECTORY = path.join("modules", "money");
+const DOCUMENT_SCHEMA_FILE = "apps/dashboard/src/modules/content/document.ts";
+const TIPTAP_EDITOR_FILE = "apps/dashboard/src/components/prose-editor.tsx";
+const TIPTAP_RENDERER_FILE = "apps/dashboard/src/modules/content/render.ts";
+const MEDIA_ORIGINAL_ALLOWED_PREFIXES = [
+  "apps/dashboard/src/modules/media/",
+  "apps/dashboard/src/modules/store/",
+  "apps/dashboard/src/modules/dev-runtime/",
+] as const;
+const MEDIA_ORIGINAL_ALLOWED_FILES = new Set<string>([
+  "apps/dashboard/src/modules/data-service/envelope.ts",
+  "apps/dashboard/src/modules/data-service/mutations/content.ts",
+]);
+const WALL_CLOCK_UI_ALLOWED = new Set<string>([
+  "apps/dashboard/src/components/dev-panel.tsx",
+  "apps/dashboard/src/features/shell/copy/dev-labels.ts",
+  "apps/dashboard/src/features/shell/components/viewer-preferences-provider.tsx",
+]);
 type InvariantRule = { readonly name: string; readonly pattern: RegExp };
 const COLOUR_RULES: readonly InvariantRule[] = [
   { name: "colour-arbitrary-value", pattern: /\[#[0-9a-fA-F]{3,8}\]/ },
@@ -22,6 +48,25 @@ const MONEY_MODULE_RULES: readonly InvariantRule[] = [
   { name: "money-math-ceil", pattern: /Math\.ceil\s*\(/ },
   { name: "money-math-trunc", pattern: /Math\.trunc\s*\(/ },
 ];
+const TIME_BOUNDARY_MODULE_RULES: readonly InvariantRule[] = [
+  { name: "time-boundary-date-ctor", pattern: /\bnew\s+Date\s*\(/ },
+  { name: "time-boundary-date-parse", pattern: /\bDate\.parse\s*\(/ },
+  { name: "time-boundary-elapsed-day", pattern: /\b(?:86_?400(?:_?000)?|604_?800(?:_?000)?)\b/ },
+];
+const TIME_BOUNDARY_UI_RULES: readonly InvariantRule[] = [
+  { name: "time-boundary-date-ctor", pattern: /\bnew\s+Date\s*\(/ },
+  { name: "time-boundary-elapsed-day", pattern: /\b(?:86_?400(?:_?000)?|604_?800(?:_?000)?)\b/ },
+];
+const UI_TOTAL_RULES: readonly InvariantRule[] = [
+  { name: "ui-financial-total-helper", pattern: /\b(?:addMinor|subtractMinor|sumMinor)\b/ },
+  { name: "ui-financial-total-reduce", pattern: /\.reduce\s*\([^)]*minorUnits\b/ },
+];
+const MEDIA_ORIGINAL_RULES: readonly InvariantRule[] = [
+  { name: "media-original-ref-leak", pattern: /\bsourceOriginalRef\b/ },
+  { name: "media-original-path-leak", pattern: /media-originals/ },
+];
+const BIDI_CONTROL_LITERAL = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
+const TIPTAP_IMPORT_PATTERN = /from\s+["'](@tiptap\/[^"']+)["']/;
 const NUMBER_LITERAL = /(?<![\w$.])(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][-+]?\d[\d_]*)?)(?![\w$])/gu; // A candidate numeric literal, so a hex, octal or binary integer can be told apart from a fractional one.
 const ADMITTED_QUOTES = new Set(['"', "'", "`"]);
 type Violation = { readonly file: string; readonly line: number; readonly name: string; readonly source: string };
@@ -121,6 +166,66 @@ function moneyViolations(file: string, lines: readonly string[], inMoneyModule: 
   });
   return violations;
 }
+function timeBoundaryViolations(file: string, lines: readonly string[]): readonly Violation[] {
+  if (file.startsWith("apps/dashboard/src/modules/time/") || WALL_CLOCK_UI_ALLOWED.has(file)) return [];
+  const inModules = file.startsWith("apps/dashboard/src/modules/");
+  const inUi = file.startsWith("apps/dashboard/src/components/") || file.startsWith("apps/dashboard/src/features/") || file.startsWith("apps/dashboard/src/app/");
+  if (!inModules && !inUi) return [];
+  const rules = inModules ? TIME_BOUNDARY_MODULE_RULES : TIME_BOUNDARY_UI_RULES;
+  const violations: Violation[] = [];
+  lines.forEach((line, index) => {
+    if (isCommentLine(line)) return;
+    const { bare } = scanLine(line);
+    for (const name of rulesFired(rules, bare)) violations.push(violation(file, index + 1, name, line));
+  });
+  return violations;
+}
+function uiFinancialTotalViolations(file: string, lines: readonly string[]): readonly Violation[] {
+  const violations: Violation[] = [];
+  lines.forEach((line, index) => {
+    if (isCommentLine(line)) return;
+    const { bare } = scanLine(line);
+    for (const name of rulesFired(UI_TOTAL_RULES, bare)) violations.push(violation(file, index + 1, name, line));
+  });
+  return violations;
+}
+function mediaOriginalViolations(file: string, lines: readonly string[]): readonly Violation[] {
+  if (MEDIA_ORIGINAL_ALLOWED_FILES.has(file) || MEDIA_ORIGINAL_ALLOWED_PREFIXES.some((prefix) => file.startsWith(prefix))) return [];
+  const violations: Violation[] = [];
+  lines.forEach((line, index) => {
+    if (isCommentLine(line)) return;
+    const { code } = scanLine(line);
+    for (const name of rulesFired(MEDIA_ORIGINAL_RULES, code)) violations.push(violation(file, index + 1, name, line));
+  });
+  return violations;
+}
+function bidiControlViolations(file: string, lines: readonly string[]): readonly Violation[] {
+  if (file === DOCUMENT_SCHEMA_FILE) {
+    const joined = lines.join("\n");
+    if (!/BIDI_CONTROL_PATTERN\s*=\s*\/.*\\u061C.*\\u200E.*\\u200F.*\\u202A-\\u202E.*\\u2066-\\u2069.*\//u.test(joined)) {
+      return [violation(file, 1, "bidi-guard-incomplete", "BIDI_CONTROL_PATTERN must reject U+061C, U+200E, U+200F, U+202A-U+202E, and U+2066-U+2069")];
+    }
+    return [];
+  }
+  const violations: Violation[] = [];
+  lines.forEach((line, index) => {
+    if (BIDI_CONTROL_LITERAL.test(line)) violations.push(violation(file, index + 1, "bidi-control-literal", line));
+  });
+  return violations;
+}
+function tiptapBoundaryViolations(file: string, lines: readonly string[]): readonly Violation[] {
+  const violations: Violation[] = [];
+  lines.forEach((line, index) => {
+    if (isCommentLine(line)) return;
+    const match = TIPTAP_IMPORT_PATTERN.exec(scanLine(line).code);
+    if (match === null) return;
+    const pkg = match[1] ?? "";
+    const allowedInEditor = file === TIPTAP_EDITOR_FILE && !pkg.startsWith("@tiptap/static-renderer");
+    const allowedInRenderer = file === TIPTAP_RENDERER_FILE && pkg.startsWith("@tiptap/static-renderer");
+    if (!allowedInEditor && !allowedInRenderer) violations.push(violation(file, index + 1, "tiptap-single-owner", line));
+  });
+  return violations;
+}
 /** Every file under `directory` whose name ends in one of `extensions`, in a stable order. */ async function collectFiles(directory: string, extensions: readonly string[]): Promise<readonly string[]> {
   const entries = (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name));
   const files: string[] = [];
@@ -136,22 +241,37 @@ const relative = (file: string): string => path.relative(ROOT, file).split(path.
 async function main(): Promise<number> {
   let colourFiles: readonly string[];
   let moneyFiles: readonly string[];
+  let allSourceFiles: readonly string[];
   const violations: Violation[] = [];
   try {
     await readdir(APP_SOURCE); // The source root is read first: a tree that cannot be read is a failure (2), never a clean verdict (0).
-    colourFiles = (await Promise.all(COLOUR_DIRECTORIES.map((directory) => collectFiles(path.join(APP_SOURCE, directory), COLOUR_EXTENSIONS)))).flat();
+    colourFiles = (await Promise.all(COLOUR_DIRECTORIES.map((directory) => collectFiles(path.join(APP_SOURCE, directory), CODE_EXTENSIONS)))).flat();
     moneyFiles = (await Promise.all(MONEY_DIRECTORIES.map((directory) => collectFiles(path.join(APP_SOURCE, directory), MONEY_EXTENSIONS)))).flat();
-    if (colourFiles.length === 0 || moneyFiles.length === 0) throw new Error(`no files were found to scan (${String(colourFiles.length)} colour, ${String(moneyFiles.length)} money)`);
+    allSourceFiles = await collectFiles(APP_SOURCE, CODE_EXTENSIONS);
+    if (colourFiles.length === 0 || moneyFiles.length === 0 || allSourceFiles.length === 0) throw new Error(`no files were found to scan (${String(colourFiles.length)} colour, ${String(moneyFiles.length)} money, ${String(allSourceFiles.length)} source)`);
+    const colourFileSet = new Set(colourFiles);
+    const moneyFileSet = new Set(moneyFiles);
     const moneyModuleRoot = path.join(APP_SOURCE, MONEY_MODULE_DIRECTORY) + path.sep;
-    for (const file of colourFiles) violations.push(...colourViolations(relative(file), await readLines(file)));
-    for (const file of moneyFiles) violations.push(...moneyViolations(relative(file), await readLines(file), file.startsWith(moneyModuleRoot)));
+    for (const file of allSourceFiles) {
+      const rel = relative(file);
+      const lines = await readLines(file);
+      if (colourFileSet.has(file)) {
+        violations.push(...colourViolations(rel, lines));
+        violations.push(...uiFinancialTotalViolations(rel, lines));
+      }
+      if (moneyFileSet.has(file)) violations.push(...moneyViolations(rel, lines, file.startsWith(moneyModuleRoot)));
+      violations.push(...timeBoundaryViolations(rel, lines));
+      violations.push(...mediaOriginalViolations(rel, lines));
+      violations.push(...bidiControlViolations(rel, lines));
+      violations.push(...tiptapBoundaryViolations(rel, lines));
+    }
   } catch (error) {
     process.stderr.write(`invariant check: cannot read the application source tree under ${APP_SOURCE}: ${String(error)}\n`);
     return 2;
   }
   violations.sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line || left.name.localeCompare(right.name));
   for (const entry of violations) process.stdout.write(`${entry.file}:${String(entry.line)}: ${entry.name}: ${entry.source}\n`);
-  process.stdout.write(`invariant check: ${String(colourFiles.length)} colour files, ${String(moneyFiles.length)} money files, ${String(violations.length)} violations\n`);
+  process.stdout.write(`invariant check: ${String(colourFiles.length)} UI files, ${String(moneyFiles.length)} money files, ${String(allSourceFiles.length)} total source files, ${String(violations.length)} violations\n`);
   return violations.length === 0 ? 0 : 1;
 }
 process.exitCode = await main();

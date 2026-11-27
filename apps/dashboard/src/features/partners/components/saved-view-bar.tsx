@@ -97,10 +97,10 @@ function viewIsInUse(view: SavedViewQueryState, query: RosterQueryState): boolea
   if (view.pageSize !== undefined && view.pageSize !== query.pageSize) return false;
   return view.columnVisibility === undefined || Object.entries(view.columnVisibility).every(([columnId, visible]) => query.columnVisibility[columnId] === visible);
 }
-const SAVED_VIEW_PART_COPY = { filter: "Filter", value: (facet: string): string => `Value in the ${facet} filter`, column: "Column", pageSize: "Rows per page" } as const;
-const SAVED_VIEW_BAR_COPY = { trigger: "Saved views", triggerName: (repairCount: number): string => (repairCount === 0 ? "Saved views" : `Saved views, ${String(repairCount)} needs repair`), apply: "Apply", cancel: "Cancel" } as const;
+const SAVED_VIEW_PART_COPY = { filter: "Filter", value: (facet: string): string => `Option in ${facet}`, column: "Column", pageSize: "Rows per page" } as const;
+const SAVED_VIEW_BAR_COPY = { trigger: "Saved views", triggerName: (repairCount: number): string => (repairCount === 0 ? "Saved views" : `Saved views (${String(repairCount)} need repair)`), apply: "Apply", cancel: "Cancel" } as const;
 const RECEIPT_HEADING_LEVEL = 3;
-const SAVE_FIELD_LABELS: Readonly<Record<string, string>> = { name: "View name", viewId: "View", queryState: "Stored choices", "queryState.search": "Search text", "queryState.applied": "Selected filters", "queryState.pageSize": "Rows per page" };
+const SAVE_FIELD_LABELS: Readonly<Record<string, string>> = { name: "View name", viewId: "View", queryState: "Saved filters", "queryState.search": "Search text", "queryState.applied": "Active filters", "queryState.pageSize": "Rows per page" };
 const RENAME_FIELD_LABELS: Readonly<Record<string, string>> = { name: "View name", viewId: "View" };
 const DELETE_FIELD_LABELS: Readonly<Record<string, string>> = { viewId: "View" };
 const ITEM_CLASS = "h-auto min-h-8 whitespace-normal";
@@ -108,10 +108,10 @@ type SavedViewOperation = "save" | "update" | "repair" | "rename";
 const OPERATION_CAPTION: Readonly<Record<SavedViewOperation, string>> = { save: "Saved view", update: "Updated view", repair: "Repaired view", rename: "Renamed view" };
 const RECEIPT_NOTICE_COPY: OutcomeNoticeCopy = {
   denied: { title: SURFACE_STATE_COPY["saved-view"].denied.title, description: SURFACE_STATE_COPY["saved-view"].denied.body },
-  unavailable: { title: "This change did not reach the source", description: "The stored view is as it was: the request did not arrive, so nothing about its choices changed." },
-  unknown: { title: "This change is not confirmed" },
+  unavailable: { title: "Couldn’t save right now", description: "The service didn’t respond, so your saved view wasn’t changed." },
+  unknown: { title: "Couldn’t confirm change" },
   retryLabel: PARTNER_ACTION_LABELS.retry,
-  checkResultLabel: "Check the result",
+  checkResultLabel: "Check result",
 };
 type OutcomeReceiptProps = { readonly operation: SavedViewOperation; readonly viewName: string; readonly outcome: MutationOutcome; readonly onCheckResult: () => void; readonly onRetrySameWork: () => void; readonly onReapply: (currentRevision: string) => void; readonly fieldLabels: Readonly<Record<string, string>> };
 function OutcomeReceipt({ operation, viewName, outcome, onCheckResult, onRetrySameWork, onReapply, fieldLabels }: OutcomeReceiptProps): ReactElement {
@@ -147,7 +147,7 @@ function ViewMenuSection({ view, drift, inUse, canWrite, busy, driftNoteId, onAp
   const applyBlocked = busy || drift === null || drifted;
   const changes: ReadonlyArray<{ readonly key: string; readonly label: string; readonly onSelect: () => void; readonly destructive?: boolean }> = changeable
     ? [
-        { key: "update", label: "Update with the choices on screen", onSelect: () => onUpdate(view) },
+        { key: "update", label: "Update with current filters", onSelect: () => onUpdate(view) },
         { key: "rename", label: "Rename", onSelect: () => onRename(view) },
         ...(drift !== null && drifted ? [{ key: "repair", label: SAVED_VIEW_COPY.repair.title, onSelect: () => onRepair(view, drift) }] : []),
         { key: "delete", label: "Delete", onSelect: () => onDelete(view), destructive: true },
@@ -341,8 +341,8 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
             <DropdownMenuContent align="start" className="w-80 max-w-[calc(100vw-2rem)]">
               <DropdownMenuLabel className="text-sm text-foreground">{SAVED_VIEW_BAR_COPY.trigger}</DropdownMenuLabel>
               <p className="px-3 pb-2 type-supporting">{SAVED_VIEW_COPY.leavesRecordsAlone.body}</p>
-              {entries.length > 0 ? null : <p className="px-3 pb-2 type-supporting">No view is stored for this roster yet. Save the choices on screen to keep them.</p>}
-              {entries.length > 0 && !driftKnown ? <p {...{ id: driftNoteId, className: "px-3 pb-2 type-supporting" }}>The filters this context offers have not been read, so a stored view cannot be checked against them and is not applied until they are.</p> : null}
+              {entries.length > 0 ? null : <p className="px-3 pb-2 type-supporting">No saved views yet. Save your current filters to reuse them anytime.</p>}
+              {entries.length > 0 && !driftKnown ? <p {...{ id: driftNoteId, className: "px-3 pb-2 type-supporting" }}>Filters haven’t loaded yet, so saved views can’t be checked or applied until they do.</p> : null}
               {entries.length === 0 ? null : <DropdownMenuSeparator />}
               {entries.map((entry) => (
                 <ViewMenuSection
@@ -363,7 +363,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
               {canWrite ? (
                 <DropdownMenuItem {...{ className: ITEM_CLASS, disabled: busy, onClick: openSave }}>Save current view</DropdownMenuItem>
               ) : (
-                <p className="px-3 py-2 type-supporting">{withheldReason === "" ? "This context admits reading a stored view and not changing one, so no view is saved, renamed or deleted here." : withheldReason}</p>
+                <p className="px-3 py-2 type-supporting">{withheldReason === "" ? "You can view saved views here, but you don’t have permission to create, edit, or delete them." : withheldReason}</p>
               )}
             </DropdownMenuContent>
           </DropdownMenu>
@@ -390,7 +390,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
             </AlertTitle>
             <AlertDescription>
               <p>{SAVED_VIEW_COPY.drift.body}</p>
-              <p className="mt-2 type-group-title text-foreground">Unavailable in this context now:</p>
+              <p className="mt-2 type-group-title text-foreground">No longer available here:</p>
               <ul className="mt-1 flex list-disc flex-col gap-1 ps-5">
                 {unavailablePartsOf(drift).map((part) => (
                   <li key={part}>
@@ -424,7 +424,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
             onCancel={() => setDeleteTarget(null)}
             description={
               <p className="type-supporting text-pretty">
-                {SAVED_VIEW_COPY.delete.body} The view named <bdi>{deleteTarget.name}</bdi> is the only thing removed, and no saved-view action brings a deleted view back.
+                {SAVED_VIEW_COPY.delete.body} Deleting <bdi>{deleteTarget.name}</bdi> can’t be undone.
               </p>
             }
             input={{ scope, expectedRevision: deleteTarget.revision, payload: { viewId: deleteTarget.id } }}
@@ -444,7 +444,7 @@ export default function SavedViewBar({ scope, admittedColumnKeys, initialResult,
           <OutcomeReceipt operation="rename" viewName={renameOperation.viewName} outcome={renameView.outcome} onCheckResult={checkResult} onRetrySameWork={() => replayRename()} onReapply={replayRename} fieldLabels={RENAME_FIELD_LABELS} />
         </div>
       )}
-      {busy ? <output className="text-sm text-muted-foreground text-pretty">Saving once. The receipt appears below when the partner source answers.</output> : null}
+      {busy ? <output className="text-sm text-muted-foreground text-pretty">Saving view…</output> : null}
       <NameViewDialog panel={panel} name={nameDraft} error={nameErrors} pending={panel?.mode === "rename" ? renameView.isPending : saveView.isPending} onNameChange={setNameDraft} onSubmit={() => void submitName()} onCancel={closePanel} />
     </section>
   );

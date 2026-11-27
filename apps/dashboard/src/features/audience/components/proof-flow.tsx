@@ -45,18 +45,18 @@ const EMAIL_FIELD = "email";
 const SIGNUP_FIELD_LABELS: Readonly<Record<string, string>> = { email: "Email address", publisherId: "Publisher", purpose: "Purpose", displayName: "Display name", languagePreference: "Reading language" };
 const CONFIRM_FIELD_LABELS: Readonly<Record<string, string>> = { membershipId: "The membership this confirmation applies to" };
 const SURFACE_COPY = {
-  entitlement: "One membership, for this publisher and this purpose only. No other publisher, no other purpose and no other record about you changes here.",
+  entitlement: "Applies to this ministry’s update emails only.",
   emailLabel: "Email address",
-  emailDescription: "The address this membership is set for. It is stored as a value on the membership and is never used to look up, match or merge another record.",
-  addressFact: "Address on this membership",
-  languageFact: "Reading language recorded for this publisher",
-  awaitingReadback: "Nothing on this page confirmed the address: confirmation is the person's own act, and the control appears here once the service has read this membership back as awaiting proof.",
-  closedReason: "The service reports this window as closed, so this address cannot be confirmed now. The control stays in place and disabled, so a closed window is never mistaken for a missing action.",
-  noWindowStated: "This surface was given no window state, so the control asks the service, which refuses a confirmation outside the window the acceptance recorded.",
-  storedWindowLead: "The acceptance recorded for this address set its confirmation window to end at",
-  storedWindowTail: "Confirming inside that window is what made this membership active. That window is neither a delivery nor a reading.",
-  offNoControl: "Changing that choice is the person's own act on the preferences surface, so this flow offers no control that would turn notices on.",
-  restrictedNoControl: "A restriction is not a preference, and confirming an address never clears one, so this flow offers no control here.",
+  emailDescription: "Saved only for this subscription — never used to match or merge other records.",
+  addressFact: "Email address",
+  languageFact: "Reading language",
+  awaitingReadback: "Refreshing subscription status… Confirm below once ready.",
+  closedReason: "The confirmation window has expired — request update emails again to start a fresh window.",
+  noWindowStated: "Confirmation is checked against the server when you confirm.",
+  storedWindowLead: "Confirmation window closed at",
+  storedWindowTail: "Confirming inside that window activated your email updates.",
+  offNoControl: "Use the notification switch above if you’d like to turn update emails back on.",
+  restrictedNoControl: "This subscription has a restriction applied at the source.",
 } as const;
 const MessageFact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-1.5", termClassName: "text-muted-foreground", valueClassName: "min-w-0 wrap-anywhere" });
 function DeadlineStatement({ deadlineLabel, expired, id }: { readonly deadlineLabel: string; readonly expired: boolean; readonly id: string }): ReactElement {

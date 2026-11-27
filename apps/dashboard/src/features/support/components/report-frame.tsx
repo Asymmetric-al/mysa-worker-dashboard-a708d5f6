@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useMemo, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import StateNotice from "@/components/state-notice";
 import { refusalSummary } from "@/components/form-field";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -9,9 +9,10 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/cn";
 import { isRecord } from "@/lib/guards";
+import { fetchRead } from "@/lib/read-transport";
 import { assertNever } from "@/lib/result";
 import { sameScope, type Coverage, type CoverageState, type GiftAttribution, type ReadEnvelope, type Scope } from "@/modules/data-service/envelope";
-import { printModel } from "@/modules/export/print";
+import { printModel, WHOLE_QUERY_PRINT_MAX_ROWS } from "@/modules/export/print";
 import { matrixDrilldownQuery, type MatrixCell, type ReportQuery, type ReportResult } from "@/modules/support/report";
 import { COVERAGE_TEMPLATES, REPORT_NOT_FOUND, fillTemplate } from "../copy";
 import { GIFTS_PARAM } from "../gift-params";
@@ -32,8 +33,8 @@ export type ReportFrameProps = {
   readonly onSelectYear?: (year: number) => void;
   readonly className?: string;
 };
-const LOADING_BODY = "No figure is shown until the read answers, because a report written before the answer would state a number nobody computed.";
-const COVERAGE_NOTE_TITLES: Readonly<Partial<Record<CoverageState, string>>> = { partial: "Coverage of this period is partial", unknown: "How much of this period the source covers is unknown" };
+const LOADING_BODY = "Fetching verified figures for this report.";
+const COVERAGE_NOTE_TITLES: Readonly<Partial<Record<CoverageState, string>>> = { partial: "Partial period coverage", unknown: "Coverage dates not specified" };
 const NO_YEARS: readonly number[] = [];
 /** The page window the address states, in the read's own vocabulary: a page index counted from zero, and the rows it holds, which travel together because a row count without a page states no window. */ const PAGE_PARAM = "page";
 function isReportResult(value: unknown): value is ReportResult {
@@ -76,7 +77,7 @@ function requestQueryOf(query: ReportQuery): ReportRequestQuery {
 }
 function coverageNoteOf(coverage: Coverage): { readonly title: string; readonly body: string } | null {
   const title = COVERAGE_NOTE_TITLES[coverage.state];
-  return title === undefined ? null : { title, body: fillTemplate(COVERAGE_TEMPLATES[coverage.state], { from: coverage.from ?? "a date the source does not state", to: coverage.to ?? "a date the source does not state" }) };
+  return title === undefined ? null : { title, body: fillTemplate(COVERAGE_TEMPLATES[coverage.state], { from: coverage.from ?? "an unspecified date", to: coverage.to ?? "an unspecified date" }) };
 } /** The gifts address one matrix cell opens: the query that cell stands for, stated in the ledger's own filter set. */
 function cellDrilldownHref(query: ReportQuery, attribution: GiftAttribution, cell: MatrixCell): string {
   const drilldown = matrixDrilldownQuery(query, attribution, cell.currency, cell.bucketStart, cell.bucketEnd); // The narrowing is derived here from the query the matrix was computed from, the row's own attribution and the cell's month, so no cell carries a copy of the query behind it.
@@ -127,7 +128,7 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
   const read = useReport({ scope, query: requestQuery, snapshotId, enabled: recognised, initialAnswer: seededAnswer });
   const answer = read.data;
   const envelope = answer === undefined ? (read.isError ? undefined : seed) : answer.kind === "envelope" ? answer.envelope : undefined;
-  const retry = { label: "Retry the read", onClick: (): void => void read.refetch() };
+  const retry = { label: "Try again", onClick: (): void => void read.refetch() };
   const selectYear = useCallback(
     (year: number): void => {
       if (onSelectYear !== undefined) {
@@ -150,8 +151,50 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
     },
     [pathname, router],
   );
+  const [wholeQueryPrintState, setWholeQueryPrintState] = useState<{ readonly snapshotId: string; readonly source: ReportEnvelope; readonly envelope: ReportEnvelope | null; readonly error: string | null } | null>(null);
+  const activePrint = wholeQueryPrintState?.snapshotId === snapshotId && wholeQueryPrintState.source === envelope ? wholeQueryPrintState : null;
+  const wholeQueryEnvelope = activePrint?.envelope ?? null;
+  useEffect(() => {
+    if (wholeQueryEnvelope === null) return;
+    const clearPrint = (): void => setWholeQueryPrintState((current) => (current?.envelope === wholeQueryEnvelope ? null : current));
+    window.addEventListener("afterprint", clearPrint, { once: true });
+    const frame = window.requestAnimationFrame(() => window.print());
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("afterprint", clearPrint);
+    };
+  }, [wholeQueryEnvelope]);
+  const requestWholeQueryPrint = useCallback(async (): Promise<void> => {
+    if (envelope === undefined) return;
+    const { page: _omitPage, ...withoutPage } = requestQuery;
+    const wholeQueryRequest: ReportRequestQuery = { ...withoutPage, wholeQuery: true };
+    const attempt = { snapshotId, source: envelope, envelope: null, error: null };
+    setWholeQueryPrintState(attempt);
+    const finish = (result: ReportEnvelope | null, error: string | null): void =>
+      setWholeQueryPrintState((current) => (current === attempt ? { ...attempt, envelope: result, error } : current));
+    try {
+      const response = await fetchRead<ReportEnvelope["data"], ReportEnvelope["coverage"]>({ url: "/api/report", body: { query: wholeQueryRequest, snapshotId: reportSnapshotId(wholeQueryRequest) }, admits: isReportResult });
+      if (response.kind === "envelope" && sameScope(response.envelope.scope, scope) && response.envelope.revision === envelope.revision && response.envelope.asOf === envelope.asOf) {
+        finish(response.envelope, null);
+        return;
+      }
+      const message =
+        response.kind === "refused"
+          ? refusalSummary(response.refused)
+          : response.kind === "unavailable"
+            ? response.unavailable.guidance
+            : response.kind === "denied"
+              ? "Your current session doesn’t have permission to print this report."
+              : "The report snapshot changed while preparing the print. Refresh the report and try again.";
+      finish(null, message);
+    } catch {
+      finish(null, "Couldn’t load the full-query report for printing. Try again in a moment.");
+    }
+  }, [envelope, requestQuery, scope, snapshotId]);
   const answeredResult = envelope === undefined ? null : envelope.data; // The one print model of the answered result: built when the result or the locale changes and reused in between, so a re-render for another reason rebuilds no cell, and `null` exactly when no envelope stands.
+  const activePrintEnvelope = wholeQueryEnvelope ?? envelope;
   const model = useMemo(() => (answeredResult === null ? null : printModel(answeredResult, { locale })), [answeredResult, locale]);
+  const activePrintModel = useMemo(() => (activePrintEnvelope === undefined ? null : activePrintEnvelope === envelope ? model : printModel(activePrintEnvelope.data, { locale })), [activePrintEnvelope, envelope, model, locale]);
   if (!recognised) {
     return (
       <div data-slot="report-frame" dir={dir} className={cn("flex min-w-0 flex-col gap-6", className)}>
@@ -167,18 +210,18 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
     content =
       answer === undefined ? (
         read.isError ? (
-          <StateNotice kind="unavailable" title="The report request did not complete" description="The request for this report never arrived at an answer, so nothing on this page is a figure and nothing is presented as one. Retrying re-requests the same read." retry={retry} headingLevel={2} />
+          <StateNotice kind="unavailable" title="Couldn’t load this report" description="The report request didn’t complete. Try again in a moment." retry={retry} headingLevel={2} />
         ) : (
-          <StateNotice kind="loading" title="Reading this report" description={LOADING_BODY} headingLevel={2} loadingLines={8} />
+          <StateNotice kind="loading" title="Loading report…" description={LOADING_BODY} headingLevel={2} loadingLines={8} />
         )
       ) : answer.kind === "denied" ? (
-        <StateNotice kind="denied" title="This report is not permitted in this scope" reasonCode={answer.denied.reasonCode} headingLevel={2} />
+        <StateNotice kind="denied" title="This report isn’t available in this context" reasonCode={answer.denied.reasonCode} headingLevel={2} />
       ) : answer.kind === "unavailable" ? (
-        <StateNotice kind="unavailable" title="This report could not be read" description={answer.unavailable.guidance} source={answer.unavailable.source} retry={retry} headingLevel={2} />
+        <StateNotice kind="unavailable" title="Couldn’t load this report" description={answer.unavailable.guidance} source={answer.unavailable.source} retry={retry} headingLevel={2} />
       ) : answer.kind === "refused" ? (
-        <StateNotice kind="refused" title="This report's request was refused" description={refusalSummary(answer.refused)} headingLevel={2} />
+        <StateNotice kind="refused" title="Some report filters aren’t valid" description={refusalSummary(answer.refused)} headingLevel={2} />
       ) : (
-        <StateNotice kind="loading" title="Reading this report" description={LOADING_BODY} headingLevel={2} loadingLines={8} />
+        <StateNotice kind="loading" title="Loading report…" description={LOADING_BODY} headingLevel={2} loadingLines={8} />
       );
   } else {
     const result = envelope.data;
@@ -195,10 +238,21 @@ function ReportLayout({ reportId, result, locale, dir, year, years, onSelectYear
         )}
         <ReportLayout reportId={reportId} result={result} locale={locale} dir={dir} year={reportYearOf(query, result)} years={yearChoices ?? NO_YEARS} onSelectYear={selectYear} onSelectPage={selectPage} />
         <Separator />
-        <ExportPrintActions scope={scope} query={query} snapshotId={snapshotId} snapshot={{ ...facts, rowTotal: result.total }} locale={locale} dir={dir} canExport={envelope.actions.some((action) => action.name === "exportQuery" && action.available)} />
+        <ExportPrintActions
+          scope={scope}
+          query={query}
+          snapshotId={snapshotId}
+          snapshot={{ ...facts, rowTotal: result.total }}
+          locale={locale}
+          dir={dir}
+          canExport={envelope.actions.some((action) => action.name === "exportQuery" && action.available)}
+          wholeQueryPrint={{ shownRows: result.rows.length, maxRows: WHOLE_QUERY_PRINT_MAX_ROWS, pending: activePrint !== null && activePrint.error === null, error: activePrint?.error ?? null, onPrintWholeQuery: () => void requestWholeQueryPrint() }}
+        />
       </>
     );
-    printed = <PrintReport model={model} snapshot={facts} locale={locale} dir={dir} />;
+    const printEnvelope = activePrintEnvelope ?? envelope;
+    const printFacts = { basis: printEnvelope.data.snapshot.basis, currencies: printEnvelope.data.snapshot.currencies, period: { from: String(printEnvelope.data.snapshot.period.from), to: String(printEnvelope.data.snapshot.period.to) }, coverage: printEnvelope.coverage, asOf: printEnvelope.asOf, isCurrentPeriod: (activePrintModel ?? model).inProgress };
+    printed = <PrintReport model={activePrintModel ?? model} snapshot={printFacts} locale={locale} dir={dir} />;
   }
   return (
     <div data-slot="report-frame" dir={dir} className={cn("flex min-w-0 flex-col gap-6", className)}>

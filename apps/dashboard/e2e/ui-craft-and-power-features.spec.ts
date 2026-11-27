@@ -38,7 +38,7 @@ test.describe("UI/UX Elevation — Complete Multi-Ecosystem Craft, Power Feature
     await firstExpandToggle.click();
     await expect(firstExpandToggle).toHaveAttribute("aria-expanded", "true");
     await expect(table.locator('[data-slot="data-grid-expanded-row"]')).toHaveCount(1);
-    await expect(table.locator('[data-slot="data-grid-expanded-row"]')).toContainText("Gift & allocation grain");
+    await expect(table.locator('[data-slot="data-grid-expanded-row"]')).toContainText("Type & allocation");
 
     // ReUI Expand All / Collapse All toggle in DataGridHeader.
     const expandAll = page.locator('[data-slot="data-grid-expand-all"]');
@@ -92,7 +92,7 @@ test.describe("UI/UX Elevation — Complete Multi-Ecosystem Craft, Power Feature
     await page.locator('[data-slot="command-palette-trigger"]').click();
     const palette = page.locator('[data-slot="command-palette"]');
     await expect(palette).toBeVisible();
-    await page.getByLabel("Search workspace destinations and commands").fill("Agenda");
+    await page.getByLabel("Search pages and actions").fill("Agenda");
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/\/work\/agenda/u);
 
@@ -112,11 +112,11 @@ test.describe("UI/UX Elevation — Complete Multi-Ecosystem Craft, Power Feature
 
     // Partners Roster expandable row + Partner Detail horizontal Scrollspy & CopyButton.
     await page.goto("/partners");
-    const rosterTable = page.getByRole("table", { name: "Partner roster" });
+    const rosterTable = page.getByRole("table", { name: "Partners" });
     await expect(rosterTable).toBeVisible();
     await rosterTable.locator('[data-slot="data-grid-expand-toggle"]').first().click();
     await expect(rosterTable.locator('[data-slot="data-grid-expanded-row"]')).toHaveCount(1);
-    await rosterTable.locator('[data-slot="data-grid-expanded-row"]').getByRole("link", { name: "Open full partner record" }).click();
+    await rosterTable.locator('[data-slot="data-grid-expanded-row"]').getByRole("link", { name: "Open full profile" }).click();
     await expect(page.locator('[data-slot="scrollspy-nav"]')).toBeVisible();
     await expect(page.locator('[data-slot="copy-button"]').first()).toBeVisible();
 
@@ -125,12 +125,12 @@ test.describe("UI/UX Elevation — Complete Multi-Ecosystem Craft, Power Feature
     await page.getByRole("radio", { name: "Cards view" }).click();
     await expect(page.locator('[data-slot="updates-cards-grid"]')).toBeVisible();
     await page.getByRole("radio", { name: "Table view" }).click();
-    await page.getByRole("table", { name: "Updates and their editions" }).locator('[data-slot="data-grid-expand-toggle"]').first().click();
+    await page.getByRole("table", { name: "Updates and editions" }).locator('[data-slot="data-grid-expand-toggle"]').first().click();
     await expect(page.locator('[data-slot="data-grid-expanded-row"]')).toHaveCount(1);
 
     // Open Keyboard Shortcuts Sheet via Command Palette quick action.
     await page.locator('[data-slot="command-palette-trigger"]').click();
-    await page.getByLabel("Search workspace destinations and commands").fill("shortcuts");
+    await page.getByLabel("Search pages and actions").fill("shortcuts");
     await page.keyboard.press("Enter");
     await expect(page.locator('[data-slot="shortcuts-sheet"]')).toBeVisible();
     await page.keyboard.press("Escape");
@@ -150,8 +150,8 @@ test.describe("UI/UX Elevation — Complete Multi-Ecosystem Craft, Power Feature
     await page.goto("/help");
     const helpSearch = page.getByLabel("Search help topics");
     await expect(helpSearch).toBeVisible();
-    await helpSearch.fill("synthetic dataset");
-    await expect(page.getByText("1 of 5 topics")).toBeVisible();
+    await helpSearch.fill("development data");
+    await expect(page.getByText("2 of 5 topics")).toBeVisible();
     await page.getByRole("button", { name: "Clear help search" }).click();
     await expect(page.getByText("5 of 5 topics")).toBeVisible();
   });
@@ -215,5 +215,48 @@ test.describe("UI/UX Elevation — Complete Multi-Ecosystem Craft, Power Feature
       await page.goto(route);
       await expectNoHorizontalPageScroll(page, `320px reflow on ${route}`);
     }
+  });
+
+  test("Design Engineering ergonomics: persisted Command Palette theme switch, DateSelector Enter submit & zero-dead-zone DataGrid labels", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/");
+
+    // Toggle dark theme via Command Palette and verify it persists across full reload and syncs with Settings.
+    await page.locator('[data-slot="command-palette-trigger"]').click();
+    await page.getByLabel("Search pages and actions").fill("Switch light");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("html")).toHaveClass(/\bdark\b/u);
+
+    await page.reload();
+    await expect(page.locator("html")).toHaveClass(/\bdark\b/u);
+
+    // Dark-mode WCAG 2.2 AA check on Home & Support with quiet Zinc borders.
+    const darkAudit = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    expect(blockingAccessibilityViolations(darkAudit), "Dark-mode Home must carry zero serious or critical WCAG 2.2 AA violations.").toEqual([]);
+
+    // Switch back to light via Command Palette so preference stays deterministic.
+    await page.locator('[data-slot="command-palette-trigger"]').click();
+    await page.getByLabel("Search pages and actions").fill("Switch light");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("html")).not.toHaveClass(/\bdark\b/u);
+
+    // DateSelector supports Enter submission directly inside the custom range inputs.
+    await page.goto("/support/gifts?period=this-year");
+    await page.locator('[data-slot="date-selector-trigger"]').click();
+    await page.getByLabel("Start date").fill("2026-01-01");
+    await page.getByLabel("End date").fill("2026-12-31");
+    await page.getByLabel("End date").press("Enter");
+    await expect(page).toHaveURL(/from=2026-01-01/u);
+    await expect(page).toHaveURL(/to=2026-12-31/u);
+
+    // DataGrid column label wraps checkbox cleanly (clicking label text toggles visibility with zero dead zone).
+    await page.locator('[data-slot="data-grid-view-trigger"]').click();
+    const methodCheckbox = page.getByRole("checkbox", { name: /Show .* column/i }).last();
+    const initialChecked = await methodCheckbox.getAttribute("aria-checked");
+    const enclosingLabel = methodCheckbox.locator("xpath=ancestor::label[1]");
+    await enclosingLabel.locator("span").first().click();
+    await expect(methodCheckbox).toHaveAttribute("aria-checked", initialChecked === "true" ? "false" : "true");
+    await page.getByRole("button", { name: "Reset grid", exact: true }).click();
+    await page.keyboard.press("Escape");
   });
 });

@@ -15,7 +15,7 @@ import ReachControl, { type ReachControlProps } from "./reach-control";
 type ReviewOutcome = Awaited<ReturnType<ReviewPanelProps["onDecide"]>>;
 type PageReach = NonNullable<ReachControlProps["current"]>;
 const PUBLISH_ONLY = "publish-only" satisfies ApproveCandidatePayload["notifyMode"];
-const REJECTION_NOT_OFFERED = "A Page candidate is answered with an approval or a request for changes, so no rejection was recorded and nothing was applied. " + "Choose Request changes and say in the note what has to change: that answer gives the author a new revision to submit.";
+const REJECTION_NOT_OFFERED = "Page reviews use Approve or Request changes rather than Reject. Choose Request changes and add a note explaining what needs to be updated.";
 const REVIEW_IS_REQUIRED = true;
 const RELEASE_SENDS_NO_NOTICE = false;
 const NO_CANDIDATES: readonly CandidateView[] = [];

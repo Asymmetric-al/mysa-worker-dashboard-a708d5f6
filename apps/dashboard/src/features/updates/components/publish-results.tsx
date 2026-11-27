@@ -17,17 +17,17 @@ export const PUBLISH_EDITION_STATES = ["released", "failed-with-prior-good-head"
 export type PublishEditionState = (typeof PUBLISH_EDITION_STATES)[number];
 export type PublishedEditionNotice = { readonly state: SendStatus; readonly detail?: string; readonly intentId?: string };
 export type PublishedEdition = { readonly variant: Parameters<typeof lifecycleOf>[0]; readonly state: PublishEditionState; readonly release?: NonNullable<Parameters<typeof lifecycleOf>[1]>; readonly reasonCode?: string; readonly reason?: string; readonly notice?: PublishedEditionNotice };
-const REPLAY_NOTE = "These rows are the result stored for that operation, not a new effect: nothing was released a second time and no revision advanced.";
-const NOTICE_HONESTY_NOTE = "A notice that was accepted is not a delivered message and not a read one: acceptance states only that this application took the submission, and nothing here states that a message arrived or was opened.";
-const RETRY_INTENT_NOTE = "If this page offers to retry, it resubmits this same operation rather than starting a new one, so work that was already accepted answers with its stored result instead of happening twice.";
-const NO_EDITIONS_DESCRIPTION = "The submission was recorded, and the service reported no result for the editions it covered. Nothing here summarises them, because a summary would state what the service did not.";
-const UPDATES_LIST = { label: "Open the Updates list", href: "/communication" } as const;
-const REFUSED_WITHOUT_FIELDS = "No edition was released or attempted, and the refusal named no field to correct, so nothing here can say which edition to change.";
-const RECEIPT_HEADING: Readonly<Partial<Record<MutationOutcome["outcome"], string>>> = { accepted: "Release result", alreadyAccepted: "Release result for the earlier submission" };
+const REPLAY_NOTE = "Showing the stored result from your earlier publish — nothing was published a second time.";
+const NOTICE_HONESTY_NOTE = "Accepted means the simulated email notification was queued — not that it was delivered or read.";
+const RETRY_INTENT_NOTE = "Retrying safely re-checks this operation so already-published editions aren’t released twice.";
+const NO_EDITIONS_DESCRIPTION = "Publishing was recorded, but no per-edition details were returned.";
+const UPDATES_LIST = { label: "Back to Updates", href: "/communication" } as const;
+const REFUSED_WITHOUT_FIELDS = "No editions were published. Check your selections and try again.";
+const RECEIPT_HEADING: Readonly<Partial<Record<MutationOutcome["outcome"], string>>> = { accepted: "Publishing results", alreadyAccepted: "Publishing results (previous attempt)" };
 /** The one type scale's utility for each level, so this surface's heading takes the measure of the level the composing page gives it rather than one fixed size. */ const HEADING_SCALE: Readonly<Record<ReceiptHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
-const PUBLICATION_LABEL: Readonly<Record<PublishEditionState, string>> = { released: "Revision released", "failed-with-prior-good-head": "Earlier revision still published", "needs-attention": "Earlier revision still published", withdrawn: "Revision withdrawn" };
+const PUBLICATION_LABEL: Readonly<Record<PublishEditionState, string>> = { released: "Published revision", "failed-with-prior-good-head": "Previous version still live", "needs-attention": "Previous version still live", withdrawn: "Unpublished revision" };
 /** Where the recorded per-send results of one submitted notice are read, named by that notice's own identity rather than by whichever notice was submitted last. */ const DELIVERY_PATH = "/communication/delivery";
-const NOTICE_IDENTITY_LABEL = "Notice submitted";
+const NOTICE_IDENTITY_LABEL = "Notification ID";
 const NOTICE_LINK_CLASS = cn(buttonVariants({ variant: "outline", size: "sm" }), BUTTON_WRAP_CLASS);
 const publicationOf = (edition: PublishedEdition): { readonly label: string; readonly revisionId: string } | null => {
   const revisionId = edition.release?.revisionId.trim() ?? "";
@@ -35,18 +35,21 @@ const publicationOf = (edition: PublishedEdition): { readonly label: string; rea
 };
 const NARRATIVES: Readonly<Record<PublishEditionState, { readonly published: string; readonly unpublished: string }>> = {
   released: {
-    published: "This attempt released this edition for its audience and language, and the revision above is the one it now publishes.",
-    unpublished: "This attempt reports this edition as released and the service named no published revision for it, so nothing on this page can state which revision a reader is served.",
+    published: "Published for this audience and language. Readers now see the revision shown above.",
+    unpublished: "Marked as published, though no revision ID was returned to confirm which revision readers see.",
   },
   "failed-with-prior-good-head": {
-    published: "This attempt did not release this edition. The revision above is its earlier publication and is still the one an authorised reader is served, and the editions that did release in this attempt stand as they are — this is not a rollback of them.",
-    unpublished: "This attempt did not release this edition, and it has no earlier publication, so no reader is served a revision of it. No other edition in this attempt was changed by it.",
+    published: "This edition wasn’t published. The previous published revision above is still live, and other editions that succeeded remain published.",
+    unpublished: "This edition wasn’t published and has no prior published version, so readers cannot see it. Other editions were not affected.",
   },
   "needs-attention": {
-    published: "This attempt left this edition needing attention, so no new revision was released for it. The revision above is its earlier publication and is still the one an authorised reader is served. A result that needs attention is a complete result, not a pending one.",
-    unpublished: "This attempt left this edition needing attention, so no revision was released for it and no reader is served it yet. A result that needs attention is complete: it names what to look at rather than an error that stopped the run.",
+    published: "This edition needs attention before a new revision can be published. The previous revision above is still live.",
+    unpublished: "This edition needs attention before it can be published, so readers cannot see it yet.",
   },
-  withdrawn: { published: "This attempt released nothing for this edition, and the edition is withdrawn: this application does not serve it to that audience.", unpublished: "This attempt released nothing for this edition, and the edition is withdrawn: this application does not serve it to that audience." },
+  withdrawn: {
+    published: "Nothing was published — this edition is unpublished and no longer shown to readers.",
+    unpublished: "Nothing was published — this edition is unpublished and no longer shown to readers.",
+  },
 };
 function EditionRow({ edition, synthesis, renderAction }: { readonly edition: PublishedEdition; readonly synthesis: readonly VariantReleaseOutcome[]; readonly renderAction?: ((edition: PublishedEdition) => ReactNode) | undefined }): ReactElement {
   const { variant, state } = edition;
@@ -101,7 +104,7 @@ function EditionRow({ edition, synthesis, renderAction }: { readonly edition: Pu
               </p>
               <p className="min-w-0 type-body">
                 <Link href={((intentId: string): string => `${DELIVERY_PATH}?intentId=${encodeURIComponent(intentId)}`)(noticeIntentId)} data-slot="button" className={NOTICE_LINK_CLASS}>
-                  {"Open the recorded results for this notice"}
+                  {"View send history"}
                 </Link>
               </p>
             </div>
@@ -149,10 +152,10 @@ export function PublishResults({ outcome, editions, onCheckResult, onReapply, fi
           <CardHeader>
             <CardTitle>
               <Heading id={titleId} className={HEADING_SCALE[headingLevel]}>
-                {"Result for each edition"}
+                {"Results by edition"}
               </Heading>
             </CardTitle>
-            <CardDescription>{"Each edition below reports its own result, and editions can differ, so they are read one at a time rather than as one result for the whole submission."}</CardDescription>
+            <CardDescription>{"Each audience and language edition publishes independently."}</CardDescription>
           </CardHeader>
           <CardContent className="flex min-w-0 flex-col gap-3">
             <ul aria-labelledby={titleId} className="flex min-w-0 flex-col gap-2">

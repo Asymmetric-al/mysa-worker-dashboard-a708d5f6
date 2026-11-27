@@ -26,7 +26,7 @@ export type VideoPlayerProps = {
   readonly onRetry?: () => void;
   readonly className?: string;
 };
-const UNAVAILABLE_COPY = "This placement's video could not be read from its source, so the player is not shown.";
+const UNAVAILABLE_COPY = "This video couldn’t be loaded right now.";
 const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line wrap-anywhere";
 /** The single video surface, in whichever of its six states the placement is in. */ export function VideoPlayer({ title, src, poster, captions, transcript, credit, language, state, direction, reason, nextStep, onRetry, className }: VideoPlayerProps): ReactElement {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -54,13 +54,13 @@ const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line
       </Button>
     );
   }
-  const renderUnavailable = (description: string): ReactElement => <StateNotice kind="unavailable" title="This video is unavailable" description={description} retry={onRetry === undefined ? undefined : { label: "Try loading the video again", onClick: handleRetry }} />;
+  const renderUnavailable = (description: string): ReactElement => <StateNotice kind="unavailable" title="Video unavailable" description={description} retry={onRetry === undefined ? undefined : { label: "Try again", onClick: handleRetry }} />;
   const renderRejected = (): ReactElement => (
     <Alert variant="destructive">
       <TriangleAlertIcon aria-hidden="true" />
-      <AlertTitle>This file was not accepted</AlertTitle>
+      <AlertTitle>Video couldn’t be added</AlertTitle>
       <AlertDescription>
-        <p>{reason ?? "It did not pass this application's local video profile check, so nothing was placed."}</p>
+        <p>{reason ?? "This file didn’t meet the video format or size requirements."}</p>
         {nextStep === undefined ? null : <p>{nextStep}</p>}
         {renderChooseAnotherFile()}
       </AlertDescription>
@@ -70,7 +70,7 @@ const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line
     <Alert role={undefined}>
       <AlertTitle>No video added</AlertTitle>
       <AlertDescription>
-        <p>This upload was cancelled, so the placement is unchanged and nothing was prepared.</p>
+        <p>Upload cancelled — nothing was changed.</p>
         {renderChooseAnotherFile()}
       </AlertDescription>
     </Alert>
@@ -78,7 +78,7 @@ const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line
   const renderSelected = (): ReactElement => (
     <div className="flex flex-col gap-3">
       {renderPosterFrame()}
-      <p className="text-sm text-muted-foreground">{"Chosen, and not yet prepared. This video is prepared on this device before it can be played."}</p>
+      <p className="text-sm text-muted-foreground">{"Selected — preparing locally before playback."}</p>
     </div>
   );
   const renderPreparing = (): ReactElement => (
@@ -86,13 +86,13 @@ const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line
       {renderPosterFrame()}
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
         <Spinner className="shrink-0" />
-        <span>{"Preparing this video on this device. Nothing is uploaded, and the video can be played once preparation finishes."}</span>
+        <span>{"Preparing video locally… Playback will be ready once finished."}</span>
       </p>
     </div>
   );
   function renderPlayable(): ReactElement {
-    if (playableSrc === undefined) return renderUnavailable("No playback rendition was supplied for this placement, so there is nothing to play.");
-    if (playbackFailed) return renderUnavailable("The request for this video did not complete, so it is not offered as playable. A restriction applied since this page was opened has the same effect, because every request is re-checked.");
+    if (playableSrc === undefined) return renderUnavailable("No playable video is available for this item.");
+    if (playbackFailed) return renderUnavailable("Couldn’t play this video. Access may have changed or the file may be unavailable.");
     return (
       // `jsx-a11y/media-has-caption` is suppressed for this player and only this player: its tracks are the `<track kind="captions">` elements `trackList.map` renders, which the rule cannot see statically, and the media profile admits a video without one, which then plays with its transcript as the alternative.
       // oxlint-disable-next-line jsx-a11y/media-has-caption
@@ -100,7 +100,7 @@ const TRANSCRIPT_TEXT_CLASS = "text-sm text-muted-foreground whitespace-pre-line
         {trackList.map((track, index) => (
           <track key={track.src} kind="captions" src={track.src} srcLang={track.srcLang} label={track.label} {...(index === defaultTrackIndex ? { default: true } : {})} />
         ))}
-        <p className="p-4 text-sm text-muted-foreground">{hasTranscript ? "This browser cannot play the video here. The transcript below is the alternative." : "This browser cannot play the video here, and no transcript was admitted for this placement."}</p>
+        <p className="p-4 text-sm text-muted-foreground">{hasTranscript ? "Your browser can’t play this video. Read the transcript below instead." : "Your browser can’t play this video."}</p>
       </video>
     );
   }

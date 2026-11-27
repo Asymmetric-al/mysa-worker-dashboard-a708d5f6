@@ -9,17 +9,20 @@ export type ReadingProgressBarProps = {
 
 /**
  * React Bits Pro-inspired editorial reading progress hairline.
- * Uses passive scroll + `requestAnimationFrame` + GPU-composited `scaleX` with logical RTL origin.
+ * Uses passive scroll + `requestAnimationFrame` + direct ref `scaleX` (zero React re-renders per scroll frame) with logical RTL origin.
  * Purely decorative (`aria-hidden="true"`), zero layout shift, zero raw colors.
  */
 export function ReadingProgressBar({ className }: ReadingProgressBarProps) {
-  const [ratio, setRatio] = React.useState(0);
+  const fillRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     let frame = 0;
     const measure = (): void => {
       frame = 0;
-      setRatio(computeReadingProgress(window.scrollY, document.documentElement.scrollHeight, window.innerHeight));
+      const ratio = computeReadingProgress(window.scrollY, document.documentElement.scrollHeight, window.innerHeight);
+      if (fillRef.current !== null) {
+        fillRef.current.style.transform = `scaleX(${ratio.toFixed(4)})`;
+      }
     };
     const schedule = (): void => {
       if (frame === 0) frame = window.requestAnimationFrame(measure);
@@ -38,11 +41,12 @@ export function ReadingProgressBar({ className }: ReadingProgressBarProps) {
     <div
       aria-hidden="true"
       data-slot="reading-progress"
-      className={cn("pointer-events-none sticky top-[var(--app-shell-sticky-offset,4rem)] z-15 h-0.5 w-full overflow-hidden rounded-full bg-border/60 print:hidden", className)}
+      className={cn("pointer-events-none sticky top-[var(--app-shell-sticky-offset,4rem)] z-(--z-progress) h-0.5 w-full overflow-hidden rounded-full bg-border/60 print:hidden", className)}
     >
       <div
+        ref={fillRef}
         className="reading-progress-fill h-full w-full bg-primary"
-        style={{ transform: `scaleX(${ratio.toFixed(4)})` }}
+        style={{ transform: "scaleX(0)" }}
       />
     </div>
   );

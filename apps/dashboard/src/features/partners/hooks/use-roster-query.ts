@@ -2,7 +2,7 @@
 /** The Partners roster's browser data layer: its controlled query state, owned by the URL, and the three named reads that describe it — the whole-dataset roster, the facet set it is filtered by, and the caller's saved views. The service does every piece of work the state describes, and nothing here filters, sorts, pages or totals a record. */
 import { keepPreviousData, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { scopeKey } from "@/components/context-switch-guard";
 import type { ReadEnvelope, Scope, ValueState } from "@/modules/data-service/envelope";
 import type { ReadResult } from "@/modules/data-service/outcome";
@@ -132,27 +132,33 @@ export function useRosterQuery<TRow = unknown>(scope: Scope, options: RosterQuer
   // The request this surface was first asked for. The address moves on as the worker searches, filters, sorts and pages, and the payload echoes no search or selection, so a seed only ever stands for the question the server read it with.
   const [asked] = useState<RosterRequestParams | null>(() => (initialResult === undefined ? null : request));
   const seed = seedOf(initialResult, asked, request, scope);
+  const latestQueryRef = useRef<RosterQueryState>(query);
+  useEffect(() => {
+    latestQueryRef.current = query;
+  }, [query]);
   const commit = useCallback(
     (next: RosterQueryState) => {
+      latestQueryRef.current = next;
       const search = rosterQuerySearch(next);
       router.replace(search === "" ? pathname : `${pathname}?${search}`, { scroll: false });
     },
     [pathname, router],
   );
-  const setQuery = useCallback((patch: Partial<RosterQueryState>) => commit(mergeRosterQuery(query, patch)), [commit, query]);
+  const setQuery = useCallback((patch: Partial<RosterQueryState>) => commit(mergeRosterQuery(latestQueryRef.current, patch)), [commit]);
   const clearFacetValue = useCallback(
     (facetKey: string, value: string) => {
-      const selected = query.facets[facetKey];
+      const current = latestQueryRef.current;
+      const selected = current.facets[facetKey];
       if (selected === undefined) return;
       const remaining = selected.filter((entry) => entry !== value);
-      const facets: Record<string, readonly string[]> = { ...query.facets };
+      const facets: Record<string, readonly string[]> = { ...current.facets };
       if (remaining.length === 0) delete facets[facetKey];
       else facets[facetKey] = remaining;
-      commit(mergeRosterQuery(query, { facets }));
+      commit(mergeRosterQuery(current, { facets }));
     },
-    [commit, query],
+    [commit],
   );
-  const clearAll = useCallback(() => commit(mergeRosterQuery(query, { search: "", facets: {} })), [commit, query]);
+  const clearAll = useCallback(() => commit(mergeRosterQuery(latestQueryRef.current, { search: "", facets: {} })), [commit]);
   const enabled = scopeIsResolved(scope);
   const roster = useQuery<ReadResult<RosterEnvelope<TRow>>>({
     queryKey: [...scopeKey(scope), PARTNER_KEY.roster, request],

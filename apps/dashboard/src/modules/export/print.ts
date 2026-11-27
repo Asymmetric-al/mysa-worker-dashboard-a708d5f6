@@ -3,6 +3,8 @@ import { formatMinor } from "@/modules/money/format";
 import { REPORT_IDS, type ReportResult, type ReportRow } from "@/modules/support/report";
 import { countCellText, civilDateText, rowAmountPath, snapshotMetadata, VALUE_STATE_TEXT } from "./csv";
 import { type AuditedColumnTable } from "@/modules/export/csv";
+/** Upper bound on rows rendered into an optional whole-query browser print view; queries above this bound remain printable page-by-page and exportable whole via CSV. */
+export const WHOLE_QUERY_PRINT_MAX_ROWS = 2_000;
 export type PrintValueState = ReportResult["valueStates"][string];
 export type PrintFact = { readonly field: string; readonly label: string; readonly value: string };
 export type PrintSummaryLine = { readonly label: string; readonly text: string; readonly accessibleLabel: string; readonly state: PrintValueState };

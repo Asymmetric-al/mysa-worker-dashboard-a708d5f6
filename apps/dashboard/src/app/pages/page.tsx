@@ -9,9 +9,9 @@ type DocumentsResult = Awaited<ReturnType<typeof reads.pages.findContentDocument
 type DocumentEntry = Extract<DocumentsResult, { readonly kind: "envelope" }>["envelope"]["data"]["documents"][number];
 type PagesIndexProps = ComponentProps<typeof PagesIndex>;
 type EditionLifecycle = PageIndexRow["editions"][number]["lifecycle"];
-const PAGE_TITLE = "Pages";
+const PAGE_TITLE = "Ministry pages";
 export const metadata: Metadata = { title: PAGE_TITLE };
-const PAGE_LEDE = "A Worker Page and a Project Page are public pages, each composed from the sections its own family admits. This index lists the Pages this ministry holds and describes both catalogues; composing, previewing and releasing an edition happen in the Page's own builder.";
+const PAGE_LEDE = "Build and publish your Missionary page and Project pages. Choose a page below to edit sections, add language editions, preview, or publish.";
 const LIVE_RELEASE_LIFECYCLES: ReadonlySet<EditionLifecycle> = new Set<EditionLifecycle>(["released", "partially-released"]);
 const titleOf = (entry: DocumentEntry, family: PageFamily): string => (entry.title.status === "stated" ? entry.title.title : `${"Untitled"} ${copy.families[family].label}`);
 function editionRowOf(documentId: string, edition: DocumentEntry["editions"][number]): PageIndexRow["editions"][number] {

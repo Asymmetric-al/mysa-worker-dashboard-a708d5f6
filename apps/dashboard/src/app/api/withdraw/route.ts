@@ -1,7 +1,7 @@
 import { ZodError, z } from "zod";
 import { mutationInputSchema, mutations, outcomeFromError, toResponse } from "@/modules/data-service";
 import { sessionIdOf } from "../session-cookie";
-import { UNIDENTIFIED_ATTEMPT, claimedBodyRoute, declaresJsonBody, dispatch, type ClaimedWrite } from "../handler";
+import { UNIDENTIFIED_ATTEMPT, claimedBodyRoute, dispatch, readRequestBody, type ClaimedWrite } from "../handler";
 import { routeMethods } from "@/app/api/methods";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,20 +20,11 @@ const WITHDRAW_OPERATIONS = ["withdrawUpdate", "withdrawLocale"] as const;
 const discriminantSchema = z.object({ payload: z.object({ operation: z.enum(WITHDRAW_OPERATIONS, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.operationRequired }) }, { error: MESSAGES.bodyNotJson });
 type ReadBody = { readonly read: true; readonly body: unknown } | { readonly read: false; readonly message: string };
 async function boundedBodyOf(request: SessionRequest): Promise<ReadBody> {
-  if (!declaresJsonBody(request)) return { read: false, message: MESSAGES.bodyNotJson };
-  const declared = request.headers.get("content-length");
-  const declaredBytes = declared === null ? 0 : Number.parseInt(declared, 10);
-  if (Number.isFinite(declaredBytes) && declaredBytes > MAX_BODY_BYTES) return { read: false, message: MESSAGES.bodyTooLarge };
-  const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) return { read: false, message: MESSAGES.bodyTooLarge };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return { read: false, message: MESSAGES.bodyNotJson };
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return { read: false, message: MESSAGES.bodyNotObject };
-  return { read: true, body: parsed };
+  const read = await readRequestBody(request, MAX_BODY_BYTES);
+  if (read.kind === "oversized") return { read: false, message: MESSAGES.bodyTooLarge };
+  if (read.kind === "unreadable") return { read: false, message: MESSAGES.bodyNotJson };
+  if (typeof read.value !== "object" || read.value === null || Array.isArray(read.value)) return { read: false, message: MESSAGES.bodyNotObject };
+  return { read: true, body: read.value };
 }
 const unreadableBody = (message: string): Response => toResponse(outcomeFromError(UNIDENTIFIED_ATTEMPT, new ZodError([{ code: "custom", path: ["body"], message }])));
 const WITHDRAW_WRITES = {

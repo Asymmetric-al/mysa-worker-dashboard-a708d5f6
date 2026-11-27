@@ -8,12 +8,12 @@ const DropdownMenu = ({ ...props }: MenuPrimitive.Root.Props) => <MenuPrimitive.
 const DropdownMenuPortal = ({ ...props }: MenuPrimitive.Portal.Props) => <MenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />;
 const DropdownMenuTrigger = ({ ...props }: MenuPrimitive.Trigger.Props) => <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
 const DROPDOWN_MENU_CONTENT_CLASS =
-  "z-50 max-h-(--available-height) w-(--anchor-width) min-w-48 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-2xl bg-popover p-1 text-popover-foreground shadow-2xl ring-1 ring-foreground/5 duration-100 outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 dark:ring-foreground/10 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95";
+  "z-(--z-popover) max-h-(--available-height) w-(--anchor-width) min-w-48 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-2xl bg-popover p-1 text-popover-foreground shadow-overlay duration-150 ease-out outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-95";
 function DropdownMenuContent({ align = "start", alignOffset = 0, side = "bottom", sideOffset = 4, className, ...props }: MenuPrimitive.Popup.Props & Pick<MenuPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
   const direction = useDirection();
   return (
     <MenuPrimitive.Portal>
-      <MenuPrimitive.Positioner className="isolate z-50 outline-none" align={align} alignOffset={alignOffset} side={side} sideOffset={sideOffset}>
+      <MenuPrimitive.Positioner className="isolate z-(--z-popover) outline-none" align={align} alignOffset={alignOffset} side={side} sideOffset={sideOffset} collisionPadding={8}>
         <MenuPrimitive.Popup dir={direction} data-slot="dropdown-menu-content" className={cn(DROPDOWN_MENU_CONTENT_CLASS, className)} {...props} />
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
@@ -26,7 +26,7 @@ const DropdownMenuLabel = ({ className, inset, ...props }: MenuPrimitive.GroupLa
   </MenuPrimitive.Group>
 );
 const DROPDOWN_MENU_ITEM_CLASS =
-  "group/dropdown-menu-item relative flex cursor-default items-center gap-2.5 rounded-xl px-3 py-2 text-sm outline-hidden select-none focus:bg-highlight focus:text-highlight-foreground not-data-[variant=destructive]:focus:**:text-highlight-foreground data-inset:ps-9.5 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive";
+  "group/dropdown-menu-item relative flex cursor-default items-center gap-2.5 rounded-xl px-3 py-2 text-sm outline-hidden select-none focus:bg-highlight focus:text-highlight-foreground not-data-[variant=destructive]:focus:**:text-highlight-foreground data-inset:ps-9.5 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive-tint data-[variant=destructive]:focus:text-destructive data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive";
 const DropdownMenuItem = ({ className, inset, variant = "default", ...props }: MenuPrimitive.Item.Props & { inset?: boolean; variant?: "default" | "destructive" }) => (
   <MenuPrimitive.Item data-slot="dropdown-menu-item" data-inset={inset} data-variant={variant} className={cn(DROPDOWN_MENU_ITEM_CLASS, className)} {...props} />
 );
@@ -40,7 +40,7 @@ const DropdownMenuSubTrigger = ({ className, inset, children, ...props }: MenuPr
   </MenuPrimitive.SubmenuTrigger>
 );
 const DROPDOWN_MENU_SUB_CONTENT_CLASS =
-  "w-auto min-w-36 rounded-2xl bg-popover p-1 text-popover-foreground shadow-2xl ring-1 ring-foreground/5 duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95";
+  "w-auto min-w-36 rounded-2xl bg-popover p-1 text-popover-foreground shadow-overlay duration-150 ease-out data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95";
 const DropdownMenuSubContent = ({ align = "start", alignOffset = -3, side = "right", sideOffset = 0, className, ...props }: React.ComponentProps<typeof DropdownMenuContent>) => (
   <DropdownMenuContent data-slot="dropdown-menu-sub-content" className={cn(DROPDOWN_MENU_SUB_CONTENT_CLASS, className)} align={align} alignOffset={alignOffset} side={side} sideOffset={sideOffset} {...props} />
 );

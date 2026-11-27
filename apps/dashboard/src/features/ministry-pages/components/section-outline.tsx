@@ -35,18 +35,18 @@ const managedReasonKeyOf = (section: PageBuilderSection): ManagedFieldKey => sec
 type HeldMove = { readonly identity: ReviewedAttempt; readonly variables: Parameters<ReturnType<typeof useMovePageSection>["mutateAsync"]>[0]; readonly label: string; readonly kind: MoveControlKind };
 const controlIdOf = (base: string, kind: MoveControlKind, position: number): string => `${base}-${kind}-${String(position)}`;
 const MOVE_RESULT: Readonly<Record<MutationOutcome["outcome"], (position: number) => string>> = {
-  accepted: (position) => ` now stands at ${copy.builder.positionOption(position)}. ${copy.sectionActions.results.moved}`,
-  alreadyAccepted: (position) => ` was already moved to ${copy.builder.positionOption(position)} by this same change, so nothing was applied again.`,
-  unchanged: () => " did not move: it already stands at that position.",
-  conflict: () => " did not move. This edition changed since it was read, so the order shown is the one that now stands.",
-  denied: () => " was not moved: this change is not permitted in the context the outline was read in.",
-  invalid: () => " was not moved: the position asked for was not accepted.",
-  unavailable: () => " was not moved: the source behind this edition could not be reached, so nothing is reported as applied.",
-  unknown: () => " may or may not have moved: the result was not confirmed, so check the order before trying again.",
+  accepted: (position) => ` moved to ${copy.builder.positionOption(position)}. ${copy.sectionActions.results.moved}`,
+  alreadyAccepted: (position) => ` is already at ${copy.builder.positionOption(position)}.`,
+  unchanged: () => " is already in that position.",
+  conflict: () => " didn’t move because this edition changed. Showing the latest order.",
+  denied: () => " couldn’t be moved in this context.",
+  invalid: () => " couldn’t be moved to that position.",
+  unavailable: () => " couldn’t be moved because the service is unavailable.",
+  unknown: () => " may or may not have moved. Check the order before trying again.",
 };
 const outcomeSentence = (outcome: MutationOutcome, targetIndex: number): string => MOVE_RESULT[outcome.outcome](targetIndex + 1);
-const blockedSentence = (reason: string): string => ` did not move. ${reason}`;
-const NO_AUTHORITY_REASON = "Open this edition again and change its order from there: the context this Page was read in is the only one a section change may act in.";
+const blockedSentence = (reason: string): string => ` didn’t move. ${reason}`;
+const NO_AUTHORITY_REASON = "Reopen this draft edition to reorder sections.";
 const NOTE_CLASS = "text-sm text-pretty text-muted-foreground";
 type MoveControlProps = { readonly direction: "up" | "down"; readonly sectionLabel: string; readonly position: number; readonly controlId: string; readonly describedBy: string | undefined; readonly ariaDisabled: boolean; readonly onActivate: () => void };
 // A blocked move control states why with `aria-disabled` and stays focusable: the native `disabled` attribute would take the
@@ -132,7 +132,7 @@ export type SectionOutlineProps = {
     if (transientlyBlocked) return;
     const targetIndex = Math.min(Math.max(targetPosition, 0), lastIndex);
     if (targetIndex === fromPosition) {
-      announce(labelOf(section), " did not move: it already stands at that position.");
+      announce(labelOf(section), " is already in that position.");
       return;
     }
     startMove(kind, section, targetIndex);
@@ -159,8 +159,8 @@ export type SectionOutlineProps = {
             const upReasonId = `${reasonIdBase}-${String(listIndex)}-up`;
             const downReasonId = `${reasonIdBase}-${String(listIndex)}-down`;
             const rowReason = managed ? copy.lockReasons.reasons[managedReasonKeyOf(section)] : authority === undefined ? NO_AUTHORITY_REASON : null;
-            const upReason = rowReason ?? (position === 0 ? "This section already stands first in this edition." : null);
-            const downReason = rowReason ?? (position === lastIndex ? "This section already stands last in this edition." : null);
+            const upReason = rowReason ?? (position === 0 ? "Already first in this edition." : null);
+            const downReason = rowReason ?? (position === lastIndex ? "Already last in this edition." : null);
             const activate = (kind: MoveControlKind, reason: string | null, targetPosition: number) => (): void => {
               if (reason !== null) {
                 announce(label, blockedSentence(reason));

@@ -9,7 +9,7 @@ import { reads, type ReadAction } from "@/modules/data-service";
 import { ReadNotices, type ReadNoticeCopy } from "../../../page-frame";
 const ROSTER_HREF = "/partners";
 const DETAIL_COPY = SURFACE_STATE_COPY["partner-detail"];
-const RETURN_LABEL = "Return to this record";
+const RETURN_LABEL = "Back to partner";
 const PAGE_COLUMN = "flex min-w-0 flex-col gap-6 text-start";
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Edit partner" };

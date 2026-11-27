@@ -9,16 +9,16 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Commitment" };
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 1,
-  denied: { title: "This commitment is not shown in this context", body: "The commitments read was refused for the context this session is admitted to. Nothing here states whether a commitment carries that identifier, what such a commitment would be, or how large it is." },
-  unavailable: { title: "The commitment could not be read" },
-  refused: { title: "This commitment's request was refused" },
+  denied: { title: "This commitment isn’t available in this context", body: "Your current session doesn’t have permission to view commitment details here." },
+  unavailable: { title: "Couldn’t load this commitment" },
+  refused: { title: "Couldn’t open this commitment" },
 };
 /** One commitment: the envelope for it, or the read's own refusal stated as `denied` or `unavailable`. */ export default async function CommitmentDetailPage({ params, searchParams }: CommitmentDetailRouteProps): Promise<ReactElement> {
   const { commitmentId } = await params;
   const carried = searchSuffixOf(await searchParams);
   const result = await reads.support.readCommitments({ commitmentId });
-  const back = { label: "Back to the commitments list", href: `${LIST_HREF}${carried}` };
-  const copy: ReadNoticeCopy = { ...NOTICE_COPY, denied: { ...NOTICE_COPY.denied, action: back }, unavailable: { ...NOTICE_COPY.unavailable, action: { label: "Read this commitment again", href: `${LIST_HREF}/${encodeURIComponent(commitmentId)}${carried}` } }, refused: { ...NOTICE_COPY.refused, action: back } };
+  const back = { label: "Back to Commitments", href: `${LIST_HREF}${carried}` };
+  const copy: ReadNoticeCopy = { ...NOTICE_COPY, denied: { ...NOTICE_COPY.denied, action: back }, unavailable: { ...NOTICE_COPY.unavailable, action: { label: "Try again", href: `${LIST_HREF}/${encodeURIComponent(commitmentId)}${carried}` } }, refused: { ...NOTICE_COPY.refused, action: back } };
   if (result.kind !== "envelope") return pageRefusalOf(result, copy, 4);
   return <CommitmentDetail scope={result.envelope.scope} commitmentId={commitmentId} locale="en-GB" />;
 }

@@ -15,21 +15,21 @@ import { formatSourceReference, type SourceReference } from "@/lib/ids";
 /** The sections of a record body, in the only order they render. */ export const RECORD_DETAIL_SECTIONS = ["contactMethods", "restrictions", "relationshipContext", "activity", "privateNotes", "openTasks", "supportHistory"] as const;
 export type RecordDetailSection = (typeof RECORD_DETAIL_SECTIONS)[number];
 export const RECORD_DETAIL_SECTION_TITLES: Readonly<Record<RecordDetailSection, string>> = {
-  contactMethods: "Permitted contact methods",
-  restrictions: "Restrictions",
-  relationshipContext: "Relationship context",
-  activity: "Actual activity",
+  contactMethods: "Contact details",
+  restrictions: "Communication restrictions",
+  relationshipContext: "Relationship details",
+  activity: "Activity",
   privateNotes: "Private notes",
   openTasks: "Open tasks",
-  supportHistory: "Support history",
+  supportHistory: "Giving & commitments",
 };
 const SECTION_DESCRIPTIONS: Readonly<Partial<Record<RecordDetailSection, string>>> = {
-  restrictions: "A restriction records what must not happen for this relationship. It is not a tag and not a note, so it is listed here in its own words.",
-  activity: "Only something that happened appears here, with the precision its date is known to. A gift, a scheduled task or an opened mail or dialer app is not an activity.",
-  privateNotes: "These lines are yours alone. They never appear in a shared projection, in an export, or in another record's audience.",
+  restrictions: "Important boundaries on how or whether to contact this partner.",
+  activity: "Conversations, visits, and messages you’ve logged — separate from gifts and scheduled tasks.",
+  privateNotes: "Visible only to you — never shared with coaches, exports, or other partners.",
 };
-/** The audience a private note is shown with, stated once so no two surfaces word it differently and a reader never has to infer from a section heading whether the text beside it is shared. */ export const PRIVATE_NOTE_AUDIENCE_LABEL = "Private note — only you";
-const UNAVAILABLE_DESCRIPTION = "The sections that depend on that source are unavailable rather than empty. Everything else on this record still works, and nothing was changed.";
+/** The audience badge shown beside Private notes so visibility is always explicit. */ export const PRIVATE_NOTE_AUDIENCE_LABEL = "Private — only visible to you";
+const UNAVAILABLE_DESCRIPTION = "Sections from that source couldn’t be loaded right now. Everything else on this profile still works.";
 const LOADING_SECTION_BLOCKS = 3;
 const LOADING_LINE_WIDTHS = ["w-full", "w-5/6", "w-2/3"] as const;
 export type RecordDetailLayout = "page" | "panel" | "sheet";
@@ -85,7 +85,7 @@ const toDomId = (generated: string, suffix: string): string => `record-detail-${
     <article aria-busy={isLoading ? true : undefined} aria-labelledby={identityHeadingId} className={cn(chrome.surface, className)}>
       {!isLoading && presentSections.length > 0 ? (
         <a href={`#${sectionsRegionId}`} className="sr-only rounded-md px-2 py-1 text-sm focus-visible:not-sr-only focus-visible:inline-flex focus-visible:min-h-6 focus-visible:items-center focus-visible:bg-background">
-          {"Skip to the record's sections"}
+          {"Skip to profile sections"}
         </a>
       ) : null}
       {breadcrumb !== undefined && breadcrumb.length > 0 ? (
@@ -135,7 +135,7 @@ const toDomId = (generated: string, suffix: string): string => `record-detail-${
         </CardHeader>
       </Card>
       {hasContent(actions) ? <div className={chrome.actionBar}>{actions}</div> : null}
-      {unavailable !== undefined ? <StateNotice kind="unavailable" title={"One source behind this record could not be read"} description={UNAVAILABLE_DESCRIPTION} source={unavailable.source} retry={retry} headingLevel={noticeHeadingLevel} /> : null}
+      {unavailable !== undefined ? <StateNotice kind="unavailable" title={"Part of this profile couldn’t be loaded"} description={UNAVAILABLE_DESCRIPTION} source={unavailable.source} retry={retry} headingLevel={noticeHeadingLevel} /> : null}
       {isLoading ? (
         <div aria-hidden="true" className="flex flex-col gap-4">
           {Array.from({ length: LOADING_SECTION_BLOCKS }, (_unused, index) => (
@@ -154,7 +154,7 @@ const toDomId = (generated: string, suffix: string): string => `record-detail-${
         <>
           {layout === "page" && presentSections.length >= 3 ? (
             <ScrollspyNav
-              label="Jump to record sections"
+              label="Jump to profile sections"
               orientation="horizontal"
               sections={presentSections.map((section) => ({
                 id: `${sectionsRegionId}-${section}`,

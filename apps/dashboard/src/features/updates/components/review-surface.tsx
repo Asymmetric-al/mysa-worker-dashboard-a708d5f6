@@ -6,7 +6,7 @@ import type { MutationInput, Scope } from "@/modules/data-service/envelope";
 import { isOutcome, unavailable, unknown, type MutationOutcome } from "@/modules/data-service/outcome";
 const REVIEW_ENDPOINT = "/api/review";
 const HANDLER_SYSTEM = "data-service";
-const TRANSPORT_GUIDANCE = "The review request did not complete, so this decision is reported as neither applied nor refused. Retry it as the same attempt: a replay returns the result recorded for it instead of answering the candidate twice.";
+const TRANSPORT_GUIDANCE = "Your review decision didn’t finish sending. Retry safely — if it already saved, you’ll see the stored result without duplicating it.";
 export type UpdateReviewSurfaceProps = {
   readonly candidates: readonly CandidateView[];
   readonly activeVariantId: string;

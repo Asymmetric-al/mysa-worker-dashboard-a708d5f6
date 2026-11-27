@@ -16,17 +16,17 @@ import { useSetPreference } from "../hooks/use-audience-mutations";
 import type { SetPreferencePayload } from "../schemas/preference";
 type PreferenceChoice = SetPreferencePayload["choice"];
 const CHOICE_ORDER: readonly PreferenceChoice[] = Object.freeze(Object.keys(PREFERENCE_CHOICE_COPY)) as readonly PreferenceChoice[];
-const PURPOSE_LABELS: Readonly<Record<string, string>> = { "update-email": "Update email" };
+const PURPOSE_LABELS: Readonly<Record<string, string>> = { "update-email": "Update emails" };
 const purposeLabelOf = (purpose: string): string => PURPOSE_LABELS[purpose] ?? purpose;
 const CONTROL_COPY = {
-  legend: (purpose: string): string => `${purposeLabelOf(purpose)} from this publisher`,
-  scope: "This choice covers one publisher and one purpose only. It subscribes you to nothing else, grants no access to protected content and changes no financial record, and choosing it is your own decision rather than a restriction placed on you.",
-  publisherTerm: "Publisher",
-  purposeTerm: "Purpose",
-  selectedMarker: "selected here",
-  pending: "Submitting this choice…",
-  restrictedTitle: "This choice cannot be changed here",
-  restrictedFallback: "This membership is restricted by the source of record, so no choice is offered for it.",
+  legend: (purpose: string): string => `${purposeLabelOf(purpose)}`,
+  scope: "Applies only to this ministry’s update emails. Your other subscriptions, protected access, and financial records aren’t affected.",
+  publisherTerm: "Ministry",
+  purposeTerm: "List",
+  selectedMarker: "active",
+  pending: "Saving preference…",
+  restrictedTitle: "Preference locked",
+  restrictedFallback: "This subscription is restricted at the source and can’t be changed here.",
 } as const;
 const FIELD_LABELS: Readonly<Record<string, string>> = { membershipId: "Membership", choice: "Choice", languagePreference: "Language" };
 const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";

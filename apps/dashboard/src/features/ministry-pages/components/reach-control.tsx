@@ -11,20 +11,20 @@ import { decideReach, REACH_VALUES, type Reach } from "@/modules/content/reach";
 import { copy } from "../copy";
 import { openRevisionOf, settledRevisionOf, useSetPageReach, type SetReachVariables } from "../hooks/page-mutations";
 import type { SetReachPayload } from "../schemas/reach";
-const FIELD_LABELS: Readonly<Record<string, string>> = { documentId: "Page", reach: "Reach" };
+const FIELD_LABELS: Readonly<Record<string, string>> = { documentId: "Page", reach: "Visibility" };
 const REACH_CONTROL_COPY = {
-  scopeNote: "Reach belongs to a release, so this sets how far every released language edition of this page reaches. It releases nothing and sends no notice: an edition reaches only at the reach it already had when it was released.",
-  recordedTerm: "Recorded reach",
-  intendedTerm: "Reach after this change",
-  meaningTerm: "What that means",
-  reviewTitle: "Review this reach change",
-  reviewNote: "Choosing an option saves nothing on its own. Saving applies the change once, to every released edition of this page, and leaves every draft exactly as it is.",
-  confirmLabel: "Save reach",
-  cancelLabel: "Keep the recorded reach",
+  scopeNote: "Applies to all published language editions of this page. Changing visibility doesn’t publish drafts or send emails.",
+  recordedTerm: "Current visibility",
+  intendedTerm: "New visibility",
+  meaningTerm: "What changes",
+  reviewTitle: "Confirm visibility change",
+  reviewNote: "Selecting an option doesn’t save automatically. Save to apply this visibility to all published editions while leaving drafts untouched.",
+  confirmLabel: "Save visibility",
+  cancelLabel: "Keep current visibility",
   doneLabel: "Done",
-  disabledFallback: "Reach cannot be changed right now.",
-  noReleaseTitle: "Reach is set when this edition is released",
-  noReleaseBody: "This edition has no released edition yet, so it has no reach to set. Releasing it is a separate action, and no value is offered here that could not be saved.",
+  disabledFallback: "Visibility can’t be changed right now.",
+  noReleaseTitle: "Publish first to set visibility",
+  noReleaseBody: "This edition hasn’t been published yet. Publish an edition first before choosing who can see it.",
 } as const;
 export type ReachControlProps = {
   readonly variantId: string;

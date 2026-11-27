@@ -4,7 +4,7 @@ import { copy } from "@/features/ministry-pages/copy";
 import { reads } from "@/modules/data-service";
 import { PageSurface } from "../../../../page-frame";
 export const dynamic = "force-dynamic";
-const SURFACE_TITLE = "Language edition preview";
+const SURFACE_TITLE = "Page preview";
 export const metadata: Metadata = { title: SURFACE_TITLE };
 type LocaleEditionsResult = Awaited<ReturnType<typeof reads.pages.readPageLocales>>;
 type LocaleEditionsData = Extract<LocaleEditionsResult, { kind: "envelope" }>["envelope"]["data"];

@@ -15,12 +15,12 @@ const DISPLAY_TIME_ZONE = REPORT_DEFAULT_TIME_ZONE;
 const AGENDA_PAGE_SIZE = 200;
 const PARTNER_LABEL_PAGE_SIZE = 200;
 const FIRST_PAGE = 0;
-const PAGE_COPY = { lede: "The open dated work of this context, grouped by the day each task is due, with the plan a meeting states and the records a task is linked to. Undated work is read on the lists, never here, and a task is completed, reopened, edited or cancelled there." } as const;
+const PAGE_COPY = { lede: "Your open dated tasks grouped by due date, plus any scheduled meeting times. Undated tasks stay on the main Tasks page." } as const;
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: 2,
-  denied: { title: "The dated agenda is not available in this context", body: "This session may not read the tasks of the context it is working in, so no day, row or count is stated here — a refusal is not an empty agenda. Another context, if this session holds one, can be chosen from the shell." },
-  unavailable: { title: "The dated agenda could not be read", action: { label: "Try this read again", href: "/work/agenda" } },
-  refused: { title: "This view's request was refused", body: "This route states only the display time zone and a page size the read admits, so a request the read refuses is answered here rather than thrown, and the source behind it did not fail." },
+  denied: { title: "Agenda isn’t available in this ministry", body: "Your current session doesn’t have access to tasks here. If you belong to another ministry, switch to it from the header." },
+  unavailable: { title: "Couldn’t load your agenda", action: { label: "Try again", href: "/work/agenda" } },
+  refused: { title: "Couldn’t load agenda", body: "This view couldn’t run with the requested parameters. Reload to try again." },
 };
 /** The dated agenda: one read, one snapshot, and the family's own agenda rendering it. */ export default async function WorkAgendaPage(): Promise<ReactElement> {
   const [agenda, partners] = await Promise.all([reads.work.readAgenda({ displayTimeZone: DISPLAY_TIME_ZONE, pageSize: AGENDA_PAGE_SIZE }), reads.partners.findPartners({ page: { index: FIRST_PAGE, size: PARTNER_LABEL_PAGE_SIZE } })]);
@@ -31,7 +31,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink className="inline-link" render={<Link href="/work" />}>
-              {"Work"}
+              {"Tasks"}
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />

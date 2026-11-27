@@ -17,32 +17,30 @@ import type { Scope } from "@/modules/data-service/envelope";
 import { UNIDENTIFIED_ATTEMPT, invalid, type MutationOutcome } from "@/modules/data-service/outcome";
 import { AUDIENCE_LABEL_COPY, INTERACTION_COPY, PRIVATE_RECORD_COPY } from "../copy/privacy";
 import { useLogInteraction } from "../hooks/use-partner-mutations";
-import { INTERACTION_KINDS, INTERACTION_PRECISIONS, logInteractionPayloadSchema, nextTaskPayloadSchema, type InteractionKind, type InteractionPrecision, type LogInteractionPayload, type NextTaskPayload } from "../schemas/interaction";
+import { INTERACTION_KIND_LABELS, INTERACTION_KINDS, INTERACTION_PRECISIONS, logInteractionPayloadSchema, nextTaskPayloadSchema, type InteractionPrecision, type LogInteractionPayload, type NextTaskPayload } from "../schemas/interaction";
 import { TextAreaField, TextField, controlAria } from "./bound-fields";
 import PartnerPicker, { partnerSelectionRef, type PartnerSelection } from "./partner-picker";
 const PART_RECEIPT_HEADING = 3;
-const TYPE_LABEL = "Kind of contact";
-const PRECISION_LEGEND = "How precisely is the day known?";
-const DATE_LABEL = "The day it happened";
-const DATE_DESCRIPTION = "A calendar date with no time of day and no time zone behind it: the day as it is stated, never converted through an instant.";
-const OUTCOME_LABEL = "What came of it";
-const OUTCOME_DESCRIPTION = "A sentence in your own words about what followed the contact. It is a statement of what happened, not a promise, a gift or a task.";
-const SUBJECT_LEGEND = "The contact this is recorded against";
-const PARTNERS_LABEL = "Other people who took part";
-const ROLE_LABEL = "How they took part";
-const NOTE_LABEL = "A note about this contact";
-const NOTE_DESCRIPTION = `Plain text, in your own words. ${AUDIENCE_LABEL_COPY.private.label}: ${AUDIENCE_LABEL_COPY.private.description} ${PRIVATE_RECORD_COPY.remainsPrivate.body}`;
-const TASK_HEADING = "Next step";
-const TASK_TITLE_LABEL = "What needs doing";
-const TASK_TITLE_DESCRIPTION = "A few words, because a title is the one thing a task cannot do without.";
-const TASK_DUE_LABEL = "Due on";
-const TASK_DUE_DESCRIPTION = "A calendar date with no time of day and no zone behind it. Leave it empty for undated work.";
-const TASK_LINK_LEGEND = "Linked record";
-const UNCONFIRMED_NOTE = "The last attempt's result is not confirmed. Check it with the operation identity in the receipt rather than submitting the same work again, because a second attempt could record the contact twice.";
+const TYPE_LABEL = "Activity type";
+const PRECISION_LEGEND = "How well do you know the date?";
+const DATE_LABEL = "Date";
+const DATE_DESCRIPTION = "The calendar date this happened.";
+const OUTCOME_LABEL = "What happened";
+const OUTCOME_DESCRIPTION = "A brief summary in your own words (doesn’t record a gift, commitment, or completed task).";
+const SUBJECT_LEGEND = "Primary partner";
+const PARTNERS_LABEL = "Other partners involved";
+const ROLE_LABEL = "Role";
+const NOTE_LABEL = "Private note";
+const NOTE_DESCRIPTION = `${AUDIENCE_LABEL_COPY.private.label}: ${AUDIENCE_LABEL_COPY.private.description} ${PRIVATE_RECORD_COPY.remainsPrivate.body}`;
+const TASK_HEADING = "Follow-up task";
+const TASK_TITLE_LABEL = "Task title";
+const TASK_TITLE_DESCRIPTION = "A short reminder of what to do next.";
+const TASK_DUE_LABEL = "Due date";
+const TASK_DUE_DESCRIPTION = "Optional. Leave blank for an undated task.";
+const TASK_LINK_LEGEND = "Link to";
+const UNCONFIRMED_NOTE = "We couldn’t confirm the previous save. Check the result above instead of submitting again so we don’t record duplicates.";
 const TASK_READ_JOBS = ["tasks", "agenda", "series"] as const;
-const FOLLOW_UP_OFFLINE_GUIDANCE =
-  "This device reported no connection, so the follow-up task's request did not leave from here. Reconnect and save this same follow-up again: it keeps this attempt's identity, so a request that had already arrived is answered with its original result rather than creating the task twice.";
-const INTERACTION_KIND_LABELS: Readonly<Record<InteractionKind, string>> = { conversation: "A conversation", visit: "A visit", call: "A phone call", meeting: "A meeting", "written-exchange": "A written exchange", other: "Something else" };
+const FOLLOW_UP_OFFLINE_GUIDANCE = "You appear to be offline, so the follow-up task wasn’t sent. Reconnect and save it again when you’re back online.";
 const PRECISION_WORDING: Readonly<Record<InteractionPrecision, ChoiceWording>> = {
   date: { label: INTERACTION_COPY.precisionDate.title, hint: INTERACTION_COPY.precisionDate.body },
   approximate: { label: INTERACTION_COPY.precisionApproximate.title, hint: INTERACTION_COPY.precisionApproximate.body },
@@ -50,10 +48,10 @@ const PRECISION_WORDING: Readonly<Record<InteractionPrecision, ChoiceWording>> =
 };
 type TaskIntent = "none" | "create";
 const TASK_INTENTS = ["none", "create"] as const satisfies readonly TaskIntent[];
-const TASK_INTENT_WORDING: Readonly<Record<TaskIntent, ChoiceWording>> = { none: { label: "No follow-up task", hint: "Save the interaction on its own." }, create: { label: "Create a follow-up task", hint: "Save the interaction, then the task as a second change." } };
+const TASK_INTENT_WORDING: Readonly<Record<TaskIntent, ChoiceWording>> = { none: { label: "No follow-up task", hint: "Save the activity on its own." }, create: { label: "Add a follow-up task", hint: "Save the activity first, then create a separate follow-up task." } };
 type TaskLink = "this-record" | "no-link";
 const TASK_LINKS = ["this-record", "no-link"] as const satisfies readonly TaskLink[];
-const TASK_LINK_WORDING: Readonly<Record<TaskLink, ChoiceWording>> = { "this-record": { label: "This contact", hint: "The task is filed against the record this interaction is about." }, "no-link": { label: "No link", hint: "The task is filed on its own, with no record attached." } };
+const TASK_LINK_WORDING: Readonly<Record<TaskLink, ChoiceWording>> = { "this-record": { label: "This partner", hint: "Link the task to this partner." }, "no-link": { label: "Not linked", hint: "Create a standalone task." } };
 type InteractionFormValues = { type: string; precision: InteractionPrecision; date: string; outcome: string; note: string; taskIntent: TaskIntent; taskTitle: string; taskDueOn: string; taskLink: TaskLink };
 const INITIAL_VALUES: InteractionFormValues = { type: "", precision: "date", date: "", outcome: "", note: "", taskIntent: "none", taskTitle: "", taskDueOn: "", taskLink: "this-record" };
 const INTERACTION_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { partnerId: SUBJECT_LEGEND, type: TYPE_LABEL, "occurredOn.precision": PRECISION_LEGEND, "occurredOn.date": DATE_LABEL, outcome: OUTCOME_LABEL, participants: PARTNERS_LABEL, "participants.0.role": ROLE_LABEL, note: NOTE_LABEL };
@@ -95,7 +93,7 @@ function taskCandidateOf(partnerId: string, values: InteractionFormValues): unkn
 }
 function RoleField({ name, error, value, onChange }: { readonly name: string; readonly error: string | readonly string[] | undefined; readonly value: string; readonly onChange: (role: string) => void }): ReactElement {
   return (
-    <FormField name={name} label={ROLE_LABEL} description="What this person did in the contact, in a few words." error={error} required>
+    <FormField name={name} label={ROLE_LABEL} description="How they took part (for example, Partner, Host, or Pastor)." error={error} required>
       {(control) => <Input id={control.id} type="text" autoComplete="off" className="w-full sm:max-w-72" value={value} onChange={(event) => onChange(event.currentTarget.value)} {...controlAria(control)} />}
     </FormField>
   );
@@ -194,15 +192,13 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
   return (
     <section data-slot="interaction-form" dir={dir} aria-labelledby={headingId} className={cn("flex min-w-0 flex-col gap-6", className)}>
       <div className="flex min-w-0 flex-col gap-2">
-        <h2 {...{ id: headingId, className: "type-section-title text-pretty" }}>Log an interaction</h2>
-        <p className="type-supporting text-pretty">An interaction records something that actually happened, so this entry states a contact the worker made rather than something the application inferred.</p>
+        <h2 {...{ id: headingId, className: "type-section-title text-pretty" }}>Activity details</h2>
+        <p className="type-supporting text-pretty">Log calls, visits, conversations, and messages that actually happened.</p>
       </div>
       <Alert data-slot="interaction-scope" className="min-w-0">
         <AlertTitle>{INTERACTION_COPY.whatCounts.title}</AlertTitle>
         <AlertDescription>
-          <p>{INTERACTION_COPY.whatCounts.body}</p>
-          <p>{INTERACTION_COPY.whatDoesNot.body}</p>
-          <p>{INTERACTION_COPY.recordedOnce.body}</p>
+          <p>{INTERACTION_COPY.whatCounts.body} {INTERACTION_COPY.whatDoesNot.body}</p>
           <p>{INTERACTION_COPY.provesNothing.body}</p>
         </AlertDescription>
       </Alert>
@@ -224,7 +220,7 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
               {interactionRefusal === null ? null : <FormErrorSummary errors={interactionRefusal} labels={INTERACTION_FIELD_LABELS} order={INTERACTION_FIELD_ORDER} headingLevel={PART_RECEIPT_HEADING} />}
               <form.Field name="type">
                 {(field) => (
-                  <FormField name="type" label={TYPE_LABEL} description="The kinds this record admits are closed, so a contact is filed as one of them rather than as free text that nothing can compare." error={interactionErrors?.byField.type} required>
+                  <FormField name="type" label={TYPE_LABEL} description="Choose the type of contact that took place." error={interactionErrors?.byField.type} required>
                     {(control) => (
                       <NativeSelect
                         id={control.id}
@@ -237,7 +233,7 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                         onBlur={field.handleBlur}
                         {...controlAria(control)}
                       >
-                        <NativeSelectOption value="">Choose the kind of contact</NativeSelectOption>
+                        <NativeSelectOption value="">Choose activity type</NativeSelectOption>
                         {INTERACTION_KINDS.map((kind) => (
                           <NativeSelectOption key={kind} value={kind}>
                             {INTERACTION_KIND_LABELS[kind]}
@@ -248,7 +244,7 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                   </FormField>
                 )}
               </form.Field>
-              <FormFieldGroup legend={PRECISION_LEGEND} name="occurredOn.precision" description="The record keeps the precision you actually have, so a nearer day is never invented to fill the field in." error={interactionErrors?.byField["occurredOn.precision"]} required>
+              <FormFieldGroup legend={PRECISION_LEGEND} name="occurredOn.precision" description="Choose the precision you actually know — no date is guessed." error={interactionErrors?.byField["occurredOn.precision"]} required>
                 {(group) => (
                   <form.Field name="precision">
                     {(field) => (
@@ -268,21 +264,21 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                 )}
               </FormFieldGroup>
               {values.precision === "unknown" ? (
-                <p className="type-supporting text-pretty">No date is recorded, because the day is not known. Nothing is guessed to stand in for it, and no deadline is derived from this entry.</p>
+                <p className="type-supporting text-pretty">Saved without a date — nothing will be guessed.</p>
               ) : (
                 <div className="flex min-w-0 flex-col gap-2">
                   <form.Field name="date">
                     {(field) => <TextField field={field} name="occurredOn.date" label={DATE_LABEL} description={`${DATE_DESCRIPTION} ${civilDateConvention(field.state.value)}`} error={interactionErrors?.byField["occurredOn.date"]} required type="date" onEdit={editedInteraction} className="w-full sm:max-w-60" />}
                   </form.Field>
-                  {values.precision === "approximate" ? <p className="type-supporting text-pretty">Recorded as approximate: the day is known only roughly, so the entry says so instead of implying a precision it does not have.</p> : null}
+                  {values.precision === "approximate" ? <p className="type-supporting text-pretty">Marked as approximate so it’s clear this is an estimated date.</p> : null}
                 </div>
               )}
               <form.Field name="outcome">{(field) => <TextAreaField field={field} name="outcome" label={OUTCOME_LABEL} description={OUTCOME_DESCRIPTION} error={interactionErrors?.byField.outcome} required rows={3} onEdit={editedInteraction} />}</form.Field>
               <Separator />
               <div className="flex min-w-0 flex-col gap-4">
                 <div className="flex min-w-0 flex-col gap-1">
-                  <h3 className="type-subsection-title text-pretty">Who took part</h3>
-                  <p className="type-supporting text-pretty">The contact this interaction is recorded against always takes part. Anyone else is chosen from the records this context can read, so a participant names a record rather than a typed name.</p>
+                  <h3 className="type-subsection-title text-pretty">People involved</h3>
+                  <p className="type-supporting text-pretty">This partner is included automatically. You can also add other shared partners who took part.</p>
                 </div>
                 <FormFieldGroup legend={SUBJECT_LEGEND} name="participants.0" error={interactionErrors?.byField["participants.0"]} className="rounded-2xl border border-border/80 bg-surface-subtle p-4">
                   {() => (
@@ -290,7 +286,7 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                       <p className="flex min-w-0 flex-col gap-1 type-body">
                         {subject === null ? null : <bdi className="min-w-0 font-medium break-words">{subject.displayName}</bdi>}
                         <bdi className="mono-identifier min-w-0 break-words text-xs text-muted-foreground">{subject === null ? partnerId : partnerSelectionRef(subject)}</bdi>
-                        <span className="text-pretty text-muted-foreground">Always a participant of this interaction, so it has no remove control: the entry is recorded against exactly one record.</span>
+                        <span className="text-pretty text-muted-foreground">Always included as the primary partner for this activity.</span>
                       </p>
                       <RoleField name="participants.0.role" error={interactionErrors?.byField["participants.0.role"]} value={subjectRole} onChange={setSubjectRoleValue} />
                     </div>
@@ -301,7 +297,7 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                   scope={scope}
                   name="participants"
                   label={PARTNERS_LABEL}
-                  description="Search the records this context admits. Two records that read alike are listed as two choices, and choosing one states which record you mean."
+                  description="Search your shared partners to add anyone else who joined."
                   error={interactionErrors?.byField.participants}
                   value={participants}
                   onValueChange={(next) => {
@@ -345,9 +341,9 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
               <div className="flex min-w-0 flex-col gap-4">
                 <div className="flex min-w-0 flex-col gap-1">
                   <h3 className="type-subsection-title text-pretty">{TASK_HEADING}</h3>
-                  <p className="type-supporting text-pretty">A follow-up task is separate work. It is saved as its own change under its own identity, and completing it later proves nothing about contact, support or a promise.</p>
+                  <p className="type-supporting text-pretty">Optional. Saved separately from the activity above so you can track your next step in Tasks.</p>
                 </div>
-                <FormFieldGroup legend="Do you want a follow-up task?" name="task-intent" description="A task is optional. Leaving it out saves the interaction alone.">
+                <FormFieldGroup legend="Add a follow-up task?" name="task-intent" description="Leave off to save only the activity.">
                   {(group) => (
                     <form.Field name="taskIntent">
                       {(field) => (
@@ -373,7 +369,7 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                     <form.Field name="taskDueOn">
                       {(field) => <TextField field={field} name="dueOn" label={TASK_DUE_LABEL} description={`${TASK_DUE_DESCRIPTION} ${civilDateConvention(field.state.value)}`} error={taskErrors?.byField.dueOn} optionalHint type="date" onEdit={editedTask} className="w-full sm:max-w-60" />}
                     </form.Field>
-                    <FormFieldGroup legend={TASK_LINK_LEGEND} name="partnerId" description="A task may name the contact this interaction is recorded against, or stand on its own." error={taskErrors?.byField.partnerId}>
+                    <FormFieldGroup legend={TASK_LINK_LEGEND} name="partnerId" description="Choose whether to link this task to the partner or keep it standalone." error={taskErrors?.byField.partnerId}>
                       {(group) => (
                         <form.Field name="taskLink">
                           {(field) => (
@@ -396,9 +392,9 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
                     {interaction.outcome !== null && finishesEntry(interaction.outcome) ? (
                       <div className="flex min-w-0 flex-col gap-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Button {...{ type: "button" as const, variant: "outline" as const, className: "min-h-target max-w-full whitespace-normal" as const, disabled: pending, onClick: saveTaskAlone }}>{task.pending ? "Saving the follow-up task" : "Save the follow-up task"}</Button>
+                          <Button {...{ type: "button" as const, variant: "outline" as const, className: "min-h-target max-w-full whitespace-normal" as const, disabled: pending, onClick: saveTaskAlone }}>{task.pending ? "Saving task…" : "Save follow-up task"}</Button>
                         </div>
-                        <p className="type-supporting text-pretty">The interaction above is already recorded, so this saves the task by itself and sends nothing about the interaction again.</p>
+                        <p className="type-supporting text-pretty">Your activity is already saved — this only saves the follow-up task.</p>
                       </div>
                     ) : null}
                   </div>
@@ -411,10 +407,10 @@ export type InteractionFormProps = { readonly scope: Scope; readonly partnerId: 
               <div className="flex min-w-0 flex-col gap-2">
                 {unconfirmed ? null : (
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button {...{ type: "submit" as const, className: "min-h-target max-w-full whitespace-normal" as const, disabled: pending }}>{interaction.pending ? "Logging the interaction" : "Log the interaction"}</Button>
+                    <Button {...{ type: "submit" as const, className: "min-h-target max-w-full whitespace-normal" as const, disabled: pending }}>{interaction.pending ? "Saving activity…" : "Save activity"}</Button>
                   </div>
                 )}
-                <p className="type-supporting text-pretty">{unconfirmed ? UNCONFIRMED_NOTE : "The interaction is saved first. A follow-up task is then saved as a separate change with its own identity, so a task that fails never re-sends the interaction."}</p>
+                <p className="type-supporting text-pretty">{unconfirmed ? UNCONFIRMED_NOTE : "The activity saves first. Any follow-up task saves separately so a task error never duplicates your activity."}</p>
               </div>
             </>
           )}

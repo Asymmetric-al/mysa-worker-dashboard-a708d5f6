@@ -76,38 +76,38 @@ function NoticeButton({ action, variant, size, pending, onRun }: NoticeButtonPro
 const COVERAGE_DATE_CLASS = "whitespace-nowrap";
 function CoverageGapSentence({ coverage }: { readonly coverage: Coverage }): ReactNode {
   const { from, to } = coverage;
-  if (from === null && to === null) return "The source stated neither a start nor an end for the period its records cover.";
+  if (from === null && to === null) return "The data source didn’t specify a start or end date for its records.";
   if (to === null) {
     return (
       <>
-        The source covers records from <bdi className={COVERAGE_DATE_CLASS}>{from}</bdi> onwards; every date before that one is outside the covered period.
+        Records cover from <bdi className={COVERAGE_DATE_CLASS}>{from}</bdi> onwards; earlier dates aren’t included.
       </>
     );
   }
   if (from === null) {
     return (
       <>
-        The source covers records up to <bdi className={COVERAGE_DATE_CLASS}>{to}</bdi>; every date after that one is outside the covered period.
+        Records cover up to <bdi className={COVERAGE_DATE_CLASS}>{to}</bdi>; later dates aren’t included.
       </>
     );
   }
   return (
     <>
-      The source covers records from <bdi className={COVERAGE_DATE_CLASS}>{from}</bdi> to <bdi className={COVERAGE_DATE_CLASS}>{to}</bdi>; every date before or after that range is outside the covered period.
+      Records cover <bdi className={COVERAGE_DATE_CLASS}>{from}</bdi> to <bdi className={COVERAGE_DATE_CLASS}>{to}</bdi>; dates outside this range aren’t included.
     </>
   );
 }
 const COVERAGE_COMPLETENESS: Readonly<Record<CoverageState, string>> = {
-  complete: "The source reports that period as fully covered, so a total over it covers all of the period.",
-  partial: "The source reports that period as only partly covered, so every total here is an incomplete subtotal rather than a whole-period figure.",
-  unknown: "Whether the source covers that whole period is not known, so every total here is an incomplete subtotal rather than a whole-period figure.",
+  complete: "This period is fully covered.",
+  partial: "This period is only partly covered, so totals shown here are incomplete subtotals.",
+  unknown: "Coverage for this period isn’t confirmed, so totals shown here are incomplete subtotals.",
 };
 function CoverageSummary({ coverage }: { readonly coverage: Coverage | undefined }): ReactElement {
   if (coverage === undefined) {
     return (
       <>
-        <p>The source did not state the period its records cover.</p>
-        <p>Without a stated period, no total here can be presented as a whole-period figure, so every total is an incomplete subtotal.</p>
+        <p>The data source didn’t specify the date range it covers.</p>
+        <p>Totals shown here are treated as incomplete subtotals rather than full-period totals.</p>
       </>
     );
   }
@@ -128,14 +128,14 @@ function renderAlertContent(input: AlertContentInput): { readonly icon: ReactEle
         icon: <CloudOffIcon aria-hidden="true" />,
         body: (
           <>
-            <p>The source that holds this data could not be read, so this surface reports the outage instead of an empty result or a zero.</p>
+            <p>We couldn’t reach the data source for this section, so nothing is replaced with zero or an empty list.</p>
             {source === undefined ? null : (
               <p>
-                Source <bdi className="mono-identifier">{formatSourceReference(source)}</bdi>.
+                Source: <bdi className="mono-identifier">{formatSourceReference(source)}</bdi>.
               </p>
             )}
             {description === undefined ? null : <p>{description}</p>}
-            {retry === undefined ? null : <p>Retrying re-requests this read. Until it succeeds, no value on this surface stands in for the missing data.</p>}
+            {retry === undefined ? null : <p>Try again to request this data once the source is reachable.</p>}
           </>
         ),
       };
@@ -144,14 +144,14 @@ function renderAlertContent(input: AlertContentInput): { readonly icon: ReactEle
         icon: <CircleAlertIcon aria-hidden="true" />,
         body: (
           <>
-            <p>This change may have been applied and its acknowledgement never arrived, so its outcome is not known.</p>
+            <p>This change may have gone through, but we didn’t receive confirmation.</p>
             {operationId === undefined ? null : (
               <p>
-                Operation <bdi className="mono-identifier">{operationId}</bdi>. Checking it returns the original result when the change was applied, and applies nothing when it was not.
+                Operation <bdi className="mono-identifier">{operationId}</bdi>. Checking shows whether it succeeded without creating a duplicate.
               </p>
             )}
             {description === undefined ? null : <p>{description}</p>}
-            <p>No second attempt starts from here: a check reads what happened, and repeating the same request under the same operation replays its original result rather than repeating the effect.</p>
+            <p>Checking inspects what happened safely, and retrying replays the original request rather than applying it twice.</p>
           </>
         ),
       };
@@ -160,14 +160,14 @@ function renderAlertContent(input: AlertContentInput): { readonly icon: ReactEle
         icon: <ShieldAlertIcon aria-hidden="true" />,
         body: (
           <>
-            <p>This request is not permitted in the current scope and session.</p>
+            <p>Your current session doesn’t have access to this view.</p>
             {reasonCode === undefined ? null : (
               <p>
-                Reason <bdi className="mono-identifier">{reasonCode}</bdi>.
+                Reason: <bdi className="mono-identifier">{reasonCode}</bdi>.
               </p>
             )}
             {description === undefined ? null : <p>{description}</p>}
-            <p>The answer is identical whether or not anything exists here, so nothing on this surface reveals what it cannot show.</p>
+            <p>This message is the same whether or not a record exists here.</p>
           </>
         ),
       };
@@ -176,9 +176,9 @@ function renderAlertContent(input: AlertContentInput): { readonly icon: ReactEle
         icon: <SquarePenIcon aria-hidden="true" />,
         body: (
           <>
-            <p>This view's own request was refused, so nothing was read and nothing is shown in its place. The source did not fail, and no permission was refused.</p>
+            <p>This request couldn’t be run as entered, so nothing was loaded.</p>
             {description === undefined ? null : <p>{description}</p>}
-            <p>Correct the request and ask again: once it is one this view admits, the read runs unchanged.</p>
+            <p>Adjust the request parameters and try again.</p>
           </>
         ),
       };
@@ -197,9 +197,9 @@ function renderAlertContent(input: AlertContentInput): { readonly icon: ReactEle
         icon: <LanguagesIcon aria-hidden="true" />,
         body: (
           <>
-            <p>No edition this reader is permitted to read exists in the requested language, so nothing is shown in its place.</p>
+            <p>No edition you have access to is available in this language.</p>
             {description === undefined ? null : <p>{description}</p>}
-            <p>A fallback the reader may not read is neither offered nor named here, so this surface reports the missing language instead of substituting one.</p>
+            <p>Other restricted versions aren’t substituted or listed here.</p>
           </>
         ),
       };

@@ -121,6 +121,8 @@ const isGiftsLedgerData = (value: unknown): boolean => isRecord(value) && isReco
       return fetchRead<GiftsLedgerData, FinancialCoverage>({ url: `/api/support/gifts?${params.toString()}`, admits: isGiftsLedgerData });
     },
     staleTime: GIFTS_STALE_TIME_MS,
+    // The record route already read this exact view. A different cached answer can still revalidate on mount.
+    refetchOnMount: (cached) => record === undefined || initialEnvelope === undefined || cached.state.data?.kind !== "envelope" || cached.state.data.envelope !== initialEnvelope,
     ...(initialEnvelope === undefined ? {} : { initialData: (): GiftsReadResult => ({ kind: "envelope", envelope: initialEnvelope }), initialDataUpdatedAt: asOfInstant(initialEnvelope.asOf) }),
   });
 }

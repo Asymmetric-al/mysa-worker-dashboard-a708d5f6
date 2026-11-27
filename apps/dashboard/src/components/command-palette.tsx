@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { ArrowRightIcon, KeyboardIcon, MoonIcon, SearchIcon, SunIcon } from "lucide-react";
-import { useCallback, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactElement } from "react";
 import { PRIMARY_NAV } from "@/components/sidebar-nav";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ type CommandActionItem = SearchableCommandItem & {
 function buildCommandCatalog(): readonly CommandActionItem[] {
   const items: CommandActionItem[] = [];
   for (const nav of PRIMARY_NAV) {
-    const group = nav.section === "secondary" ? "System" : "Workspace";
+    const group = nav.section === "secondary" ? "Account" : nav.group === "growth" ? "Support & growth" : "Ministry";
     items.push({
       id: `route:${nav.href}`,
       kind: "route",
@@ -45,16 +45,16 @@ function buildCommandCatalog(): readonly CommandActionItem[] {
       actionId: "open-shortcuts",
       label: "View keyboard shortcuts",
       group: "Quick actions",
-      description: "Inspect navigation, Data Grid, and prose editor shortcuts.",
+      description: "See navigation, table, and writing editor shortcuts.",
       keywords: ["shortcuts", "keys", "help", "keyboard", "?"],
     },
     {
       id: "action:toggle-theme",
       kind: "action",
       actionId: "toggle-theme",
-      label: "Toggle light / dark appearance",
+      label: "Switch light / dark theme",
       group: "Quick actions",
-      description: "Switch this browser's color scheme immediately.",
+      description: "Change this browser’s appearance right away.",
       keywords: ["theme", "dark", "light", "appearance", "mode"],
     },
   );
@@ -67,6 +67,7 @@ export type CommandPaletteProps = {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onOpenShortcuts: () => void;
+  readonly onToggleTheme?: () => void;
   readonly currentPath: string;
 };
 
@@ -74,11 +75,12 @@ export type CommandPaletteProps = {
  * Global Command Palette (`⌘K` / `Ctrl+K`) built strictly on MYSA's Base UI `Dialog`
  * and UI SDK `useShortcut`, styled with Maia Zinc tokens.
  */
-export function CommandPalette({ open, onOpenChange, onOpenShortcuts, currentPath }: CommandPaletteProps): ReactElement {
+export function CommandPalette({ open, onOpenChange, onOpenShortcuts, onToggleTheme, currentPath }: CommandPaletteProps): ReactElement {
   const router = useRouter();
   const inputId = useId();
   const listId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const listRef = useRef<HTMLElement | null>(null);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [isDark, setIsDark] = useState(false);
@@ -104,6 +106,13 @@ export function CommandPalette({ open, onOpenChange, onOpenShortcuts, currentPat
   const results = useMemo(() => filterAndRankItems(COMMAND_CATALOG, query), [query]);
   const safeIndex = results.length === 0 ? -1 : Math.min(activeIndex, results.length - 1);
 
+  // Keep the keyboard-highlighted command row scrolled cleanly inside the results viewport.
+  useEffect(() => {
+    if (!open || safeIndex < 0) return;
+    const activeButton = listRef.current?.querySelector<HTMLButtonElement>('button[data-highlighted="true"]');
+    activeButton?.scrollIntoView({ block: "nearest" });
+  }, [open, safeIndex]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, { readonly item: CommandActionItem; readonly flatIndex: number }[]>();
     results.forEach((item, flatIndex) => {
@@ -127,11 +136,15 @@ export function CommandPalette({ open, onOpenChange, onOpenShortcuts, currentPat
       }
       if (item.actionId === "toggle-theme") {
         const nextDark = !document.documentElement.classList.contains("dark");
-        document.documentElement.classList.toggle("dark", nextDark);
+        if (onToggleTheme !== undefined) {
+          onToggleTheme();
+        } else {
+          document.documentElement.classList.toggle("dark", nextDark);
+        }
         setIsDark(nextDark);
       }
     },
-    [handleOpenChange, onOpenShortcuts, router],
+    [handleOpenChange, onOpenShortcuts, onToggleTheme, router],
   );
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>): void => {
@@ -150,39 +163,45 @@ export function CommandPalette({ open, onOpenChange, onOpenShortcuts, currentPat
   };
 
   const hint = useShortcutHint("mod+k");
+  const resolveInitialFocus = useCallback((): HTMLElement | null => {
+    if (typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches) return null;
+    return inputRef.current;
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent initialFocus={() => inputRef.current} className="gap-0 overflow-hidden p-0 sm:max-w-lg" data-slot="command-palette">
+      <DialogContent initialFocus={resolveInitialFocus} className="gap-0 overflow-hidden p-0 sm:max-w-lg" data-slot="command-palette">
         <DialogHeader className="sr-only">
-          <DialogTitle>Jump to workspace destination or action</DialogTitle>
-          <DialogDescription>Type to filter pages, sub-surfaces, and quick workspace actions.</DialogDescription>
+          <DialogTitle>Go to a page or action</DialogTitle>
+          <DialogDescription>Search pages, sub-pages, and quick actions across your missionary workspace.</DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center gap-2.5 border-b border-border/80 px-4 py-3 pe-12">
           <SearchIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
           <label htmlFor={inputId} className="sr-only">
-            Search workspace destinations and commands
+            Search pages and actions
           </label>
           <Input
             ref={inputRef}
             id={inputId}
             type="search"
+            autoComplete="off"
+            spellCheck={false}
             aria-controls={listId}
-            placeholder="Jump to a surface, report, or action…"
+            placeholder="Search pages, reports, or actions…"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
               setActiveIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            className="h-8 border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0"
+            className="h-8 border-0 bg-transparent px-0 text-base shadow-none focus-visible:ring-0 md:text-sm"
           />
         </div>
 
-        <nav id={listId} aria-label="Matching destinations and actions" className="flex max-h-80 flex-col gap-3 overflow-y-auto overscroll-contain p-2.5">
+        <nav ref={listRef} id={listId} aria-label="Matching pages and actions" className="flex max-h-80 flex-col gap-3 overflow-y-auto overscroll-contain p-2.5">
           {grouped.length === 0 ? (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">No destination or action matches that filter.</p>
+            <p className="px-3 py-6 text-center text-sm text-muted-foreground">No matching pages or actions found.</p>
           ) : (
             grouped.map(([groupName, entries]) => (
               <div key={groupName} className="flex flex-col gap-1">

@@ -26,7 +26,7 @@ export type TargetProgressProps = {
 type Progress = NonNullable<TargetProgressProps["progress"]>;
 type RecordedPeriod = Progress["recorded"][number];
 type BanneredState = Exclude<TargetState, "no-target" | "unavailable">;
-const COMPARISON_HEADING = "The four measures";
+const COMPARISON_HEADING = "Activity overview";
 const TABLE_COLUMNS = [
   { key: "period", label: "Period" },
   { key: "dates", label: "Dates" },
@@ -36,8 +36,8 @@ type RecordedReading = { readonly word: string | null; readonly showsFigure: boo
 const RECORDED_READING: Readonly<Record<ValueState, RecordedReading>> = {
   value: { word: null, showsFigure: true, qualifier: null, sentence: null },
   zero: { word: TARGET_STATE_COPY["zero-recorded"].label, showsFigure: true, qualifier: null, sentence: TARGET_STATE_COPY["zero-recorded"].description },
-  unknown: { word: "Unknown", showsFigure: false, qualifier: null, sentence: "The activity source did not establish a count for this period, so no figure is stated. Unknown is not a zero." },
-  withheld: { word: "Withheld", showsFigure: false, qualifier: null, sentence: "A count exists for this period but is not shown on this surface. Withheld is neither a zero nor an empty period." },
+  unknown: { word: "Unknown", showsFigure: false, qualifier: null, sentence: "No count was returned for this period — unknown isn’t treated as zero." },
+  withheld: { word: "Withheld", showsFigure: false, qualifier: null, sentence: "Count withheld on this view — not zero and not empty." },
   unavailable: { word: TARGET_STATE_COPY.unavailable.label, showsFigure: false, qualifier: null, sentence: TARGET_STATE_COPY.unavailable.description },
   "incomplete-subtotal": { word: "Incomplete subtotal", showsFigure: true, qualifier: "incomplete subtotal", sentence: COACHING_COPY.targets.partial },
 };
@@ -78,13 +78,11 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
   return (
     <ChartFigure
       title={`${measureLabel} recorded against a target of ${quantity}`}
-      summary={
-        `${MEASURE_COPY[progress.measure].hint} ${coverageSentence(progress.coverage)} ` + `As-of statement: ${progress.asOf}. Each point is the count recorded for one period: a ` + "period is never filled in from its neighbour, and these counts are never turned into a percentage, a completion rate or a running total."
-      }
-      caption={`Bar chart of ${measureNoun} recorded per period${rangeClause(progress.coverage)}, ` + "with the same periods and figures in the data table below."}
+      summary={`${MEASURE_COPY[progress.measure].hint} ${coverageSentence(progress.coverage)} As of ${progress.asOf}. Each bar shows one period’s recorded count — never averaged or converted into a percentage.`}
+      caption={`Bar chart of ${measureNoun} per period${rangeClause(progress.coverage)}, with exact counts in the table below.`}
       kind="bar"
       series={series}
-      units={`Units: whole ${measureNoun}, counted from activity recorded inside each period. ` + "Nothing here is an amount of money."}
+      units={`Count of ${measureNoun} logged per period (not a financial amount).`}
       coverage={progress.coverage}
       asOf={progress.asOf}
       table={table}
@@ -94,8 +92,8 @@ function ProgressFigure({ progress, locale }: { readonly progress: Progress; rea
   );
 }
 const ComparisonRegion = ({ rows }: { readonly rows: ReadonlyArray<NonNullable<TargetProgressProps["comparison"]>[number]> }): ReactElement => (
-  <Panel headingLevel={2} title={COMPARISON_HEADING} description="Each measure is counted on its own from the activity you recorded, so a conversation inside a call is counted as a conversation and the call remains one call." contentClassName="flex min-w-0 flex-col gap-4">
-    <ul aria-label={COMPARISON_HEADING} className="grid min-w-0 gap-3 sm:grid-cols-2">
+  <Panel headingLevel={2} title={COMPARISON_HEADING} description="Each activity type is counted separately from your logged interactions." contentClassName="flex min-w-0 flex-col gap-4">
+    <ul aria-label={COMPARISON_HEADING} className="grid min-w-0 gap-3 @2xl/main:grid-cols-2">
       {rows.map((row, index) => {
         const reading = RECORDED_READING[row.valueState];
         const meterMax = Math.max(row.target, 1);
@@ -125,7 +123,7 @@ const ComparisonRegion = ({ rows }: { readonly rows: ReadonlyArray<NonNullable<T
         );
       })}
     </ul>
-    <p className="type-supporting text-balance">{"These four are stated separately and are never added together, ranked or turned into a score: none of them measures effort, and no worker is compared with another."}</p>
+    <p className="type-supporting text-balance">{"Each activity type is tracked independently — never combined into a score or compared against other missionaries."}</p>
   </Panel>
 );
 export default function TargetProgress({ progress, comparison, locale, className }: TargetProgressProps): ReactElement {

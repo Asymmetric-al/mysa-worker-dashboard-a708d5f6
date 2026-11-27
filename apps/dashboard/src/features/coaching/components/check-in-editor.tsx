@@ -43,16 +43,15 @@ type HeldWrite =
   | { readonly review: "update"; readonly input: Omit<MutationInput<CheckInUpdateSharedPayload>, "operationId"> }
   | { readonly review: "withdraw"; readonly input: Omit<MutationInput<CheckInWithdrawPayload>, "operationId"> };
 type HeldReceipt = { readonly write: HeldWrite; readonly outcome: MutationOutcome | null };
-const DRAFT_UNSAVED_SENTENCE = "Not saved yet: this draft holds changes the saved private revision does not, and autosave writes them as soon as writing pauses.";
+const DRAFT_UNSAVED_SENTENCE = "Unsaved changes — autosaves when you pause typing.";
 const AUTOSAVE_PAUSE_MS = 800;
-const DRAFT_SAVED_SENTENCE = "Saved: this draft matches the private revision the source holds, so autosave has nothing left to write.";
+const DRAFT_SAVED_SENTENCE = "All changes saved privately.";
 const QUESTION_LABEL = "Question";
 const ANSWER_LABEL = "Answer";
-const COMPLETION_LABEL = "Draft completion";
-const SHARED_SAME_SENTENCE = "Your private draft and the shared revision hold the same text.";
-const UNASSIGNED_DRAFT_SENTENCE =
-  "These answers belong to no question in the captured set, so they are kept exactly as you saved them: this editor writes answers beside their questions, and there is nowhere here to change them. Saving the private draft keeps them, and sharing a check-in copies the saved private draft as it stands.";
-const UNASSIGNED_SHARED_SENTENCE = "These answers belong to no question in the captured question set, and they came into this revision with the private draft it was shared from. Updating the shared check-in sends the answers written beside these questions, so they are not part of that update.";
+const COMPLETION_LABEL = "Progress";
+const SHARED_SAME_SENTENCE = "Your private draft matches what’s shared with your coach.";
+const UNASSIGNED_DRAFT_SENTENCE = "These saved answers aren’t linked to a current question, so they’re preserved read-only here. Saving keeps them, and sharing includes your saved draft as-is.";
+const UNASSIGNED_SHARED_SENTENCE = "These answers came from an earlier question set when this check-in was shared. Updating your shared check-in only sends answers to the current questions.";
 const EMPTY_ANSWERS: readonly string[] = [];
 const scalarCount = (text: string): number => Array.from(text).length;
 const PATH_POSITION = /\[(\d+)\]/u;
@@ -91,14 +90,12 @@ function refusalMessagesByField(violations: readonly CheckInViolation[]): Readon
   }
   return byField;
 }
-const countSentence = (noun: string, position: number, scalars: number, limit: number): string => `${noun} ${position} is ${scalars} of ${limit} characters.`;
-const completionSentence = (answered: number, total: number): string => (total === 0 ? "No question has been captured yet, so there is nothing to complete." : `${answered} of ${total} questions answered.`);
-const questionSetCountSentence = (count: number): string => `This check-in carries ${count} of ${CHECKIN_MAX_QUESTIONS} questions.`;
-const questionSetFullSentence = (count: number): string => `This check-in carries ${count} of ${CHECKIN_MAX_QUESTIONS} questions, so a further question is refused rather than added. Take one out first, and nothing here was dropped.`;
+const countSentence = (noun: string, position: number, scalars: number, limit: number): string => `${noun} ${position}: ${scalars} / ${limit} characters`;
+const completionSentence = (answered: number, total: number): string => (total === 0 ? "No questions added yet." : `${answered} of ${total} questions answered.`);
+const questionSetCountSentence = (count: number): string => `${count} of ${CHECKIN_MAX_QUESTIONS} questions`;
+const questionSetFullSentence = (count: number): string => `Limit reached (${count} of ${CHECKIN_MAX_QUESTIONS} questions). Remove a question before adding another.`;
 const refusalCountSentence = (count: number): string =>
-  count === 1
-    ? "One value is outside a limit: it is marked beside its field with the count it reached and the limit it crossed. Nothing was shortened and nothing was dropped."
-    : `${count} values are outside a limit: each is marked beside its field with the count it reached and the limit it crossed. Nothing was shortened and nothing was dropped.`;
+  count === 1 ? "1 field exceeds its limit. Shorten the highlighted field — nothing was cut or dropped." : `${count} fields exceed their limits. Shorten the highlighted fields — nothing was cut or dropped.`;
 function fieldLabelsOf(count: number): Readonly<Record<string, string>> {
   const labels: Record<string, string> = {};
   for (let position = 0; position < count; position += 1) {
@@ -110,7 +107,7 @@ function fieldLabelsOf(count: number): Readonly<Record<string, string>> {
 function focusSentence(target: FocusTarget, scalars: number): string {
   const noun = target.field === "question" ? QUESTION_LABEL : ANSWER_LABEL;
   const limit = target.field === "question" ? CHECKIN_MAX_QUESTION_SCALARS : CHECKIN_MAX_ANSWER_SCALARS;
-  return `${noun} ${target.position + 1} is ${scalars} of ${limit} characters.`;
+  return `${noun} ${target.position + 1}: ${scalars} / ${limit} characters`;
 }
 const signatureOf = (questions: readonly string[], answers: readonly string[]): string => JSON.stringify([questions, answers]);
 const answerSequenceOf = (body: CheckInBody): readonly CheckInAnswer[] => [...body.questions.map((_, position) => ({ questionOrder: position, text: body.answers[position] ?? "" })), ...body.unassignedAnswers.map((text) => ({ questionOrder: null, text }))];
@@ -159,7 +156,7 @@ function QuestionRow({ position, wording, answer, wordingRefusal, answerRefusal,
         {(field) => <Textarea id={field.id} name={`checkin-answer-${position}`} value={answer} rows={4} aria-describedby={field.describedBy} aria-invalid={field.invalid || undefined} onChange={(event) => onAnswer(event.target.value)} onFocus={() => onFocus({ field: "answer", position })} />}
       </FormField>
       <div className="flex flex-wrap items-center gap-2">
-        <Button {...{ type: "button", variant: "ghost", size: "sm", onClick: onRemove }}>{"Remove this question"}</Button>
+        <Button {...{ type: "button", variant: "ghost", size: "sm", onClick: onRemove }}>{"Remove question"}</Button>
       </div>
     </div>
   );
@@ -275,7 +272,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
   const addWrittenQuestion = (): void => {
     const wording = draftQuestion.trim();
     if (wording === "") {
-      setAddRefusal("A question needs words before it joins the set: write it above and add it again.");
+      setAddRefusal("Write a question before adding it.");
       return;
     }
     const id = `written-question-${writtenQuestions.current}`;
@@ -397,10 +394,10 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
   const saveReplayable = save.data !== undefined && (save.data.outcome === "unavailable" || save.data.outcome === "unknown");
   const blockedReason =
     unavailable !== null ? (
-      <p className="type-body text-pretty text-destructive wrap-anywhere">{"Nothing can be saved, shared, updated or withdrawn while the source cannot be read, and nothing you wrote has been lost."}</p>
+      <p className="type-body text-pretty text-destructive wrap-anywhere">{"Can’t save, share, update, or withdraw while the service is unavailable. Nothing you typed was lost."}</p>
     ) : violations.length === 0 ? null : (
       <Alert variant="destructive">
-        <AlertTitle>{"Nothing will be sent yet"}</AlertTitle>
+        <AlertTitle>{"Fix limits before saving"}</AlertTitle>
         <AlertDescription>
           <p className="text-pretty">{refusalCountSentence(violations.length)}</p>
           {formRefusals.length === 0 ? null : (
@@ -419,48 +416,48 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
     <section aria-labelledby={headingId} data-slot="check-in-editor" data-interface-locale={locale} data-check-in-state={state} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
       <Panel titleId={headingId} headingLevel={2} title="Write a check-in" description={COACHING_COPY.checkIns.purpose} descriptionClassName="text-pretty wrap-anywhere" cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-3">
         <div className="flex min-w-0 flex-col gap-2" aria-labelledby={limitsId}>
-          <h3 {...{ id: limitsId, className: "type-subsection-title" }}>{"The limits this check-in works within"}</h3>
+          <h3 {...{ id: limitsId, className: "type-subsection-title" }}>{"Check-in limits"}</h3>
           <ul className="flex min-w-0 list-disc flex-col gap-1 ps-4 text-sm text-pretty text-muted-foreground">
             <li className="wrap-anywhere">
-              At most <bdi className="tabular-figures">{CHECKIN_MAX_QUESTIONS}</bdi> questions in one check-in.
+              Up to <bdi className="tabular-figures">{CHECKIN_MAX_QUESTIONS}</bdi> questions per check-in.
             </li>
             <li className="wrap-anywhere">
-              At most <bdi className="tabular-figures">{CHECKIN_MAX_QUESTION_SCALARS}</bdi> characters in a question, counted one per Unicode character, so a character outside the basic plane counts once.
+              Up to <bdi className="tabular-figures">{CHECKIN_MAX_QUESTION_SCALARS}</bdi> characters per question.
             </li>
             <li className="wrap-anywhere">
-              At most <bdi className="tabular-figures">{CHECKIN_MAX_ANSWER_SCALARS}</bdi> characters in an answer, counted the same way.
+              Up to <bdi className="tabular-figures">{CHECKIN_MAX_ANSWER_SCALARS}</bdi> characters per answer.
             </li>
             <li className="wrap-anywhere">
-              At most <bdi className="tabular-figures">{CHECKIN_MAX_REQUEST_BYTES}</bdi> bytes once the whole check-in is sent.
+              Up to <bdi className="tabular-figures">{CHECKIN_MAX_REQUEST_BYTES}</bdi> bytes total when saved or shared.
             </li>
           </ul>
-          <p className="type-supporting text-pretty wrap-anywhere">{"A value that crosses one of these limits is refused with the count it reached, and it is never shortened: nothing you wrote is cut down to fit, and no question leaves the set without you removing it yourself."}</p>
+          <p className="type-supporting text-pretty wrap-anywhere">{"Anything over a limit is flagged rather than trimmed, so your writing is never cut off."}</p>
         </div>
         {focused === null ? null : (
           <p className="type-supporting wrap-anywhere">
-            {"Where you are"}: {focusSentence(focused, focusedScalars)}
+            {"Editing"}: {focusSentence(focused, focusedScalars)}
           </p>
         )}
       </Panel>
-      {unavailable === null ? null : <StateNotice kind="unavailable" title="This check-in cannot be read right now" description={COACHING_COPY.checkIns.unavailable} source={unavailable.source} headingLevel={3} />}
+      {unavailable === null ? null : <StateNotice kind="unavailable" title="Couldn’t load this check-in" description={COACHING_COPY.checkIns.unavailable} source={unavailable.source} headingLevel={3} />}
       <Card className="min-w-0">
         <CardHeader>
           <CardTitle className="wrap-anywhere">
             <h3 className="type-subsection-title flex min-w-0 flex-wrap items-center gap-2">
-              {"Your private draft"}
+              {"Private draft"}
               <Badge variant="secondary">{CHECK_IN_STATE_COPY["private-draft"].label}</Badge>
             </h3>
           </CardTitle>
           <CardDescription className="text-pretty wrap-anywhere">{CHECK_IN_STATE_COPY["private-draft"].description}</CardDescription>
         </CardHeader>
         <CardContent className="flex min-w-0 flex-col gap-4">
-          <p className="type-supporting text-pretty wrap-anywhere">{"Only you can read this draft: autosave writes it as a private revision while you write, and it reaches no coach. Sharing is a separate action you take deliberately."}</p>
+          <p className="type-supporting text-pretty wrap-anywhere">{"Only you can see this draft. Autosave keeps it private — nothing reaches your coach until you choose to share."}</p>
           <p className="type-supporting text-pretty wrap-anywhere">
-            {"The questions were fixed when this check-in started, so a change to the offered list cannot rewrite what you are already writing."}
+            {"Questions are locked to this check-in once started, so updates to suggested prompts won’t overwrite your work."}
             {props.captured === null ? null : (
               <>
                 {" "}
-                {"Captured"} <bdi className="mono-identifier">{storedDayText(props.captured.capturedAt)}</bdi>.
+                {"Started"} <bdi className="mono-identifier">{storedDayText(props.captured.capturedAt)}</bdi>.
               </>
             )}
           </p>
@@ -486,11 +483,11 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
                 onFocus={setFocused}
               />
             ))}
-            {questions.length === 0 ? <p className="type-supporting text-pretty wrap-anywhere">{"No questions yet. Add one below or take one from the offered list; a check-in with no questions is still a private note to yourself."}</p> : null}
+            {questions.length === 0 ? <p className="type-supporting text-pretty wrap-anywhere">{"No questions yet. Add your own below or choose from suggested prompts."}</p> : null}
           </div>
           {unassignedSaved.length === 0 ? null : (
             <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3">
-              <h4 className="text-sm font-medium">{"Saved answers that belong to no question"}</h4>
+              <h4 className="text-sm font-medium">{"Saved answers without a matching question"}</h4>
               <UnassignedAnswers answers={unassignedSaved} keyPrefix="draft" />
               <p className="text-sm text-pretty text-muted-foreground wrap-anywhere">{UNASSIGNED_DRAFT_SENTENCE}</p>
             </div>
@@ -498,7 +495,7 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
           <Separator />
           <div className="flex min-w-0 flex-col gap-3">
             <h4 className="type-group-title">{"Add a question"}</h4>
-            <FormField label="The question you want to answer" name="checkin-new-question" description="Write it in your own words, or take one of the offered questions below.">
+            <FormField label="Your question" name="checkin-new-question" description="Write a question in your own words, or choose a suggested prompt below.">
               {(field) => <Input id={field.id} name="checkin-new-question" value={draftQuestion} autoComplete="off" aria-describedby={field.describedBy} onChange={(event) => setDraftQuestion(event.target.value)} />}
             </FormField>
             <div className="flex flex-wrap items-center gap-2">
@@ -507,9 +504,9 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
             </div>
             {addRefusal === null ? null : <output className="block text-sm text-pretty text-destructive wrap-anywhere">{addRefusal}</output>}
             <div className="flex min-w-0 flex-col gap-2">
-              <h5 className="type-group-title">{"Offered questions"}</h5>
+              <h5 className="type-group-title">{"Suggested prompts"}</h5>
               {offered.length === 0 ? (
-                <p className="type-supporting text-pretty wrap-anywhere">{"No offered questions came with this check-in, so every question is one you write yourself."}</p>
+                <p className="type-supporting text-pretty wrap-anywhere">{"No suggested prompts available for this check-in — add your own questions above."}</p>
               ) : (
                 <ul className="flex min-w-0 flex-col items-start gap-2">
                   {offered.map((question) => (
@@ -527,8 +524,8 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
           <Separator />
           <div className="flex min-w-0 flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <Button {...{ type: "button", onClick: submitSave, disabled: !canSave || save.isPending, "aria-describedby": canSave ? undefined : refusalId }}>{save.isPending ? "Saving the private draft" : "Save private draft"}</Button>
-              <output className="text-sm text-pretty text-muted-foreground wrap-anywhere">{save.isPending ? "Saving the private draft. Nothing you wrote is cleared while it saves." : dirty ? DRAFT_UNSAVED_SENTENCE : DRAFT_SAVED_SENTENCE}</output>
+              <Button {...{ type: "button", onClick: submitSave, disabled: !canSave || save.isPending, "aria-describedby": canSave ? undefined : refusalId }}>{save.isPending ? "Saving draft…" : "Save private draft"}</Button>
+              <output className="text-sm text-pretty text-muted-foreground wrap-anywhere">{save.isPending ? "Saving private draft…" : dirty ? DRAFT_UNSAVED_SENTENCE : DRAFT_SAVED_SENTENCE}</output>
             </div>
             {save.data === undefined ? null : <OperationResult outcome={save.data} headingLevel={4} fieldLabels={fieldLabelsOf(questions.length)} {...(saveReplayable ? { onRetrySameWork: submitSave } : {})} />}
           </div>
@@ -538,11 +535,11 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
         <CardHeader>
           <CardTitle className="wrap-anywhere">
             <h3 className="type-subsection-title flex min-w-0 flex-wrap items-center gap-2">
-              {"The shared revision"}
+              {"Shared version"}
               <Badge variant={sharedWithdrawn ? "outline" : "secondary"}>{sharedCopy === null ? "Not shared" : sharedCopy.label}</Badge>
             </h3>
           </CardTitle>
-          <CardDescription className="text-pretty wrap-anywhere">{sharedCopy === null ? "No revision is shared, so a coach can read nothing from this check-in yet." : sharedCopy.description}</CardDescription>
+          <CardDescription className="text-pretty wrap-anywhere">{sharedCopy === null ? "Not shared yet — your coach can’t see this check-in." : sharedCopy.description}</CardDescription>
         </CardHeader>
         {shared === null ? null : (
           <CardContent className="flex min-w-0 flex-col gap-3">
@@ -552,34 +549,34 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
             <AnswerList questions={shared.body.questions} answers={shared.body.answers} keyPrefix="shared" listClassName="flex min-w-0 list-decimal flex-col gap-3 ps-4" muted />
             {unassignedShared.length === 0 ? null : (
               <div className="flex min-w-0 flex-col gap-2">
-                <h4 className="type-group-title">{"Answers that belong to no question"}</h4>
+                <h4 className="type-group-title">{"Answers without a matching question"}</h4>
                 <UnassignedAnswers answers={unassignedShared} keyPrefix="shared" />
                 <p className="type-supporting text-pretty wrap-anywhere">{UNASSIGNED_SHARED_SENTENCE}</p>
               </div>
             )}
-            {sharedDiffers === null ? null : <p className="type-supporting text-pretty wrap-anywhere">{sharedDiffers ? "Your private draft and the shared revision hold different text, and the shared revision changes only through Update shared check-in." : SHARED_SAME_SENTENCE}</p>}
-            {sharedWithdrawn ? <p className="type-supporting text-pretty wrap-anywhere">{"A withdrawn revision cannot be shared again, so a new check-in would carry anything you want a coach to read next."}</p> : null}
+            {sharedDiffers === null ? null : <p className="type-supporting text-pretty wrap-anywhere">{sharedDiffers ? "Your private draft has edits not yet in the shared version. Use Update shared check-in when you’re ready to share them." : SHARED_SAME_SENTENCE}</p>}
+            {sharedWithdrawn ? <p className="type-supporting text-pretty wrap-anywhere">{"Withdrawn check-ins can’t be re-shared. Start a new check-in whenever you want to share again."}</p> : null}
           </CardContent>
         )}
       </Card>
-      {savedBody === null || shared !== null || effectiveCheckInId !== null ? null : <p className="type-supporting text-pretty wrap-anywhere">{"The check-in's own identity is not known here yet, so sharing has to start from its list rather than from this view."}</p>}
+      {savedBody === null || shared !== null || effectiveCheckInId !== null ? null : <p className="type-supporting text-pretty wrap-anywhere">{"Save this check-in first before sharing it with your coach."}</p>}
       {shareInput === null ? null : (
         <ActionReview<CheckInSharePayload>
-          title="Share this check-in with your coach"
+          title="Share check-in with your coach"
           description={
             <div className="flex min-w-0 flex-col gap-2">
-              <p className="text-pretty">{"The revision that will be shared"}</p>
+              <p className="text-pretty">{"What your coach will see"}</p>
               {savedBody === null ? null : <AnswerList questions={savedBody.questions} answers={savedBody.answers} keyPrefix="share" />}
               {savedBody === null || savedBody.unassignedAnswers.length === 0 ? null : (
                 <div className="flex min-w-0 flex-col gap-1">
                   <UnassignedAnswers answers={savedBody.unassignedAnswers} keyPrefix="share" />
-                  <p className="text-pretty">{"These answers belong to no question in the captured set: this share sends the saved private draft as it stands, so they stay with it rather than beside a question."}</p>
+                  <p className="text-pretty">{"These saved answers aren’t matched to a question and will be included as saved."}</p>
                 </div>
               )}
-              {dirty ? <p className="text-pretty">{"This shares the saved private revision, so the changes still unsaved above are not part of it."}</p> : null}
+              {dirty ? <p className="text-pretty">{"This shares your last saved private draft — unsaved edits above won’t be included yet."}</p> : null}
             </div>
           }
-          consequence={<p className="type-supporting text-pretty wrap-anywhere">{"Sharing makes the saved private revision readable by the named coach, for the duration this relationship was accepted with. It sends no notification, records no interaction and creates no task."}</p>}
+          consequence={<p className="type-supporting text-pretty wrap-anywhere">{"Makes your saved private draft visible to your coach for the duration of your coaching relationship. Doesn’t send notifications, log activity, or create tasks."}</p>}
           confirmLabel="Share with coach"
           headingLevel={3}
           input={shareInput}
@@ -589,17 +586,17 @@ export default function CheckInEditor(props: CheckInEditorProps): ReactElement {
       )}
       {shared === null || sharedWithdrawn || questionsMatchShared ? null : (
         <Alert>
-          <AlertTitle>{"This draft asks different questions from the shared revision"}</AlertTitle>
+          <AlertTitle>{"Draft questions differ from the shared version"}</AlertTitle>
           <AlertDescription>
-            <p className="text-pretty wrap-anywhere">{"Update shared check-in changes answers only, on the question set the shared revision captured. Answer those questions here, or share a new check-in that carries the questions you now want to ask."}</p>
+            <p className="text-pretty wrap-anywhere">{"Updating a shared check-in updates answers to the original questions only. Match the shared questions here, or start a new check-in to ask new questions."}</p>
           </AlertDescription>
         </Alert>
       )}
       {updateInput === null ? null : (
         <ActionReview<CheckInUpdateSharedPayload>
-          title="Update the shared check-in"
+          title="Update shared check-in"
           description={<AnswerList questions={questions.map((question) => question.wording)} answers={answers} keyPrefix="update" />}
-          consequence={<p className="type-supporting text-pretty wrap-anywhere">{"The answers below become the shared revision, which is the only way a shared check-in changes. This step does not save your private draft."}</p>}
+          consequence={<p className="type-supporting text-pretty wrap-anywhere">{"Updates the shared answers your coach sees without changing your private draft."}</p>}
           confirmLabel="Update shared check-in"
           headingLevel={3}
           input={updateInput}

@@ -74,36 +74,35 @@ type SeriesOccurrence = NonNullable<SeriesView["currentOccurrence"]>;
 type SeriesStateName = keyof typeof SERIES_STATE_LABELS;
 type SeriesEndKind = SeriesView["rule"]["end"]["kind"];
 type SeriesGroupHeadingLevel = 2 | 3 | 4;
-const SERIES_STATUS_SR_PREFIX = "Series status";
-const PLANNED_TIME_PREFIX = "Planned time";
-const END_OF_SERIES_LABEL = "End";
-const PREVIEW_DATES_NOTE =
-  "These dates are the plan's next dates, judged in the plan's own planning timezone rather than in the one this browser displays: the date the plan is waiting for an answer on when that date is still ahead, and the dates its rule produces after it. Only the date marked actionable can be answered on this page: the others are previews, and nothing happens on them until they become the next date. Where the rule asked for a day a month does not have, the date shown is that month's final day and the resolution is stated beside it.";
+const SERIES_STATUS_SR_PREFIX = "Plan status";
+const PLANNED_TIME_PREFIX = "Scheduled time";
+const END_OF_SERIES_LABEL = "Ends";
+const PREVIEW_DATES_NOTE = "Dates follow this plan’s time zone. Only the active date can be completed or skipped — future dates are shown as a preview.";
 const SERIES_STATE_TONES: Readonly<Record<SeriesStateName, StatusTone>> = { active: "positive", paused: "caution", stopped: "neutral" };
 const GROUP_HEADING_TAG: Readonly<Record<SeriesGroupHeadingLevel, "h2" | "h3" | "h4">> = { 2: "h2", 3: "h3", 4: "h4" };
 /** The one type scale's heading utility per level, so a group heading states the level its caller renders it at with the same measure on every surface. */ const GROUP_HEADING_SCALE: Readonly<Record<SeriesGroupHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const COMMANDS = {
-  complete: { label: "Complete", receiptHeading: "Completing this date" },
-  skip: { label: "Skip", receiptHeading: "Skipping this date" },
-  editOccurrence: { label: "Edit this occurrence", receiptHeading: "Changing this date" },
-  editFuture: { label: "Edit this and future", receiptHeading: "Revising the plan" },
-  pause: { label: "Pause", receiptHeading: "Pausing the series", narration: "Pausing admits no new dates while the series is on hold, and completes nothing." },
-  resume: { label: "Resume", receiptHeading: "Resuming the series", narration: "Resuming lets the rule admit its next date again; it completes nothing and contacts no one." },
-  stop: { label: "Stop", receiptHeading: "Stopping the series", narration: "Stopping ends the plan for good. It is not the same as pausing, and it completes nothing." },
-  applyOccurrence: { label: "Apply to this date" },
-  applyRevision: { label: "Apply this revision" },
-  stopConfirm: { label: "Stop the series" },
-  composer: { label: "Add this work as a one-off task" },
+  complete: { label: "Complete", receiptHeading: "Completed occurrence" },
+  skip: { label: "Skip", receiptHeading: "Skipped occurrence" },
+  editOccurrence: { label: "Edit this occurrence", receiptHeading: "Updated occurrence" },
+  editFuture: { label: "Edit this and future", receiptHeading: "Updated repeating plan" },
+  pause: { label: "Pause", receiptHeading: "Paused plan", narration: "Temporarily holds future dates without completing any tasks." },
+  resume: { label: "Resume", receiptHeading: "Resumed plan", narration: "Restarts scheduling the next date on this plan." },
+  stop: { label: "Stop", receiptHeading: "Stopped plan", narration: "Permanently ends this repeating plan (cannot be resumed)." },
+  applyOccurrence: { label: "Save this occurrence" },
+  applyRevision: { label: "Save changes" },
+  stopConfirm: { label: "Stop plan" },
+  composer: { label: "Add as one-off task" },
   cancel: { label: "Cancel" },
 } as const;
 const COMMAND_BUTTON_CLASS = "min-h-8 max-w-full whitespace-normal";
-const GROUP_LEGENDS = { occurrence: "This date", series: "The series", preview: "The rule and its next dates", noDate: "No date to answer" } as const;
-const OCCURRENCE_ABSENT = { heading: "No date on this series is waiting for an answer", body: "Only one date is actionable at a time, and this series has none right now. A preview date is not a date to complete or skip, so nothing is offered here for it." } as const;
+const GROUP_LEGENDS = { occurrence: "Current occurrence", series: "Plan controls", preview: "Schedule & upcoming dates", noDate: "None active" } as const;
+const OCCURRENCE_ABSENT = { heading: "No active occurrence right now", body: "There isn’t an open occurrence awaiting action on this plan right now." } as const;
 const EFFECTIVE_BOUNDARY_LABEL = "Takes effect from";
-const OCCURRENCE_FORM = { heading: "Change this date", note: "This change applies to the date below and to nothing else: its kind stays as it is, and the rule that produces the following dates is not altered." } as const;
-const REVISION_FORM = { heading: "Revise the plan from the boundary", note: "The revision applies from the boundary stated above. Every date before it, and every completed date, keeps the rule it was planned under." } as const;
-const FORM_REFUSAL = { title: "Check the details of this change", description: "Nothing was sent: correct the fields named here and submit the change again." } as const;
-const SERVICE_REFUSAL = { title: "Check the details of this change", description: "This change was sent and the plan's service refused it: correct the fields it named, then submit the change again." } as const;
+const OCCURRENCE_FORM = { heading: "Edit this occurrence", note: "Updates only this single date without changing the rest of the repeating schedule." } as const;
+const REVISION_FORM = { heading: "Update future occurrences", note: "Applies from the date above onward — earlier dates and completed history stay unchanged." } as const;
+const FORM_REFUSAL = { title: "Please check these details", description: "Nothing was saved yet — fix the highlighted fields and try again." } as const;
+const SERVICE_REFUSAL = { title: "Please check these details", description: "Fix the highlighted fields and try again." } as const;
 const SERIES_COMMAND_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { seriesId: "Series", unfinishedWork: UNFINISHED_WORK_LEGEND };
 const UNFINISHED_WORK_OPTIONS: readonly { readonly value: string; readonly label: string; readonly hint?: string }[] = UNFINISHED_WORK_VALUES.map((value) => ({ value, label: UNFINISHED_WORK_LABELS[value], hint: UNFINISHED_WORK_HINTS[value] }));
 const OCCURRENCE_FIELD_LABELS: Readonly<Record<string, string | undefined>> = { occurrenceId: "The date", title: "Title", category: CATEGORY_LABEL, dueOn: "Due date", kind: "Kind", plannedTime: PLANNED_TIME_PREFIX, timeZone: PLANNING_TIME_ZONE_LABEL, note: "Note" };
@@ -466,8 +465,8 @@ function GroupHeading({ heading, headingId, label, badge }: { readonly heading: 
   );
 }
 const EDIT_TOGGLES = [
-  { key: "occurrence", ...COMMANDS.editOccurrence, narration: "Only this one date changes: the rule that produced it, and every other date on the series, stay as they are." },
-  { key: "future", ...COMMANDS.editFuture, narration: "Revises the plan from an explicit boundary onward, so the dates before it keep the rule they were planned under." },
+  { key: "occurrence", ...COMMANDS.editOccurrence, narration: "Changes only this single date without altering the repeating schedule." },
+  { key: "future", ...COMMANDS.editFuture, narration: "Updates the schedule from this date onward while keeping past history intact." },
 ] as const;
 type OccurrenceCommandsProps = { readonly scope: Scope; readonly series: SeriesView; readonly revision: string; readonly actions: readonly ReadAction[]; readonly effectiveFrom: string | null; readonly onCheckResult?: (() => void) | undefined; readonly onOpenComposer?: (() => void) | undefined };
 function OccurrenceCommands({ scope, series, revision, actions, effectiveFrom, onCheckResult, onOpenComposer }: OccurrenceCommandsProps): ReactElement {
@@ -577,7 +576,7 @@ export function SeriesStateControls({ scope, seriesId, revision, state, actions,
   const [unfinishedWork, setUnfinishedWork] = useState<UnfinishedWork>(() => stopSeriesSchema.parse({ seriesId }).unfinishedWork);
   const stopInput = { scope, expectedRevision: revision, payload: stopSeriesSchema.parse({ seriesId, unfinishedWork }) };
   const stopConfirmation = {
-    title: "Stop this series?",
+    title: "Stop this repeating plan?",
     confirmLabel: COMMANDS.stopConfirm.label,
     description: (
       <>
@@ -627,7 +626,7 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
       <div className="flex min-w-0 flex-col gap-4">
         {/* The plan's own rule, stated before the dates it produces: what the plan is comes before what it produces next. */}
         <section aria-labelledby={ruleHeadingId} data-slot="series-plan-rule" className="flex min-w-0 flex-col gap-2">
-          <h3 {...{ id: ruleHeadingId, className: "type-subsection-title" }}>{"The plan's first due date and its end"}</h3>
+          <h3 {...{ id: ruleHeadingId, className: "type-subsection-title" }}>{"Start date & end"}</h3>
           <PlanRuleFacts rule={series.rule} />
         </section>
         {previewReading === null ? null : (
@@ -661,5 +660,5 @@ export default function OccurrenceActions({ envelope, displayLocale, effectiveFr
       </div>
     ),
   };
-  return <RecordDetail {...{ layout: "page", className, breadcrumb: [{ label: "Work", href: "/work" }], identity, status, sections }} />;
+  return <RecordDetail {...{ layout: "page", className, breadcrumb: [{ label: "Tasks", href: "/work" }], identity, status, sections }} />;
 }

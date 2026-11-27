@@ -87,8 +87,8 @@ const LARGEST_DEFAULT_PAGE_SIZE = 200;
                       aria-label={`Page ${formatCount.format(token)} of ${formatCount.format(pageCount)}`}
                       className={cn(
                         buttonVariants({ variant: token === currentPage ? "outline" : "ghost", size: "sm" }),
-                        "min-h-8 min-w-8 px-2.5 tabular-figures aria-disabled:pointer-events-none aria-disabled:opacity-45",
-                        token === currentPage ? "border-border bg-card font-semibold text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
+                        "min-h-8 min-w-8 px-2.5 font-medium tabular-figures aria-disabled:pointer-events-none aria-disabled:opacity-45",
+                        token === currentPage ? "border-border bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground",
                       )}
                     >
                       {formatCount.format(token)}

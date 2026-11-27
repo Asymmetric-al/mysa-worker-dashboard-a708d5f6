@@ -17,24 +17,24 @@ export const OUTCOME_SEVERITY: Readonly<Record<OutcomeName, AnnouncementSeverity
 export const OUTCOME_HEADINGS: Readonly<Record<OutcomeName, string>> = {
   accepted: "Saved",
   alreadyAccepted: "Already saved",
-  unchanged: "Nothing to change",
-  conflict: "Someone else changed this",
+  unchanged: "No changes needed",
+  conflict: "Updated elsewhere",
   denied: "Not permitted",
-  invalid: "Check the details",
-  unavailable: "Source unavailable",
-  unknown: "Result not confirmed",
+  invalid: "Please check these details",
+  unavailable: "Service unavailable",
+  unknown: "Couldn’t confirm result",
 };
 const RECEIPT_HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's utility per level, so a receipt states its own heading at the measure of the level it lands at. */ const RECEIPT_HEADING_SCALE: Readonly<Record<"h2" | "h3" | "h4", string>> = { h2: "type-section-title", h3: "type-subsection-title", h4: "type-group-title" };
 export type ReceiptHeadingLevel = keyof typeof RECEIPT_HEADING_TAG;
 /** The closed per-item vocabulary, listed once so the set has a runtime form as well as a type. */ export const PER_ITEM_RESULT_STATES = ["accepted", "unchanged", "excluded", "failed"] as const;
 export type PerItemResultState = (typeof PER_ITEM_RESULT_STATES)[number];
-export const PER_ITEM_RESULT_STATUS: Readonly<Record<PerItemResultState, StatusBadgeSpec>> = { accepted: { label: "Accepted", tone: "positive" }, unchanged: { label: "Unchanged", tone: "neutral" }, excluded: { label: "Excluded", tone: "caution" }, failed: { label: "Failed", tone: "danger" } };
-const NO_REASON_TEXT = "No reason was stated for this row.";
-const PER_ITEM_HEADING = "Result for each row";
-const NOT_STATED_TEXT = "Not stated";
-const CONFLICT_CURRENT_LABEL = "The value the record holds now";
-const CONFLICT_INPUT_LABEL = "Your input, kept as you entered it";
+export const PER_ITEM_RESULT_STATUS: Readonly<Record<PerItemResultState, StatusBadgeSpec>> = { accepted: { label: "Saved", tone: "positive" }, unchanged: { label: "Unchanged", tone: "neutral" }, excluded: { label: "Excluded", tone: "caution" }, failed: { label: "Failed", tone: "danger" } };
+const NO_REASON_TEXT = "No details provided for this row.";
+const PER_ITEM_HEADING = "Row-by-row results";
+const NOT_STATED_TEXT = "Not set";
+const CONFLICT_CURRENT_LABEL = "Saved version";
+const CONFLICT_INPUT_LABEL = "Your changes";
 const CONFLICT_VALUE_CLASS = "min-w-0 rounded-md bg-muted p-2 text-sm whitespace-pre-wrap wrap-anywhere text-foreground";
 const FIELD_KEY_SEPARATOR = /[_-]+/u;
 const CAMEL_WORD_BREAK = /(?<=[a-z0-9])(?=[A-Z])/u;
@@ -120,7 +120,7 @@ export type PerItemResultsProps = { readonly items: readonly PerItemResult[]; re
         <p id={headingId} className="text-sm font-medium">
           {heading}
         </p>
-        <p className="text-sm text-muted-foreground">{"Each row below reports its own result, and rows can differ, so read them one at a time rather than as one result for the whole batch."}</p>
+        <p className="text-sm text-muted-foreground">{"Each row has its own status below — review them individually."}</p>
       </div>
       <ul aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2 sm:hidden">
         {rows.map((row) => (
@@ -244,7 +244,7 @@ function conflictDifferences(current: unknown, preservedInput: unknown, fieldLab
         <p id={headingId} className="text-sm font-medium">
           {"Fields that differ"}
         </p>
-        <p className="text-sm text-muted-foreground">{"Only the fields where the record and your input disagree are listed, each with the value the record holds now beside what you entered. Every other field of the record stays as it is, so it is not restated here."}</p>
+        <p className="text-sm text-muted-foreground">{"Only fields where the saved version and your changes differ are shown below."}</p>
       </div>
       <ul aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2 sm:hidden">
         {fields.map((field) => (
@@ -314,8 +314,8 @@ type ReceiptContext = {
   readonly fieldLabels: Readonly<Record<string, string | undefined>> | undefined;
 };
 function unknownRecoverySentence(offersCheck: boolean, offersReplay: boolean): string | null {
-  if (offersCheck && offersReplay) return "Nothing here starts a second attempt: checking the result reads what happened, and retrying " + "sends this same operation, which answers with its original result instead of repeating the " + "effect.";
-  return offersCheck ? "Nothing here starts a second attempt: checking the result reads what happened, and applies " + "nothing." : offersReplay ? "Nothing here starts a second attempt: retrying sends this same operation, which answers with " + "its original result instead of repeating the effect." : null;
+  if (offersCheck && offersReplay) return "Checking reads what happened without making a second change, and retrying safely replays this same request instead of repeating it.";
+  return offersCheck ? "Checking reads what happened without applying anything new." : offersReplay ? "Retrying safely replays this same request and returns its original result instead of repeating it." : null;
 }
 const receipt = (summary: ReactNode, details: ReactNode): ReceiptBody => ({ summary, details });
 function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "invalid" }>, context: ReceiptContext): ReceiptBody {
@@ -326,8 +326,8 @@ function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "inva
       const perItem = items.length === 0 ? null : <PerItemResults items={items} columns={context.perItemColumns} renderItemAction={context.renderItemAction} />;
       return receipt(
         <>
-          <p>The change was applied once, and it stays on this page as the record of it.</p>
-          <p>The revision below is what this record now stands at, and the next change has to present it.</p>
+          <p>Your changes were saved.</p>
+          {facts ? <p className="text-muted-foreground">The latest revision reference is shown below.</p> : null}
         </>,
         facts || perItem !== null ? (
           <>
@@ -340,26 +340,26 @@ function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "inva
     case "alreadyAccepted":
       return receipt(
         <>
-          <p>You sent this before, and the result stored for it came back unchanged: nothing was applied a second time and the revision did not advance.</p>
-          <p>What appears below is what the earlier submission produced, not a new effect.</p>
+          <p>This request was already saved earlier — nothing was applied a second time.</p>
+          <p className="text-muted-foreground">The original saved result is shown below.</p>
         </>,
         <>
           {hasFacts(outcome) ? <ReceiptFacts revision={outcome.revision} /> : null}
-          <ValueBlock label="The result stored for this operation" value={outcome.result} />
+          <ValueBlock label="Original saved result" value={outcome.result} />
         </>,
       );
     case "unchanged":
-      return receipt(<p>Nothing needed changing, so nothing happened: no history entry and no activity record was created.</p>, hasFacts(outcome) ? <ReceiptFacts revision={outcome.revision} /> : null);
+      return receipt(<p>Everything already matched, so no changes or history entries were created.</p>, hasFacts(outcome) ? <ReceiptFacts revision={outcome.revision} /> : null);
     case "conflict": {
       const reapply = context.run(context.onReapply);
       const differences = conflictDifferences(outcome.current, outcome.preservedInput, context.fieldLabels);
       return receipt(
         <>
-          <p>{outcome.reason === "stale-revision" ? "Someone else saved a change after you opened this record, so your change was not applied." : "This submission reused the identity of an earlier request with different content, so it was refused."}</p>
-          <p>Your input is kept exactly as you entered it, beside the value the record holds now, and nothing was overwritten in either direction.</p>
+          <p>{outcome.reason === "stale-revision" ? "Someone else updated this after you opened it, so your changes weren’t saved yet." : "This request reused an earlier submission ID with different details, so it was stopped."}</p>
+          <p>Your edits are kept alongside the latest saved version below — nothing was overwritten.</p>
           {reapply === undefined ? null : (
             <div className="flex flex-wrap items-center gap-2">
-              <ReceiptButton label="Re-apply my input" variant="default" onSelect={reapply} />
+              <ReceiptButton label="Re-apply my changes" variant="default" onSelect={reapply} />
             </div>
           )}
         </>,
@@ -371,7 +371,7 @@ function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "inva
               <ValueBlock label={CONFLICT_INPUT_LABEL} value={outcome.preservedInput} />
             </div>
           ) : differences.length === 0 ? (
-            <p className="text-sm text-pretty">{"Your input states no value the record holds differently, so no field is listed here: what this conflict refuses is the revision, not a value."}</p>
+            <p className="text-sm text-pretty">{"Your values already match the saved version — only the revision changed."}</p>
           ) : (
             <ConflictFields fields={differences} />
           )}
@@ -381,11 +381,11 @@ function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "inva
     case "denied":
       return receipt(
         <>
-          <p>This request was refused in the current session and scope, and nothing was changed.</p>
+          <p>Your current session doesn’t have permission to make this change, so nothing was updated.</p>
           <p>
-            Reason <Identifier value={outcome.reasonCode} />.
+            Reason: <Identifier value={outcome.reasonCode} />.
           </p>
-          <p>The answer is the same whether or not anything exists here, so nothing on this receipt states what you may not see.</p>
+          <p className="text-muted-foreground">This message is the same whether or not a record exists here.</p>
         </>,
         null,
       );
@@ -394,16 +394,16 @@ function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "inva
       const guidance = outcome.guidance.trim();
       return receipt(
         <>
-          <p>The source behind this work could not be reached, so this receipt reports the outage instead of an empty result or a zero.</p>
+          <p>We couldn’t reach the data source for this action, so nothing was changed.</p>
           <p>
             Source <bdi className="mono-identifier">{outcome.source.system}</bdi>, reference <bdi className="mono-identifier">{outcome.source.reference}</bdi>.
           </p>
           {guidance === "" ? null : <p>{outcome.guidance}</p>}
           {retry === undefined ? null : (
             <>
-              <p>Retrying re-requests this same operation, so the service answers with the original result if the change had already been applied.</p>
+              <p>Retrying safely resends the same request without creating duplicates.</p>
               <div className="flex flex-wrap items-center gap-2">
-                <ReceiptButton label="Retry the same request" variant="outline" onSelect={retry} />
+                <ReceiptButton label="Retry request" variant="outline" onSelect={retry} />
               </div>
             </>
           )}
@@ -417,15 +417,15 @@ function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "inva
       const recovery = unknownRecoverySentence(check !== undefined, retry !== undefined);
       return receipt(
         <>
-          <p>This change may have been applied and its acknowledgement never arrived, so its result is not confirmed either way.</p>
+          <p>We didn’t get a confirmation back, so this change may or may not have gone through.</p>
           <p>
             Operation <Identifier value={outcome.operationId} />.
           </p>
           {recovery === null ? null : <p>{recovery}</p>}
           {check === undefined && retry === undefined ? null : (
             <div className="flex flex-wrap items-center gap-2">
-              {check === undefined ? null : <ReceiptButton label="Check the result" variant="default" onSelect={check} />}
-              {retry === undefined ? null : <ReceiptButton label="Retry the same request" variant="outline" onSelect={retry} />}
+              {check === undefined ? null : <ReceiptButton label="Check result" variant="default" onSelect={check} />}
+              {retry === undefined ? null : <ReceiptButton label="Retry request" variant="outline" onSelect={retry} />}
             </div>
           )}
         </>,
@@ -441,7 +441,7 @@ function receiptBody(outcome: Exclude<MutationOutcome, { readonly outcome: "inva
 type InvalidReceiptProps = { readonly outcome: InvalidOutcome; readonly title: string; readonly headingLevel: ReceiptHeadingLevel; readonly fieldLabels: Readonly<Record<string, string | undefined>> | undefined; readonly className: string | undefined };
 function InvalidReceipt({ outcome, title, headingLevel, fieldLabels, className }: InvalidReceiptProps): ReactElement {
   const errors = fieldErrorsFromInvalid(outcome);
-  if (errors.count > 0) return <FormErrorSummary errors={errors} labels={fieldLabels} title={title} description="Nothing was changed: correct the fields this submission names and submit again." headingLevel={headingLevel} className={className} />;
+  if (errors.count > 0) return <FormErrorSummary errors={errors} labels={fieldLabels} title={title} description="Nothing was saved yet — fix the highlighted fields and try again." headingLevel={headingLevel} className={className} />;
   const Heading = RECEIPT_HEADING_TAG[headingLevel];
   return (
     <Card data-slot="operation-result" data-outcome="invalid" className={cn("min-w-0", className)}>
@@ -452,7 +452,7 @@ function InvalidReceipt({ outcome, title, headingLevel, fieldLabels, className }
       </CardHeader>
       <CardContent>
         <p role="alert" className="type-supporting">
-          The submission was refused before anything changed, and it named no field to correct. Nothing was applied.
+          This request couldn’t be saved, so nothing was changed. Review your entries and try again.
         </p>
       </CardContent>
     </Card>

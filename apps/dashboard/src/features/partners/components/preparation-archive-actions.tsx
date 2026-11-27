@@ -14,14 +14,14 @@ import { ARCHIVE_COPY, type Copy } from "../copy/privacy";
 import { PARTNER_ACTION_LABELS, SURFACE_STATE_COPY } from "../copy/states";
 import { useArchivePreparation, useRestorePreparation, type PartnerMutationHandle, type PartnerMutationInput } from "../hooks/use-partner-mutations";
 import type { ArchivePreparationPayload } from "../schemas/preparation";
-const ARCHIVE_LABEL = "Archive preparation";
-const RESTORE_LABEL = "Restore preparation";
-const CONFIRM_DESCRIPTION = "The change takes effect as soon as you confirm it, and its outcome appears in place below this review.";
-const UNAVAILABLE_TITLE = "This change did not reach the source";
-const UNAVAILABLE_DESCRIPTION = "The preparation record keeps its place in the source: the request did not arrive, so nothing about it changed.";
+const ARCHIVE_LABEL = "Archive private contact";
+const RESTORE_LABEL = "Restore private contact";
+const CONFIRM_DESCRIPTION = "This takes effect right away, and you can undo it anytime.";
+const UNAVAILABLE_TITLE = "Couldn’t update private contact";
+const UNAVAILABLE_DESCRIPTION = "The service didn’t respond, so your private contact wasn’t changed.";
 const DENIED_TITLE = SURFACE_STATE_COPY["private-preparation"].denied.title;
 const DENIED_DESCRIPTION = SURFACE_STATE_COPY["private-preparation"].denied.body;
-const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { partnerId: "Preparation record" };
+const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { partnerId: "Private contact" };
 const RECEIPT_HEADING_LEVEL = 3;
 /** The levels this review can land at — a subsection under the record's own section title, or a group title inside the panel's and the sheet's section scale — so the step states the level of the presentation it lands in. */ const REVIEW_HEADING_TAG = { 3: "h3", 4: "h4" } as const;
 const REVIEW_HEADING_SCALE = { 3: "type-subsection-title", 4: "type-group-title" } as const;
@@ -42,7 +42,7 @@ export interface PreparationArchiveActionsProps {
   readonly className?: string;
 }
 type OutcomeReceiptProps = { readonly outcome: MutationOutcome; readonly onCheckResult: (() => void) | undefined; readonly onReplay: (() => void) | undefined; readonly onReapply: ((revision: string) => void) | undefined };
-const NOTICE_COPY: OutcomeNoticeCopy = { denied: { title: DENIED_TITLE, description: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE, description: UNAVAILABLE_DESCRIPTION }, unknown: { title: "This change is not confirmed" }, retryLabel: PARTNER_ACTION_LABELS.retry, checkResultLabel: "Check the result" };
+const NOTICE_COPY: OutcomeNoticeCopy = { denied: { title: DENIED_TITLE, description: DENIED_DESCRIPTION }, unavailable: { title: UNAVAILABLE_TITLE, description: UNAVAILABLE_DESCRIPTION }, unknown: { title: "Couldn’t confirm change" }, retryLabel: PARTNER_ACTION_LABELS.retry, checkResultLabel: "Check result" };
 function OutcomeReceipt({ outcome, onCheckResult, onReplay, onReapply }: OutcomeReceiptProps): ReactElement {
   const notice = outcomeNotice(outcome, NOTICE_COPY, { onRetrySameWork: onReplay, onCheckResult, headingLevel: RECEIPT_HEADING_LEVEL });
   return notice === null ? <OperationResult outcome={outcome} headingLevel={RECEIPT_HEADING_LEVEL} onReapply={outcome.outcome === "conflict" && onReapply !== undefined ? () => onReapply(outcome.currentRevision) : undefined} fieldLabels={FIELD_LABELS} /> : <StateNotice {...notice} />;
@@ -124,7 +124,7 @@ export default function PreparationArchiveActions({ partnerId, kind, archived, e
               </AlertDialogContent>
             </AlertDialog>
           </div>
-          {pending ? <output className="text-sm text-muted-foreground text-pretty">Applying this change once. The receipt below appears when the partner source answers.</output> : null}
+          {pending ? <output className="text-sm text-muted-foreground text-pretty">Saving change…</output> : null}
         </CardContent>
       </Card>
       {settled === null ? null : (

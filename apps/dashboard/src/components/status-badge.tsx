@@ -22,22 +22,22 @@ const TONE_APPEARANCE: Readonly<Record<StatusTone, { readonly variant: NonNullab
 /** The word and tone of each audience an edition may serve, exhaustive over the content module's closed union so a third audience is a compile error rather than an unlabelled chip. The Updates list, the variant cards, the review panel and the preview read this one record, so one audience is never stated two ways. */
 export const AUDIENCE_STATUS: Readonly<Record<VariantAudience, StatusBadgeSpec>> = { public: { label: "Public", tone: "neutral" }, "approved-supporter": { label: "Approved supporters", tone: "info" } };
 /** The four states of a membership in one publisher's purpose: `active`, `awaiting-proof`, `off` and `restricted`. */ export type MembershipStatus = MembershipState;
-export const MEMBERSHIP_STATUS: Readonly<Record<MembershipStatus, StatusBadgeSpec>> = { active: { label: "Active", tone: "positive" }, "awaiting-proof": { label: "Awaiting proof", tone: "caution" }, off: { label: "Off", tone: "neutral" }, restricted: { label: "Restricted", tone: "danger" } };
+export const MEMBERSHIP_STATUS: Readonly<Record<MembershipStatus, StatusBadgeSpec>> = { active: { label: "Active", tone: "positive" }, "awaiting-proof": { label: "Awaiting confirmation", tone: "caution" }, off: { label: "Off", tone: "neutral" }, restricted: { label: "Restricted", tone: "danger" } };
 export type SendStatus = SendOutcomeState;
-export const SEND_STATUS: Readonly<Record<SendStatus, StatusBadgeSpec>> = { accepted: { label: "Accepted — not delivered", tone: "info" }, failed: { label: "Failed", tone: "danger" }, unknown: { label: "Outcome unknown", tone: "caution" } };
-/** The three reach values a released edition may carry, each under the specification's fixed name: Not public, Shared by link: public, and Listed publicly. */ export type ReleaseReachStatus = Reach;
-export const REACH_STATUS: Readonly<Record<ReleaseReachStatus, StatusBadgeSpec>> = { "not-public": { label: "Not public", tone: "neutral" }, "link-public": { label: "Shared by link: public", tone: "info" }, listed: { label: "Listed publicly", tone: "positive" } };
+export const SEND_STATUS: Readonly<Record<SendStatus, StatusBadgeSpec>> = { accepted: { label: "Accepted (not delivered)", tone: "info" }, failed: { label: "Failed", tone: "danger" }, unknown: { label: "Unconfirmed", tone: "caution" } };
+/** The three visibility settings for a published ministry page. */ export type ReleaseReachStatus = Reach;
+export const REACH_STATUS: Readonly<Record<ReleaseReachStatus, StatusBadgeSpec>> = { "not-public": { label: "Not public", tone: "neutral" }, "link-public": { label: "Unlisted (link only)", tone: "info" }, listed: { label: "Listed publicly", tone: "positive" } };
 export type CoachingGrantStatus = GrantLifecycleState | "accepted-but-unavailable";
 export const COACHING_STATUS: Readonly<Record<CoachingGrantStatus, StatusBadgeSpec>> = {
-  invited: { label: "Invited — not yet accepted", tone: "info" },
-  accepted: { label: "Accepted — access not started", tone: "positive" },
+  invited: { label: "Invited (pending)", tone: "info" },
+  accepted: { label: "Accepted (not active yet)", tone: "positive" },
   active: { label: "Active", tone: "positive" },
   revoked: { label: "Revoked", tone: "danger" },
   expired: { label: "Expired", tone: "caution" },
   ended: { label: "Ended", tone: "neutral" },
-  left: { label: "Coach left — access closed", tone: "neutral" },
-  superseded: { label: "Superseded by a newer invitation", tone: "muted" },
-  "accepted-but-unavailable": { label: "Accepted — access unavailable", tone: "caution" },
+  left: { label: "Coach left", tone: "neutral" },
+  superseded: { label: "Replaced by newer invite", tone: "muted" },
+  "accepted-but-unavailable": { label: "Accepted (access unavailable)", tone: "caution" },
 };
 /** The five recurring outcomes plus `outside-partition`, each with the word the support module already owns and the tone this file adds. */ export const BUCKET_STATUS: Readonly<Record<RecurringBucket, StatusBadgeSpec>> = {
   received: { label: BUCKET_LABELS.received, tone: "positive" },

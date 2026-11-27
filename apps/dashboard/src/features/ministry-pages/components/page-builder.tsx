@@ -33,19 +33,19 @@ const PANES = ["outline", "fields", "preview"] as const;
 type Pane = (typeof PANES)[number];
 const PANE_LABEL: Readonly<Record<Pane, string>> = { outline: copy.builder.outline, fields: copy.builder.fields, preview: copy.builder.preview };
 type BuilderSelection = { readonly locale: string; readonly sectionId: string | null; readonly pane: Pane; readonly releaseVariantIds: readonly string[] };
-const NO_DRAFT_DESCRIPTION = "No language edition of this Page holds a saved draft, so there are no sections to change and nothing to preview. The catalogue below starts the first edition; starting one releases nothing and notifies nobody.";
-const PREVIEW_LOADING_DESCRIPTION = "The preview of the exact revision on screen is being read. Nothing is released while it is read, and no other edition is shown in its place.";
-const GIVING_UNAVAILABLE_TITLE = "The giving placement could not be read";
-const DENIED_DESCRIPTION = "The answer is the same whether or not this Page exists, so nothing here states a title, a section, an edition or how many of either there are.";
-const REFUSED_DESCRIPTION = "The request this Page was read with is not one the read admits, so nothing was read here and nothing stands in its place.";
-const GIVING_LOADING_DESCRIPTION = "The approved giving designation for this Page is being read. No other fund and no default designation is shown in the meantime, and no amount is shown at all.";
+const NO_DRAFT_DESCRIPTION = "No language edition has a saved draft yet. Choose a section type below to start your first draft — nothing is published or emailed.";
+const PREVIEW_LOADING_DESCRIPTION = "Loading preview for this revision. Nothing is published while previewing.";
+const GIVING_UNAVAILABLE_TITLE = "Couldn’t load giving details";
+const DENIED_DESCRIPTION = "We don’t disclose whether a page exists when you don’t have permission to view it.";
+const REFUSED_DESCRIPTION = "This page request wasn’t accepted, so nothing could be loaded.";
+const GIVING_LOADING_DESCRIPTION = "Loading the approved giving designation for this page. No gift amounts are shown here.";
 const SECTION_CLASS = "flex min-w-0 flex-col gap-4";
 const HEADING_CLASS = "type-section-title text-pretty wrap-anywhere";
 const NOTE_CLASS = "type-supporting text-pretty wrap-anywhere";
 const PREVIEW_LINK_CLASS = "inline-flex min-h-6 w-fit max-w-full min-w-0 items-center text-start text-sm font-medium inline-link text-pretty wrap-anywhere focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 function otherEditionDescription(composedLocale: string, openLocale: string): string {
-  if (composedLocale === "") return `The Page read named no edition to compose, so no section can be changed here. ${openLocale === "" ? "No language edition is open either." : "This edition can still be previewed, reviewed, released and set to its own reach."}`;
-  return `The Page read composes the ${composedLocale} draft, so its sections are the ones that can be changed. The ${openLocale === "" ? "edition" : `${openLocale} edition`} you have open can still be previewed, reviewed, released and set to its own reach.`;
+  if (composedLocale === "") return `No editable draft is selected for this page. ${openLocale === "" ? "No language edition is open." : "You can still preview, review, publish, and set visibility for this edition."}`;
+  return `Section editing is open for the ${composedLocale} draft. You can still preview, review, publish, and set visibility for the ${openLocale === "" ? "current edition" : `${openLocale} edition`}.`;
 }
 const isSectionType = (element: string): element is PageSectionType => (PAGE_SECTION_TYPES as readonly string[]).includes(element);
 const managedReasonKeyOf = (value: string | null): ManagedFieldKey | null => (value !== null && (MANAGED_FIELD_KEYS as readonly string[]).includes(value) ? (value as ManagedFieldKey) : null);
@@ -122,9 +122,9 @@ function refusalNotice(answer: Refusal, words: RefusalWords, retry: () => void, 
       return <StateNotice kind="refused" headingLevel={words.headingLevel} title={copy.states.refusedTitle} description={words.refusedDescription} {...placement} />;
   }
 }
-const PAGE_REFUSAL: RefusalWords = { headingLevel: 2, unavailableTitle: copy.states.unavailableTitle, retryLabel: "Read this Page again", refusedDescription: REFUSED_DESCRIPTION };
-const CATALOGUE_REFUSAL: RefusalWords = { headingLevel: 3, unavailableTitle: "The section catalogue could not be read", retryLabel: "Read the catalogue again", refusedDescription: REFUSED_DESCRIPTION };
-const GIVING_REFUSAL: RefusalWords = { headingLevel: 3, unavailableTitle: GIVING_UNAVAILABLE_TITLE, retryLabel: "Read the giving designation again", refusedDescription: "The request for this Page's giving designation is not one that read admits, so this placement states no destination rather than an invented one." };
+const PAGE_REFUSAL: RefusalWords = { headingLevel: 2, unavailableTitle: copy.states.unavailableTitle, retryLabel: "Try again", refusedDescription: REFUSED_DESCRIPTION };
+const CATALOGUE_REFUSAL: RefusalWords = { headingLevel: 3, unavailableTitle: "Couldn’t load section catalogue", retryLabel: "Try again", refusedDescription: REFUSED_DESCRIPTION };
+const GIVING_REFUSAL: RefusalWords = { headingLevel: 3, unavailableTitle: GIVING_UNAVAILABLE_TITLE, retryLabel: "Try again", refusedDescription: "The giving designation request wasn’t accepted, so no fund destination is shown." };
 const LOADING_NOTICE = (headingLevel: NoticeHeadingLevel, title: string, description: string): ReactElement => <StateNotice kind="loading" headingLevel={headingLevel} title={title} description={description} />;
 /** The exact, currently authorised, inert preview the route already read for the edition this builder opens on. It is shown until the surface's own preview read answers, and it is never shown for another edition. */
 export type PageBuilderProps = { readonly page: ReadEnvelope<PageBuilderView>; readonly locales: ReadEnvelope<readonly EditionView[]>; readonly givingBinding: ReadEnvelope<GivingBindingView>; readonly preview?: PagePreviewView; readonly className?: string };
@@ -175,14 +175,14 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
   // The document record's own revision, as the read that runs again after every accepted write states it: the reach, containment, withdrawal and edition-creation changes all validate that record, so each of them presents this revision rather than one an edition holds.
   const documentRevision = pageResult.envelope.revision;
   const family = builder.family === "update" ? undefined : builder.family;
-  if (family === undefined) return <StateNotice kind="refused" headingLevel={2} title={copy.states.refusedTitle} description={"An Update is not a Page: it carries prose and its own media rather than a section catalogue, a reach setting and language editions of its own."} className={className} />;
+  if (family === undefined) return <StateNotice kind="refused" headingLevel={2} title={copy.states.refusedTitle} description={"Updates aren’t edited in the ministry page builder. Open this update under Updates instead."} className={className} />;
   const catalogue = catalogueOf(cataloguesRead.data?.kind === "envelope" ? cataloguesRead.data.envelope.data : undefined, family);
   const catalogueDocument = { documentId, expectedRevision: documentRevision, ...(composedLocale === "" ? {} : { locale: composedLocale }) };
   const givingResult = givingRead.data;
   const givingView: ReadEnvelope<GivingBindingView> | undefined = givingResult === undefined ? givingBinding : givingResult.kind === "envelope" ? { ...givingResult.envelope, data: givingResult.envelope.data.binding } : undefined;
   const givingProblem = givingResult === undefined || givingResult.kind === "envelope" ? undefined : givingResult;
   const otherEditionNote = otherEditionDescription(composedLocale, activeLocale);
-  const composedAction = composedLocale === "" ? undefined : { label: `Work on the ${composedLocale} draft`, onClick: () => setSelection((current) => ({ ...current, locale: composedLocale })) };
+  const composedAction = composedLocale === "" ? undefined : { label: `Edit ${composedLocale} draft`, onClick: () => setSelection((current) => ({ ...current, locale: composedLocale })) };
   return (
     <div data-slot="page-builder" data-document-id={documentId} data-family={family} data-locale={activeLocale} data-composing={composingDraft ? "true" : "false"} className={cn("flex min-w-0 flex-col gap-8 text-start", className)}>
       <div className={"order-2 flex min-w-0 flex-col gap-6 lg:order-1"}>
@@ -192,10 +192,10 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
           <LocaleEditionSwitcher editions={editionList} selectedLocale={activeLocale} onSelectLocale={(locale) => setSelection((current) => ({ ...current, locale }))} />
         </div>
         <section aria-labelledby={controlsHeadingId} className={SECTION_CLASS}>
-          <h2 {...{ id: controlsHeadingId, className: HEADING_CLASS }}>{"Review, release, reach and giving"}</h2>
+          <h2 {...{ id: controlsHeadingId, className: HEADING_CLASS }}>{"Publishing, visibility & giving"}</h2>
           <div className={"grid min-w-0 gap-6 lg:grid-cols-2"}>
             <div className={SECTION_CLASS}>
-              <p className={NOTE_CLASS}>{"The editions chosen here are the ones a release covers. Each edition reports its own result, and a Page release sends no notice."}</p>
+              <p className={NOTE_CLASS}>{"Select which language editions to publish. Each edition reports its own status, and publishing a page doesn’t send email notifications."}</p>
               <ReleaseControls
                 scope={scope}
                 documentId={documentId}
@@ -218,7 +218,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
       </div>
       <div className={"order-1 flex min-w-0 flex-col gap-4 lg:order-2"}>
         <fieldset className={cn("inline-flex w-fit max-w-full min-w-0 flex-wrap items-center gap-1 rounded-4xl border border-border/80 bg-muted/70 p-1 lg:hidden")}>
-          <legend className="sr-only">{"Which part of this Page to work on"}</legend>
+          <legend className="sr-only">{"Page editor pane"}</legend>
           {PANES.map((pane) => (
             <Button key={pane} type="button" size="sm" variant={selection.pane === pane ? "default" : "ghost"} aria-pressed={selection.pane === pane} className={"min-h-target max-w-full whitespace-normal"} onClick={() => setSelection((current) => ({ ...current, pane }))}>
               {PANE_LABEL[pane]}
@@ -235,22 +235,22 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
               <section data-pane="outline" aria-labelledby={outlineHeadingId} className={paneClass("outline", selection.pane)}>
                 <h2 {...{ id: outlineHeadingId, className: HEADING_CLASS }}>{copy.builder.outline}</h2>
                 {editionList.length === 0 ? (
-                  <StateNotice kind="empty" headingLevel={3} title={"This Page has no language edition yet"} description={copy.states.emptyEditions} />
+                  <StateNotice kind="empty" headingLevel={3} title={"No language editions yet"} description={copy.states.emptyEditions} />
                 ) : composingDraft ? (
                   <>
                     <SectionOutline sections={sections} selectedSectionId={chosenSectionId} onSelect={chooseSection} variantId={draftVariantId} expectedRevision={draftExpectedRevision} scope={scope} documentId={documentId} />
                     {builder.sections.filter((section) => !isSectionType(section.element)).length === 0 ? null : <p className={NOTE_CLASS}>{copy.catalogue.outsideCatalogue}</p>}
                   </>
                 ) : builder.draft === null ? (
-                  <StateNotice kind="empty" headingLevel={3} title={"This Page has nothing composed yet"} description={NO_DRAFT_DESCRIPTION} />
+                  <StateNotice kind="empty" headingLevel={3} title={"No sections yet"} description={NO_DRAFT_DESCRIPTION} />
                 ) : (
-                  <StateNotice kind="empty" headingLevel={3} title={"Sections are composed in one edition at a time"} description={otherEditionNote} action={composedAction} />
+                  <StateNotice kind="empty" headingLevel={3} title={"Edit sections in one language at a time"} description={otherEditionNote} action={composedAction} />
                 )}
                 {catalogue === undefined ? (
                   cataloguesRead.data === undefined ? (
-                    LOADING_NOTICE(3, "Reading the section catalogue", "The catalogue of section types this family offers is being read. The sections already composed are unaffected, and nothing is added while it is read.")
+                    LOADING_NOTICE(3, "Loading section catalogue", "Loading available section types for this page. Your existing sections aren’t affected.")
                   ) : cataloguesRead.data.kind === "envelope" ? (
-                    <p className={NOTE_CLASS}>{"The catalogue read answered without a catalogue for this family, so no section type is offered here. None is invented in its place, and the sections already composed are unaffected."}</p>
+                    <p className={NOTE_CLASS}>{"No section catalogue was returned for this page type. Existing sections aren’t affected."}</p>
                   ) : (
                     refusalNotice(cataloguesRead.data, CATALOGUE_REFUSAL, () => void cataloguesRead.refetch())
                   )
@@ -287,7 +287,7 @@ export function PageBuilder({ page, locales, givingBinding, preview, className }
                   <p className={NOTE_CLASS}>{copy.builder.openEditionPreviewNote}</p>
                 </div>
               )}
-              {previewView === undefined ? LOADING_NOTICE(3, "Reading this edition's preview", PREVIEW_LOADING_DESCRIPTION) : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} retry={{ label: copy.preview.mediaRetryLabel, onClick: () => void previewRead.refetch() }} />}
+              {previewView === undefined ? LOADING_NOTICE(3, "Loading edition preview", PREVIEW_LOADING_DESCRIPTION) : <PagePreviewFrame layout="builder" preview={previewView} givingBinding={givingView?.data} retry={{ label: copy.preview.mediaRetryLabel, onClick: () => void previewRead.refetch() }} />}
             </section>
           }
         />

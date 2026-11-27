@@ -25,11 +25,11 @@ const QUIET_CLASS = "max-w-prose type-supporting text-pretty";
 const WEEKDAY_NAMES: Readonly<Record<number, string>> = { 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday", 7: "Sunday" };
 const MONTH_NAMES: Readonly<Record<number, string>> = { 1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June", 7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December" };
 const DAY_MARKERS: Readonly<Record<AgendaRow["dateRelation"], string | undefined>> = { today: TASK_LIST_LABELS.today, past: TASK_LIST_LABELS.overdue, future: undefined, undated: undefined };
-const EMPTY_COPY = { title: "No dated work is open", body: "No open task in this context carries a due date, so no day groups anything. Work with no date is read on the five task lists, where a task is also given a date and completed, reopened or cancelled.", action: "Add a task on the lists" } as const;
-const RETRY_LABEL = "Try this read again";
-const FAILED_COPY = { title: "The dated agenda could not be read", body: "This page's request for the agenda did not answer, so no day, row or count is shown in its place. Retry the read, and reset the development data if it keeps failing." } as const;
-const DENIED_COPY = { title: "The dated agenda is not available in this context", body: "This session may not read the tasks of the context it is working in, so no day, row or count is stated here. Another context, if this session holds one, can be chosen from the shell." } as const;
-const REFUSED_COPY = { title: "This view's request was refused", body: "The agenda states only the display time zone and a page size the read admits, so a request the read refuses is answered here rather than thrown, and the source behind it did not fail." } as const;
+const EMPTY_COPY = { title: "No dated tasks open", body: "None of your open tasks have a due date yet. Add a due date from Tasks to see them organized by day here.", action: "Open Tasks" } as const;
+const RETRY_LABEL = "Try again";
+const FAILED_COPY = { title: "Couldn’t load your agenda", body: "We couldn’t reach the agenda right now. Try again in a moment." } as const;
+const DENIED_COPY = { title: "Agenda isn’t available in this ministry", body: "Your current session doesn’t have access to tasks here. If you belong to another ministry, switch to it from the header." } as const;
+const REFUSED_COPY = { title: "Couldn’t load agenda", body: "Adjust the view parameters and try again." } as const;
 type CivilDateText = { readonly heading: string; readonly compact: string; readonly machine: string };
 function civilDateTextOf(stored: string): CivilDateText {
   const parsed = parseCivilDate(stored);
@@ -154,11 +154,11 @@ function AgendaBody({ scope, envelope, partnerLabels, columnVisibility, onQueryS
     <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <SegmentedTabs label="Agenda layout" value={viewMode} onValueChange={setViewMode} options={AGENDA_VIEW_OPTIONS} />
-        <span className="text-xs text-muted-foreground">Read-only calendar inspection — edit dates from the task composer.</span>
+        <span className="text-xs text-muted-foreground">Calendar preview — edit due dates from the Tasks page.</span>
       </div>
-      {viewMode === "calendar" ? <CalendarGrid events={calendarEvents} todayIso={todayIso} label="Dated agenda calendar" emptyDayMessage="No dated open task falls on this calendar day." /> : list}
+      {viewMode === "calendar" ? <CalendarGrid events={calendarEvents} todayIso={todayIso} label="Dated agenda calendar" emptyDayMessage="No tasks due on this day." /> : list}
       {hasPlannedTime ? <p className={QUIET_CLASS}>{PLANNED_VERSUS_HELD_NOTE}</p> : null}
-      <p className={QUIET_CLASS}>{"Completing, reopening and cancelling a task happen here exactly as they do on the lists. Editing a task's date, title, category or link opens the composer on the lists, because a date is changed by choosing it there and never by dragging a row onto a day."}</p>
+      <p className={QUIET_CLASS}>{"You can complete, reopen, or cancel tasks right here. To change a due date, title, or linked partner, choose Edit."}</p>
     </>
   );
 }
@@ -193,7 +193,7 @@ export type AgendaProps = {
   function content(): ReactNode {
     if (reading === undefined) {
       if (read.isError) return <StateNotice kind="unavailable" headingLevel={2} title={FAILED_COPY.title} description={FAILED_COPY.body} retry={{ label: RETRY_LABEL, onClick: refresh }} />;
-      return <StateNotice kind="loading" headingLevel={2} title="Reading the dated agenda" loadingLines={4} />;
+      return <StateNotice kind="loading" headingLevel={2} title="Loading agenda…" loadingLines={4} />;
     }
     switch (reading.kind) {
       case "envelope":
@@ -201,15 +201,14 @@ export type AgendaProps = {
       case "denied":
         return <StateNotice kind="denied" headingLevel={2} title={DENIED_COPY.title} description={DENIED_COPY.body} reasonCode={reading.denied.reasonCode} />;
       case "unavailable":
-        return <StateNotice kind="unavailable" headingLevel={2} title="The dated agenda could not be read" description={reading.unavailable.guidance} source={reading.unavailable.source} retry={{ label: RETRY_LABEL, onClick: refresh }} />;
+        return <StateNotice kind="unavailable" headingLevel={2} title={FAILED_COPY.title} description={reading.unavailable.guidance} source={reading.unavailable.source} retry={{ label: RETRY_LABEL, onClick: refresh }} />;
       case "refused":
         return <StateNotice kind="refused" headingLevel={2} title={REFUSED_COPY.title} description={REFUSED_COPY.body} />;
     }
   }
   return (
     <div data-slot="work-agenda" data-page={String(window.page)} data-page-size={String(window.pageSize)} className={className === undefined || className.trim() === "" ? SURFACE_CLASS : `${SURFACE_CLASS} ${className}`}>
-      {/* Stated once above the surface's own content, so the zone the days on screen were grouped and judged in is read before any day is, on every arm the read answers — the empty one included. */}
-      <p className={QUIET_CLASS}>{`Every day on this page is grouped and judged in ${judgedZone}, the display time zone this browser chose in Settings, and the agenda read in that same zone, so no day here is judged in two; a planned meeting still states the zone it is planned in.`}</p>
+      <p className={QUIET_CLASS}>{`Days are grouped using your display time zone (${judgedZone}). Scheduled meetings keep their own time zone.`}</p>
       {/* Above this surface's own content, so a row action's receipt is read in the agenda's own context whether or not the row that produced it is still part of the read. */}
       <TaskActionResult receipt={receipt} headingLevel={2} />
       {content()}

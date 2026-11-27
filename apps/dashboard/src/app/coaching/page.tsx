@@ -44,10 +44,15 @@ function durationViewOf(duration: CoachingRelationship["duration"]): GrantDurati
   if (duration.kind === "none") return { kind: "none" };
   return { kind: "through-date", throughDate: duration.shareThroughDate };
 }
-function grantViewOf(relationship: CoachingRelationship): CoachingGrantView {
+function grantViewOf(relationship: CoachingRelationship, overview: CoachingOverview): CoachingGrantView {
   const readable = relationship.outcomes.accessLive;
   const modules: readonly ModuleRead[] = readable ? relationship.admittedModules.map((admitted) => ({ key: admitted.module, readState: admitted.readState })) : [];
+  const activeRelationships = overview.relationships.filter((entry) => entry.outcomes.accessLive).length;
   return {
+    grantId: relationship.grantId,
+    recipientPrincipalId: relationship.recipientPrincipalId,
+    totalRelationships: overview.relationships.length,
+    activeRelationships,
     state: relationship.state,
     availability: relationship.availability,
     modules,
@@ -65,7 +70,7 @@ const NOTICE_COPY: ReadNoticeCopy = { headingLevel: 1, denied: { title: COACHING
   if (result.kind !== "envelope") return pageRefusalOf(result, NOTICE_COPY);
   const overview = result.envelope.data;
   const relationship = currentRelationshipOf(overview);
-  const grant = relationship === null ? null : grantViewOf(relationship);
+  const grant = relationship === null ? null : grantViewOf(relationship, overview);
   return (
     <PageColumn>
       <PageHeading title={COACHING_COPY.overview.heading} />

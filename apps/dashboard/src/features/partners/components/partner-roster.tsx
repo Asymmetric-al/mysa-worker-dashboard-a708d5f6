@@ -37,7 +37,7 @@ export interface PartnerRosterRow {
   readonly commitmentStatus?: string | null;
 }
 export type PartnerRosterProps = { readonly scope: Scope; readonly initialResult?: ReadResult<RosterEnvelope<PartnerRosterRow>>; readonly rowActions?: (row: PartnerRosterRow) => ReactNode; readonly emptyAction?: ReactNode; readonly dir?: "ltr" | "rtl"; readonly className?: string; readonly introduction?: ReactNode };
-const ROSTER_LABEL = "Partner roster";
+const ROSTER_LABEL = "Partners";
 const PAGE_SIZE_OPTIONS: readonly number[] = [ROSTER_PAGE_SIZE_DEFAULT, ROSTER_PAGE_SIZE_CAP];
 const ROW_PATH_PREFIX = "rows.";
 const REFERRAL_TONES: Readonly<Record<PartnerReferralStatus, "positive" | "caution" | "muted">> = { active: "positive", "incomplete-date": "caution", expired: "muted" };
@@ -46,11 +46,11 @@ const SORT_FIELD_BY_COLUMN: Readonly<Record<string, string>> = { displayName: "d
 const COLUMN_BY_SORT_FIELD: Readonly<Record<string, PartnerColumnKey>> = { displayName: "displayName", kind: "kind", favourite: "favourite", lastActivityOn: "recentActivity" };
 const ROSTER_COPY = {
   openRecord: (name: string): string => `Open ${name}`,
-  openBeside: "Open",
-  openBesideNote: (name: string): string => ` ${name} beside the list`,
-  panelTitle: "Partner record",
-  filtersUnavailableTitle: "The filters could not be read",
-  filtersUnavailableBody: "The filter set describing this roster did not come back, so no filter control is offered here rather than one that would silently match nothing. The search, the list and the records are read independently of it, and reading again settles which it is.",
+  openBeside: "Quick view",
+  openBesideNote: (name: string): string => ` ${name} in side panel`,
+  panelTitle: "Partner profile",
+  filtersUnavailableTitle: "Couldn’t load filters",
+  filtersUnavailableBody: "Filters didn’t load right now, so they’re hidden until you retry. You can still search and browse the list.",
 } as const;
 const sameSort = (left: RosterSort | null, right: RosterSort | null): boolean => (left === null || right === null ? left === right : left.field === right.field && left.direction === right.direction);
 const sortDescriptorsOf = (sort: RosterSort | null): SortDescriptor[] => {
@@ -103,8 +103,8 @@ function NameCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
       <Link href={partnerHref(row.partner.partnerId)} className="inline-flex min-h-6 min-w-0 items-center rounded-sm font-medium inline-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         {displayName === "" ? <bdi className="mono-identifier">{row.partner.partnerId}</bdi> : <bdi className="text-pretty wrap-anywhere">{displayName}</bdi>}
       </Link>
-      {row.partner.audience === "private" ? <StatusBadge label="Private record" tone="caution" /> : null}
-      {row.partner.archived ? <StatusBadge label="Archived" tone="muted" srPrefix="Private preparation" /> : null}
+      {row.partner.audience === "private" ? <StatusBadge label="Private contact" tone="caution" /> : null}
+      {row.partner.archived ? <StatusBadge label="Archived" tone="muted" srPrefix="Private contact" /> : null}
     </span>
   );
 }
@@ -119,11 +119,11 @@ const ChipRun = ({ chips, variant }: { readonly chips: readonly { readonly key: 
 );
 const chip = (key: string, content: ReactNode): { readonly key: string; readonly content: ReactNode } => ({ key, content });
 function ContactMethodCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
-  if (row.contactMethodKinds.length === 0) return <span className="text-muted-foreground">No permitted contact method</span>;
+  if (row.contactMethodKinds.length === 0) return <span className="text-muted-foreground">No permitted contact</span>;
   return <ChipRun variant="secondary" chips={row.contactMethodKinds.map((kind) => chip(kind, CONTACT_METHOD_LABELS[kind]))} />;
 }
 function TagsCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
-  if (row.partner.tags.length === 0) return <span className="text-muted-foreground">No tag</span>;
+  if (row.partner.tags.length === 0) return <span className="text-muted-foreground">No tags</span>;
   return <ChipRun variant="outline" chips={row.partner.tags.map((tag) => chip(tag, <bdi className="min-w-0 wrap-anywhere">{tag}</bdi>))} />;
 }
 function RelationshipCell({ row }: { readonly row: PartnerRosterRow }): ReactElement {
@@ -131,8 +131,8 @@ function RelationshipCell({ row }: { readonly row: PartnerRosterRow }): ReactEle
   const initiativeCount = row.initiativeIds.length;
   return (
     <span className="flex min-w-0 flex-col gap-1">
-      {stage === null || stage.trim() === "" ? <span className="text-muted-foreground">No relationship label recorded</span> : <bdi className="wrap-anywhere">{stage}</bdi>}
-      <span className="text-xs text-muted-foreground">{initiativeCount === 0 ? "No initiative" : `${String(initiativeCount)} initiative${initiativeCount === 1 ? "" : "s"}`}</span>
+      {stage === null || stage.trim() === "" ? <span className="text-muted-foreground">No relationship label</span> : <bdi className="wrap-anywhere">{stage}</bdi>}
+      <span className="text-xs text-muted-foreground">{initiativeCount === 0 ? "No initiatives" : `${String(initiativeCount)} initiative${initiativeCount === 1 ? "" : "s"}`}</span>
       {row.referralStatus === null ? null : <StatusBadge label={closedLabel(FACET_VALUE_LABELS["referral-status"], row.referralStatus)} tone={REFERRAL_TONES[row.referralStatus]} srPrefix="Referral" />}
     </span>
   );
@@ -141,13 +141,13 @@ const OpenTasksCell = ({ row, position, states }: { readonly row: PartnerRosterR
   <span className="flex min-w-0 flex-col gap-1">
     <StatedCount count={row.openTaskCount} noun="open" state={stateOfRowMember(states, position, "openTaskCount")} />
     <StatedCount count={row.overdueTaskCount} noun="overdue" state={stateOfRowMember(states, position, "overdueTaskCount")} />
-    <StatedCount count={row.undatedTaskCount} noun="without a due date" state={stateOfRowMember(states, position, "undatedTaskCount")} />
+    <StatedCount count={row.undatedTaskCount} noun="undated" state={stateOfRowMember(states, position, "undatedTaskCount")} />
   </span>
 );
 function GivingCurrencyCell({ row, position, states }: { readonly row: PartnerRosterRow; readonly position: number; readonly states: RecordedStates | null }): ReactElement {
   const state = stateOfRowMember(states, position, "givingCurrencies");
   const currencies = row.givingCurrencies ?? [];
-  if (state === "zero" || (state === "value" && currencies.length === 0)) return <span className="text-muted-foreground">No gift in this period</span>;
+  if (state === "zero" || (state === "value" && currencies.length === 0)) return <span className="text-muted-foreground">No gifts in period</span>;
   if (state !== "value") return <StatedValueBadge state={state} />;
   return <ChipRun variant="secondary" chips={currencies.map((currency) => chip(currency, <bdi className="mono-identifier">{currency}</bdi>))} />;
 }
@@ -198,8 +198,8 @@ const OpenBesideAction = ({ row, onOpen }: { readonly row: PartnerRosterRow; rea
 );
 const ImportFirstAction = (): ReactElement => (
   <div className="flex max-w-prose flex-col items-center gap-2">
-    <Link {...{ href: "/partners/import", "data-slot": "button", className: cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS) }}>Import a contact list</Link>
-    <p className="text-center text-xs text-pretty text-muted-foreground">A contact list is imported into this ministry and reviewed row by row before anything is accepted.</p>
+    <Link {...{ href: "/partners/import", "data-slot": "button", className: cn(buttonVariants({ variant: "outline" }), BUTTON_WRAP_CLASS) }}>Import contacts</Link>
+    <p className="text-center text-xs text-pretty text-muted-foreground">Review every row before adding contacts to your private list.</p>
   </div>
 );
 function RosterNotes({ envelope }: { readonly envelope: ReadEnvelope<unknown> }): ReactElement {
@@ -214,9 +214,9 @@ function RosterNotes({ envelope }: { readonly envelope: ReadEnvelope<unknown> })
         </p>
       ) : null}
       {envelope.coverage.state === "complete" ? null : <StateNotice kind="partial-coverage" headingLevel={3} title={partial.title} description={partial.body} coverage={envelope.coverage} />}
-      <p className="max-w-prose text-xs text-pretty text-muted-foreground">This list shows shared facts only. Notes and preparation text are read on the record itself, and a tag, a favourite or an open task proves nothing about contact, consent or giving.</p>
+      <p className="max-w-prose text-xs text-pretty text-muted-foreground">This table shows shared partner info. Your private notes stay on each partner’s profile, and tags or tasks never imply consent or giving.</p>
       <p className="text-xs text-muted-foreground">
-        Read at:
+        Updated:{" "}
         <bdi className="mono-identifier">{envelope.asOf}</bdi>
       </p>
     </div>
@@ -246,7 +246,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
     if (!open) setOpenPartnerId(null);
   };
   const queryState: RecordListQueryState = { sort: sortDescriptorsOf(roster.query.sort), page: roster.query.page, pageSize: roster.query.pageSize, columnVisibility: roster.query.columnVisibility };
-  const retryFacets = { label: "Try the filters again", onClick: (): void => void roster.facets.refetch() };
+  const retryFacets = { label: "Retry filters", onClick: (): void => void roster.facets.refetch() };
   const retryRoster = { label: PARTNER_ACTION_LABELS.retry, onClick: (): void => void roster.roster.refetch() };
   const changeSearch = (value: string): void => roster.setQuery({ search: value });
   const changeApplied = (next: Record<string, string[]>): void => roster.setQuery({ facets: next });
@@ -275,7 +275,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
     const copy = SURFACE_STATE_COPY.roster;
     if (result === undefined) {
       if (roster.roster.isError) return <StateNotice kind="unavailable" headingLevel={2} title={copy.unavailable.title} description={copy.unavailable.body} retry={retryRoster} />;
-      return <StateNotice kind="loading" headingLevel={2} title="Reading the partner roster" loadingLines={5} />;
+      return <StateNotice kind="loading" headingLevel={2} title="Loading partners…" loadingLines={5} />;
     }
     switch (result.kind) {
       case "envelope": {
@@ -292,21 +292,21 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
             renderExpandedRow={(row) => (
               <div className="grid gap-3 text-xs sm:grid-cols-3">
                 <div className="flex flex-col gap-1">
-                  <span className="font-medium text-muted-foreground">Record &amp; contact channels</span>
+                  <span className="font-medium text-muted-foreground">Partner ID &amp; contact</span>
                   <div className="flex flex-wrap items-center gap-1.5">
                     <bdi className="mono-identifier text-foreground">{row.partner.partnerId}</bdi>
                     <CopyButton value={row.partner.partnerId} label={`Copy partner ID for ${nameOf(row)}`} className="h-6 min-h-6 px-2 text-xs" />
                   </div>
                   <span className="text-muted-foreground">
                     {row.contactMethodKinds.length === 0
-                      ? "No permitted contact method"
+                      ? "No permitted contact"
                       : `Permitted: ${row.contactMethodKinds.map((kind) => CONTACT_METHOD_LABELS[kind]).join(", ")}`}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="font-medium text-muted-foreground">Relationship &amp; follow-up</span>
+                  <span className="font-medium text-muted-foreground">Relationship &amp; tasks</span>
                   <span className="text-foreground">
-                    {row.partner.stage === null || row.partner.stage.trim() === "" ? "No stage recorded" : <bdi>{row.partner.stage}</bdi>}
+                    {row.partner.stage === null || row.partner.stage.trim() === "" ? "No relationship label" : <bdi>{row.partner.stage}</bdi>}
                     {` · ${String(row.initiativeIds.length)} ${row.initiativeIds.length === 1 ? "initiative" : "initiatives"}`}
                   </span>
                   <span className="tabular-figures text-muted-foreground">
@@ -315,10 +315,10 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
                 </div>
                 <div className="flex flex-col items-start justify-between gap-2 sm:items-end">
                   <span className="text-muted-foreground">
-                    {row.lastActivityOn === null ? "No activity recorded" : `Last activity: ${row.lastActivityOn}`}
+                    {row.lastActivityOn === null ? "No activity yet" : `Last activity: ${row.lastActivityOn}`}
                   </span>
                   <Link href={partnerHref(row.partner.partnerId)} className="inline-link font-medium text-foreground">
-                    Open full partner record
+                    Open full profile
                   </Link>
                 </div>
               </div>
@@ -353,7 +353,7 @@ export default function PartnerRoster({ scope, initialResult, rowActions, emptyA
   return (
     <div data-slot="partner-roster" dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
       <div className="flex min-w-0 flex-col gap-3">
-        <PartnerFacets label={ROSTER_LABEL} facetsEnvelope={facetsEnvelope} search={{ value: roster.query.search, onChange: changeSearch, placeholder: "Search the whole roster" }} applied={roster.query.facets} onAppliedChange={changeApplied} pending={busy} />
+        <PartnerFacets label={ROSTER_LABEL} facetsEnvelope={facetsEnvelope} search={{ value: roster.query.search, onChange: changeSearch, placeholder: "Search partners…" }} applied={roster.query.facets} onAppliedChange={changeApplied} onClearAll={clearFilters} pending={busy} />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/80 bg-surface-subtle px-3.5 py-2.5">
           <SavedViewBar scope={scope} admittedColumnKeys={PARTNER_COLUMN_KEYS} initialResult={initialResult} />
           <ColumnChooser value={roster.query.columnVisibility} onValueChange={changeColumns} envelope={envelope} />

@@ -2,15 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactElement } from "react";
 import { PageColumn, PageHeading } from "./page-frame";
-const PAGE_TITLE = "This page could not be found";
+const PAGE_TITLE = "Page not found";
 const COPY = {
-  missing: "No screen in this dashboard answers to the address you opened, so nothing is shown in its place: a missing address is not an empty list, a zero or a record with nothing in it.",
-  whereToGo: "Every screen this session can open is listed in the navigation beside this page. The two destinations that begin again are",
+  missing: "We couldn’t find a page at this address.",
+  whereToGo: "Use the sidebar to jump anywhere, or head back to",
   orOpen: "or",
-  helpStated: ", where each job and where it starts is stated.",
+  helpStated: "for guides to your workspace.",
 } as const;
 export const metadata: Metadata = { title: PAGE_TITLE };
-/** The surface a missing address renders: the product's one page title at the page-title scale, and the two destinations that begin again — because a missing address is still a page, and states its heading like every other. */ export default function NotFoundPage(): ReactElement {
+/** Missing-route screen with clear paths back to Home and Help. */ export default function NotFoundPage(): ReactElement {
   return (
     <PageColumn>
       <PageHeading title={PAGE_TITLE} paragraphs={[COPY.missing]} />
@@ -23,7 +23,7 @@ export const metadata: Metadata = { title: PAGE_TITLE };
         <Link href={"/help"} className="inline-link">
           Help
         </Link>
-        {COPY.helpStated}
+        {` ${COPY.helpStated}`}
       </p>
     </PageColumn>
   );

@@ -11,7 +11,7 @@ const PAGE_READING_PATH = "/preview/pages/doc-page-harbour-youth/en";
 const UPDATE_READING_PATH = `/preview/${UPDATE_DOCUMENT}`;
 const SEEDED_VIDEO = { assetId: "asset-video-welcome", playback: "rendition-video-welcome-playback", poster: "rendition-video-welcome-poster", captions: "rendition-video-welcome-captions", transcript: "rendition-video-welcome-transcript" } as const;
 const DEVELOPMENT_LABEL = "Development data";
-const LOCAL_PROCESSING = "local processing; not production scanning or transcoding"; // The sentence every simulated media boundary states, in the specification's own words.
+const LOCAL_PROCESSING = "Processed locally — not production media scanning or transcoding."; // The sentence every simulated media boundary states, in the specification's own words.
 const PROTECTED_PROSE = "the monthly costs rose in September"; // The protected sentence the approved-supporter edition carries and the public edition deliberately does not.
 const PUBLIC_PROSE = "Thank you for praying with us"; // A public sentence from the same Update, so the reading view below is proved to have rendered an edition rather than nothing.
 const TYPED_PROSE = "A note for the people who support this work."; // What this file types into the editor, so "the prose is untouched" is an assertion about text only this test put there.
@@ -76,7 +76,7 @@ async function openEditor(page: Page): Promise<void> {
 }
 async function openPicker(page: Page, kind: "image" | "video"): Promise<Locator> {
   await mediaPaneOf(page) // Opens the picker for one kind of media from the editor's own add action, and waits for its first step.
-    .getByRole("button", { name: kind === "video" ? "Add a video" : "Add an image", exact: true })
+    .getByRole("button", { name: kind === "video" ? "Add video" : "Add image", exact: true })
     .click();
   const picker = page.locator(`[data-slot="media-picker"][data-kind="${kind}"]`);
   await expect(picker).toBeVisible();
@@ -103,7 +103,7 @@ async function showVideoPlacements(page: Page): Promise<void> {
 }
 type VideoPlacementInput = { readonly file: string; readonly altText?: string; readonly caption?: string; readonly credit?: string; readonly language?: string; readonly transcript?: string; readonly poster?: string | null; readonly captions?: string | null; readonly trackLabel?: string };
 /** The placement's caption field, told apart from the caption-track file input the video picker offers beside it. */ async function describePlacement(picker: Locator, input: VideoPlacementInput): Promise<void> {
-  await picker.getByLabel(/^Alternative text/u).fill(input.altText ?? PLACEMENT_TEXT.altText); // The labels carry a required marker or an "(optional)" suffix, so each field is addressed by the start of the label a person reads rather than by text that would have to guess which of the two it is.
+  await picker.getByLabel(/^Alt text/u).fill(input.altText ?? PLACEMENT_TEXT.altText); // The labels carry a required marker or an "(optional)" suffix, so each field is addressed by the start of the label a person reads rather than by text that would have to guess which of the two it is.
   await picker.getByLabel(/^Caption(?! track)/u).fill(input.caption ?? PLACEMENT_TEXT.caption);
   await picker.getByLabel(/^Credit/u).fill(input.credit ?? PLACEMENT_TEXT.credit);
   await picker.getByLabel(/^Language/u).fill(input.language ?? PLACEMENT_TEXT.language);
@@ -198,10 +198,10 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await editor.pressSequentially(TYPED_PROSE);
   await expect(page.getByText("Saved", { exact: true }).first()).toBeVisible();
   const picker = await openPicker(page, "video");
-  await expect(picker.getByText("What this placement admits", { exact: true }), "--- the picker states what it admits before any work begins ------------------------------").toBeVisible();
+  await expect(picker.getByText("Supported formats & limits", { exact: true }), "--- the picker states what it admits before any work begins ------------------------------").toBeVisible();
   await expect(picker.getByText(/MP4 with H\.264 video and AAC audio, or WebM with VP8 or VP9 video and Vorbis or Opus audio/u).first()).toBeVisible();
   for (const value of ["No more than 100 MiB.", "No longer than 3 minutes.", "No larger than 1,920 × 1,080 pixels."]) await expect(picker.getByText(value, { exact: true })).toBeVisible();
-  await expect(picker.getByText(/This application checks the file.s content itself, so a name or an extension never decides what a file is/u)).toBeVisible();
+  await expect(picker.getByText(/Files are inspected by content rather than file extension\./u)).toBeVisible();
   await expect(picker.locator('[data-slot="simulation-label"][data-simulation-effect="media-preparation"]')).toContainText(LOCAL_PROCESSING);
   const held = await holdNextRegistration(page);
   await chooseFile(picker, "sample-h264.mp4");
@@ -215,12 +215,12 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await expect(picker).toHaveAttribute("data-phase", "preparing");
   await expect(picker.locator('[aria-label="Preparing this video"]')).toBeVisible();
   await expect(picker.getByText("Preparing…", { exact: true })).toBeVisible();
-  await expect(picker.getByText(/Preparing this file with the local media pipeline: it is decoded, checked, re-encoded so its metadata is removed, and stored\. Nothing is published\./u)).toBeVisible();
+  await expect(picker.getByText(/Preparing file locally: checking format, removing metadata, and saving to your draft\. Nothing is published\./u)).toBeVisible();
   await expect(picker.getByRole("button", { name: "Stop waiting", exact: true })).toBeVisible();
   held.release();
   const receipt = picker.locator('[data-slot="operation-result"]');
   await expect(receipt).toHaveAttribute("data-outcome", "accepted", { timeout: PREPARATION_TIMEOUT_MS });
-  await expect(receipt, "The receipt states that one effect was applied and that it is recorded, and it repeats that this was local processing rather than production scanning").toContainText("The change was applied once");
+  await expect(receipt, "The receipt states that one effect was applied and that it is recorded, and it repeats that this was local processing rather than production scanning").toContainText("Your changes were saved.");
   await expect(picker.locator('[data-simulation-context="block"][data-simulation-effect="media-preparation"]')).toContainText(LOCAL_PROCESSING);
   await picker.getByRole("button", { name: "Done", exact: true }).click();
   await expect(picker).toBeHidden();
@@ -231,13 +231,13 @@ test("a chosen video is checked by its own content, prepared on this device, and
   const placed = videos.first();
   await expect(placed).toHaveAttribute("data-state", "ready");
   await expect(placed).toContainText("Ready");
-  const placedFor = await placementFact(placed, "Placed for");
+  const placedFor = await placementFact(placed, "Used for");
   for (const purpose of ["playback", "poster", "captions", "transcript"]) expect(placedFor, `the placement is placed for its ${purpose} rendition`).toContain(purpose);
-  expect(await placementFact(placed, "Alternative text")).toBe(PLACEMENT_TEXT.altText);
+  expect(await placementFact(placed, "Alt text")).toBe(PLACEMENT_TEXT.altText);
   expect(await placementFact(placed, "Credit")).toBe(PLACEMENT_TEXT.credit);
-  expect(await placementFact(placed, "Transcript")).toBe("Present"); // The record states what this asset really carries: registering the chosen files sends their own bytes and text, so the asset holds the playback, poster, caption and transcript renditions prepared for it.
-  expect(await placementFact(placed, "Caption track")).toBe("Present");
-  expect(await placementFact(placed, "Poster")).toBe("Present");
+  expect(await placementFact(placed, "Transcript")).toBe("Included"); // The record states what this asset really carries: registering the chosen files sends their own bytes and text, so the asset holds the playback, poster, caption and transcript renditions prepared for it.
+  expect(await placementFact(placed, "Captions")).toBe("Included");
+  expect(await placementFact(placed, "Poster")).toBe("Included");
   await placeVideo(page, { file: "sample-vp9.webm", altText: "A second short clip for supporters", caption: "Another welcome" });
   await showVideoPlacements(page);
   await expect(videos).toHaveCount(2);
@@ -249,7 +249,7 @@ test("a chosen video is checked by its own content, prepared on this device, and
   await expect(rejecting.getByText(/Upload an MP4 \(avc video with aac audio\) or a WebM \(vp8 or vp9 video/u)).toBeVisible();
   await expect(rejecting, "An invalid attempt changes nothing, so it stays on the form rather than presenting a receipt as if something had been registered").toHaveAttribute("data-phase", "described");
   await expect(rejecting.locator('[data-slot="operation-result"]')).toHaveCount(0);
-  await expect(mediaPaneOf(page).getByText("This media was not placed", { exact: true })).toBeVisible();
+  await expect(mediaPaneOf(page).getByText("Couldn’t attach media", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(rejecting).toBeHidden();
   await showVideoPlacements(page);
@@ -296,7 +296,7 @@ test("a chosen video is checked by its own content, prepared on this device, and
 });
 test("a released edition plays its MP4 with a poster and a WebVTT caption track, and never starts by itself with sound", async ({ page }) => {
   await page.goto(PAGE_READING_PATH);
-  await expect(page.getByRole("heading", { level: 1, name: "Page edition", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Public page", exact: true })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_LABEL, { exact: true }).first()).toBeVisible();
   const video = page.locator("video").first();
   await expect(video, "The one player the application renders: native semantic HTML with its own controls, so the browser's accessible player is what a reader meets rather than a reimplementation of one").toBeVisible();
@@ -352,7 +352,7 @@ test("a released edition plays its MP4 with a poster and a WebVTT caption track,
   const placementFacts = videoFigure.locator("figcaption");
   await expect(placementFacts, "the figure states the caption, the credit of the work and the language it is in, rather than only the words the placement typed into the caption field").toHaveCount(1);
   for (const fact of ["A welcome from the group.", "Harbour Youth", "Language: en"] as const) await expect(placementFacts, `the figure states ${JSON.stringify(fact)}`).toContainText(fact);
-  await expect(page.getByText("simulated publication; reach is demonstrated in the receiving preview", { exact: true }).first(), "The surface states that its reach is demonstrated rather than pushed to a real audience").toBeVisible();
+  await expect(page.getByText("Simulated publishing — preview how readers see it in Reader preview.", { exact: true }).first(), "The surface states that its reach is demonstrated rather than pushed to a real audience").toBeVisible();
 });
 test("every rendition is served by the application's own scoped route, and a byte range returns a partial response", async ({ page }) => {
   await page.goto(PAGE_READING_PATH); // The addresses the released edition emitted, read from the player itself rather than composed here: a test that built its own addresses would prove what the route admits, not what the application serves.
@@ -519,20 +519,20 @@ test("a protected notice carries no protected prose or media, and the link it ca
   expect(html, "the notice points at the receiving surface").toContain(UPDATE_READING_PATH);
   expect(plain, "the plain-text notice points at the receiving surface").toContain(UPDATE_READING_PATH);
   await page.goto("/communication/inbox");
-  await expect(page.getByRole("heading", { level: 2, name: "Messages produced for this membership" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Simulated emails" })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_LABEL, { exact: true }).first()).toBeVisible();
-  for (const said of [/Send outcome: Accepted — not delivered/u, /It is not a delivered message and not a read one/u]) await expect(page.getByText(said).first()).toBeVisible();
+  for (const said of [/Status: Accepted \(not delivered\)/u, /not that it was delivered or read/u]) await expect(page.getByText(said).first()).toBeVisible();
   await expect(page.getByText("Delivered", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Notice body: Protected notice", { exact: true })).toBeVisible();
+  await expect(page.getByText("Privacy: Protected notice", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /^Open the message/u }).click();
-  await expect(page.getByRole("heading", { level: 3, name: "The message as it was produced for this recipient" })).toBeVisible();
-  await expect(page.getByText("A protected Update arrives as a link, not as the Update itself", { exact: true })).toBeVisible();
-  await expect(page.getByText(/It holds no protected prose, no image, no location, no poster, no transcript and no caption/u)).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open the protected Update", exact: true })).toHaveAttribute("href", UPDATE_READING_PATH);
+  await expect(page.getByRole("heading", { level: 3, name: "Email preview" })).toBeVisible();
+  await expect(page.getByText("Protected updates send a link only", { exact: true })).toBeVisible();
+  await expect(page.getByText(/never the body text, photos, locations, videos, captions, or preview snippets/u)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Read protected update", exact: true })).toHaveAttribute("href", UPDATE_READING_PATH);
   await expect(page.getByRole("tab", { name: "HTML", exact: true })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "Plain text", exact: true })).toHaveCount(0);
   for (const absent of [page.locator("video"), page.getByText(PROTECTED_PROSE), page.getByText(TRANSCRIPT_TEXT), page.getByText(PLACEMENT_TEXT.altText)]) await expect(absent).toHaveCount(0);
-  await expect(page.getByText("simulated — no mail leaves this application", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Simulated — no email leaves this workspace.", { exact: true }).first()).toBeVisible();
   await page.goto(`${EDITOR_PATH}/preview`);
   const transcriptLink = page
     .locator("figure")
@@ -550,7 +550,7 @@ test("a protected notice carries no protected prose or media, and the link it ca
   await actAsPersona(page, OUTSIDE_READER_PERSONA);
   await page.goto(`${UPDATE_READING_PATH}?locale=en`);
   await expect(page.locator('[data-slot="receiving-post-denied"]'), "a reader without the grant is refused at the same link").toBeVisible();
-  await expect(page.getByRole("heading", { name: "This edition cannot be read here", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "This update isn’t available", exact: true })).toBeVisible();
   await expect(page.getByText(PROTECTED_PROSE), "the refusal discloses no protected prose").toHaveCount(0);
   await expect(page.locator("video"), "and no protected media").toHaveCount(0);
 });

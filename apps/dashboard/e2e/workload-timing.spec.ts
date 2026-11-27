@@ -136,14 +136,14 @@ async function awaitExportHydration(page: Page): Promise<void> {
   const summary = page.locator(MEANINGFUL_CONTENT_SLOT);
   await expect(summary, "The ledger states the whole-result figures of the query it read.").toBeVisible();
   let total = 0;
-  for (const line of await summary.locator("li").allInnerTexts()) for (const match of line.matchAll(/\band\s+([\d,]+)\s+gifts?\b/gu)) total += Number((match[1] ?? "0").replaceAll(",", ""));
+  for (const line of await summary.locator("li").allInnerTexts()) for (const match of line.matchAll(/·\s*([\d,]+)\s+gifts?\b/gu)) total += Number((match[1] ?? "0").replaceAll(",", ""));
   return total;
 }
 /** The whole-result row count the report states for the query its export writes, which is the count the file's own total is compared with. */ async function rowsStatedByReport(page: Page): Promise<number> {
   const actions = page.locator('[data-slot="export-print-actions"]');
   await expect(actions, "The report states how many rows its whole-query export will hold.").toBeVisible();
   const stated = (await actions.innerText()).replace(/\s+/gu, " ");
-  const digits = (/Rows in the file\s*([\d,]+)/u.exec(stated)?.[1] ?? "").replaceAll(",", "");
+  const digits = (/Rows included:?\s*([\d,]+)/u.exec(stated)?.[1] ?? "").replaceAll(",", "");
   const value = Number(digits);
   if (digits === "" || !Number.isSafeInteger(value)) throw new Error(`The report states no readable whole-result row count beside its export control, so the file has no count to agree with: ${JSON.stringify(stated.slice(0, 200))}`);
   return value;
@@ -214,7 +214,7 @@ test("times the whole-query CSV export once and states the row count it exported
   ensureWorkload();
   const machine = machineRecord();
   console.log(JSON.stringify({ measurement: "machine", ...machine }));
-  const control = page.getByRole("button", { name: "Export the whole query as CSV" });
+  const control = page.getByRole("button", { name: "Export CSV" });
   const attempt = await withRetake(EXPORT_TEST, 1, async () => {
     await page.goto(RECEIVED_REPORT_HREF, { waitUntil: "domcontentloaded", timeout: NAVIGATION_TIMEOUT_MS });
     await expect(control, "The received-support report offers the whole-query export in this scope.").toBeEnabled();

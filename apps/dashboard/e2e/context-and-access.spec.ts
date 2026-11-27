@@ -3,8 +3,8 @@ import { test, expect, actAs, fieldAt, isRecord, newAttemptId, parseJson, scopeA
 const OWNER_SESSION = "established-worker";
 const UNAUTHORISED_READER_SESSION = "reader-unauthorized"; // A seeded reader holding no grant of any kind: the persona whose refusal must disclose nothing.
 const REFUSED_SESSIONS = [
-  { sessionId: "session-denied", label: "a denied session", heading: /This workspace is not available to this session/u, reason: /Reason not-admitted/u, guidance: "request-access" },
-  { sessionId: "session-expired", label: "an expired session", heading: /This session has expired/u, reason: /Reason session-expired/u, guidance: "sign-in-again" },
+  { sessionId: "session-denied", label: "a denied session", heading: /You don’t have access to this workspace/u, reason: /Reason:\s*not-admitted/u, guidance: "request-access" },
+  { sessionId: "session-expired", label: "an expired session", heading: /Your session has expired/u, reason: /Reason:\s*session-expired/u, guidance: "sign-in-again" },
 ] as const;
 const OWNER_PARTNER_ID = "partner-jo-mbeki";
 const OWNER_PARTNER_NAME = "Jo Mbeki";
@@ -89,7 +89,7 @@ async function captureOwnerValues(page: Page): Promise<OwnerValues> {
   await actAs(page, OWNER_SESSION); // Captures, from the owner's own authorised surfaces, every value another identity must never obtain.
   await page.goto(`/partners/${OWNER_PARTNER_ID}`);
   await expect(page.getByRole("heading", { level: 1, name: OWNER_PARTNER_NAME })).toBeVisible(); // The heading is the record's own stated identity, so a page that renders a different record fails here rather than letting every later assertion compare against the wrong partner.
-  const privateNote = (await page.locator('[data-slot="card"]').filter({ hasText: "What you wrote" }).locator("li p.whitespace-pre-line bdi").first().innerText()).trim();
+  const privateNote = (await page.locator('[data-slot="card"]').filter({ hasText: "Your private notes" }).locator("li p.whitespace-pre-line bdi").first().innerText()).trim();
   expect(privateNote.length, "the owner's private note is captured from the record's own private-notes card").toBeGreaterThan(0);
   const ownerRoster = await get(page, "the owner's roster, searched by the record's own display name", `/api/partners?search=${encodeURIComponent(OWNER_PARTNER_NAME)}`); // The owner's own roster finds the record by that display name, which is what makes the outside identities' empty search below a statement about authority rather than about a broken search.
   expect(rosterOf(ownerRoster).total, "the owner's own roster finds the record the outside identities are denied").toBeGreaterThan(0);
@@ -191,7 +191,7 @@ test.describe("criterion 19 — context and access", () => {
     await actAs(page, "second-worker");
     await page.goto("/support/gifts"); // The same browser, acting as a different identity: the shell states the second worker's own context and offers no choice, because this session is admitted to exactly one ministry.
     await expect(page.getByText("Riverbend Chapel")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Change context/u })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Switch ministry/u })).toHaveCount(0);
     await expectSurfaceWithoutOwnerValue(page, "the second worker's gifts ledger", ownerOnlyValues(values));
     const ownRecord = await get(page, "the second worker's roster searched by their own partner's name", `/api/partners?search=${encodeURIComponent("Owen Hale")}`); // Their own roster does find their own record, so the empty results below are the owner's record being absent from their scope rather than a search that matches nothing for anybody.
     expect(rosterOf(ownRecord).total, "the second worker's roster holds their own partner").toBeGreaterThan(0);
@@ -202,8 +202,8 @@ test.describe("criterion 19 — context and access", () => {
     const values = await captureOwnerValues(page);
     await actAs(page, UNAUTHORISED_READER_SESSION);
     await page.goto("/");
-    await expect(page.getByText(/could not be read for this session/u)).toBeVisible();
-    await expect(page.getByText(/a refusal is not a quiet day/u)).toBeVisible();
+    await expect(page.getByText(/doesn’t have access to Home/u)).toBeVisible();
+    await expect(page.getByText(/same whether or not a record exists/u)).toBeVisible();
     await expectSurfaceWithoutOwnerValue(page, "the unauthorised reader's Home", ownerOnlyValues(values));
     const session = await get(page, "the unauthorised reader's admission state", "/api/session"); // A reader is signed in as its own principal and holds no ministry context: it acts on records it owns, never inside a worker's context, and no context is fabricated for it.
     expect(session.response.status(), "the reader's own admission state is readable to it").toBe(200);
@@ -254,31 +254,31 @@ test.describe("criterion 19 — context and access", () => {
     });
     await page.goto("/support/gifts");
     const youthGift = page.getByRole("link", { name: /^Open gift /u });
-    await expect(page.getByRole("button", { name: /Active context: .*Youth Ministry/u })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Active ministry: .*Youth Ministry/u })).toBeVisible();
     await expect(youthGift).toHaveCount(1);
     fence.armed = true;
-    await page.getByRole("button", { name: "Gift date" }).click();
+    await page.getByRole("button", { name: "Date given" }).click();
     await expect.poll(() => fence.held, { message: "the ledger's read is still in flight when the context changes" }).toBe(true);
-    await page.getByRole("button", { name: /Change context/u }).click();
+    await page.getByRole("button", { name: /Switch ministry/u }).click();
     await page.getByRole("menuitem").filter({ hasText: "Students Ministry" }).first().click();
-    const guard = page.getByRole("alertdialog", { name: "Switch context?" });
+    const guard = page.getByRole("alertdialog", { name: "Switch ministry?" });
     await expect(guard).toBeVisible();
     await expect(guard.getByRole("button", { name: "Stay here" })).toBeEnabled(); // The guard is the one place a change of context is decided, and staying is always offered and never disabled. The gifts ledger holds no unsaved work of its own, so this guard offers Stay and Discard alone: a save is offered only for work the surface behind the dialog reports as unsaved, which the edit surface's own case below exercises.
     await guard.getByRole("button", { name: "Discard and switch" }).click();
-    await expect(page.getByRole("button", { name: /Active context: .*Students Ministry/u })).toBeVisible(); // The new context is stated by the shell, and the surface behind it is that context's own reading: an unavailable finance source, stated as unavailable, rather than the previous context's rows.
-    await expect(page.getByRole("heading", { name: "The gifts ledger could not be read" })).toBeVisible();
-    await expect(page.getByText(/not zero and not an empty result/u)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Active ministry: .*Students Ministry/u })).toBeVisible(); // The new context is stated by the shell, and the surface behind it is that context's own reading: an unavailable finance source, stated as unavailable, rather than the previous context's rows.
+    await expect(page.getByRole("heading", { name: "Couldn’t load Gifts" })).toBeVisible();
+    await expect(page.getByText(/nothing is replaced with zero or an empty list/u)).toBeVisible();
     await expect(youthGift).toHaveCount(0);
     releaseInFlight(); // The delayed answer arrives after the switch and changes nothing: the fence decided the surface, not the order in which two responses came back.
     await expect.poll(() => fence.settled, { message: "the delayed read settles after the switch" }).toBe(true);
-    await expect(page.getByRole("button", { name: /Active context: .*Students Ministry/u })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Active ministry: .*Students Ministry/u })).toBeVisible();
     await expect(youthGift).toHaveCount(0);
     const readsBeforeReturn = reads.length; // Returning to the first context reads it again: the cache was cleared with the switch, so the records come back from the service under that scope rather than from the other context's envelope.
-    await page.getByRole("button", { name: /Change context/u }).click();
+    await page.getByRole("button", { name: /Switch ministry/u }).click();
     await page.getByRole("menuitem").filter({ hasText: "Youth Ministry" }).first().click();
     await expect(guard).toBeVisible();
     await guard.getByRole("button", { name: "Discard and switch" }).click();
-    await expect(page.getByRole("button", { name: /Active context: .*Youth Ministry/u })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Active ministry: .*Youth Ministry/u })).toBeVisible();
     await expect(youthGift).toHaveCount(1);
     await expect.poll(() => reads.length, { message: "the first context is read again rather than restored from a cached envelope" }).toBeGreaterThan(readsBeforeReturn);
   });
@@ -289,16 +289,16 @@ test.describe("criterion 19 — context and access", () => {
     await expect(displayName).toHaveValue(OWNER_PARTNER_NAME); // The form opens on the value the record holds, so the suffix typed below is the whole of the difference the guard is asked about.
     const typedSuffix = " (draft)";
     await displayName.fill(`${OWNER_PARTNER_NAME}${typedSuffix}`);
-    await page.getByRole("button", { name: /Change context/u }).click(); // A context change requested from the header, while the edit above is unsaved: the decision the guard must put to the worker.
+    await page.getByRole("button", { name: /Switch ministry/u }).click(); // A context change requested from the header, while the edit above is unsaved: the decision the guard must put to the worker.
     await page.getByRole("menuitem").filter({ hasText: "Students Ministry" }).first().click();
-    const guard = page.getByRole("alertdialog", { name: "Switch context?" });
+    const guard = page.getByRole("alertdialog", { name: "Switch ministry?" });
     await expect(guard).toBeVisible();
-    await expect(guard.getByText(/permitted fields have been edited on this screen and not saved yet/u)).toBeVisible(); // The guard names the work it is asking about in the owning surface's words, so the worker is not deciding about a general warning.
+    await expect(guard.getByText(/You have unsaved edits on this partner profile/u)).toBeVisible(); // The guard names the work it is asking about in the owning surface's words, so the worker is not deciding about a general warning.
     await expect(guard.getByRole("button", { name: "Save and switch" })).toBeEnabled(); // Saving is offered because the edit surface reported the unsaved edit, and it is the surface's own save that runs rather than one this workspace invents.
     await expect(guard.getByRole("button", { name: "Discard and switch" })).toBeEnabled(); // Discarding is offered beside it, so the choice is the worker's rather than a default applied for them.
     await expect(guard.getByRole("button", { name: "Stay here" })).toBeEnabled(); // Staying is always offered, so the three answers the specification names are all on the dialog at once.
     await guard.getByRole("button", { name: "Discard and switch" }).click();
-    await expect(page.getByRole("button", { name: /Active context: .*Students Ministry/u })).toBeVisible(); // The switch itself completes and the shell states the context now in force.
+    await expect(page.getByRole("button", { name: /Active ministry: .*Students Ministry/u })).toBeVisible(); // The switch itself completes and the shell states the context now in force.
     await expect(displayName).toHaveValue(OWNER_PARTNER_NAME); // Discarding is the worker's answer that nothing from the old context is carried over: the typed suffix is gone and the field reads the record's own value again.
   });
   test("a state-changing request another site caused is refused before it reaches the store", async ({ page }) => {

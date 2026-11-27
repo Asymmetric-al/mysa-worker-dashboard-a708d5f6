@@ -21,17 +21,17 @@ const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's heading utility per level, so this chooser states the level it lands at with the same measure on every surface. */ const HEADING_SCALE: Readonly<Record<keyof typeof HEADING_TAG, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 /** The section count this surface states, so the draft's own count and a preset's count read with one measure. */ const partCount = (count: number): string => (count === 1 ? "1 section" : `${String(count)} sections`);
 const SURFACE_COPY = {
-  choiceQuestion: "Which preset should this edition start from?",
-  proposalHeading: "What this preset proposes",
-  presetTerm: "Preset",
-  familyTerm: "Family",
-  languageTerm: "Language edition",
+  choiceQuestion: "Choose a starting template",
+  proposalHeading: "Included sections",
+  presetTerm: "Template",
+  familyTerm: "Page type",
+  languageTerm: "Language",
   draftTerm: "Draft edition",
-  draftSectionsTerm: "Sections in this draft",
+  draftSectionsTerm: "Current draft",
   partCount,
   replacementNote: (draftSectionCount: number, presetSectionCount: number): string =>
-    draftSectionCount === 0 ? `This draft holds no section yet, so this preset composes it from its ${partCount(presetSectionCount)}.` : `Applying this preset replaces the ${partCount(draftSectionCount)} this draft holds now with its ${partCount(presetSectionCount)}.`,
-  unavailable: { "no-target": "This edition has no draft yet, so there is nothing for a preset to compose into.", "no-context": "The draft's context is not stated on this surface, so no preset can be applied from here.", disabled: "This edition cannot take a preset right now." },
+    draftSectionCount === 0 ? `Starts this empty draft with ${partCount(presetSectionCount)}.` : `Replaces your current ${partCount(draftSectionCount)} with ${partCount(presetSectionCount)}.`,
+  unavailable: { "no-target": "Create a draft for this edition before applying a template.", "no-context": "Template actions aren’t available on this screen.", disabled: "Templates can’t be applied right now." },
 } as const;
 const FIELD_LABELS: Readonly<Record<string, string | undefined>> = { presetId: SURFACE_COPY.presetTerm, variantId: SURFACE_COPY.languageTerm, draftRevisionId: SURFACE_COPY.draftTerm };
 export type PresetView = { readonly presetId: string; readonly sections: readonly PageSectionType[]; readonly creates: "reviewable-draft" };

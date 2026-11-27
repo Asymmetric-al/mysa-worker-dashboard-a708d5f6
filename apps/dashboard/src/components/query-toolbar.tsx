@@ -26,6 +26,8 @@ import type { ValueState } from "@/modules/data-service/envelope";
   readonly facets: readonly FacetSpec[];
   readonly applied: Readonly<Record<string, readonly string[]>>;
   readonly onAppliedChange: (next: Record<string, string[]>) => void;
+  /** Optional atomic clear callback invoked by "Clear all" so search and facets reset in one URL update. */
+  readonly onClearAll?: () => void;
   readonly amountRange?: AmountRangeScope;
   readonly pending?: boolean;
   /** Optional extra control placed cleanly in the toolbar strip (e.g. ReUI Date Selector). */
@@ -35,20 +37,20 @@ import type { ValueState } from "@/modules/data-service/envelope";
 };
 const TOOLBAR_COPY = {
   searchLabel: "Search",
-  clearSearch: "Clear the search text",
-  acrossFacets: "Every selected filter must match.",
-  withinFacet: "Within one filter, any selected value may match.",
-  singleValue: "Choose one value.",
-  facetEmpty: "This filter offers no value in the context you are working in.",
-  facetLoading: "Loading filter options.",
-  clearFacet: "Clear this filter",
+  clearSearch: "Clear search",
+  acrossFacets: "All selected filters apply together.",
+  withinFacet: "Pick one or more values.",
+  singleValue: "Pick one value.",
+  facetEmpty: "No filter options available in this ministry.",
+  facetLoading: "Loading filters…",
+  clearFacet: "Clear filter",
   appliedCount: (count: number): string => `${count} selected`,
-  facetUnavailableLabel: (facet: string): string => `${facet}, unavailable`,
-  activeFilters: "Selected filters",
-  removeFilter: "Remove this filter",
-  clearAll: "Clear all filters",
-  noFilterApplied: "No filter is applied, so this list shows the whole result.",
-  currencyScopeReason: "Amounts in different currencies are not compared, so choose one currency before setting an amount range.",
+  facetUnavailableLabel: (facet: string): string => `${facet} (unavailable)`,
+  activeFilters: "Active filters",
+  removeFilter: "Remove filter",
+  clearAll: "Clear all",
+  noFilterApplied: "Showing all results.",
+  currencyScopeReason: "Select a single currency first to filter by amount range (currencies aren’t mixed).",
 } as const;
 const DEFAULT_SEARCH_DEBOUNCE_MS = 250;
 const LOADING_PLACEHOLDER_ROWS = 4;
@@ -251,7 +253,7 @@ function FilterChip({ chip, onRemove }: { readonly chip: AppliedChip; readonly o
 const FACET_LAYER_PREFIX = "facet:";
 type UnavailableFilterNote = { readonly facetId: string; readonly label: string; readonly reason: string; readonly reasonId: string };
 type FacetControlEntry = { readonly facet: FacetSpec; readonly reason: string | null; readonly reasonId: string };
-/** The only filter surface in the application. */ export function QueryToolbar({ label, search, facets, applied, onAppliedChange, amountRange, pending = false, trailingControls, className, locale }: QueryToolbarProps): ReactNode {
+/** The only filter surface in the application. */ export function QueryToolbar({ label, search, facets, applied, onAppliedChange, onClearAll, amountRange, pending = false, trailingControls, className, locale }: QueryToolbarProps): ReactNode {
   const searchFieldId = useId();
   const [openLayer, setOpenLayer] = useState<string | null>(null);
   const [searchState, setSearchState] = useState<{ readonly external: string; readonly text: string }>({ external: search.value, text: search.value });
@@ -304,7 +306,14 @@ type FacetControlEntry = { readonly facet: FacetSpec; readonly reason: string | 
     dispatchSearch("");
   }
   function clearAll(): void {
-    clearSearchText();
+    if (timerRef.current !== null) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    updateSearchText("");
+    if (onClearAll !== undefined) {
+      onClearAll();
+      return;
+    }
+    dispatchSearch("");
     onAppliedChange({});
   }
   const setFacetValues = (facetId: string, values: readonly string[]): void => onAppliedChange(withFacetValues(applied, facetId, values));

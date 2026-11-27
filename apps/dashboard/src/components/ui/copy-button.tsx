@@ -55,7 +55,10 @@ export function CopyButton({ value, label, copiedLabel = "Copied", showText = fa
         onClick={() => void handleCopy()}
         className={cn("min-h-6 min-w-6 text-muted-foreground hover:text-foreground", copied && "text-positive hover:text-positive", className)}
       >
-        {copied ? <CheckIcon aria-hidden="true" className="size-3.5" /> : <CopyIcon aria-hidden="true" className="size-3.5" />}
+        <span aria-hidden="true" className="relative inline-flex size-3.5 items-center justify-center">
+          <CopyIcon className={cn("absolute size-3.5 transition-[opacity,transform] duration-150 ease-out", copied ? "scale-75 opacity-0" : "scale-100 opacity-100")} />
+          <CheckIcon className={cn("absolute size-3.5 transition-[opacity,transform] duration-150 ease-out", copied ? "scale-100 opacity-100" : "scale-75 opacity-0")} />
+        </span>
         {showText ? <span className="text-xs">{copied ? copiedLabel : "Copy"}</span> : null}
       </Button>
       <output className="sr-only">{copied ? `${label}: ${copiedLabel}.` : ""}</output>

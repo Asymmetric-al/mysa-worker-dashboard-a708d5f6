@@ -13,10 +13,10 @@ const KEEP_TOGETHER = "min-w-0 print:break-inside-avoid";
 const HEADING_CLASS = "type-subsection-title print:text-sm";
 const WRAPPING_TEXT_CLASS = "min-w-0 break-words";
 const ALIGN: Readonly<Record<PrintColumn["align"], string>> = { start: "text-start", end: "text-end" };
-const HEADINGS = { summary: "Summary, one line per currency", rows: "Rows", about: "About this page" } as const;
+const HEADINGS = { summary: "Summary by currency", rows: "Rows", about: "Report notes" } as const;
 const COMPLETENESS_PROSE: Readonly<Record<PrintModel["completeness"], string>> = {
-  "whole-query": "This page holds every authorised row of the query, so the figures printed here are the whole " + "query's figures rather than a page of them.",
-  "page-only": "This page holds one page of the query, so the rows printed here are a window of the result while " + "the row count stated below is the whole query's count.",
+  "whole-query": "Includes all matching rows for this report.",
+  "page-only": "Shows the current page of rows; total matching rows are listed below. Export CSV for the full dataset.",
 };
 const PrintedCell = ({ cell, align }: { readonly cell: PrintCell; readonly align: PrintColumn["align"] }): ReactElement => (
   <TableCell className={cn("align-top print:px-1 print:py-0.5 print:whitespace-normal", ALIGN[align])}>
@@ -57,7 +57,7 @@ const PrintedTable = ({ model, partition }: { readonly model: PrintModel; readon
 );
 /** Renders one report result as the page a worker prints: its title and period state, the snapshot statement the screen shows, the per-currency summary, the rows, and the words that keep the printed sheet checkable. */
 export function PrintReport({ model, snapshot, locale, dir, className }: PrintReportProps): ReactElement {
-  const partition = snapshot.currencies.length === 0 ? "No currency is stated by this read" : snapshot.currencies.join(", ");
+  const partition = snapshot.currencies.length === 0 ? "No currency specified" : snapshot.currencies.join(", ");
   return (
     <section aria-label="Printable report" data-print-report="" dir={dir} className={cn("flex min-w-0 flex-col gap-6 print:gap-3 print:text-xs", className)}>
       <header className="flex min-w-0 flex-col gap-1 print:break-inside-avoid">

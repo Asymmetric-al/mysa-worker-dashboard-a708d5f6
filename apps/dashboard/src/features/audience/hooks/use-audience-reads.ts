@@ -24,7 +24,7 @@ export type ReceivingPostEnvelope = EnvelopeOf<ReadOf<typeof readReceivingPost>>
 export type DiscoveryIndexEnvelope = EnvelopeOf<ReadOf<typeof readDiscoveryIndex>>;
 export type ReceivingPageEnvelope = EnvelopeOf<ReadOf<typeof readReceivingPage>>;
 const READ_STALE_TIME_MS = 5_000;
-const TRANSPORT_GUIDANCE = "The request did not complete, so this read has no answer and is reported unavailable rather than empty. Request it again: nothing was changed, and a source that could not be read is not a source with nothing in it.";
+const TRANSPORT_GUIDANCE = "Couldn’t complete the request right now. Nothing was changed — try again shortly.";
 const pageParams = (query: { readonly page?: number; readonly pageSize?: number }): QueryParams => ({ ...(query.page === undefined ? {} : { page: query.page }), ...(query.pageSize === undefined ? {} : { pageSize: query.pageSize }) });
 function searchOf(params: QueryParams): string {
   const search = new URLSearchParams();

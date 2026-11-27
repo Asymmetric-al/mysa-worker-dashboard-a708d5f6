@@ -11,6 +11,7 @@ import type { MutationInput } from "@/modules/data-service";
 import { CONTEXT_SWITCH_COPY } from "@/features/shell/copy/context-switch";
 import { submitContextSelection } from "../api-client";
 import { useDevState } from "../hooks/use-dev-state";
+import { useOptionalViewerPreferences } from "./viewer-preferences-provider";
 export type ShellFrameProps = { readonly scope: Scope; readonly admissionState: AdmissionState; readonly contextAdmissions: readonly AdmittedContext[]; readonly contextRevision: string; readonly developmentRegion?: ReactNode; readonly children: ReactNode };
 export function ShellFrame(props: ShellFrameProps): ReactElement {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }));
@@ -51,6 +52,15 @@ function ShellSurface({ scope, admissionState, contextAdmissions, contextRevisio
       ...(unsavedWork === null ? {} : { unsavedWork, saveUnsavedWork: unsavedWork.save, discardUnsavedWork: unsavedWork.discard }),
     };
   }, [canSwitchContext, contextAdmissions, contextRevision, fence, router, scope.principalId, unsavedWork]);
-  return <AppShell {...{ scope, admissionState, contextAdmissions, contextSwitch, developmentRegion, devScenarioId }}>{children}</AppShell>;
+  const viewerPreferences = useOptionalViewerPreferences();
+  const handleToggleTheme = useCallback((): void => {
+    const nextDark = !document.documentElement.classList.contains("dark");
+    if (viewerPreferences !== null) {
+      viewerPreferences.setAppearance(nextDark ? "dark" : "light");
+    } else {
+      document.documentElement.classList.toggle("dark", nextDark);
+    }
+  }, [viewerPreferences]);
+  return <AppShell {...{ scope, admissionState, contextAdmissions, contextSwitch, onToggleTheme: handleToggleTheme, developmentRegion, devScenarioId }}>{children}</AppShell>;
 }
 export default ShellFrame;

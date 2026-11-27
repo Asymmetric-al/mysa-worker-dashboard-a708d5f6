@@ -21,16 +21,16 @@ const DRILLDOWN_PARTNER = "partner-church-st-aidan";
 const DRILLDOWN_MONTH_FROM = "2026-07-01";
 const DRILLDOWN_MONTH_TO = "2026-07-31";
 const DEVELOPMENT_DATA_LABEL = "Development data";
-const PARTIAL_COVERAGE_OPENING = "Coverage is partial";
+const PARTIAL_COVERAGE_OPENING = "Partial (";
 const INCOMPLETE_MARKER = /\(incomplete\)/u;
 const GIFT_LINK_LABEL = /^Open gift (\S+)$/u;
-const ROWS_IN_FILE = /Rows in the file\s+([\d,]+)/u;
-const SNAPSHOT_FACT_LABELS = ["Basis", "Grain", "Period", "Currencies", "Coverage", "As of"] as const;
+const ROWS_IN_FILE = /Rows included:\s+([\d,]+)/u;
+const SNAPSHOT_FACT_LABELS = ["Basis", "Counting rule", "Period", "Currencies", "Coverage", "Updated"] as const;
 type SnapshotFactLabel = (typeof SNAPSHOT_FACT_LABELS)[number];
 type SnapshotFacts = Readonly<Record<SnapshotFactLabel, string>>;
 type WholeResultLine = { readonly kind: "amount"; readonly currency: string; readonly amount: StatedAmount; readonly giftCount: number; readonly statement: string } | { readonly kind: "state"; readonly currency: string; readonly word: string; readonly statement: string }; // One line of the ledger's whole-result summary: a stated amount with its gift count, or a state that is not a number.
 async function readWholeResult(page: Page): Promise<readonly WholeResultLine[]> {
-  const heading = page.getByRole("heading", { name: "Whole-result support, by currency" });
+  const heading = page.getByRole("heading", { name: "Totals by currency" });
   await expect(heading, "The ledger states its whole-result support for the query it read.").toBeVisible();
   const lines = page.locator('[data-slot="whole-result-summary"] li');
   const stated = await lines.count();
@@ -45,7 +45,7 @@ async function readWholeResult(page: Page): Promise<readonly WholeResultLine[]> 
       figures.push({ kind: "state", currency, word: state, statement });
       continue;
     }
-    const gift = /\band\s+([\d,]+)\s+gifts?\b/u.exec(statement);
+    const gift = /·\s+([\d,]+)\s+gifts?\b/u.exec(statement);
     if (gift === null) throw new Error(`The whole-result line for ${currency} states ${JSON.stringify(statement.slice(0, 240))} without the gift count it states beside every amount. A figure whose grain cannot be read is not compared.`);
     figures.push({ kind: "amount", currency, amount: statedAmountOf(statement, `The whole-result line for ${currency}`), giftCount: countOf(gift[1] ?? "", `The gift count beside the whole-result figure for ${currency}`), statement });
   }
@@ -146,7 +146,7 @@ async function snapshotFactsOf(page: Page, variant: "screen" | "print"): Promise
   for (const [index, label] of labels.entries()) stated[label] = values[index] ?? "";
   const missing = SNAPSHOT_FACT_LABELS.filter((label) => stated[label] === undefined);
   if (missing.length > 0) throw new Error(`The ${variant} snapshot statement states no ${missing.join(", ")}, so the artifacts cannot be compared on it. It stated ${labels.join(", ")}.`);
-  return { Basis: stated.Basis ?? "", Grain: stated.Grain ?? "", Period: stated.Period ?? "", Currencies: stated.Currencies ?? "", Coverage: stated.Coverage ?? "", "As of": stated["As of"] ?? "" };
+  return { Basis: stated.Basis ?? "", "Counting rule": stated["Counting rule"] ?? "", Period: stated.Period ?? "", Currencies: stated.Currencies ?? "", Coverage: stated.Coverage ?? "", Updated: stated.Updated ?? "" };
 }
 function periodOfFacts(facts: SnapshotFacts): { readonly from: string; readonly to: string } {
   const match = /^(\S+) to (\S+)$/u.exec(facts.Period);
@@ -154,14 +154,14 @@ function periodOfFacts(facts: SnapshotFacts): { readonly from: string; readonly 
   return { from: match[1] ?? "", to: match[2] ?? "" };
 }
 function asOfOfFacts(facts: SnapshotFacts): string {
-  const match = /^As of (\S+)/u.exec(facts["As of"]); // The instant an as-of fact states, without the sentence that explains it.
-  if (match === null) throw new Error(`The as-of fact states ${JSON.stringify(facts["As of"])} without the instant it was read at, so no snapshot is identified.`);
+  const match = /^Read as of (\S+)/u.exec(facts.Updated); // The instant an as-of fact states, without the sentence that explains it.
+  if (match === null) throw new Error(`The as-of fact states ${JSON.stringify(facts.Updated)} without the instant it was read at, so no snapshot is identified.`);
   return match[1] ?? "";
 }
 function coverageStateOfFacts(facts: SnapshotFacts): string {
-  const match = /^Coverage is (\w+)/u.exec(facts.Coverage);
+  const match = /^(Complete|Partial|Coverage)\b/u.exec(facts.Coverage);
   if (match === null) throw new Error(`The coverage fact states ${JSON.stringify(facts.Coverage)} without a coverage state, so partial coverage could not be told from complete.`);
-  return match[1] ?? "";
+  return match[1] === "Complete" ? "complete" : match[1] === "Partial" ? "partial" : "unknown";
 }
 function expectSameSnapshot(facts: SnapshotFacts, subject: string, expected: SnapshotFacts): void {
   expect(periodOfFacts(facts), `${subject} states the period the other artifacts state.`).toEqual(periodOfFacts(expected)); // Asserts one artifact's snapshot statement carries the same period, coverage state and as-of instant as the query's own report states.
@@ -170,7 +170,7 @@ function expectSameSnapshot(facts: SnapshotFacts, subject: string, expected: Sna
 }
 const DOWNLOAD_TIMEOUT_MS = 60_000; // How long one export has to produce its file, so a download that never arrives fails as itself rather than as the test's deadline.
 async function downloadCsv(page: Page): Promise<CsvFile> {
-  const button = page.getByRole("button", { name: "Export the whole query as CSV" }); // Downloads the whole query as a CSV file and parses it, through the surface's own export action.
+  const button = page.getByRole("button", { name: "Export CSV" }); // Downloads the whole query as a CSV file and parses it, through the surface's own export action.
   await expect(button, "The report offers the whole-query export in this scope.").toBeEnabled();
   const waiting = page.waitForEvent("download", { timeout: DOWNLOAD_TIMEOUT_MS });
   await button.click();
@@ -228,8 +228,8 @@ test("one query, one snapshot: the screen, the chart, the table, a matrix drilld
   await page.goto(`${GIFTS_HREF}?${query}`); // --- the screen artifact: the ledger's whole result, and the rows it rendered for it.
   await expect(page.getByRole("heading", { name: "Received gifts", level: 1 })).toBeVisible();
   const ledgerFacts = await snapshotFactsOf(page, "screen");
-  expect(ledgerFacts.Basis, "The screen states the one named received-support basis.").toContain("effective_cash_allocation");
-  expect(ledgerFacts.Grain, "The screen states the grain a row is counted at.").toContain("One row is one authorised allocation");
+  expect(ledgerFacts.Basis, "The screen states the one named received-support basis.").toContain("Effective cash allocation");
+  expect(ledgerFacts["Counting rule"], "The screen states the grain a row is counted at.").toContain("Each row is one authorised allocation");
   expect(ledgerFacts.Currencies, "The screen states the one currency partition the query was read in.").toBe(CURRENCY);
   expect(periodOfFacts(ledgerFacts), "The ledger states the civil year the query names as its own period.").toEqual({ from: SNAPSHOT_FROM, to: SNAPSHOT_TO });
   expect(coverageStateOfFacts(ledgerFacts), "The source's coverage of this period is partial, and the screen states it as partial.").toBe("partial");
@@ -284,7 +284,7 @@ test("one query, one snapshot: the screen, the chart, the table, a matrix drilld
   expect(printed.rows, "The printed page holds every row of the query, because the whole result fits one page.").toBe(wholeRows);
   expect(printed.rowAmounts.length, "Every printed row states its amount, so the sheet's own rows can be summed.").toBe(wholeRows);
   expect(sumOf(printed.rowAmounts, "The printed page's rows"), "The printed page's rows sum to the same minor units the screen, the file and the chart state.").toBe(ledgerFigure.amount.minorUnits);
-  expect(printed.about, "The printed page says it holds every authorised row of the query rather than a window of it.").toContain("every authorised row of the query");
+  expect(printed.about, "The printed page says it holds every authorised row of the query rather than a window of it.").toContain("Includes all matching rows for this report.");
   await page.goto(`${HISTORY_REPORT_HREF}?year=${String(SNAPSHOT_YEAR)}&currency=${CURRENCY}`); // --- the chart artifact: the year's monthly series, read from its data table.
   await expect(page.getByRole("heading", { name: "Monthly history", level: 1 })).toBeVisible();
   expectSameSnapshot(await snapshotFactsOf(page, "screen"), "The chart", reportFacts);
@@ -341,7 +341,7 @@ test("one query, one snapshot: the screen, the chart, the table, a matrix drilld
   expect(sumOf(drilledAmounts, "The drilled ledger's rows"), "The drilled rows themselves sum to the cell's figure, which is the whole-result figure of the drilled query.").toBe(drilldown.amount.minorUnits);
   expect(periodOfFacts(drilledFacts), "The drilled query states the cell's month as two civil days.").toEqual(drilldownPeriod);
   expect(drilledFacts.Basis, "The drilled query is measured on the same named basis as the matrix.").toBe(matrixFacts.Basis);
-  expect(drilledFacts.Grain, "The drilled query is counted at the same grain as the matrix.").toBe(matrixFacts.Grain);
+  expect(drilledFacts["Counting rule"], "The drilled query is counted at the same grain as the matrix.").toBe(matrixFacts["Counting rule"]);
   expect(coverageStateOfFacts(drilledFacts), "The drilled query carries the same coverage state as the matrix.").toBe(coverageStateOfFacts(matrixFacts));
   expect(asOfOfFacts(drilledFacts), "The drilled query carries the same as-of instant as the matrix.").toBe(asOfOfFacts(matrixFacts));
   recordEvidence(
@@ -349,13 +349,30 @@ test("one query, one snapshot: the screen, the chart, the table, a matrix drilld
     `${query}: ${String(wholeRows)} rows and ${String(ledgerFigure.amount.minorUnits)} ${CURRENCY} minor units as of ${asOfOfFacts(ledgerFacts)}, agreed by the ledger's whole-result figure and its ${String(rowsOnPage)} rows, the report screen, the CSV (${String(csv.rows.length)} records), the printed page (${String(printed.rows)} rows), the chart's ${String(statedMonths.length)} stated months and ${String(chartMonths.length - statedMonths.length)} gaps, the matrix's ${String(cells.length)} cells, and the drilled ledger of the first cell (${String(drilledRows)} rows of ${String(drilldown.amount.minorUnits)}).`,
   );
 });
+test("the full-report print control includes rows beyond the current page", async ({ page }) => {
+  await openReport(page, `${RECEIVED_REPORT_HREF}?period=this-year&currency=${CURRENCY}&page=0&pageSize=1`, "Received support");
+  const printedRows = page.locator("[data-print-report] tbody tr");
+  await expect(printedRows).toHaveCount(1);
+  const allRows = (await readPrintedPage(page)).rowsStated;
+  expect(allRows).toBeGreaterThan(1);
+  await page.evaluate(() => {
+    window.print = () => {
+      const rows = document.querySelectorAll("[data-print-report] tbody tr").length;
+      document.documentElement.setAttribute("data-printed-row-count", String(rows));
+      window.dispatchEvent(new Event("afterprint"));
+    };
+  });
+  await page.getByRole("button", { name: `Print all ${String(allRows)} rows` }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-printed-row-count", String(allRows));
+  await expect(printedRows).toHaveCount(1);
+});
 test("the whole query agrees between the screen, the CSV and the printed page, beyond the loaded page", async ({ page }) => {
   ensureWorkload();
   await openReport(page, `${GIFTS_HREF}?period=this-year&currency=${CURRENCY}`, "Received gifts"); // --- the screen artifact: the ledger's whole-result figure for one currency --------------------
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
   const ledgerFacts = await snapshotFactsOf(page, "screen");
-  expect(ledgerFacts.Basis, "The screen states the one named received-support basis.").toContain("effective_cash_allocation");
-  expect(ledgerFacts.Grain, "The screen states the grain a row is counted at.").toContain("One row is one authorised allocation");
+  expect(ledgerFacts.Basis, "The screen states the one named received-support basis.").toContain("Effective cash allocation");
+  expect(ledgerFacts["Counting rule"], "The screen states the grain a row is counted at.").toContain("Each row is one authorised allocation");
   expect(ledgerFacts.Currencies, "The screen states the currency partition the whole query was read in.").toBe(CURRENCY);
   const ledgerFigure = wholeResultAmountOf(await readWholeResult(page), CURRENCY);
   const wholeRows = await listTotalOf(page, "gifts");
@@ -364,7 +381,7 @@ test("the whole query agrees between the screen, the CSV and the printed page, b
   expect(rowsOnPage, "The ledger renders one page of the query rather than the whole result.").toBe(PAGE_SIZE_DEFAULT);
   expect(coverageStateOfFacts(ledgerFacts), "The source's coverage of this period is partial, and the screen states it as partial.").toBe("partial");
   expect(ledgerFigure.statement, "A figure read under partial coverage is labelled an incomplete subtotal, in text rather than by colour.").toMatch(INCOMPLETE_MARKER);
-  await expect(page.locator('[data-slot="whole-result-summary"]'), "The summary states that the currencies are never added together.").toContainText("no combined total is stated");
+  await expect(page.locator('[data-slot="whole-result-summary"]'), "The summary states that the currencies are never added together.").toContainText("Currencies are kept separate and never combined.");
   expect(ledgerFigure.giftCount, "The gift count is counted at the gift's own grain.").toBeLessThanOrEqual(wholeRows);
   await openReport(page, `${RECEIVED_REPORT_HREF}?period=this-year&currency=${CURRENCY}`, "Received support"); // --- the report artifact: the same figure, from the same query, on the report surface -------------
   const reportFacts = await snapshotFactsOf(page, "screen");
@@ -418,14 +435,14 @@ test("the whole query agrees between the screen, the CSV and the printed page, b
     expectSameAmount(statedAmountOf(withoutNeutraliser(row["amount"] ?? ""), `The formatted amount of row ${String(index)}`), { currency: CURRENCY, minorUnits: rowMinorUnitsOf(csv, row, index) }, `Row ${String(index)} states one amount in its formatted and in its minor-unit column.`);
   }
   const printed = await readPrintedPage(page); // --- the print artifact -------------------------------------------------------------------------
-  expect(printed.facts.Basis, "The printed page states the one named basis.").toContain("effective_cash_allocation");
-  expect(printed.facts.Grain, "The printed page states the grain.").toContain("One row is one authorised allocation");
+  expect(printed.facts.Basis, "The printed page states the one named basis.").toContain("Effective cash allocation");
+  expect(printed.facts["Counting rule"], "The printed page states the grain.").toContain("Each row is one authorised allocation");
   expect(printed.facts.Currencies, "The printed page states the currency partition.").toBe(CURRENCY);
   expectSameSnapshot(printed.facts, "The printed page", reportFacts);
   expectSameAmount(printed.summaryAmount, ledgerFigure.amount, "The printed page's summary states the same received support the screen's whole-result figure states.");
   expect(printed.rowsStated, "The printed page states the whole query's row count beside the page it printed.").toBe(wholeRows);
   expect(printed.rows, "The printed page holds the page the screen loaded, and never pretends that page is the query.").toBe(PAGE_SIZE_DEFAULT);
-  expect(printed.about, "The printed page says in words that it holds one page of the query.").toContain("one page of the query");
+  expect(printed.about, "The printed page says in words that it holds one page of the query.").toContain("Shows the current page of rows");
   expect(printed.about, "The printed page explains how to obtain the complete result.").toContain("export the CSV for the complete result");
   expect(printed.about, "The printed page names the shortfall between the page it holds and the query's rows.").toContain(`This view shows ${String(PAGE_SIZE_DEFAULT)} of ${String(wholeRows)} rows`);
   expect(printed.about, "The printed page states its partial coverage in text.").toContain(PARTIAL_COVERAGE_OPENING);
@@ -481,9 +498,9 @@ test("the whole-query values do not move when the order and the page do", async 
 });
 test("an amount range is offered only inside one currency, and the currencies stay apart", async ({ page }) => {
   await openReport(page, `${GIFTS_HREF}?period=this-year`, "Received gifts");
-  await expect(page.getByRole("button", { name: "Amount range, unavailable" }), "With every currency selected the amount range is stated as unavailable rather than offered as a filter that would compare amounts across currencies.").toBeVisible(); // --- while the query selects every currency, the range states that it cannot be applied -----------
+  await expect(page.getByRole("button", { name: "Amount range (unavailable)" }), "With every currency selected the amount range is stated as unavailable rather than offered as a filter that would compare amounts across currencies.").toBeVisible(); // --- while the query selects every currency, the range states that it cannot be applied -----------
   await expect(page.locator('[data-slot="query-toolbar"]'), "The reason the range cannot be applied is stated in text, so it is not carried by a disabled look alone.").toContainText("Amount range:");
-  await expect(page.locator('[data-slot="query-toolbar"]'), "The reason names the rule: an amount range spans one currency's minor units.").toContainText("one currency");
+  await expect(page.locator('[data-slot="query-toolbar"]'), "The reason names the rule: an amount range spans one currency's minor units.").toContainText(/(?:one|single) currency/u);
   const allCurrencies = await readWholeResult(page); // --- the currencies are stated apart, and a row whose currency is unknown is not a zero -----------
   const currencyNames = allCurrencies.map((line) => line.currency).sort();
   expect(currencyNames.length, "The seed holds received support in more than one currency, which is what makes the single-currency rule worth asserting.").toBeGreaterThan(1);
@@ -498,14 +515,14 @@ test("an amount range is offered only inside one currency, and the currencies st
   await page.getByRole("combobox", { name: "Currency" }).click(); // --- one currency makes the range available ------------------------------------------------------
   await page.getByRole("option", { name: new RegExp(`^${CURRENCY}`, "u") }).click();
   await expect(page, "Choosing one currency is a query the address states, so the view can be returned to.").toHaveURL(new RegExp(`currency=${CURRENCY}`, "u"));
-  await expect(page.getByRole("button", { name: "Amount range, unavailable" }), "With exactly one currency selected the range is offered, because a range then compares one currency's minor units.").toHaveCount(0);
-  await expect(page.getByRole("list", { name: "Selected filters" }), "The applied filters are stated on screen, so the query this view states is readable without decoding the address.").toContainText(`Currency: ${CURRENCY}`);
+  await expect(page.getByRole("button", { name: "Amount range (unavailable)" }), "With exactly one currency selected the range is offered, because a range then compares one currency's minor units.").toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Active filters" }), "The applied filters are stated on screen, so the query this view states is readable without decoding the address.").toContainText(`Currency: ${CURRENCY}`);
   await expect.poll(async () => (await page.locator('[data-slot="pagination-bar"] output').first().innerText()).replace(/\s+/gu, " ").trim(), { message: "The narrowed query replaces the count the wider one stated, so the readings below describe the result on screen." }).not.toBe(unfilteredPager);
   const singleCurrencyPager = (await page.locator('[data-slot="pagination-bar"] output').first().innerText()).replace(/\s+/gu, " ").trim();
   await page.getByRole("combobox", { name: "Amount range" }).click(); // --- a band inside that currency narrows the result to amounts it can compare ---------------------
   await page.getByRole("option", { name: `Under 100 ${CURRENCY}` }).click();
   await expect(page, "The applied band is stated in the address as the minor units it compares, so a reload reads the same rows.").toHaveURL(/amountMin=0&amountMax=9999/u);
-  await expect(page.getByRole("list", { name: "Selected filters" }), "The range is stated as an applied filter beside the currency and the period.").toContainText(`Amount range: Under 100 ${CURRENCY}`);
+  await expect(page.getByRole("list", { name: "Active filters" }), "The range is stated as an applied filter beside the currency and the period.").toContainText(`Amount range: Under 100 ${CURRENCY}`);
   await expect.poll(async () => (await page.locator('[data-slot="pagination-bar"] output').first().innerText()).replace(/\s+/gu, " ").trim(), { message: "The ranged query replaces the count the single-currency query stated, so the readings below describe the narrowed result." }).not.toBe(singleCurrencyPager);
   const rangedAmount = wholeResultAmountOf(await readWholeResult(page), CURRENCY);
   const rangedRows = await listTotalOf(page, "gifts");
@@ -524,9 +541,9 @@ test("an amount range is offered only inside one currency, and the currencies st
     rangedRowAmounts.push(rowAmount.minorUnits);
   }
   expect(sumOf(rangedRowAmounts, "The ranged ledger's rows"), "The rows on the page sum to the whole-result figure the same screen states, because they are the whole result.").toBe(rangedAmount.amount.minorUnits);
-  await page.getByRole("button", { name: `Remove this filter: Currency: ${CURRENCY}` }).click(); // --- the selection stops naming one currency, so the range is dropped rather than kept silently --- Removing the applied currency through its own chip is the surface's affordance for clearing a filter; the single-select picker offers no way to state "no choice" other than removing what it
-  await expect(page.getByRole("button", { name: "Amount range, unavailable" }), "Once the selection no longer names one currency the range states again that it cannot be applied, rather than comparing currencies.").toBeVisible();
-  await expect(page.getByRole("list", { name: "Selected filters" }), "The dropped range is gone from the applied filters, so no invisible filter narrows the result.").not.toContainText("Amount range:");
+  await page.getByRole("button", { name: `Remove filter: Currency: ${CURRENCY}` }).click(); // --- the selection stops naming one currency, so the range is dropped rather than kept silently --- Removing the applied currency through its own chip is the surface's affordance for clearing a filter; the single-select picker offers no way to state "no choice" other than removing what it
+  await expect(page.getByRole("button", { name: "Amount range (unavailable)" }), "Once the selection no longer names one currency the range states again that it cannot be applied, rather than comparing currencies.").toBeVisible();
+  await expect(page.getByRole("list", { name: "Active filters" }), "The dropped range is gone from the applied filters, so no invisible filter narrows the result.").not.toContainText("Amount range:");
   await expect(page, "The dropped range is gone from the address too, so a reload cannot reinstate a comparison across currencies.").not.toHaveURL(/amountMin/u);
   await expect.poll(async () => await page.locator('[data-slot="whole-result-summary"] li').count(), { message: "With every currency selected the summary states each currency on its own line again, once the widened read answers." }).toBeGreaterThan(1);
   const afterClearing = await readWholeResult(page);
@@ -545,7 +562,7 @@ test("the chart's monthly series sums to the figure the screen, the CSV and the 
   const figure = page.locator('[data-slot="chart-figure"]').first();
   await expect(figure, "The report draws its monthly series inside the one chart pattern.").toBeVisible();
   const caption = (await figure.locator("figcaption").innerText()).replace(/\s+/gu, " ");
-  for (const text of [`Amounts are in ${CURRENCY}`, "Coverage: partial", "As of"]) expect(caption, "The chart states its unit, its coverage and the instant it was read at, so a partial year is not read as a total.").toContain(text);
+  for (const text of [`Amounts in ${CURRENCY}`, "Partial coverage", "Read as of"]) expect(caption, "The chart states its unit, its coverage and the instant it was read at, so a partial year is not read as a total.").toContain(text);
   const chartMonths = await chartMonthsOf(page);
   const gapMonths = chartMonths.filter((month) => month.amount === undefined).map((month) => month.start);
   const plottedAmounts = chartMonths.filter((month) => month.amount !== undefined).map((month) => month.amount ?? 0);
@@ -586,7 +603,7 @@ test("one figure at three grains: the matrix cell, the rows it narrows to and th
   expectSameAmount(drilledFigure.amount, cellAmount, "The rows the cell narrows to sum to the cell's own figure, in exact minor units.");
   expect(periodOfFacts(drilledFacts), "The drilled query states the cell's month as two civil days.").toEqual({ from: DRILLDOWN_MONTH_FROM, to: DRILLDOWN_MONTH_TO });
   expect(drilledFacts.Basis, "The drilled query is measured on the same named basis as the matrix.").toBe(matrixFacts.Basis);
-  expect(drilledFacts.Grain, "The drilled query is counted at the same grain as the matrix.").toBe(matrixFacts.Grain);
+  expect(drilledFacts["Counting rule"], "The drilled query is counted at the same grain as the matrix.").toBe(matrixFacts["Counting rule"]);
   expect(coverageStateOfFacts(drilledFacts), "The drilled query carries the same coverage statement as the matrix.").toBe(coverageStateOfFacts(matrixFacts));
   const renderedRows = await readRenderedRows(page, "Received gifts");
   expect(renderedRows, "The drilled query's whole result fits one page, so the rows on screen are the rows behind the cell.").toBe(drilledRows);
@@ -594,7 +611,7 @@ test("one figure at three grains: the matrix cell, the rows it narrows to and th
   const drilledAmounts: number[] = [];
   for (let index = 0; index < renderedRows; index += 1) drilledAmounts.push(statedAmountOf(await drilledTable.locator("tbody tr").nth(index).innerText(), `Row ${String(index)} of the drilled ledger`).minorUnits);
   expect(sumOf(drilledAmounts, "The drilled ledger's rows"), "The rows themselves sum to the cell's figure, which is the whole-result figure of the drilled query.").toBe(cellAmount.minorUnits);
-  await expect(page.getByRole("list", { name: "Selected filters" }), "The drilled view states the partner it was narrowed to as an applied filter.").toContainText(`Attribution: ${DRILLDOWN_PARTNER}`);
+  await expect(page.getByRole("list", { name: "Active filters" }), "The drilled view states the partner it was narrowed to as an applied filter.").toContainText(`Attribution: ${DRILLDOWN_PARTNER}`);
   const drilldownQuery = `from=${DRILLDOWN_MONTH_FROM}&to=${DRILLDOWN_MONTH_TO}&currency=${CURRENCY}&recipient=partner&partnerId=${DRILLDOWN_PARTNER}`; // --- the report of the same narrow query, its CSV and its print ----------------------------------
   await openReport(page, `${RECEIVED_REPORT_HREF}?${drilldownQuery}`, "Received support");
   expectSameAmount(statedAmountOf(await factOf(page.locator('[data-slot="report-screen"]'), "Received in the period"), "The report's figure for the drilled query"), cellAmount, "The report of the drilled query states the cell's figure.");
@@ -614,7 +631,7 @@ test("one figure at three grains: the matrix cell, the rows it narrows to and th
   expect(printed.rows, "The printed page holds every row of the drilled query, because the whole result fits one page.").toBe(drilledRows);
   expect(printed.rowAmounts.length, "Every printed row states its amount, so the page's own rows can be summed.").toBe(drilledRows);
   expect(sumOf(printed.rowAmounts, "The printed page's rows"), "The printed page's rows sum to the cell's figure, in exact minor units: the sheet and the screen are one result.").toBe(cellAmount.minorUnits);
-  expect(printed.about, "The printed page says it holds every authorised row of the query rather than a window of it.").toContain("every authorised row of the query");
+  expect(printed.about, "The printed page says it holds every authorised row of the query rather than a window of it.").toContain("Includes all matching rows for this report.");
   recordEvidence(
     "criterion-1 matrix drilldown",
     `Matrix cell ${DRILLDOWN_PARTNER} ${DRILLDOWN_MONTH_FROM}: ${String(cellAmount.minorUnits)} ${CURRENCY} minor units agreed by the cell, the ${String(drilledRows)} rows it narrowed to (from ${String(parentRows)} in the parent query), the drilled report's screen, its export (${String(csv.rows.length)} records) and its printed page (${String(printed.rows)} rows).`,
@@ -628,22 +645,28 @@ test("a record visit returns to the same filtered view, at the same place in it"
   await expect(table.locator("tbody tr").first()).toBeVisible();
   await page.mouse.wheel(0, 1_200);
   expect(await page.evaluate(() => window.scrollY), "The filtered ledger is longer than the viewport, which is what makes the place in it something to return to.").toBeGreaterThan(0);
-  const chipsBefore = (await page.getByRole("list", { name: "Selected filters" }).innerText()).replace(/\s+/gu, " ").trim();
+  const chipsBefore = (await page.getByRole("list", { name: "Active filters" }).innerText()).replace(/\s+/gu, " ").trim();
   const pagerBefore = (await page.locator('[data-slot="pagination-bar"] output').first().innerText()).replace(/\s+/gu, " ").trim();
   const firstGiftBefore = await firstGiftLink(page).getAttribute("aria-label");
   const giftRecordLink = firstGiftLink(page); // The place the reader leaves at is read with the row's link in view, because the click scrolls the link into view itself: the offset the wheel reached is one the reader only passes through.
   const placeBefore = await scrollPlaceOfRow(page, giftRecordLink, "The gifts ledger");
+  const clientRecordReads: string[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/support/gifts" && url.searchParams.has("record")) clientRecordReads.push(url.pathname);
+  });
   await giftRecordLink.click(); // The visit: the row's own link is the only route to the record, and it names the gift it opens.
-  await expect(page.getByRole("heading", { name: "Gift record", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Gift details", level: 1 })).toBeVisible();
   await expect(page, "The record is a destination of its own, so the visit is a navigation rather than a panel over the list.").toHaveURL(new RegExp(`${GIFTS_HREF}/gift-[^?]+`, "u"));
   await page.goBack();
   await expect(page.getByRole("heading", { name: "Received gifts", level: 1 })).toBeVisible();
   await expect(page, "The ledger returns with the filters the visit started from, so the query survives the detail visit.").toHaveURL(/period=this-year&currency=USD/u);
-  expect((await page.getByRole("list", { name: "Selected filters" }).innerText()).replace(/\s+/gu, " ").trim(), "The applied filters come back exactly as they were.").toBe(chipsBefore);
+  expect((await page.getByRole("list", { name: "Active filters" }).innerText()).replace(/\s+/gu, " ").trim(), "The applied filters come back exactly as they were.").toBe(chipsBefore);
   expect((await page.locator('[data-slot="pagination-bar"] output').first().innerText()).replace(/\s+/gu, " ").trim(), "The page window comes back exactly as it was.").toBe(pagerBefore);
   await expect(table.locator("tbody tr").first()).toBeVisible();
   expect(await firstGiftLink(page).getAttribute("aria-label"), "The same rows are in the same order after the return.").toBe(firstGiftBefore);
   await expectRestoredScrollPlace(page, placeBefore, "The gifts ledger's return"); // The return restores the offset the reader actually left at rather than bounding it by a document that is still filling: the shell's development panels grow the document across a visit, so the return is held to the offset within the tolerance on a document at least as tall as the one left.
+  expect(clientRecordReads, "The gift record renders from the server's read without repeating it in the browser.").toEqual([]);
   const restoredOffset = await page.evaluate(() => window.scrollY);
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first(), "The returned view is still labelled as development data, so no surface of this application can be mistaken for production.").toBeVisible();
   recordEvidence(

@@ -197,18 +197,18 @@ describe("Wave 2 primitives: Breadcrumbs, Scrollspy, Editorial Metrics & Task Bo
     ]);
     expect(buildRouteBreadcrumbs("/partners/partner-jo-mbeki/edit")).toEqual([
       { label: "Partners", href: "/partners" },
-      { label: "Partner record", href: "/partners/partner-jo-mbeki" },
+      { label: "Partner profile", href: "/partners/partner-jo-mbeki" },
       { label: "Edit contact" },
     ]);
     expect(buildRouteBreadcrumbs("/pages/doc-page-harbour-youth/en/preview/")).toEqual([
-      { label: "Pages", href: "/pages" },
+      { label: "Ministry pages", href: "/pages" },
       { label: "Page builder", href: "/pages/doc-page-harbour-youth" },
       { label: "Preview" },
     ]);
     expect(buildRouteBreadcrumbs("/preview/pages/doc-page-harbour-youth/en")).toEqual([
-      { label: "Communication", href: "/communication" },
-      { label: "Published pages", href: "/preview/pages" },
-      { label: "Public reading" },
+      { label: "Updates", href: "/communication" },
+      { label: "Public pages", href: "/preview/pages" },
+      { label: "Public page" },
     ]);
   });
 

@@ -25,59 +25,45 @@ function sessionStateSectionOf(key: SessionStateSection["key"]): SessionStateSec
   return { key, title: entry.title, body: entry.body, steps: entry.recoverySteps };
 }
 const SESSION_STATE_SECTIONS: readonly SessionStateSection[] = NON_ADMITTED_STATES.map(sessionStateSectionOf);
-const SESSION_INTRO =
-  "Admission is decided outside this workspace, by the organization a session works with, and every read and every change is authorised against what that admission allows. The four states below are what a session that is not admitted meets; each is stated in the same words wherever it appears, and each says what did not happen before it says what can be done.";
+const SESSION_INTRO = "Access is managed by your sending organization. Below is what each access or session message means and what to do next.";
 const SWITCH_CHOICES = [
   { label: CONTEXT_SWITCH_COPY.saveLabel, note: CONTEXT_SWITCH_COPY.saveNote },
   { label: CONTEXT_SWITCH_COPY.discardLabel, note: CONTEXT_SWITCH_COPY.unsavedWorkNote },
   { label: CONTEXT_SWITCH_COPY.stayLabel, note: CONTEXT_SWITCH_COPY.stayNote },
 ] as const;
-const SETTINGS_INTRO =
-  "Settings holds four preferences for this browser, one panel that states where this session's data came from, and the reset that re-seeds the development data. None of the four changes which records may be read or which ministry the session works in: appearance, interface language and display time zone change only how the workspace is shown to you, and the publishing preference decides only the release mode a new submission asks for, which sends nothing by itself.";
+const SETTINGS_INTRO = "Settings lets you customize how MYSA looks in this browser, choose your default update release option, check data status, or reset local sample data.";
 const SETTING_FACTS: readonly { readonly heading: string; readonly body: string }[] = [
-  { heading: "Appearance", body: "Light, dark, or matching your device. A choice applies to this browser and takes effect immediately, and matching your device follows your operating system while the page is open. Nothing else in the workspace changes with it." },
-  { heading: "Interface language", body: "Sets the language of the dates, times and numbers shown to you. It does not translate the interface, and it is never the language of anything sent to a partner." },
-  { heading: "Display time zone", body: "Changes how a time of day is shown to you. A date with no time of day — a due date, an introduction date — keeps the day the service recorded, and no deadline moves with this setting." },
-  {
-    heading: "Publishing preference",
-    body: "The release mode a new submission of an edition asks for: publish only, or publish and notify now. The submission records that mode and a reviewer cannot change it, so the choice belongs to the author before the review; choosing it here sends nothing by itself, because the release and the notice are separate deliberate steps and a notice is simulated where it is triggered.",
-  },
-  {
-    heading: "Source status",
-    body: "States the source system, the source reference, the coverage that source reports and the instant the page read it, and adds the development scenario when the session carries one. Every value there is read rather than computed, and a status this session may not read, or one whose source did not answer, is stated as exactly that rather than as an absence.",
-  },
-  { heading: "Reset", body: `${RESET_COPY.body} ${RESET_COPY.irreversibleNote}` },
+  { heading: "Appearance", body: "Switch between Light, Dark, or Match device. Applies right away in this browser." },
+  { heading: "Date & number format", body: "Controls how dates, times, and numbers are formatted on screen. It doesn’t translate the app or change what partners receive." },
+  { heading: "Display time zone", body: "Controls how timestamps appear on screen. Calendar-day due dates and repeating task schedules stay anchored to their original dates." },
+  { heading: "Update publishing default", body: "Sets whether new ministry update submissions default to Publish only or Publish and notify partners. Changing this setting never sends anything by itself." },
+  { heading: "Data & source status", body: "Shows which data source powered your view, the date range it covers, and when the page was loaded." },
+  { heading: "Reset sample data", body: `${RESET_COPY.body} ${RESET_COPY.irreversibleNote}` },
 ];
-const DEVELOPMENT_INTRO = "This workspace runs on one synthetic development dataset: the organizations, ministries, people, gifts, commitments, updates, pages and messages are seeded data rather than anyone's real records, and the same data stands behind every screen of the session.";
-const DEVELOPMENT_LABEL_POINTER =
-  "The shell says so on every screen. The Development data label sits in the header, beneath the current organization and ministry, states the same thing on every page, and names the development scenario the session is running in when there is one. It is the label to look for whenever a page seems to describe real people or real money.";
+const DEVELOPMENT_INTRO = "This workspace runs on sample development data — all organizations, ministries, partners, gifts, updates, pages, and inbox messages are simulated locally.";
+const DEVELOPMENT_LABEL_POINTER = "The Development data banner stays visible in the header on every screen so you can always tell you’re looking at sample data.";
 const SIMULATED_BOUNDARIES: readonly { readonly name: string; readonly where: string }[] = [
-  { name: "Mail submission", where: "beside the control that requests a notification for a publication, and on the per-send results that follow it." },
-  { name: "Publication reach", where: "on the result of a release, because what a release reaches is shown in the receiving preview instead of being published anywhere." },
-  { name: "Giving destination", where: "on every placement that offers giving, where no payment can be taken." },
-  { name: "Importer safety", where: "in the contact import journey, where a parse that succeeded says nothing about whether the file was safe." },
-  { name: "Media preparation", where: "while an image or a video is prepared, where that processing happens inside this application." },
+  { name: "Email sending", where: "When sending partner update notifications and on send history results." },
+  { name: "Public publishing", where: "When publishing updates or ministry pages — preview how readers see them in Reader preview." },
+  { name: "Giving links", where: "On ministry page giving placements — no real payment is processed." },
+  { name: "Contact imports", where: "When uploading a spreadsheet in Import contacts — files are parsed locally and not virus-scanned." },
+  { name: "Image & video prep", where: "When uploading photos or videos in updates and ministry pages — processed locally." },
 ];
 const DESTINATION_DESCRIPTIONS: Readonly<Record<string, string>> = {
-  "/": "The day's three questions in one place: what needs attention, what is information only, and which work is unfinished — each item with the reason it is there and where it leads.",
-  "/partners":
-    "The roster over people, households, churches and other organizations, together with the private preparation records you keep before anything is shared. A record opens into identity, permitted contact methods, restrictions, actual activity, private notes, open tasks and the support history you are authorised to read.",
-  "/work": "Today, upcoming, overdue, all and undated tasks, a dated agenda, and a repeating plan you can pause, resume or stop. Completing a task records that the task is done and says nothing about contact, payment or a message.",
-  "/support": "Received support on one named basis, the commitments behind it, one goal and four fixed reports. Every value here is read: no action posts, corrects, refunds or infers money.",
-  "/communication": "Ministry Updates and their variants, the audience that may be notified, the per-send results, and the synthetic inbox that shows how a message renders. A release is not a delivery.",
-  "/pages": "Worker and Project Pages: the section builder, the locale editions, the reach setting, the withdrawal of an edition, and a preview that cannot start giving.",
-  "/coaching": "Your own preparation, targets and check-ins, and the modules you share with a coach for a stated time. A coach reads only what has been shared, and only until that sharing ends.",
+  "/": "See what needs your attention today, recent support changes, and drafts or tasks in progress.",
+  "/partners": "Keep track of the people, families, churches, and organizations supporting your ministry — plus private contacts only you can see.",
+  "/work": "Track calls, emails, thank-yous, repeating follow-up plans, and your dated agenda.",
+  "/communication": "Write and publish ministry updates, manage your email audience, check send history, and preview what partners read.",
+  "/support": "Follow your monthly support, received gifts, recurring commitments, support goal, and financial reports.",
+  "/pages": "Build and publish your Missionary page and Project pages with photos, video, and giving links.",
+  "/coaching": "Set personal targets, log check-ins, and choose exactly what to share with your coach.",
 };
 const DESTINATIONS: readonly { readonly href: string; readonly label: string; readonly description: string }[] = PRIMARY_NAV.filter((item) => (item.section ?? "primary") === "primary").map((item) => ({ href: item.href, label: item.label, description: DESTINATION_DESCRIPTIONS[item.href] ?? "" }));
 
 const SECTION_SEARCH_INDEX: Readonly<Record<keyof typeof SECTION_IDS, string>> = {
-  session: [
-    "Getting in and session states",
-    SESSION_INTRO,
-    ...SESSION_STATE_SECTIONS.flatMap((entry) => [entry.title, entry.body, ...entry.steps]),
-  ].join(" ").toLowerCase(),
+  session: ["Access & session states", SESSION_INTRO, ...SESSION_STATE_SECTIONS.flatMap((entry) => [entry.title, entry.body, ...entry.steps])].join(" ").toLowerCase(),
   context: [
-    "Choosing and switching context",
+    "Switching ministries",
     CHOOSER_COPY.body,
     CHOOSER_COPY.oneMinistryNote,
     CONTEXT_SWITCH_COPY.title,
@@ -85,30 +71,20 @@ const SECTION_SEARCH_INDEX: Readonly<Record<keyof typeof SECTION_IDS, string>> =
     ...SWITCH_CHOICES.flatMap((choice) => [choice.label, choice.note]),
     CONTEXT_SWITCH_COPY.conflictNote,
     LATE_RESULT_DISCARDED,
-  ].join(" ").toLowerCase(),
-  settings: [
-    "Settings and its preferences",
-    SETTINGS_INTRO,
-    ...SETTING_FACTS.flatMap((fact) => [fact.heading, fact.body]),
-  ].join(" ").toLowerCase(),
-  development: [
-    "The synthetic dataset and where each effect is labelled",
-    DEVELOPMENT_INTRO,
-    DEVELOPMENT_LABEL_POINTER,
-    ...SIMULATED_BOUNDARIES.flatMap((boundary) => [boundary.name, boundary.where]),
-  ].join(" ").toLowerCase(),
-  destinations: [
-    "Where each job begins",
-    ...DESTINATIONS.flatMap((destination) => [destination.label, destination.description]),
-  ].join(" ").toLowerCase(),
+  ]
+    .join(" ")
+    .toLowerCase(),
+  settings: ["Settings & preferences", SETTINGS_INTRO, ...SETTING_FACTS.flatMap((fact) => [fact.heading, fact.body])].join(" ").toLowerCase(),
+  development: ["Sample data & simulated actions", DEVELOPMENT_INTRO, DEVELOPMENT_LABEL_POINTER, ...SIMULATED_BOUNDARIES.flatMap((boundary) => [boundary.name, boundary.where])].join(" ").toLowerCase(),
+  destinations: ["Workspace overview", ...DESTINATIONS.flatMap((destination) => [destination.label, destination.description])].join(" ").toLowerCase(),
 };
 
 const QUICK_JUMP: readonly { readonly key: keyof typeof SECTION_IDS; readonly label: string }[] = [
-  { key: "session", label: "Session states" },
-  { key: "context", label: "Context switching" },
+  { key: "session", label: "Access & sessions" },
+  { key: "context", label: "Switching ministries" },
   { key: "settings", label: "Settings" },
-  { key: "development", label: "Synthetic dataset" },
-  { key: "destinations", label: "Destinations" },
+  { key: "development", label: "Sample data" },
+  { key: "destinations", label: "Where to start" },
 ];
 
 const HelpSection = ({ id, title, description, contentClass, children }: { readonly id: string; readonly title: string; readonly description: string; readonly contentClass: string; readonly children: ReactNode }): ReactElement => (
@@ -117,7 +93,7 @@ const HelpSection = ({ id, title, description, contentClass, children }: { reado
 
 export type HelpContentProps = { readonly className?: string };
 
-/** Searchable Help & FAQ surface inspired by Shadcn Space `accordion-11` while keeping every reference section visible by default. */
+/** Searchable reference cards for session states, ministry switching, settings, sample data, and workspace areas. */
 export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
   const searchId = useId();
   const [filterText, setFilterText] = useState("");
@@ -146,7 +122,7 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
                 id={searchId}
                 type="search"
                 value={filterText}
-                placeholder="Filter help topics (e.g. session, time zone, simulated, reset)…"
+                placeholder="Search help topics (e.g. session, time zone, simulated, reset)…"
                 autoComplete="off"
                 onChange={(event) => setFilterText(event.target.value)}
               />
@@ -163,7 +139,7 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
             {`${String(visibleKeys.size)} of ${String(QUICK_JUMP.length)} topics`}
           </Badge>
         </div>
-        <nav aria-label="Jump to help section" className="flex flex-wrap items-center gap-1.5">
+        <nav aria-label="Jump to help topic" className="flex flex-wrap items-center gap-1.5">
           {QUICK_JUMP.filter((item) => visibleKeys.has(item.key)).map((item) => (
             <a
               key={item.key}
@@ -180,14 +156,14 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
         <StateNotice
           kind="empty"
           headingLevel={3}
-          title="No help topic matches that search"
-          description="Try a broader term such as session, context, settings, or dataset, or clear the search to read all five reference sections."
+          title="No help topics match your search"
+          description="Try a broader word like session, ministry, settings, or simulated — or clear the search to see all five topics."
           action={{ label: "Clear search", onClick: () => setFilterText("") }}
         />
       ) : null}
 
       {visibleKeys.has("session") ? (
-        <HelpSection id={SECTION_IDS.session} title="Getting in and session states" description={SESSION_INTRO} contentClass="flex min-w-0 flex-col gap-5">
+        <HelpSection id={SECTION_IDS.session} title="Access & session states" description={SESSION_INTRO} contentClass="flex min-w-0 flex-col gap-5">
           {SESSION_STATE_SECTIONS.map((state, index) => (
             <div key={state.key} className="flex min-w-0 flex-col gap-2">
               {index === 0 ? null : <Separator />}
@@ -209,7 +185,7 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
       ) : null}
 
       {visibleKeys.has("context") ? (
-        <HelpSection id={SECTION_IDS.context} title="Choosing and switching context" description={CHOOSER_COPY.body} contentClass="flex min-w-0 flex-col gap-4">
+        <HelpSection id={SECTION_IDS.context} title="Switching ministries" description={CHOOSER_COPY.body} contentClass="flex min-w-0 flex-col gap-4">
           <p className="type-supporting text-pretty wrap-anywhere">{CHOOSER_COPY.oneMinistryNote}</p>
           <Separator />
           <h4 className="type-group-title">{CONTEXT_SWITCH_COPY.title}</h4>
@@ -228,7 +204,7 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
       ) : null}
 
       {visibleKeys.has("settings") ? (
-        <HelpSection id={SECTION_IDS.settings} title="Settings and its preferences" description={SETTINGS_INTRO} contentClass="flex min-w-0 flex-col gap-4">
+        <HelpSection id={SECTION_IDS.settings} title="Settings & preferences" description={SETTINGS_INTRO} contentClass="flex min-w-0 flex-col gap-4">
           {SETTING_FACTS.map((fact, index) => (
             <div key={fact.heading} className="flex min-w-0 flex-col gap-2">
               {index === 0 ? null : <Separator />}
@@ -240,11 +216,11 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
       ) : null}
 
       {visibleKeys.has("development") ? (
-        <HelpSection id={SECTION_IDS.development} title="The synthetic dataset and where each effect is labelled" description={DEVELOPMENT_INTRO} contentClass="flex min-w-0 flex-col gap-4">
+        <HelpSection id={SECTION_IDS.development} title="Sample data & simulated actions" description={DEVELOPMENT_INTRO} contentClass="flex min-w-0 flex-col gap-4">
           <p className="type-supporting text-pretty wrap-anywhere">{DEVELOPMENT_LABEL_POINTER}</p>
           <Separator />
-          <h4 className="type-group-title">Where an effect is labelled</h4>
-          <p className="type-supporting text-pretty wrap-anywhere">{"Five effects would leave this application in production, and none of them does. Each is labelled where it is triggered — beside the control that triggers it, and again on the result that follows — and each label states what did not happen."}</p>
+          <h4 className="type-group-title">Where actions are simulated</h4>
+          <p className="type-supporting text-pretty wrap-anywhere">{"Five external actions are simulated locally and clearly labelled whenever you use them:"}</p>
           <dl className="flex min-w-0 flex-col gap-3">
             {SIMULATED_BOUNDARIES.map((boundary) => (
               <div key={boundary.name} className="flex min-w-0 flex-col gap-1">
@@ -254,14 +230,14 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
             ))}
           </dl>
           <Separator />
-          <p className="type-supporting text-pretty wrap-anywhere">{"An accepted notification is not a message that was delivered or read, a release is not a delivery, a completed task proves nothing about contact, and a commitment is not received money. Each surface states which of those it is reporting."}</p>
+          <p className="type-supporting text-pretty wrap-anywhere">{"Important distinctions: an accepted email notification doesn’t prove delivery, publishing an update doesn’t automatically email partners, completing a task doesn’t log an interaction or gift, and a recurring commitment isn’t received money."}</p>
         </HelpSection>
       ) : null}
 
       {visibleKeys.has("destinations") ? (
-        <HelpSection id={SECTION_IDS.destinations} title="Where each job begins" description="Each retained workflow begins at one of these destinations, and each destination is the shell's own entry for it, listed in the navigation's order." contentClass="flex min-w-0 flex-col gap-4">
-          <nav aria-label="Workflow destinations" className="min-w-0">
-            <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <HelpSection id={SECTION_IDS.destinations} title="Where to start" description="Jump straight to any part of your missionary workspace." contentClass="flex min-w-0 flex-col gap-4">
+          <nav aria-label="Workspace areas" className="min-w-0">
+            <ul className="grid min-w-0 gap-3 @2xl/main:grid-cols-2">
               {DESTINATIONS.map((destination) => (
                 <li key={destination.href} className="flex min-w-0 flex-col gap-2 rounded-2xl border border-border/80 bg-surface-subtle p-4 shadow-xs">
                   <h4 className="type-group-title flex min-w-0 flex-wrap items-center">
@@ -272,8 +248,6 @@ export const HelpContent = ({ className }: HelpContentProps): ReactElement => {
               ))}
             </ul>
           </nav>
-          <Separator />
-          <p className="type-supporting text-pretty wrap-anywhere">Settings and Help sit together at the foot of the same rail, below its rule, and keep that position on every screen. A destination that has sub-surfaces shows them beneath it in the rail.</p>
         </HelpSection>
       ) : null}
     </div>

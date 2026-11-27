@@ -25,9 +25,9 @@ const SELECT_LABEL = "Task to share";
 const PREVIEW_DUE_TERM = "Due date";
 const PREVIEW_STATUS_TERM = "Status";
 const NO_DUE_DATE = "No due date";
-const OCCURRENCE_MISSING_BODY = "This task repeats, and the list states no occurrence of it: a repeating task's summary is shared only for the occurrence you select, so nothing can be shared from it here. The task itself is unchanged, and a summary can still be shared from a task that does not repeat.";
-const FINGERPRINT_MISSING_BODY = "The list did not carry the fingerprint of this task's reviewed meaning, so a description could not be tied to what was reviewed. Reload the list and choose the task again.";
-const FIELD_LABELS: Readonly<Record<string, string>> = { taskId: SELECT_LABEL, safeDescription: "Reviewed description", occurrenceId: "Occurrence", reviewedFingerprint: "Reviewed meaning" };
+const OCCURRENCE_MISSING_BODY = "Repeating tasks must be shared one occurrence at a time, and this row doesn’t list a specific occurrence yet.";
+const FINGERPRINT_MISSING_BODY = "Missing verification details for this task. Reload the list and select the task again.";
+const FIELD_LABELS: Readonly<Record<string, string>> = { taskId: SELECT_LABEL, safeDescription: "Summary for your coach", occurrenceId: "Occurrence", reviewedFingerprint: "Reviewed task" };
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 /** The one type scale's heading utility per level, so the selector's card states its heading at the level it sits at with the same measure as every other heading there. */ const HEADING_SCALE: Readonly<Record<ReviewHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const SENTENCE_CLASS = "type-supporting text-pretty";
@@ -35,13 +35,13 @@ const FACT_ROW_CLASS = "flex min-w-0 flex-wrap items-baseline gap-x-2";
 const FACT_TERM_CLASS = "text-muted-foreground";
 const AUTHORED_TEXT_CLASS = "min-w-0 break-words text-pretty whitespace-pre-wrap";
 const REFUSAL_COPY: Readonly<Record<Exclude<TaskShareRefusalReason, "description-too-long">, string>> = {
-  "description-empty": "A shared summary states what you want your coach to read, so write the description before you share it.",
-  "not-reviewed": "This summary has no reviewed description attached, so nothing is shared until it is reviewed again.",
-  "successor-needs-fresh-selection": "This is a new occurrence of a repeating task, and nothing carries over from the occurrence you shared before. Select this occurrence to share a summary of it.",
-  "stale-revision": "The summary moved since this list was read, so nothing was shared. Reload the list and review the description again.",
-  "not-shared": "This summary is no longer shared, so there is nothing here to extend.",
-  "occurrence-already-shared": "This task already has a summary shared with your coach, so the same occurrence is not shared twice.",
-  unavailable: "The task behind this summary cannot be read right now, so nothing was shared. Try again in a moment.",
+  "description-empty": "Write a short description for your coach before sharing.",
+  "not-reviewed": "Review your summary description before sharing.",
+  "successor-needs-fresh-selection": "This is a new occurrence of a repeating task. Select this occurrence below to share it.",
+  "stale-revision": "This task changed since the page loaded. Reload the list and review again.",
+  "not-shared": "This summary is no longer shared.",
+  "occurrence-already-shared": "This task already has a summary shared with your coach.",
+  unavailable: "Couldn’t load this task right now. Try again shortly.",
 };
 export type TaskSummaryCandidate = {
   readonly taskId: string;
@@ -120,7 +120,7 @@ function decideShare({ selected, shares, description, selectedOccurrenceId, revi
   if (blocking !== undefined) return { kind: "refused", message: blocking === "shared" ? REFUSAL_COPY["occurrence-already-shared"] : TASK_SHARE_STATE_COPY["needs-review"].description, about: "selection" };
   const occurrenceId = selected.occurrenceId;
   // No reload is offered here: the surface states that it can name no occurrence, so re-reading the same list would answer the same way.
-  if (selected.isRecurringSuccessor && occurrenceId === undefined) return { kind: "cannot", heading: "This occurrence cannot be shared yet", description: OCCURRENCE_MISSING_BODY, reloadable: false };
+  if (selected.isRecurringSuccessor && occurrenceId === undefined) return { kind: "cannot", heading: "Can’t share this occurrence yet", description: OCCURRENCE_MISSING_BODY, reloadable: false };
   let reviewedFingerprint = selected.reviewedFingerprint;
   if (selected.isRecurringSuccessor) {
     if (occurrenceId === undefined || selectedOccurrenceId !== occurrenceId) return { kind: "refused", message: describeRefusal({ reason: "successor-needs-fresh-selection" }), about: "selection" };
@@ -131,7 +131,7 @@ function decideShare({ selected, shares, description, selectedOccurrenceId, revi
       reviewedFingerprint = reviewedFingerprint ?? admitted.value.reviewedFingerprint;
     }
   }
-  if (reviewedFingerprint === undefined || reviewedFingerprint.trim() === "") return { kind: "cannot", heading: "This task cannot be shared yet", description: FINGERPRINT_MISSING_BODY, reloadable: true };
+  if (reviewedFingerprint === undefined || reviewedFingerprint.trim() === "") return { kind: "cannot", heading: "Can’t share this task yet", description: FINGERPRINT_MISSING_BODY, reloadable: true };
   if (reviewInstant !== undefined) {
     const reviewed = reviewTaskSummary(description, reviewInstant);
     if (!reviewed.ok) return { kind: "refused", message: describeRefusal(reviewed.error), about: "description" };
@@ -155,7 +155,7 @@ function CoachPreview({ candidate, description, locale, labelId }: { readonly ca
   const written = description.trim();
   return (
     <div data-slot="task-summary-preview" className="flex min-w-0 flex-col gap-2 rounded-lg border border-border p-3">
-      <p {...{ id: labelId, className: "text-sm font-medium" }}>{"What your coach will read"}</p>
+      <p {...{ id: labelId, className: "text-sm font-medium" }}>{"Preview of what your coach will see"}</p>
       <dl aria-labelledby={labelId} className="flex min-w-0 flex-col gap-1.5 text-sm">
         <div className={FACT_ROW_CLASS}>
           <dt className={FACT_TERM_CLASS}>{PREVIEW_DUE_TERM}</dt>
@@ -171,10 +171,10 @@ function CoachPreview({ candidate, description, locale, labelId }: { readonly ca
         </div>
         <div className={FACT_ROW_CLASS}>
           <dt className={FACT_TERM_CLASS}>{"Description"}</dt>
-          <dd className="min-w-0">{written === "" ? <span className={SENTENCE_CLASS}>{"Nothing written yet. A coach reads nothing until you write a description and share it."}</span> : <bdi {...{ lang: locale, className: AUTHORED_TEXT_CLASS }}>{description}</bdi>}</dd>
+          <dd className="min-w-0">{written === "" ? <span className={SENTENCE_CLASS}>{"Write a description below to preview what your coach will see."}</span> : <bdi {...{ lang: locale, className: AUTHORED_TEXT_CLASS }}>{description}</bdi>}</dd>
         </div>
       </dl>
-      <p className="text-xs text-pretty text-muted-foreground wrap-anywhere">{"The due date and the status come from the task and stay live. Neither is editable here, and neither is a promise that the work was done."}</p>
+      <p className="text-xs text-pretty text-muted-foreground wrap-anywhere">{"Due date and status update automatically from your task."}</p>
     </div>
   );
 }
@@ -183,11 +183,11 @@ function SuccessorSelection({ candidate, selectedOccurrenceId, onSelectOccurrenc
   const selected = candidate.occurrenceId !== undefined && selectedOccurrenceId === candidate.occurrenceId;
   return (
     <Alert data-slot="task-summary-successor">
-      <AlertTitle>{"This is a new occurrence of a repeating task"}</AlertTitle>
+      <AlertTitle>{"New occurrence of a repeating task"}</AlertTitle>
       <AlertDescription className="flex min-w-0 flex-col gap-2">
-        <p className="text-pretty wrap-anywhere">{"Nothing carries over from the occurrence you shared before: a summary of this occurrence is shared only when you select it here."}</p>
+        <p className="text-pretty wrap-anywhere">{"Sharing doesn’t carry over automatically between occurrences — confirm below to share this occurrence."}</p>
         {selected ? (
-          <p className="text-pretty wrap-anywhere">{"You selected this occurrence in this session. It is the one this description will be shared for."}</p>
+          <p className="text-pretty wrap-anywhere">{"Selected for sharing."}</p>
         ) : (
           <Button {...{ type: "button", variant: "outline", size: "sm", className: cn("min-h-target", "max-w-full whitespace-normal"), onClick: onSelectOccurrence }}>{"Select this occurrence"}</Button>
         )}
@@ -271,10 +271,10 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
           )}
           <Separator />
           {candidates.length === 0 ? (
-            <StateNotice kind="empty" title="No task to share yet" description="A summary is shared from a task you already have. Add the work you want your coach to see, then come back and review a description of it." action={{ label: "Go to Work", href: "/work" }} headingLevel={noticeHeading} />
+            <StateNotice kind="empty" title="No tasks to share yet" description="Create a task first, then come back here to share a summary with your coach." action={{ label: "Go to Tasks", href: "/work" }} headingLevel={noticeHeading} />
           ) : (
             <>
-              <FormField label={SELECT_LABEL} name="task-summary-task" description="Choose one task. Its due date and status travel with the summary and stay live; the wording is yours." required>
+              <FormField label={SELECT_LABEL} name="task-summary-task" description="Pick a task. Its due date and status stay live while you write the summary your coach sees." required>
                 {(field) => (
                   <NativeSelect id={field.id} className="w-full max-w-full" value={selectedTaskId} onChange={(event) => chooseTask(event.target.value)} aria-describedby={field.describedBy} aria-invalid={field.invalid} aria-required={field.required}>
                     <NativeSelectOption value="">{"Choose a task"}</NativeSelectOption>
@@ -292,7 +292,7 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
               {selected === undefined || statusSpec === undefined ? null : (
                 <>
                   <CoachPreview candidate={selected} description={description} locale={locale} labelId={previewLabelId} />
-                  <FormField label="Reviewed description — a coach will read exactly this" name="task-summary-description" description="Write what you want your coach to understand about this piece of work. The task's own title, notes and history stay with you." error={descriptionError} required>
+                  <FormField label="Summary for your coach" name="task-summary-description" description="Write what you’d like your coach to know. Your original task title, notes, and history remain private." error={descriptionError} required>
                     {(field) => (
                       <>
                         <Textarea
@@ -306,21 +306,21 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
                           aria-invalid={field.invalid}
                           aria-required={field.required}
                         />
-                        <p {...{ id: counterId, "aria-live": "polite", className: "text-xs text-muted-foreground tabular-figures" }}>{`Written: ${String(Array.from(description).length)} / ${String(TASK_SUMMARY_MAX_CODE_POINTS)} code points`}</p>
+                        <p {...{ id: counterId, "aria-live": "polite", className: "text-xs text-muted-foreground tabular-figures" }}>{`${String(Array.from(description).length)} / ${String(TASK_SUMMARY_MAX_CODE_POINTS)} characters`}</p>
                       </>
                     )}
                   </FormField>
                   {selected.isRecurringSuccessor ? <SuccessorSelection candidate={selected} selectedOccurrenceId={selectedOccurrenceId} onSelectOccurrence={confirmOccurrence} /> : null}
-                  {cannot === null ? null : <StateNotice kind="unavailable" title={cannot.heading} description={cannot.description} headingLevel={noticeHeading} retry={cannot.reloadable && onReload !== undefined ? { label: "Reload the list", onClick: onReload } : undefined} />}
+                  {cannot === null ? null : <StateNotice kind="unavailable" title={cannot.heading} description={cannot.description} headingLevel={noticeHeading} retry={cannot.reloadable && onReload !== undefined ? { label: "Reload list", onClick: onReload } : undefined} />}
                   {selectionRefusal === undefined ? null : (
                     <Alert variant="destructive">
-                      <AlertTitle>{"This summary cannot be shared yet"}</AlertTitle>
+                      <AlertTitle>{"Can’t share this summary yet"}</AlertTitle>
                       <AlertDescription className="text-pretty wrap-anywhere">{selectionRefusal}</AlertDescription>
                     </Alert>
                   )}
                   {input === null ? null : (
                     <ActionReview<TaskSharePayload>
-                      title="Share this summary with your coach"
+                      title="Share task summary with your coach"
                       description={
                         <div className="flex min-w-0 flex-col gap-2">
                           <bdi {...{ lang: locale, className: cn("block rounded-lg border border-border p-2", AUTHORED_TEXT_CLASS) }}>{description}</bdi>
@@ -334,8 +334,8 @@ export function TaskSummarySelector({ candidates, existing, scope, locale, initi
                           </p>
                         </div>
                       }
-                      consequence="Sharing writes this summary once. It sends no notice, records no interaction, creates no task and proves nothing about contact or payment."
-                      confirmLabel="Share this summary"
+                      consequence="Shares this summary with your coach. Doesn’t send notifications, log partner activity, or create tasks."
+                      confirmLabel="Share summary"
                       input={input}
                       submit={submit}
                       onSettled={setSettled}

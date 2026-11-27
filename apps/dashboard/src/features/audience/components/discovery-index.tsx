@@ -19,7 +19,7 @@ const HEADING_TAGS: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4
 /** The one type scale's heading utility for each level, so this surface's heading takes the measure of the level the composing page gives it rather than one fixed size. */
 const HEADING_SCALE: Readonly<Record<NoticeHeadingLevel, string>> = { 1: "type-page-title", 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const LISTED_STATUS = statusBadgeProps(REACH_STATUS, "listed");
-const DENIED_DESCRIPTION = "The read was refused before it listed anything, so nothing here states how many editions are listed publicly, what they are called or whether any exists at all.";
+const DENIED_DESCRIPTION = "Your current session doesn’t have permission to view the public pages directory.";
 function ListedEditionRow({ edition, index }: { readonly edition: DiscoveryIndexEnvelope["data"]["entries"][number]; readonly index: number }): ReactElement {
   const title = edition.title.trim();
   return (
@@ -102,7 +102,7 @@ function IndexBody({ result, headingLevel, onRetry }: { readonly result: ReadRes
         );
       return (
         <div className="flex min-w-0 flex-col gap-3">
-          <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
+          <ul className="grid min-w-0 gap-3 @2xl/main:grid-cols-2">
             {entries.map((edition, index) => (
               <ListedEditionRow key={edition.href} edition={edition} index={index} />
             ))}
@@ -112,11 +112,11 @@ function IndexBody({ result, headingLevel, onRetry }: { readonly result: ReadRes
       );
     }
     case "denied":
-      return <StateNotice kind="denied" headingLevel={noticeLevel} title="This index is not available in this context" description={DENIED_DESCRIPTION} reasonCode={result.denied.reasonCode} />;
+      return <StateNotice kind="denied" headingLevel={noticeLevel} title="Public pages aren’t available in this context" description={DENIED_DESCRIPTION} reasonCode={result.denied.reasonCode} />;
     case "unavailable":
-      return <StateNotice kind="unavailable" headingLevel={noticeLevel} title={`${DISCOVERY_INDEX_COPY.heading} could not be read`} description={result.unavailable.guidance} source={result.unavailable.source} retry={{ label: "Read this index again", onClick: onRetry }} />;
+      return <StateNotice kind="unavailable" headingLevel={noticeLevel} title={`Couldn’t load ${DISCOVERY_INDEX_COPY.heading}`} description={result.unavailable.guidance} source={result.unavailable.source} retry={{ label: "Try again", onClick: onRetry }} />;
     case "refused":
-      return <StateNotice kind="refused" headingLevel={noticeLevel} title="This index's own request was refused" description="The request this index was read with is not one the read admits, so nothing was read and nothing is shown in its place. Open the index at its own address and the same job runs unchanged." />;
+      return <StateNotice kind="refused" headingLevel={noticeLevel} title="Couldn’t open Public pages" description="Reload Public pages to try again." />;
   }
 }
 /** The public discovery index of released Page editions that are listed publicly. */ export function DiscoveryIndex({ scope, initialEnvelope, headingLevel = 1, className }: DiscoveryIndexProps): ReactElement {

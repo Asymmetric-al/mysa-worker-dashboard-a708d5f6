@@ -11,13 +11,16 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/cn";
+import { useSharedPartnerSearch } from "@/lib/shared-partners";
 import { useDismissableLayer, useRovingFocus, useTypeahead } from "@/lib/ui-sdk";
 import type { MutationInput, MutationOutcome, PerItemResult, ReadEnvelope, Scope } from "@/modules/data-service";
 import { MEMBERSHIP_RULES_COPY, MEMBERSHIP_STATE_COPY, STATE_NOTICE_COPY, type MembershipState } from "../copy";
 import { useAddMembers, type NamedChange } from "../hooks/use-initiative-mutations";
 import { addMembersPayloadSchema, type AddMembersPayload } from "../schemas/member";
 export type MemberCandidate = { readonly partnerId: string; readonly displayName: string; readonly membership?: { readonly memberId: string; readonly state: MembershipState } | null };
-export type MemberCandidates = { readonly state: "available"; readonly partners: readonly MemberCandidate[] } | { readonly state: "unavailable"; readonly source: ReadEnvelope<unknown>["source"] };
+export type MemberCandidates =
+  | { readonly state: "available"; readonly partners: readonly MemberCandidate[]; readonly total?: number; readonly paged?: boolean; readonly existingMemberIds?: readonly string[] }
+  | { readonly state: "unavailable"; readonly source: ReadEnvelope<unknown>["source"] };
 /** Props of {@link MemberPicker}. */ export interface MemberPickerProps {
   readonly initiativeId: string;
   readonly candidates: readonly MemberCandidate[] | MemberCandidates;
@@ -28,29 +31,29 @@ export type MemberCandidates = { readonly state: "available"; readonly partners:
   readonly className?: string;
 }
 const PICKER_COPY = {
-  heading: "Add partners to the working list",
+  heading: "Add partners to working list",
   trigger: "Add partners",
-  triggerName: "Add partners to the working list",
+  triggerName: "Add partners to working list",
   searchLabel: "Search eligible partners",
-  searchPlaceholder: "Type a name",
-  searchClear: "Clear this search",
+  searchPlaceholder: "Search by name…",
+  searchClear: "Clear search",
   listLabel: "Eligible partners",
-  noMatch: "No eligible partner matches that search.",
-  selectedHeading: "Selected for this addition",
-  selectedEmpty: "No partner is selected, so nothing will be added.",
-  removeLabel: (name: string): string => `Remove ${name} from this selection`,
-  reviewTitle: "Review this addition",
-  reviewDescription: "These partners join this initiative's reviewed working list. Nothing is asked of them, no consent is recorded and no notice is sent.",
+  noMatch: "No eligible partners match that search.",
+  selectedHeading: "Selected to add",
+  selectedEmpty: "No partners selected yet.",
+  removeLabel: (name: string): string => `Remove ${name} from selection`,
+  reviewTitle: "Confirm working-list addition",
+  reviewDescription: "Adds these partners to your working list for planning — never sends messages or records consent.",
   reviewSelectionNoun: "partners",
-  confirmLabel: "Add to the working list",
+  confirmLabel: "Add to working list",
   cancelLabel: "Keep selecting",
-  perItemHeading: "What each partner's result was",
-  backToWorkingList: "Back to the working list",
-  emptyTitle: "No partner is eligible to add",
-  emptyBody: "Every partner this read could offer is already on the working list, was removed from it, or is not eligible for this initiative. A removed partner is returned from the working list itself.",
+  perItemHeading: "Results by partner",
+  backToWorkingList: "Back to working list",
+  emptyTitle: "No more eligible partners to add",
+  emptyBody: "All eligible partners are already on this working list, removed, or marked ineligible. You can return a removed partner directly from the list above.",
   unavailableTitle: STATE_NOTICE_COPY.unavailable.title,
-  unavailableBody: "The source behind the eligible partners could not answer, so this picker offers none rather than an empty list or a count of zero.",
-  refusalTitle: "That selection cannot be added",
+  unavailableBody: "Couldn’t load eligible partners right now. Try again in a moment.",
+  refusalTitle: "Can’t add this selection",
 } as const;
 const HEADING_TAG = { 2: "h2", 3: "h3", 4: "h4" } as const;
 type MemberPickerHeadingLevel = keyof typeof HEADING_TAG;
@@ -125,13 +128,26 @@ function PartnerSelection({ selection, results, onRemove }: PartnerSelectionProp
   const [refusal, setRefusal] = useState<string | null>(null);
   const [settled, setSettled] = useState<MutationOutcome | null>(null);
   const addMembers = useAddMembers(scope);
+  const isPaged = read.state === "available" && read.paged === true;
+  const existingMemberIds = useMemo<ReadonlySet<string>>(() => {
+    const ids = new Set<string>();
+    if (read.state !== "available") return ids;
+    for (const id of read.existingMemberIds ?? []) ids.add(id);
+    for (const candidate of read.partners) if (candidate.membership !== undefined && candidate.membership !== null) ids.add(candidate.partnerId);
+    return ids;
+  }, [read]);
+  const initialServerItems = useMemo(() => (read.state === "available" ? read.partners.map(({ partnerId, displayName }) => ({ partnerId, displayName })) : []), [read]);
+  const serverSearch = useSharedPartnerSearch({ scope, search: query, enabled: isPaged && open, initialItems: initialServerItems, initialTotal: read.state === "available" ? read.total : undefined });
   const eligible = useMemo<readonly MemberCandidate[]>(() => {
-    const stated = candidateReadOf(candidates);
-    return stated.state === "available" ? stated.partners.filter(isOfferable) : [];
-  }, [candidates]);
+    if (read.state !== "available") return [];
+    return read.partners.filter(isOfferable);
+  }, [read]);
   const visible = useMemo<readonly MemberCandidate[]>(() => {
+    if (isPaged) {
+      return serverSearch.items.filter((partner) => !existingMemberIds.has(partner.partnerId)).map((partner) => ({ partnerId: partner.partnerId, displayName: partner.displayName, membership: null }));
+    }
     return eligible.filter((candidate) => matchesSearch(candidate, query.trim().toLowerCase()));
-  }, [eligible, query]);
+  }, [isPaged, serverSearch.items, existingMemberIds, eligible, query]);
   const partnerIds = useMemo<readonly string[]>(() => selection.map((entry) => entry.partnerId), [selection]);
   const namesByPartner = useMemo<ReadonlyMap<string, string>>(() => new Map(selection.map((entry) => [entry.partnerId, entry.displayName] as const)), [selection]);
   const nameOf = useCallback((partnerId: string): string => namesByPartner.get(partnerId) ?? partnerId, [namesByPartner]);
@@ -194,7 +210,7 @@ function PartnerSelection({ selection, results, onRemove }: PartnerSelectionProp
     addCandidate(candidate);
   }
   if (read.state === "unavailable") return <StateNotice kind="unavailable" title={PICKER_COPY.unavailableTitle} description={PICKER_COPY.unavailableBody} source={read.source} headingLevel={headingLevel} className={className} />;
-  if (eligible.length === 0) return <StateNotice kind="empty" title={PICKER_COPY.emptyTitle} description={PICKER_COPY.emptyBody} action={{ label: PICKER_COPY.backToWorkingList, href: workingListHref(initiativeId) }} headingLevel={headingLevel} className={className} />;
+  if (!isPaged && eligible.length === 0) return <StateNotice kind="empty" title={PICKER_COPY.emptyTitle} description={PICKER_COPY.emptyBody} action={{ label: PICKER_COPY.backToWorkingList, href: workingListHref(initiativeId) }} headingLevel={headingLevel} className={className} />;
   const Heading = HEADING_TAG[headingLevel];
   const reviewDescription = (
     <div className="flex min-w-0 flex-col gap-2">
@@ -264,7 +280,11 @@ function PartnerSelection({ selection, results, onRemove }: PartnerSelectionProp
                   )}
                 </InputGroup>
               </div>
-              {visible.length === 0 ? (
+              {isPaged && serverSearch.error !== null ? (
+                <StateNotice kind="unavailable" title={PICKER_COPY.unavailableTitle} description={serverSearch.error.message} source={serverSearch.error.source} retry={{ label: "Try again", onClick: serverSearch.retry }} headingLevel={4} />
+              ) : isPaged && serverSearch.loading && visible.length === 0 ? (
+                <output className="px-1 py-2 text-sm text-pretty text-muted-foreground">{"Searching eligible partners…"}</output>
+              ) : visible.length === 0 ? (
                 <output className="px-1 py-2 text-sm text-pretty text-muted-foreground">{PICKER_COPY.noMatch}</output>
               ) : (
                 <div id={listId} role="listbox" aria-multiselectable="true" aria-label={PICKER_COPY.listLabel} className="flex max-h-64 min-w-0 flex-col gap-0.5 overflow-y-auto overscroll-contain rounded-xl border border-border p-1">
@@ -294,6 +314,16 @@ function PartnerSelection({ selection, results, onRemove }: PartnerSelectionProp
                   })}
                 </div>
               )}
+              {isPaged && serverSearch.error === null ? (
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2 text-xs text-muted-foreground">
+                  <span className="tabular-figures">{serverSearch.total === null ? `${String(visible.length)} shown` : `Showing ${String(visible.length)} eligible (${String(serverSearch.total)} matching shared)`}</span>
+                  {serverSearch.hasMore ? (
+                    <Button type="button" variant="ghost" size="sm" disabled={serverSearch.loadingMore} onClick={serverSearch.loadMore}>
+                      {serverSearch.loadingMore ? "Loading…" : "Load more"}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
             </PopoverContent>
           </Popover>
         </div>

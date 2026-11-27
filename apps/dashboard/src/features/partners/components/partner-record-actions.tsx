@@ -22,7 +22,7 @@ export function PartnerRecordActionBar({ partnerId, contactEditsAdmitted, logInt
   if (!contactEditsAdmitted && !logInteractionAdmitted && !createTaskAdmitted) return null;
   return (
     <>
-      {contactEditsAdmitted ? <Link {...{ "data-slot": "button", className: actionClass, href: PARTNER_RECORD_PATHS.edit(partnerId) }}>{"Edit permitted fields"}</Link> : null}
+      {contactEditsAdmitted ? <Link {...{ "data-slot": "button", className: actionClass, href: PARTNER_RECORD_PATHS.edit(partnerId) }}>{"Edit contact"}</Link> : null}
       {logInteractionAdmitted ? <Link {...{ "data-slot": "button", className: actionClass, href: PARTNER_RECORD_PATHS.newInteraction(partnerId) }}>{PARTNER_ACTION_LABELS.logInteraction}</Link> : null}
       {createTaskAdmitted ? <Link {...{ "data-slot": "button", className: actionClass, href: PARTNER_RECORD_PATHS.work(partnerId) }}>{PARTNER_ACTION_LABELS.createFollowUpTask}</Link> : null}
     </>

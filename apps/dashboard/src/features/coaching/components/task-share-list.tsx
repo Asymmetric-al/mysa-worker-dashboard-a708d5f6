@@ -36,34 +36,34 @@ export type TaskShareListProps = { readonly shares: ReadonlyArray<TaskShareListE
 const SHARE_TITLE_NOUN = "task summary";
 const REVIEW_AGAIN_HREF = "/coaching/check-ins";
 const STOP_LABEL = "Stop sharing";
-const STOP_REFUSED_FALLBACK = "This row names no share to stop, so nothing was submitted. Reload the shared summaries and choose the share again.";
+const STOP_REFUSED_FALLBACK = "Missing share details for this row. Reload the page and try again.";
 const STOP_REGION_HEADING_LEVEL = 3;
 const EMPTY_ACTION_HREF = REVIEW_AGAIN_HREF;
 const FIELD_LABELS: Readonly<Record<string, string>> = { taskShareId: "Task summary", operation: "Change" };
 const STATE_TONE: Readonly<Record<TaskShareSummaryState, StatusTone>> = { shared: "positive", "needs-review": "caution", removed: "neutral", unavailable: "danger" };
 const TASK_STATUS_WORD: Readonly<Record<TaskStatus, string>> = { open: "Open", completed: "Completed", reopened: "Reopened", cancelled: "Cancelled" };
 const DUE_PRECISION_WORD: Readonly<Record<DatePrecision, string | null>> = { date: null, approximate: "approximate", unknown: "date not confirmed" };
-const STOP_STATE_PHRASE: Readonly<Record<TaskShareSummaryState, string>> = { shared: "currently shared with your coach", "needs-review": "currently held until you review it again", removed: "already stopped", unavailable: "currently unreadable from its source" };
+const STOP_STATE_PHRASE: Readonly<Record<TaskShareSummaryState, string>> = { shared: "currently shared with your coach", "needs-review": "currently pending review", removed: "already stopped", unavailable: "currently unavailable" };
 const WITHHELD_REASON_STATEMENT: Readonly<Record<TaskShareRefusalReason, string>> = {
-  "description-too-long": "The description reviewed for this share was longer than the length a summary may carry, so it is held until a shorter one is reviewed.",
-  "description-empty": "The description reviewed for this share was blank, so it is held until a description is written and reviewed.",
-  "not-reviewed": "No reviewed description is recorded against this share, so it is held until one is reviewed.",
-  "successor-needs-fresh-selection": "This share covers an earlier occurrence of a repeating task, so the occurrence to share has to be chosen again before anything is shown.",
-  "stale-revision": "The share moved since this page read it, so it is held until you review it again.",
-  "not-shared": "This summary is not shared, so there is nothing here to withhold.",
-  "occurrence-already-shared": "This occurrence is already the shared one, so nothing new is shown for it.",
-  unavailable: "The task behind this share cannot be read at the moment, so nothing is shown in its place.",
+  "description-too-long": "Summary exceeds the character limit and is hidden until shortened and reviewed.",
+  "description-empty": "Summary is blank and is hidden until you write a description and review it.",
+  "not-reviewed": "Hidden until you review a description for this task.",
+  "successor-needs-fresh-selection": "This repeating task moved to a new occurrence — choose the occurrence to share.",
+  "stale-revision": "This task changed since it was last reviewed and is hidden until you review it again.",
+  "not-shared": "This summary isn’t shared.",
+  "occurrence-already-shared": "This occurrence is already shared.",
+  unavailable: "The underlying task couldn’t be loaded right now.",
 };
 const STOP_EFFECT = STOP_EFFECT_COPY["remove-task-share"];
 const CONTROL_CLASS = `${BUTTON_WRAP_CLASS} text-start`;
 const Fact = factFrame({ rowClassName: "flex min-w-0 items-baseline gap-x-1.5", termClassName: "shrink-0 text-muted-foreground", valueClassName: "min-w-0 wrap-anywhere" });
-const withheldReasonStatement = (reason: TaskShareRefusalReason | null | undefined): string => (reason === null || reason === undefined ? "The read did not state why this summary is held. Nothing is shown until you review it again." : WITHHELD_REASON_STATEMENT[reason]);
+const withheldReasonStatement = (reason: TaskShareRefusalReason | null | undefined): string => (reason === null || reason === undefined ? "Hidden until you review this summary again." : WITHHELD_REASON_STATEMENT[reason]);
 function SharedDescription({ description }: { readonly description: string | null }): ReactElement {
   const text = description === null ? "" : description.trim();
-  if (text === "") return <p className="min-w-0 type-supporting text-pretty">{"The read states this summary as shared but carries no description for it, so nothing is reproduced here. Review it again to share a description."}</p>;
+  if (text === "") return <p className="min-w-0 type-supporting text-pretty">{"Marked as shared, but no description was returned. Review it again to update."}</p>;
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <p className="text-xs font-medium text-muted-foreground">{"The description you reviewed"}</p>
+      <p className="text-xs font-medium text-muted-foreground">{"Summary your coach sees"}</p>
       <p className="min-w-0 type-body text-pretty whitespace-pre-line wrap-anywhere">{text}</p>
     </div>
   );
@@ -77,12 +77,12 @@ function ShareStatement({ entry }: { readonly entry: TaskShareListEntry }): Reac
       return (
         <div className="flex min-w-0 flex-col gap-1.5">
           <p className="min-w-0 type-body text-pretty">
-            <span className="font-medium">{`Description withheld. `}</span>
+            <span className="font-medium">{`Summary hidden. `}</span>
             {copy.description}
           </p>
           <p className="min-w-0 type-supporting text-pretty">{withheldReasonStatement(entry.withheldReason)}</p>
           <p className="min-w-0 type-body">
-            <Link {...{ href: REVIEW_AGAIN_HREF, className: "inline-link" }}>{"Review it again"}</Link>
+            <Link {...{ href: REVIEW_AGAIN_HREF, className: "inline-link" }}>{"Review again"}</Link>
           </p>
         </div>
       );
@@ -170,19 +170,19 @@ export default function TaskShareList({ shares, scope, locale, unavailable }: Ta
   // The attempt presents the stopped share's own revision, because the service compares that record's revision before it writes: a share that moved since this page read it is a conflict, never an overwrite.
   const stopInput = stopRequest !== null && stopRequest.success && stopping !== null ? { scope, expectedRevision: stopping.revision, payload: stopRequest.data } : null;
   const stopRefusal = stopRequest !== null && !stopRequest.success ? (stopRequest.error.issues[0]?.message ?? STOP_REFUSED_FALLBACK) : null;
-  const panelDescription = "Only the summaries you selected and reviewed are shared: a description you wrote for this purpose, the task's live due date and its live status. A task's own title, notes, links and history are never shared, and stopping a summary leaves the work itself alone.";
-  const unavailableDescription = "The source behind these summaries could not be read, so this region reports the outage instead of an empty list. Nothing was removed, no task changed, and the rest of your coaching preparation stays readable.";
-  const emptyDescription = "A summary is shared only when you select a task, write a description for this purpose and review it. Until then a coach reads no task title, note, link or history, and nothing here waits to be sent.";
+  const panelDescription = "Your coach sees only the description you wrote, the live due date, and status — never your original task title, private notes, or history.";
+  const unavailableDescription = "Couldn’t load shared task summaries right now. Your tasks and coaching notes aren’t affected.";
+  const emptyDescription = "Choose a task above and write a short summary to share with your coach. Original titles and private notes stay private.";
   return (
     <div lang={locale} data-slot="task-share-list" data-state={unavailableSource !== null ? "unavailable" : shares.length === 0 ? "empty" : "listed"} className="flex min-w-0 flex-col gap-4">
-      <Panel titleId={regionHeadingId} headingLevel={2} title="Task summaries you share" description={panelDescription} cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-4">
+      <Panel titleId={regionHeadingId} headingLevel={2} title="Shared task summaries" description={panelDescription} cardClassName="min-w-0" contentClassName="flex min-w-0 flex-col gap-4">
         {unavailableSource !== null ? (
-          <StateNotice kind="unavailable" headingLevel={3} title="Shared task summaries cannot be read right now" description={unavailableDescription} source={unavailableSource.source} />
+          <StateNotice kind="unavailable" headingLevel={3} title="Couldn’t load shared task summaries" description={unavailableDescription} source={unavailableSource.source} />
         ) : shares.length === 0 ? (
-          <StateNotice kind="empty" headingLevel={3} title="No task summary is shared yet" description={emptyDescription} action={{ label: "Choose a task summary to share", href: EMPTY_ACTION_HREF }} />
+          <StateNotice kind="empty" headingLevel={3} title="No task summaries shared yet" description={emptyDescription} action={{ label: "Share a task summary", href: EMPTY_ACTION_HREF }} />
         ) : (
           <>
-            <p className="min-w-0 type-supporting text-pretty">{"Dates are calendar days: a due date carries no time of day and no zone."}</p>
+            <p className="min-w-0 type-supporting text-pretty">{"Due dates are shown as calendar dates."}</p>
             <ul aria-labelledby={regionHeadingId} className="flex min-w-0 flex-col gap-4">
               {shares.map((entry) => (
                 <TaskShareItem key={entry.shareId} entry={entry} stopping={stopping !== null && stopping.shareId === entry.shareId} reviewRegionId={reviewRegionId} onStop={beginStop} />
@@ -195,7 +195,7 @@ export default function TaskShareList({ shares, scope, locale, unavailable }: Ta
         <div id={reviewRegionId} className="flex min-w-0 flex-col gap-3">
           <Separator />
           {stopInput === null ? (
-            <StateNotice kind="refused" headingLevel={STOP_REGION_HEADING_LEVEL} title="This share cannot be stopped from here" description={stopRefusal ?? STOP_REFUSED_FALLBACK} />
+            <StateNotice kind="refused" headingLevel={STOP_REGION_HEADING_LEVEL} title="Couldn’t stop sharing from here" description={stopRefusal ?? STOP_REFUSED_FALLBACK} />
           ) : (
             <>
               <ActionReview<TaskShareStopPayload>

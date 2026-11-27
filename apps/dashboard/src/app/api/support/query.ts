@@ -186,11 +186,20 @@ function refineAmountRangeCurrency(query: PostedCurrencyAndRange, context: z.Ref
   context.addIssue({ code: "custom", path: ["amountRange"], message: AMOUNT_RANGE_CURRENCY_MESSAGE });
 }
 const snapshotIdSchema = z.string().min(1, BODY_MESSAGES.snapshotId).optional();
-/** The body `POST /api/report` reads: which of the four reports, the filters it is computed under, and the caller's own request identity. */
-export const reportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema, scope: postedScopeField, ...POSTED_FILTER_FIELDS }).superRefine(refineAmountRangeCurrency), snapshotId: snapshotIdSchema });
+const WHOLE_QUERY_PAGE_MESSAGE = "Omit page when requesting wholeQuery: a whole-query print reads every matching row rather than one page.";
+/** The body `POST /api/report` reads: which of the four reports, the filters it is computed under, optional whole-query print mode, and the caller's own request identity. */
+export const reportRequestSchema = z.strictObject({
+  query: z
+    .strictObject({ reportId: reportIdentitySchema, scope: postedScopeField, wholeQuery: z.boolean().optional(), ...POSTED_FILTER_FIELDS })
+    .superRefine((query, context) => {
+      refineAmountRangeCurrency(query, context);
+      if (query.wholeQuery === true && query.page !== undefined) context.addIssue({ code: "custom", path: ["page"], message: WHOLE_QUERY_PAGE_MESSAGE });
+    }),
+  snapshotId: snapshotIdSchema,
+});
 /** The body `POST /api/export` reads: the same shape, whose query may name the report it is an export of, under the same amount-range rule so the two artifacts of a query are built from the same reading of it. */
 export const exportRequestSchema = z.strictObject({ query: z.strictObject({ reportId: reportIdentitySchema.optional(), scope: postedScopeField, ...POSTED_FILTER_FIELDS }).superRefine(refineAmountRangeCurrency), snapshotId: snapshotIdSchema });
-/** A posted query as the broader of the two bodies reads it. */ export type PostedQuery = z.output<typeof exportRequestSchema>["query"];
+/** A posted query as the broader of the two bodies reads it. */ export type PostedQuery = z.output<typeof exportRequestSchema>["query"] & { readonly wholeQuery?: boolean };
 /** Reduces a posted query to the bounded filter set the reads accept, naming the one currency a scoped selection states and the one report an export is of when it names one. */ export function supportQueryOf(posted: PostedQuery): SupportQuery {
   const stated = posted.currency;
   const currency = stated === undefined ? undefined : typeof stated === "string" ? stated : stated.kind === "one" ? stated.currency : undefined;
@@ -205,6 +214,7 @@ export const exportRequestSchema = z.strictObject({ query: z.strictObject({ repo
     ...(posted.search === undefined ? {} : { search: posted.search }),
     ...(posted.sort === undefined ? {} : { sort: posted.sort }),
     ...(posted.page === undefined ? {} : { page: posted.page }),
+    ...(posted.wholeQuery === true ? { wholeQuery: true } : {}),
     ...(posted.timeZone === undefined ? {} : { timeZone: posted.timeZone }),
   };
 }

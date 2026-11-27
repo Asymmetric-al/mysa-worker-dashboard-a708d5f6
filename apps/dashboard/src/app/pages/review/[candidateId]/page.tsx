@@ -13,12 +13,12 @@ type PageLocalesEnvelope = Extract<Awaited<ReturnType<typeof reads.pages.readPag
 type EditionView = PageLocalesEnvelope["data"]["editions"][number];
 /** The title this route states, whether it renders the review or a refusal in its place: the page keeps its own heading and states the refusal beneath it. */ const PAGE_TITLE = "Page review";
 /** The level a refusal nests at, because the page's title is the route's one heading and the notice sits beneath it. */ const REFUSAL_LEVEL = 2;
-const REFUSED_TITLE = "This review's request was refused";
-const UPDATE_CANDIDATE_TITLE = "This address reviews an Update, not a Page";
-const UPDATE_CANDIDATE_DESCRIPTION = "This route reviews the frozen candidates of Worker and Project Pages, and what this address names belongs to a Ministry Update, so no Page review is composed here. " + "The action below opens the same identity on the Updates review, which is the family that owns it.";
+const REFUSED_TITLE = "Couldn’t open Page review";
+const UPDATE_CANDIDATE_TITLE = "This submission is an Update, not a Ministry page";
+const UPDATE_CANDIDATE_DESCRIPTION = "This review link belongs to an Update rather than a Missionary or Project page. Open it in Update review instead.";
 const UPDATE_REVIEW_HREF_PREFIX = "/communication/review/";
-const UNRENDERABLE_TITLE = "The frozen revision cannot be shown";
-const UNRENDERABLE_DESCRIPTION = "This edition's frozen revision cannot be read as the content profile requires, so no reviewer can be asked to " + "approve it. Nothing has been approved, nothing has been released, and the revision keeps its identity until the " + "author submits one that can be shown.";
+const UNRENDERABLE_TITLE = "Submitted copy can’t be displayed";
+const UNRENDERABLE_DESCRIPTION = "This submission doesn’t meet content requirements and can’t be reviewed yet. Nothing has been approved or published.";
 type ReviewedCandidate = {
   readonly variantId: string;
   readonly candidateId: string;
@@ -66,8 +66,8 @@ function editionViewOf(edition: EditionView, documentId: string, reviewed: Revie
 }
 const NOTICE_COPY: ReadNoticeCopy = {
   headingLevel: REFUSAL_LEVEL,
-  denied: { title: "This review is not available in this session" },
-  unavailable: { title: "The review could not be read", body: "The records behind this review could not be read, so nothing is shown here in place of them. " + "No decision is offered until the read succeeds: an empty review would state that nothing is frozen, " + "which this read does not say." },
+  denied: { title: "This review isn’t available in this session" },
+  unavailable: { title: "Couldn’t load Page review", body: "Couldn’t reach the content service right now. Try again before making a review decision." },
   refused: { title: REFUSED_TITLE },
 };
 /** A notice stated inside the page it belongs to: the route's own title first, the refusal beneath it, so a screen that could not be read still says which page it is. */ const titledNoticeOf = (notice: ReactElement): ReactElement => (
@@ -78,7 +78,7 @@ const NOTICE_COPY: ReadNoticeCopy = {
 );
 const failureNoticeOf = (result: Exclude<ReadResult<never>, { kind: "envelope" }>): ReactElement => titledNoticeOf(<ReadNotices failure={result} copy={NOTICE_COPY} />);
 /** A candidate that belongs to an Update rather than a Page: stated under the page's own title, with the one action that completes the review on the family that owns it. */
-const updateCandidateNoticeOf = (candidateId: string): ReactElement => titledNoticeOf(<StateNotice kind="refused" headingLevel={REFUSAL_LEVEL} title={UPDATE_CANDIDATE_TITLE} description={UPDATE_CANDIDATE_DESCRIPTION} action={{ label: "Open the Updates review", href: updateReviewHrefOf(candidateId) }} />);
+const updateCandidateNoticeOf = (candidateId: string): ReactElement => titledNoticeOf(<StateNotice kind="refused" headingLevel={REFUSAL_LEVEL} title={UPDATE_CANDIDATE_TITLE} description={UPDATE_CANDIDATE_DESCRIPTION} action={{ label: "Open Update review", href: updateReviewHrefOf(candidateId) }} />);
 async function pageReviewOf(envelope: CandidateEnvelope, reviewed: ReviewedCandidate | undefined): Promise<ReactElement> {
   const { documentId } = envelope.data.document;
   const locales = await reads.pages.readPageLocales({ pageId: documentId });

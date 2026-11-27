@@ -6,21 +6,21 @@ const PARTNER_HREF = "/partners/partner-jo-mbeki";
 const PARTNER_REFERENCE = "partner-jo-mbeki"; // The partner the gift is attributed to, as an opaque reference: never a name, never an email.
 const FOLLOW_UP_TITLE = "Thank Jo Mbeki for the November gift";
 const TASK_NOUN = "tasks";
-const RECORD_HEADING = "Gift record";
-const REVIEW_TITLE = "Review the follow-up task";
-const PROVENANCE_SECTION = "Provenance";
+const RECORD_HEADING = "Gift details";
+const REVIEW_TITLE = "Review follow-up task";
+const PROVENANCE_SECTION = "Source provenance";
 const DEVELOPMENT_DATA_LABEL = "Development data";
 const SEEDED_TODAY = "2026-11-20";
 const TASK_PAGE_SIZE = "200";
 const OPEN_TASK_LISTS: readonly { readonly key: string; readonly label: string; readonly emptyTitle: string }[] = [
-  { key: "today", label: "Today", emptyTitle: "Nothing is due today" },
-  { key: "upcoming", label: "Upcoming", emptyTitle: "Nothing is dated ahead" },
-  { key: "overdue", label: "Overdue", emptyTitle: "Nothing is past its date" },
-  { key: "undated", label: "Undated", emptyTitle: "No task is undated" },
+  { key: "today", label: "Today", emptyTitle: "All caught up for today" },
+  { key: "upcoming", label: "Upcoming", emptyTitle: "Nothing scheduled ahead" },
+  { key: "overdue", label: "Overdue", emptyTitle: "Nothing overdue" },
+  { key: "undated", label: "Undated", emptyTitle: "No undated tasks" },
 ];
 const ROW_SELECTION = /^Select (?!all )/u;
-const INBOX = { heading: "Synthetic inbox", outcomes: "Send outcomes recorded in this inbox", count: /^(?:([\d,]+)|One) messages? (?:have|has) been produced for this membership\.$/u } as const;
-const AUDIENCE = { heading: "Update email audience", countsSlot: '[data-slot="membership-counts"]', memberNoun: "members" } as const;
+const INBOX = { heading: "Test inbox", outcomes: "Send statuses", count: /^([\d,]+) simulated emails?$/u } as const;
+const AUDIENCE = { heading: "Email audience", countsSlot: '[data-slot="membership-counts"]', memberNoun: "members" } as const;
 type CurrencyFigure = { readonly currency: string; readonly minorUnits: number; readonly giftCount: number };
 type WholeResult = { readonly figures: readonly CurrencyFigure[]; readonly text: string };
 const AMOUNT_IN_FIGURE = /(-?\d[\d.,]*)\s+([A-Z]{3})\b/u;
@@ -42,8 +42,8 @@ async function readWholeResult(page: Page): Promise<WholeResult> {
     const text = (await rows.nth(index).innerText()).replace(/\s+/gu, " ").trim();
     lines.push(text);
     const amount = AMOUNT_IN_FIGURE.exec(text);
-    const count = /and\s+([\d,]+)\s+gifts?\b/u.exec(text);
-    if (amount === null || count === null) throw new Error(`The whole-result line ${JSON.stringify(text)} does not state an amount with its currency and a gift count, so this file cannot compare it. Every received-support figure is stated as "<amount> <currency> ... and N gifts".`);
+    const count = /·\s+([\d,]+)\s+gifts?\b/u.exec(text);
+    if (amount === null || count === null) throw new Error(`The whole-result line ${JSON.stringify(text)} does not state an amount with its currency and a gift count, so this file cannot compare it. Every received-support figure is stated as "<amount> <currency> ... · N gifts".`);
     figures.push({ currency: amount[2] ?? "", minorUnits: minorUnitsFrom(amount[1] ?? ""), giftCount: Number((count[1] ?? "").replace(/,/gu, "")) });
   }
   return { figures, text: lines.join(" | ") };
@@ -72,7 +72,7 @@ async function readOpenWork(page: Page): Promise<OpenWork> {
   let total = 0;
   for (const list of OPEN_TASK_LISTS) {
     await page.goto(`${WORK_HREF}?list=${list.key}&pageSize=${TASK_PAGE_SIZE}`);
-    await expect(page.getByRole("heading", { name: "Work", level: 1 }), "The five lists are a destination of their own, reached from the shell.").toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tasks", level: 1 }), "The five lists are a destination of their own, reached from the shell.").toBeVisible();
     await expect(page.locator('[data-slot="work-task-lists"]'), `The ${list.label} list is the one the address names.`).toHaveAttribute("data-list", list.key);
     const region = page.getByRole("region", { name: `${list.label} ${TASK_NOUN}, scrollable` });
     await expect(region.or(page.getByRole("heading", { name: list.emptyTitle })), `The ${list.label} list states its rows, or says in its own words that it holds none.`).toBeVisible();
@@ -117,7 +117,7 @@ async function readBaselines(page: Page): Promise<Baselines> {
   await expect(page.getByRole("heading", { name: "Commitments", level: 1 })).toBeVisible();
   const commitmentTotal = await listTotalOf(page, "commitments");
   await page.goto(PARTNER_HREF);
-  const activity = page.getByRole("region", { name: "Actual activity" });
+  const activity = page.getByRole("region", { name: "Activity" });
   await expect(activity).toBeVisible();
   const partnerActivity = await activity.getByRole("listitem").count();
   return { wholeResult, ledgerTotal, commitmentTotal, openWork: await readOpenWork(page), messages: await readMessages(page), audience: await readAudience(page), partnerActivity };
@@ -133,11 +133,11 @@ async function openGiftFromLedger(page: Page): Promise<void> {
 }
 async function submitFollowUp(page: Page, dueOn: string): Promise<void> {
   await expect(page.getByRole("region", { name: "Follow up on this gift" })).toBeVisible(); // Fills the record's own follow-up form, reviews it, and confirms the one task it describes.
-  await page.getByLabel("What the task is for").fill(FOLLOW_UP_TITLE);
+  await page.getByLabel("Task title").fill(FOLLOW_UP_TITLE);
   await page.getByLabel("Due date").fill(dueOn);
   await expect(page.getByLabel("Partner reference")).toHaveValue(PARTNER_REFERENCE);
   await expect(page.getByRole("region", { name: REVIEW_TITLE })).toBeVisible();
-  await page.getByRole("button", { name: "Create a thank-you task" }).click();
+  await page.getByRole("button", { name: "Create thank-you task" }).click();
   await expect(page.locator('[data-slot="operation-result"][data-outcome="accepted"]')).toBeVisible();
 }
 test("the gift's own record creates the follow-up task and names the partner it came from", async ({ page }) => {
@@ -148,7 +148,7 @@ test("the gift's own record creates the follow-up task and names the partner it 
   expect(gift.currency, "The source named the currency of this gift, and this file assumes none in its place.").toBe("USD");
   expect(gift.minorUnits, "A received gift is an amount the source recorded, so its minor units are a positive count.").toBeGreaterThan(0);
   expect(gift.provenance.length, "The record prints the source it came from as opaque references.").toBeGreaterThan(0);
-  await expect(page.getByRole("heading", { name: "Basis, coverage and as-of" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Snapshot & coverage" })).toBeVisible();
   await expect(page.getByText(DEVELOPMENT_DATA_LABEL, { exact: true }).first()).toBeVisible();
   await submitFollowUp(page, SEEDED_TODAY);
   await expect(page.getByRole("heading", { name: "Saved" })).toBeVisible();
@@ -172,8 +172,8 @@ test("the task is the only thing the follow-up creates", async ({ page }) => {
   await openGiftFromLedger(page);
   const giftBefore = await readGiftRecord(page);
   await submitFollowUp(page, SEEDED_TODAY);
-  await expect(page.getByText(/sends no message and creates no stewardship obligation/u)).toBeVisible();
-  await expect(page.getByText(/no message was sent and no obligation was created/u)).toBeVisible();
+  await expect(page.getByText(/doesn’t edit the gift, send an email, or change financial records/u)).toBeVisible();
+  await expect(page.getByText(/Thank-you task added to your Tasks list\. The gift record itself wasn’t changed\./u)).toBeVisible();
   expect(await readGiftRecord(page)).toEqual(giftBefore);
   const after = await readBaselines(page);
   expect(after.wholeResult).toEqual(before.wholeResult);

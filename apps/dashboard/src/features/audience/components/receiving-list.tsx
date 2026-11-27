@@ -34,7 +34,7 @@ type ReceivingListRequest = NonNullable<UseReceivingListParams["params"]>;
 }
 const ITEM_NOUN_SINGULAR = "edition";
 const FIRST_PAGE = 1;
-const REFUSED_DESCRIPTION = "The address asked for something this view does not read, so nothing was read and no list stands in its place. Correct the request and open it again: once it is one this view admits, the read runs unchanged.";
+const REFUSED_DESCRIPTION = "Check the page parameters and try opening Reader preview again.";
 const NO_EDITIONS: readonly ReceivingEditionView[] = [];
 const NO_REQUEST: ReceivingListRequest = Object.freeze({});
 const HEADING_TAG: Readonly<Record<NoticeHeadingLevel, "h1" | "h2" | "h3" | "h4">> = { 1: "h1", 2: "h2", 3: "h3", 4: "h4" };
@@ -186,9 +186,9 @@ function EditionRow({ edition, requestedTag }: { readonly edition: ReceivingEdit
         </Alert>
         <SimulationLabel effect={RECEIVING_SIMULATION_EFFECT} />
       </header>
-      {result.kind === "denied" ? <StateNotice kind="denied" headingLevel={noticeLevel} title="This reading list cannot be read with this access" description={RECEIVING_POST_COPY.denialNotices["not-authorised"]} reasonCode={result.denied.reasonCode} /> : null}
-      {result.kind === "unavailable" ? <StateNotice kind="unavailable" headingLevel={noticeLevel} title="The reading list could not be read" description={result.unavailable.guidance} source={result.unavailable.source} retry={{ label: "Try again", onClick: refresh }} /> : null}
-      {result.kind === "refused" ? <StateNotice kind="refused" headingLevel={noticeLevel} title="This request is not a reading list this view serves" description={REFUSED_DESCRIPTION} /> : null}
+      {result.kind === "denied" ? <StateNotice kind="denied" headingLevel={noticeLevel} title="Reader preview isn’t available in this session" description={RECEIVING_POST_COPY.denialNotices["not-authorised"]} reasonCode={result.denied.reasonCode} /> : null}
+      {result.kind === "unavailable" ? <StateNotice kind="unavailable" headingLevel={noticeLevel} title="Couldn’t load updates" description={result.unavailable.guidance} source={result.unavailable.source} retry={{ label: "Try again", onClick: refresh }} /> : null}
+      {result.kind === "refused" ? <StateNotice kind="refused" headingLevel={noticeLevel} title="Couldn’t open Reader preview" description={REFUSED_DESCRIPTION} /> : null}
       {envelope === undefined ? null : renderEditions()}
     </section>
   );

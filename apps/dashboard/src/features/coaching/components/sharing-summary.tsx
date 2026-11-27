@@ -29,6 +29,10 @@ export type FinancialRange = { readonly from: CivilDateInput; readonly to: Civil
 export type GrantDurationView = { readonly kind: "ongoing" } | { readonly kind: "through-date"; readonly throughDate: CivilDateInput | null } | { readonly kind: "none" };
 export type ShareCutoffView = { readonly instant: string; readonly zone: string; readonly sourceLimitWins: boolean };
 export type CoachingGrantView = {
+  readonly grantId?: string;
+  readonly recipientPrincipalId?: string;
+  readonly totalRelationships?: number;
+  readonly activeRelationships?: number;
   readonly state: GrantLifecycleState;
   readonly availability: GrantAvailability;
   readonly modules: ReadonlyArray<ModuleRead>;
@@ -37,27 +41,27 @@ export type CoachingGrantView = {
   readonly financialRange: FinancialRange | null;
   readonly outcomes: SharingOutcomeSet;
 };
-/** The disclosures a composing surface states elsewhere in the same relationship's section: the module list where that relationship's own module controls render, and the reviewed range where its range review card renders. A flag left out is a disclosure this summary states itself, so a surface that composes only this summary reads exactly as it did. */
-export type StatedElsewhere = { readonly modules?: boolean; readonly financialRange?: boolean };
+/** The disclosures a composing surface states elsewhere in the same relationship's section: the grant identity header, the module list where that relationship's own module controls render, and the reviewed range where its range review card renders. A flag left out is a disclosure this summary states itself, so a surface that composes only this summary reads exactly as it did. */
+export type StatedElsewhere = { readonly identity?: boolean; readonly modules?: boolean; readonly financialRange?: boolean };
 export type SharingSummaryProps = { readonly grant: CoachingGrantView | null; readonly locale: string; readonly unavailable?: { readonly source: SourceReference } | null; readonly statedElsewhere?: StatedElsewhere; readonly className?: string };
 const SHARING_ROUTE = "/coaching/sharing";
-const SECTION_TITLES = { relationship: "This coaching relationship", outcomes: "Where the invitation stands", modules: "What your coach can read", duration: "Duration and closing instant" } as const;
+const SECTION_TITLES = { relationship: "Coaching relationship", outcomes: "Invitation status", modules: "What your coach can see", duration: "Duration & end date" } as const;
 export const OUTCOME_STAGE_NAME: Readonly<Record<SharingOutcomeId, string>> = { delivery: "Invitation", "identity-verification": "Identity", "deliberate-acceptance": "Acceptance", "active-access": "Access" };
 export const OUTCOME_STATE_FIELD: Readonly<Record<SharingOutcomeId, keyof SharingOutcomeSet>> = { delivery: "delivery", "identity-verification": "identityVerification", "deliberate-acceptance": "acceptance", "active-access": "access" };
-const OUTCOME_NOT_REACHED_WORD: Readonly<Record<SharingOutcomeId, string>> = { delivery: "No invitation recorded", "identity-verification": "Identity not verified", "deliberate-acceptance": "Not accepted yet", "active-access": "Access not live yet" };
-const OUTCOME_UNKNOWN_WORD: Readonly<Record<SharingOutcomeId, string>> = { delivery: "Recording uncertain", "identity-verification": "Verification unknown", "deliberate-acceptance": "Acceptance unknown", "active-access": "Access unknown" };
+const OUTCOME_NOT_REACHED_WORD: Readonly<Record<SharingOutcomeId, string>> = { delivery: "No invitation", "identity-verification": "Not verified", "deliberate-acceptance": "Not accepted", "active-access": "Not active" };
+const OUTCOME_UNKNOWN_WORD: Readonly<Record<SharingOutcomeId, string>> = { delivery: "Unknown", "identity-verification": "Unknown", "deliberate-acceptance": "Unknown", "active-access": "Unknown" };
 // The sentence a row states follows the state its badge states, so a row never asserts a fact its own word denies: the reached sentences are the copy's own (they carry the teaching of what the fact does not prove), a stage that was not reached says what is absent instead, and a stage whose record could not be read says neither. The Access sentence is worded for every way access can be not live — never accepted, revoked, ended, left or expired — so it names the lifecycle state above rather than restating it.
 const OUTCOME_NOT_REACHED_SENTENCE: Readonly<Record<SharingOutcomeId, string>> = {
-  delivery: "No invitation is recorded for this relationship, so no coach has been named and nothing is readable through it.",
-  "identity-verification": "The person's identity has not been verified against the account they act in, so that account is not established as theirs.",
-  "deliberate-acceptance": "No acceptance is recorded, so the person has not taken the invitation up deliberately, and an invitation on its own shares nothing.",
-  "active-access": "Access is not live for this relationship, so no module is readable through it. The lifecycle state above states why it is not live.",
+  delivery: "No invitation recorded yet.",
+  "identity-verification": "Your coach’s account hasn’t been verified yet.",
+  "deliberate-acceptance": "Your coach hasn’t accepted yet — sending an invitation doesn’t share anything on its own.",
+  "active-access": "Access isn’t active right now. See the relationship status above for details.",
 };
 const OUTCOME_UNKNOWN_SENTENCE: Readonly<Record<SharingOutcomeId, string>> = {
-  delivery: "The record behind this stage could not be read at this moment, so whether an invitation was recorded is unknown here and this row claims neither that it was nor that it was not.",
-  "identity-verification": "The record behind this stage could not be read at this moment, so whether the person's identity was verified is unknown here and this row claims neither that it was nor that it was not.",
-  "deliberate-acceptance": "The record behind this stage could not be read at this moment, so whether an acceptance was recorded is unknown here and this row claims neither that it was nor that it was not.",
-  "active-access": "The record behind this stage could not be read at this moment, so whether access is live is unknown here and this row claims neither that it is nor that it is not.",
+  delivery: "Couldn’t confirm whether an invitation was recorded.",
+  "identity-verification": "Couldn’t confirm whether identity was verified.",
+  "deliberate-acceptance": "Couldn’t confirm whether the invitation was accepted.",
+  "active-access": "Couldn’t confirm whether access is active.",
 };
 const OUTCOME_TONE: Readonly<Record<SharingOutcome, StatusTone>> = { reached: "info", "not-reached": "muted", unknown: "caution" };
 export function outcomeWord(entry: SharingOutcomeCopy, state: SharingOutcome): string {
@@ -82,12 +86,12 @@ export function outcomeWord(entry: SharingOutcomeCopy, state: SharingOutcome): s
 }
 export const MODULE_READ_STATE_TONE: Readonly<Record<ModuleReadState, StatusTone>> = { empty: "muted", partial: "info", withheld: "caution", unavailable: "danger", ended: "neutral" };
 const AVAILABILITY_COPY: Readonly<Record<SubjectAvailability, { label: string; description: string }>> = {
-  available: { label: "Readable", description: "Every module this grant shares has a source that can be read at this moment." },
-  unavailable: { label: "Unavailable right now", description: "The source behind these modules cannot be read at this moment. The episode is still open, the modules that do not depend on it stay usable, and this is an outage rather than an ending." },
+  available: { label: "Available", description: "All shared modules are currently accessible." },
+  unavailable: { label: "Unavailable right now", description: "Some data sources are temporarily unavailable. Your coaching relationship is still active." },
 };
 const HOLD_COPY: Readonly<Record<PermissionHold, { label: string; description: string }>> = {
-  none: { label: "Not on hold", description: "Access is not suspended: the invitation's own dates bound this share." },
-  temporary: { label: "Temporary hold", description: "Access is suspended by a temporary permission hold. A hold is not an ending, and lifting it grants nothing the invitation had not already named." },
+  none: { label: "None", description: "No hold active — access follows your agreed duration." },
+  temporary: { label: "Temporary hold", description: "Access is temporarily paused. Lifting the hold only restores what was already shared." },
 };
 const carriesDigits = (state: ValueState): boolean => state === "value" || state === "zero" || state === "incomplete-subtotal";
 function resolveCivilDate(value: CivilDateInput): CivilDate | null {
@@ -108,22 +112,22 @@ const STORED_DAY = /^(\d{4}-\d{2}-\d{2})(?:[T ]|$)/u;
 function durationStatementOf(duration: GrantDurationView): { readonly value: ReactNode; readonly sentence: string; readonly dayShown: boolean } {
   switch (duration.kind) {
     case "ongoing":
-      return { value: <bdi>{"Ongoing"}</bdi>, sentence: "You chose no end date, so the share stays open until you stop it, or until any earlier limit the source imposes.", dayShown: false };
+      return { value: <bdi>{"Ongoing"}</bdi>, sentence: "No end date — stays open until you end sharing or an organization limit applies.", dayShown: false };
     case "through-date": {
       const day = duration.throughDate === null ? null : resolveCivilDate(duration.throughDate);
-      if (day === null) return { value: <bdi>{"Through a day that could not be resolved"}</bdi>, sentence: "This share was set to run through a calendar day, but that day could not be resolved from the frozen bound, so no date is shown beside it. The closing instant below still stands.", dayShown: false };
+      if (day === null) return { value: <bdi>{"End date unavailable"}</bdi>, sentence: "The calendar date couldn’t be resolved, though the cutoff below still applies.", dayShown: false };
       return {
         value: (
           <>
             Through <bdi>{civilDateText(day)}</bdi>
           </>
         ),
-        sentence: "You chose to share through the end of that date, and the whole of it stays readable.",
+        sentence: "Shared through the end of this date.",
         dayShown: true,
       };
     }
     case "none":
-      return { value: <bdi>{"No usable duration recorded"}</bdi>, sentence: "This relationship records no usable duration, so it is not an open-ended share: nothing is readable under it, because a missing duration is never permission.", dayShown: false };
+      return { value: <bdi>{"No duration recorded"}</bdi>, sentence: "Nothing is shared when no duration is recorded.", dayShown: false };
   }
 }
 type RangeView = { readonly from: string; readonly to: string; readonly currency: string; readonly state: ValueState; readonly formatting: MinorFormatting; readonly problem: string | null };
@@ -133,7 +137,7 @@ function buildRangeView(range: FinancialRange, locale: string): RangeView {
   const from = resolveCivilDate(range.from);
   const to = resolveCivilDate(range.to);
   const asSupplied = (problem: string | null): RangeView => ({ from: civilDateText(range.from), to: civilDateText(range.to), currency: range.currency, state, formatting: formatMinor(money, state, locale), problem });
-  if (from === null || to === null) return asSupplied("The dates this range was reviewed for could not be read, so the range is not shown as reviewed and no figure stands in for it.");
+  if (from === null || to === null) return asSupplied("Couldn’t read the reviewed dates for this range, so no figure is shown.");
   const described = describeFinancialRange({ from, to, measures: [{ amount: money, state }] }, locale);
   if (!described.ok) return asSupplied(described.error.message);
   const entry = described.value.entries[0];
@@ -156,7 +160,7 @@ export const StatementAlert = ({ icon, label, sentence }: { readonly icon: React
   </Alert>
 );
 /** A module the read answers `null` for is the complete share, never an unknown one; `undefined` is a module this grant does not share at all. */ function moduleWordAndTone(readState: ModuleReadState | null | undefined): { readonly label: string; readonly tone: StatusTone } {
-  if (readState === undefined) return { label: "Switched off", tone: "muted" };
+  if (readState === undefined) return { label: "Off", tone: "muted" };
   if (readState === null) return { label: MODULE_COMPLETE_COPY.label, tone: "positive" };
   return { label: MODULE_READ_STATE_COPY[readState].label, tone: MODULE_READ_STATE_TONE[readState] };
 }
@@ -170,7 +174,7 @@ export function ModuleReadStateNotice({ readState, source = null, headingLevel =
   return <StatementAlert icon={icon} label={copy.label} sentence={copy.description} />;
 }
 function ModuleStatement({ readState }: { readonly readState: ModuleReadState | null | undefined }): ReactElement {
-  if (readState === undefined) return <p className="type-supporting text-pretty">{"This module is switched off, so your coach cannot read it."}</p>;
+  if (readState === undefined) return <p className="type-supporting text-pretty">{"Off — not visible to your coach."}</p>;
   if (readState === null) return <p className="type-supporting text-pretty">{MODULE_COMPLETE_COPY.description}</p>;
   if (readState === "empty") return <p className="type-supporting text-pretty">{MODULE_READ_STATE_COPY.empty.description}</p>;
   return <ModuleReadStateNotice readState={readState} />;
@@ -188,10 +192,11 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
   const duration = durationStatementOf(grant.duration);
   const modulesByKey = new Map<ModuleKey, ModuleReadState | null>(grant.modules.map((module) => [module.key, module.readState]));
   // Which disclosures this summary states: one a surface renders in a card of its own beside this summary is left to that card, so a single relationship never states the same five modules or the same reviewed range twice. Every other fact — the relationship, the four outcomes, the duration and the closing instant — is stated here and nowhere else.
+  const statesIdentity = statedElsewhere?.identity !== true && (grant.grantId !== undefined || grant.recipientPrincipalId !== undefined);
   const statesModules = statedElsewhere?.modules !== true;
   const statesRange = statedElsewhere?.financialRange !== true;
   return (
-    <section aria-labelledby={headingId} className={cn("min-w-0", className)}>
+    <section aria-labelledby={headingId} data-slot="sharing-summary" data-grant={grant.grantId} className={cn("min-w-0", className)}>
       <Panel
         titleId={headingId}
         title={heading}
@@ -202,6 +207,28 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
       >
         <Section id={`${headingId}-relationship`} title={SECTION_TITLES.relationship}>
           <p className="type-supporting text-pretty">{lifecycle.description}</p>
+          {statesIdentity ? (
+            <div className="flex flex-col gap-1 rounded-xl border border-border/80 bg-surface-subtle px-3 py-2 text-xs text-muted-foreground">
+              <p className="flex flex-wrap items-baseline gap-x-2">
+                {grant.recipientPrincipalId === undefined ? null : (
+                  <span>
+                    Coach: <bdi className="mono-identifier wrap-anywhere text-foreground">{grant.recipientPrincipalId}</bdi>
+                  </span>
+                )}
+                {grant.recipientPrincipalId !== undefined && grant.grantId !== undefined ? <span aria-hidden="true">·</span> : null}
+                {grant.grantId === undefined ? null : (
+                  <span>
+                    Grant: <bdi className="mono-identifier wrap-anywhere text-foreground">{grant.grantId}</bdi>
+                  </span>
+                )}
+              </p>
+              {grant.totalRelationships !== undefined && grant.totalRelationships > 1 ? (
+                <p className="text-pretty">
+                  {`Summarising this grant out of ${String(grant.totalRelationships)} recorded coaching relationships${grant.activeRelationships === undefined ? "" : ` (${String(grant.activeRelationships)} active)`}. Open Manage what you share to inspect or revoke every grant individually.`}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <dl className="flex flex-col gap-2 text-sm">
             <RelationshipFact term="Source">
               <span className="font-medium text-foreground">
@@ -243,7 +270,7 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
           <>
             <Separator />
             <Section id={`${headingId}-modules`} title={SECTION_TITLES.modules}>
-              <ul className="grid min-w-0 gap-3 sm:grid-cols-2">
+              <ul className="grid min-w-0 gap-3 @2xl/main:grid-cols-2">
                 {MODULE_KEYS.map((key) => {
                   const readState = modulesByKey.get(key);
                   const word = moduleWordAndTone(readState);
@@ -272,21 +299,21 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
           </p>
           <p className="type-supporting text-pretty">{duration.sentence}</p>
           {cutoffInstant.length === 0 ? (
-            <p className="type-supporting text-pretty">{grant.duration.kind === "ongoing" ? "No closing instant is set: this share has no end date until you stop it." : "No closing instant has been resolved for this share yet."}</p>
+            <p className="type-supporting text-pretty">{grant.duration.kind === "ongoing" ? "No end date set — stays open until you stop sharing." : "Exact cutoff will be locked in once the invitation is accepted."}</p>
           ) : (
             <>
               <p className="type-body text-pretty">
-                Closes at <bdi className="mono-identifier">{cutoffInstant}</bdi> in <bdi className="mono-identifier">{grant.shareCutoff.zone}</bdi>.
+                Ends at <bdi className="mono-identifier">{cutoffInstant}</bdi> (<bdi className="mono-identifier">{grant.shareCutoff.zone}</bdi>).
               </p>
               <p className="type-supporting text-pretty">
-                {duration.dayShown && !grant.shareCutoff.sourceLimitWins ? `It is the first instant of the civil day after the Share-through date, expressed in that zone. ` : ""}
-                {"That instant is the exclusive end of the share: a read at it is already outside the window, so the last moment that stays readable is the one before it."} {"It was frozen when this episode began, so a later travel, display-timezone or settings change cannot move it."}
+                {duration.dayShown && !grant.shareCutoff.sourceLimitWins ? "Access closes at the start of the day after your Share through date. " : ""}
+                {"Fixed when this relationship began, so travel or time zone changes won’t move it."}
               </p>
               {grant.shareCutoff.sourceLimitWins ? (
                 <StatementAlert
                   icon={<ClockIcon aria-hidden="true" />}
-                  label="An earlier limit set by the source decides this end"
-                  sentence="The source itself imposes an earlier limit than the date you chose, and that limit wins. The share closes at the frozen instant above, in the zone named with it, and not at the end of the Share-through date."
+                  label="Organization time limit applies"
+                  sentence="An organization limit ends access earlier than your selected date, so sharing closes at the cutoff above."
                 />
               ) : null}
             </>
@@ -298,7 +325,7 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
             <Section id={`${headingId}-range`} title={FINANCIAL_RANGE_COPY.heading}>
               <p className="type-supporting text-pretty">{FINANCIAL_RANGE_COPY.purpose}</p>
               {range === null ? (
-                <p className="type-supporting text-pretty">{"You did not review and share a financial range with this coach, so this grant carries no support figure. Sharing a range is a separate decision from sharing targets, check-ins or task summaries."}</p>
+                <p className="type-supporting text-pretty">{"No financial range shared with this coach. Financial sharing is optional and separate from other modules."}</p>
               ) : (
                 <>
                   <dl className="flex flex-col gap-1 text-sm">
@@ -317,12 +344,12 @@ export function SharingSummary({ grant, locale, unavailable, statedElsewhere, cl
                       )}
                     </Fact>
                     <Fact term="Basis">
-                      <bdi className="mono-identifier">{SUPPORT_BASIS}</bdi>
+                      <data value={SUPPORT_BASIS}>Effective cash allocation</data>
                     </Fact>
                   </dl>
                   <p className="type-supporting text-pretty">{BASIS_DESCRIPTION}</p>
                   <p className="type-supporting text-pretty">{FINANCIAL_RANGE_COPY.exclusions}</p>
-                  {range.problem === null ? null : <StatementAlert icon={<TriangleAlertIcon aria-hidden="true" />} label="This range cannot be shown as reviewed" sentence={range.problem} />}
+                  {range.problem === null ? null : <StatementAlert icon={<TriangleAlertIcon aria-hidden="true" />} label="Couldn’t display reviewed range" sentence={range.problem} />}
                 </>
               )}
             </Section>

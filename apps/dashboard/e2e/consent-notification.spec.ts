@@ -13,7 +13,7 @@ const SEEDED_MEMBER_STATES = { active: 5, "awaiting-proof": 2, off: 2, restricte
 const EDITION = { publicFrench: { variantId: "variant-update-autumn-fr-public", audience: "Public", locale: "Français" }, approvedSupporter: { variantId: "variant-update-autumn-en-approved-supporter", audience: "Approved supporters", locale: "English" } } as const; // The editions a fresh notice is driven through, each with the words its own release control carries: the composed path releases the edition again, so the release a notice names is the one that release produced rather than the seeded head.
 const UNRELEASED_VARIANT = "variant-update-autumn-ar-public";
 const OWN_MEMBERSHIP = "principal-established-worker";
-const SIMULATED_MAIL = "simulated — no mail leaves this application"; // The one sentence every simulated mail boundary states, in the specification's own words (AAP 0.7.2).
+const SIMULATED_MAIL = "Simulated — no email leaves this workspace."; // The one sentence every simulated mail boundary states, in the specification's own words (AAP 0.7.2).
 const RESEND_CONTROL = /resend|send again|send it again|send a new one|new send/iu;
 const PREFERENCES_PATH = "/preview/preferences";
 const CONFIRM_API = "/api/confirm";
@@ -43,16 +43,16 @@ function actionOf(body: unknown, name: string): { readonly available: boolean; r
 async function requestNoticesThroughProof(page: Page): Promise<void> {
   await openPreferences(page); // Opens the acting person's own purpose-specific membership through the proof flow the preferences route composes, which leaves it awaiting proof.
   const proof = page.locator(PROOF_FLOW);
-  await expect(proof.getByRole("heading", { level: 2, name: "Confirm this address for notices" })).toBeVisible();
+  await expect(proof.getByRole("heading", { level: 2, name: "Confirm your email address" })).toBeVisible();
   await proof.getByRole("textbox", { name: /Email address/u }).fill("established.worker@example.org");
-  await proof.getByRole("button", { name: "Request notices from this publisher", exact: true }).click();
-  await expect(proof.getByRole("button", { name: /Confirm this address/u }), "The request is recorded, so the confirmation control appears in place").toBeVisible(); // The request is recorded once the page has re-read the membership it opened: the confirmation control appears in place, so the membership is keyed by the acting principal rather than by a value this file minted.
+  await proof.getByRole("button", { name: "Request update emails", exact: true }).click();
+  await expect(proof.getByRole("button", { name: /Confirm email address/u }), "The request is recorded, so the confirmation control appears in place").toBeVisible(); // The request is recorded once the page has re-read the membership it opened: the confirmation control appears in place, so the membership is keyed by the acting principal rather than by a value this file minted.
   const opened = await readPreferences(page);
   expect(fieldAt(opened, "data", "state"), "A request opens the proof step and nothing more").toBe("awaiting-proof");
 }
 async function confirmThroughProof(page: Page): Promise<void> {
   const proof = page.locator(PROOF_FLOW); // Confirms the address the proof flow holds, inside the window its own acceptance recorded.
-  await proof.getByRole("button", { name: /Confirm this address/u }).click();
+  await proof.getByRole("button", { name: /Confirm email address/u }).click();
   await expect(proof.getByText("Saved", { exact: true }), "The receipt is the durable record of the act, and it stays on the surface the act was made from").toBeVisible();
   const confirmed = await readPreferences(page);
   expect(fieldAt(confirmed, "data", "state"), "The person's own act makes the membership active").toBe("active");
@@ -85,31 +85,31 @@ async function releaseAndNotify(page: Page, edition: (typeof EDITION)[keyof type
   await page.keyboard.type("Autumn at Harbour Youth: a note from this edition, written for the one review step.");
   await expect(page.locator(AUTOSAVE)).toHaveAttribute("data-autosave-state", "saved");
   const submitStep = editor.locator('[data-slot="action-review"]'); // The author's choice is recorded with the submission, and the reviewer cannot change it afterwards. It has to reach the step's own state and not only the radio's DOM, so the click is read back from the mode group and made again while that group still states the other mode.
-  await expect(submitStep).toContainText("Submit this edition for review");
+  await expect(submitStep).toContainText("Submit edition for review");
   const modeGroup = submitStep.locator('[data-slot="submission-release-mode"]');
   await expect(modeGroup).toBeVisible();
   await expect(async () => {
-    await submitStep.getByRole("radio", { name: "Publish and notify now", exact: true }).click();
+    await submitStep.getByRole("radio", { name: "Publish and notify partners", exact: true }).click();
     await expect(modeGroup).toHaveAttribute("data-mode", "publish-and-notify", { timeout: 2_000 });
   }).toPass({ timeout: 20_000 });
   await submitStep.getByRole("button", { name: "Submit for review", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Submit for review", exact: true }).click();
   await expect(submitStep.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted");
   await page.goto(reviewPathOf(edition.variantId)); // One review step, given once: the candidate is approved for this audience and this language and nothing else, and the reviewer reads the mode the submission recorded.
-  await expect(page.getByRole("heading", { name: "Review this Update", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review update", level: 1 })).toBeVisible();
   await expect(page.locator('[data-slot="review-publish-intent"]')).toHaveAttribute("data-notify-requested", "true");
   await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await page.getByRole("button", { name: "Approve revision", exact: true }).click();
   await expect(page.locator('[data-slot="review-recorded-decision"]'), "The decision is awaited where the panel records it, so the release below reads a candidate that is already approved rather than one it ran ahead of").toHaveAttribute("data-decision", "approved");
   await page.goto(RELEASE_PATH); // The release review publishes the edition and, because its submission asked for one, submits the notice.
-  await expect(page.getByRole("heading", { level: 2, name: "Release the selected editions" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Publish approved editions" })).toBeVisible();
   await page.getByRole("checkbox", { name: `Release ${edition.audience} — ${edition.locale}`, exact: true }).click();
-  await page.getByRole("button", { name: "Release these editions", exact: true }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Release these editions", exact: true }).click();
+  await page.getByRole("button", { name: "Publish selected editions", exact: true }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Publish selected editions", exact: true }).click();
   const receipt = page.locator('[data-slot="publish-review-result"]');
   await expect(receipt).toHaveAttribute("data-outcome", "accepted");
   await expect(receipt, "The recorded mode asked for a notice, so the release submitted one").toContainText("Notice for this edition:");
-  const noticeResults = receipt.getByRole("link", { name: "Open the recorded results for this notice", exact: true });
+  const noticeResults = receipt.getByRole("link", { name: "View send history", exact: true });
   await expect(noticeResults, "The receipt links to the results of the notice it submitted; The receipt names the notice it submitted and links to that notice's own results, so the identity is the link's own `intentId` rather than one read off the transport or off a message").toBeVisible();
   const intentId = new URL((await noticeResults.getAttribute("href")) ?? "", "http://127.0.0.1").searchParams.get("intentId") ?? "";
   expect(intentId, "The link names the notice the release submitted").toMatch(/^intent-/u);
@@ -117,21 +117,21 @@ async function releaseAndNotify(page: Page, edition: (typeof EDITION)[keyof type
 }
 async function openPreferences(page: Page): Promise<void> {
   await page.goto(PREFERENCES_PATH); // Opens the reader's own preference-and-consent surface, and waits for the page's own heading.
-  await expect(page.getByRole("heading", { level: 1, name: "Your preferences" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Reader preferences" })).toBeVisible();
 }
 async function openInbox(page: Page): Promise<void> {
   await page.goto("/communication/inbox"); // Opens the synthetic inbox and waits for the surface itself rather than for a spinner.
-  await expect(page.getByRole("heading", { level: 1, name: "Synthetic inbox" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Messages produced for this membership" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Test inbox" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Simulated emails" })).toBeVisible();
 }
 async function openDelivery(page: Page, intentId: string): Promise<void> {
   await page.goto(deliveryPathOf(intentId)); // Opens one intent's delivery results, which is where a recorded outcome and its window are read.
-  await expect(page.getByRole("heading", { level: 1, name: "Delivery" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Delivery results" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Send history" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Send results" })).toBeVisible();
 }
 async function openAudience(page: Page): Promise<void> {
   await page.goto("/communication/audience"); // Opens the publisher's audience, which states each membership's state and why it is excluded.
-  await expect(page.getByRole("heading", { level: 1, name: "Update email audience" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Email audience" })).toBeVisible();
 }
 const deliveryPathOf = (intentId: string): string => `/communication/delivery?intentId=${encodeURIComponent(intentId)}`;
 test.describe("a reader's own proof flow", () => {
@@ -142,13 +142,13 @@ test.describe("a reader's own proof flow", () => {
     await openPreferences(page);
     const proof = page.locator(PROOF_FLOW);
     await expect(proof).toBeVisible();
-    await expect(proof.getByRole("heading", { level: 2, name: "Confirm this address for notices" })).toBeVisible();
-    await expect(proof.getByText("Awaiting proof", { exact: true })).toBeVisible();
-    await expect(proof.getByText("This address is still waiting for confirmation", { exact: true }), "The pending result is neutral: it says the address is waiting, that rendering the page is not a confirmation, and that the notice is simulated — which is where the confirmation message is rendered").toBeVisible();
-    await expect(proof.getByText(/Opening this page, reloading it or previewing a link here is never a confirmation/u)).toBeVisible();
-    await expect(proof.getByText(/Notice sending is simulated — no mail leaves this application/u)).toBeVisible();
-    await expect(proof.getByText(new RegExp(`${String(CONFIRMATION_WINDOW_HOURS)} elapsed hours`, "u")), "The window is stated in elapsed hours and carries the deadline the acceptance fixed, not a date range").toBeVisible();
-    await expect(proof.getByText(/This address can be confirmed until/u)).toBeVisible();
+    await expect(proof.getByRole("heading", { level: 2, name: "Confirm your email address" })).toBeVisible();
+    await expect(proof.getByText("Awaiting confirmation", { exact: true })).toBeVisible();
+    await expect(proof.getByText("Waiting for email confirmation", { exact: true }), "The pending result is neutral: it says the address is waiting, that rendering the page is not a confirmation, and that the notice is simulated — which is where the confirmation message is rendered").toBeVisible();
+    await expect(proof.getByText(/viewing or reloading this page never confirms automatically/u)).toBeVisible();
+    await expect(proof.getByText(/Email delivery is Simulated — no email leaves this workspace\./u)).toBeVisible();
+    await expect(proof.getByText(new RegExp(`${String(CONFIRMATION_WINDOW_HOURS)} hours`, "u")).first(), "The window is stated in elapsed hours and carries the deadline the acceptance fixed, not a date range").toBeVisible();
+    await expect(proof.getByText(/Confirm before/u)).toBeVisible();
     await expect(proof.getByText(SEEDED_WINDOW.deadline, { exact: true })).toBeVisible();
     await expect(proof.getByText(/calendar day/u)).toHaveCount(0);
     const pending = await readPreferences(page);
@@ -162,7 +162,7 @@ test.describe("a reader's own proof flow", () => {
     const landed = new URL(page.url());
     expect(landed.search, "The confirmation message carries no token a page load could use; The message a reader follows carries no token, and neither does the address it lands on: the confirmation is identified by the membership and the person's own act alone").toBe("");
     expect(landed.pathname, "The message lands on the preferences surface itself").toBe(PREFERENCES_PATH);
-    await expect(proof.getByText("Address on this membership", { exact: true })).toBeVisible();
+    await expect(proof.getByText("Email address", { exact: true }).first()).toBeVisible();
     // The message the pending result points at is rendered here, in every fact a message carries: who it is from, which address it is for, what it is called and what it says. The envelope states the same message, so the wording a reader confirms from is the record's own rather than text this surface composed.
     const table = proof.locator('[data-slot="confirmation-message"]');
     await expect(table, "The confirmation message is rendered on the page the recipient is told to confirm from").toBeVisible();
@@ -179,30 +179,30 @@ test.describe("a reader's own proof flow", () => {
     expect((await page.request.get(CONFIRM_API)).status(), "A GET to the confirmation transport is not admitted").toBe(405);
     expect((await page.request.get("/api/unsubscribe")).status(), "A GET to the unsubscribe transport is not admitted").toBe(405);
     await page.reload();
-    await expect(proof.getByText("This address is still waiting for confirmation", { exact: true })).toBeVisible();
+    await expect(proof.getByText("Waiting for email confirmation", { exact: true })).toBeVisible();
     const afterReload = await readPreferences(page);
     expect(fieldAt(afterReload, "data", "state"), "Reloading the page converts nothing").toBe("awaiting-proof");
     expect(stringAt(afterReload, ["data", "confirmation", "deadline"], "The window after a reload"), "A page load neither extends nor consumes the window").toBe(SEEDED_WINDOW.deadline);
     // An address already waiting for proof can ask for its message again. The answer is `unchanged`: the request the acceptance was made for is the same one, so nothing is created and the window the acceptance fixed cannot move — which is what makes "asking again never extends it" a fact rather than a promise.
-    const askAgain = proof.getByRole("button", { name: "Send the message again", exact: true });
+    const askAgain = proof.getByRole("button", { name: "Show confirmation message again", exact: true });
     await expect(askAgain, "A membership already awaiting proof is offered the message it is waiting to confirm").toBeEnabled();
     await askAgain.click();
     await expect(proof.locator('[data-slot="operation-result"]').first(), "The answer stays on the surface the request was made from").toHaveAttribute("data-outcome", "unchanged");
     const afterAskingAgain = await readPreferences(page);
     expect([fieldAt(afterAskingAgain, "data", "state"), stringAt(afterAskingAgain, ["data", "confirmation", "deadline"], "The window after asking for the message again")], "Asking again creates no second membership and never extends the acceptance's window").toEqual(["awaiting-proof", SEEDED_WINDOW.deadline]);
-    const confirmControl = proof.getByRole("button", { name: /Confirm this address/u });
+    const confirmControl = proof.getByRole("button", { name: /Confirm email address/u });
     await expect(confirmControl, "The control is offered inside the open window; The person's own act, and the only one: the Confirm control").toBeEnabled();
     await confirmControl.click();
     await expect(proof.getByText("Saved", { exact: true }), "The receipt is the durable record of the act, and it stays on the surface rather than passing as a toast").toBeVisible();
-    await expect(proof.getByText(/The change was applied once, and it stays on this page as the record of it/u)).toBeVisible();
+    await expect(proof.getByText(/Your changes were saved\./u)).toBeVisible();
     const confirmed = await readPreferences(page);
     expect(fieldAt(confirmed, "data", "state"), "The person's own act makes the membership active").toBe("active");
     expect(fieldAt(confirmed, "data", "confirmation", "state"), "Nothing is waiting for confirmation once it is confirmed").toBe("not-awaiting-proof");
     await page.reload();
-    await expect(proof.getByText("This address is confirmed", { exact: true })).toBeVisible();
+    await expect(proof.getByText("Email address confirmed", { exact: true })).toBeVisible();
     await expect(proof.getByText("Active", { exact: true })).toBeVisible();
-    await expect(proof.getByText(/is not a delivery/u)).toBeVisible();
-    await expect(proof.getByText("Address on this membership", { exact: true }), "The address is read back from the record rather than retyped, which is the flow's own answer to Redundant Entry: nothing here asks the person for a value they have already given").toBeVisible();
+    await expect(proof.getByText(/Your other subscriptions and contact records weren’t changed/u)).toBeVisible();
+    await expect(proof.getByText("Email address", { exact: true }).first(), "The address is read back from the record rather than retyped, which is the flow's own answer to Redundant Entry: nothing here asks the person for a value they have already given").toBeVisible();
   });
 });
 test.describe("the worker who publishes, holds the audience and can be a recipient", () => {
@@ -219,14 +219,14 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     const proof = page.locator(PROOF_FLOW);
     await expect(proof.getByText(SIGNUP_WINDOW.deadline, { exact: true })).toBeVisible();
     expect(fieldAt(await readPreferences(page), "data", "confirmation", "state"), "One second before the deadline is still inside the window").toBe("open");
-    const confirmControl = proof.getByRole("button", { name: /Confirm this address/u });
+    const confirmControl = proof.getByRole("button", { name: /Confirm email address/u });
     await expect(confirmControl, "The control is offered inside the open window").toBeEnabled();
     await confirmControl.click();
     await expect(proof.getByText("Saved", { exact: true })).toBeVisible();
     const confirmed = await readPreferences(page);
     expect(fieldAt(confirmed, "data", "state"), "The confirmation inside the window is applied").toBe("active");
     await page.reload();
-    await expect(proof.getByText("This address is confirmed", { exact: true })).toBeVisible();
+    await expect(proof.getByText("Email address confirmed", { exact: true })).toBeVisible();
     await setClock(page.request, SEED_INSTANT);
   });
   test("a confirmation at exactly 168 elapsed hours is refused, and nothing revives the window", async ({ page }) => {
@@ -238,12 +238,12 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     await setClock(page.request, SIGNUP_WINDOW.deadline);
     await openPreferences(page);
     const proof = page.locator(PROOF_FLOW);
-    await expect(proof.getByText(/The confirmation window closed at/u)).toBeVisible();
+    await expect(proof.getByText(/Confirmation window expired at/u)).toBeVisible();
     await expect(proof.getByText(SIGNUP_WINDOW.deadline, { exact: true })).toBeVisible();
-    await expect(proof.getByText(/The service reports this window as closed/u)).toBeVisible();
-    await expect(proof.getByRole("button", { name: /Confirm this address/u }), "The control stays where it is and is disabled, so a closed window is never mistaken for a missing action").toBeDisabled();
-    await expect(proof.getByText(new RegExp(`${String(CONFIRMATION_WINDOW_HOURS)} elapsed hours`, "u")), "The wording is elapsed hours, and it states that reloading, retrying or resending never extends it").toBeVisible();
-    await expect(proof.getByText(/never extends it/u)).toBeVisible();
+    await expect(proof.getByText(/The confirmation window has expired/u)).toBeVisible();
+    await expect(proof.getByRole("button", { name: /Confirm email address/u }), "The control stays where it is and is disabled, so a closed window is never mistaken for a missing action").toBeDisabled();
+    await expect(proof.getByText(new RegExp(`${String(CONFIRMATION_WINDOW_HOURS)} hours`, "u")).first(), "The wording is elapsed hours, and it states that reloading, retrying or resending never extends it").toBeVisible();
+    await expect(proof.getByText(/doesn’t extend an existing window/u)).toBeVisible();
     await expect(proof.getByText(/calendar day/u)).toHaveCount(0);
     const closedWindow = await readPreferences(page);
     expect(fieldAt(closedWindow, "data", "confirmation", "state"), "At the deadline the window is expired").toBe("expired");
@@ -255,7 +255,7 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     expect(refusal, "The refusal states the instant the window ended").toContain(SIGNUP_WINDOW.deadline);
     expect(refusal, "The refusal states that a reload, a retry and a resend never extend the window").toMatch(/reload, a retry and a message sent again never extend it/u);
     await page.reload();
-    await expect(proof.getByRole("button", { name: /Confirm this address/u })).toBeDisabled();
+    await expect(proof.getByRole("button", { name: /Confirm email address/u })).toBeDisabled();
     const retried = await submitConfirmation(page, membershipId);
     expect(outcomeOf(retried), "A retry at the same instant is refused in the same terms").toBe("invalid");
     expect(messagesAt(retried, "membershipId").join(" ")).toMatch(/confirmation-expired/u);
@@ -298,9 +298,9 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     const everyServedRowAccepted = arrayAt(result, ["data", "rows"], "The intent's rows").every((row) => fieldAt(row, "state") === "accepted");
     expect(everyServedRowAccepted, "An accepted notice is accepted for every recipient it served").toBe(true);
     await openDelivery(page, intentId); // The durable surface: the trigger's own result states the simulated boundary, the window it stands in, each recorded outcome, and that acceptance is neither delivery nor reading.
-    for (const said of [SIMULATED_MAIL, "Within its usefulness window", "Outcomes recorded for this notice"]) await expect(page.getByText(said).first()).toBeVisible();
-    await expect(page.getByText("Accepted — not delivered", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(/It is not delivery and it is not reading/u).first()).toBeVisible();
+    for (const said of [SIMULATED_MAIL, "Retry window open", "What these statuses mean"]) await expect(page.getByText(said).first()).toBeVisible();
+    await expect(page.getByText("Accepted (not delivered)", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/doesn’t prove external delivery or opens/u).first()).toBeVisible();
     await expect(page.getByRole("button", { name: RESEND_CONTROL }), "An accepted copy is never submitted again").toHaveCount(0);
     await expect(page.locator("[data-sonner-toast], [data-toast], [role='log']"), "No ephemeral notification may stand in for a durable result").toHaveCount(0);
     const inbox = await readInbox(page);
@@ -312,26 +312,26 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     expect(fieldAt(message, "state"), "The message carries the outcome that was recorded").toBe("accepted");
     expect(stringAt(message, ["renditionId"], "The rendition the message was pinned to"), "The recipient is pinned to the one rendition the send result states").toBe(ownRendition);
     await openInbox(page);
-    for (const said of ["One message has been produced for this membership.", SIMULATED_MAIL, /One notification intent produces one message for one recipient/u]) await expect(page.getByText(said).first()).toBeVisible();
-    await expect(page.getByText("Two messages share one recipient and one notification intent"), "A second copy of one intent would be a defect stated here").toHaveCount(0);
+    for (const said of ["1 simulated email", SIMULATED_MAIL, /Each notification produces at most one email per recipient/u]) await expect(page.getByText(said).first()).toBeVisible();
+    await expect(page.getByText("Duplicate messages detected for one send"), "A second copy of one intent would be a defect stated here").toHaveCount(0);
     const sender = stringAt(message, ["sender"], "The message's sender");
     const subject = stringAt(message, ["subject"], "The message's subject");
     await expect(page.getByText(sender, { exact: true }).first()).toBeVisible();
     await expect(page.getByText(subject, { exact: true }).first()).toBeVisible();
     await page.getByRole("button", { name: /^Open the message/u }).click(); // Both renderings are real: the HTML tab renders the notice, and the plain-text tab renders the same message as a readable alternative in a pre-formatted block rather than as a note about one.
-    await expect(page.getByRole("heading", { level: 3, name: "The message as it was produced for this recipient" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 3, name: "Email preview" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "HTML" })).toBeVisible();
     await expect(page.getByText("An update has been published.").first()).toBeVisible();
     await page.getByRole("tab", { name: "Plain text" }).click();
     const plainBody = page.locator("pre").filter({ hasText: "Open the update" });
     await expect(plainBody, "The plain-text tab renders the whole message, not a note about one").toBeVisible();
     await expect(plainBody).toContainText(/You are receiving updates by email because you asked to hear from this publisher/u);
-    await expect(page.getByText(/It is not a delivered message and not a read one/u).first(), "The honesty note, and the absence of any claim the application cannot make").toBeVisible();
+    await expect(page.getByText(/not that it was delivered or read/u).first(), "The honesty note, and the absence of any claim the application cannot make").toBeVisible();
     for (const claim of [/^Delivered$/u, /^Opened$/u]) await expect(page.getByText(claim), "No surface claims a message was delivered or read").toHaveCount(0);
     await openAudience(page);
-    for (const value of ["Active", "Awaiting proof", "Off", "Restricted"]) await expect(page.getByText(value, { exact: true }).first()).toBeVisible();
-    await expect(page.getByText(/A subscribed-style flag, an imported row, a contact edit or an existing partner record is not consent/u)).toBeVisible();
-    await expect(page.getByRole("row").filter({ hasText: "Accepted — not delivered" }), "A membership is never reported as a send outcome").toHaveCount(0);
+    for (const value of ["Active", "Awaiting confirmation", "Off", "Restricted"]) await expect(page.getByText(value, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/Adding a contact, importing a spreadsheet, or editing an email address never subscribes someone automatically/u)).toBeVisible();
+    await expect(page.getByRole("row").filter({ hasText: "Accepted (not delivered)" }), "A membership is never reported as a send outcome").toHaveCount(0);
   });
   test("unsubscribing turns off one publisher and one purpose, and a later notice excludes that person", async ({ page }) => {
     await requestNoticesThroughProof(page);
@@ -344,14 +344,14 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     expect(numberAt(await readInbox(page), ["data", "intentCount"], "Messages in the inbox before unsubscribing")).toBe(1);
     await openPreferences(page);
     const unsubscribe = page.locator('[data-slot="unsubscribe-confirm"]');
-    await expect(unsubscribe.getByRole("heading", { name: "Turn off notices from this publisher" })).toBeVisible();
-    for (const said of [/This membership today:/u, /changes one membership/u]) await expect(unsubscribe.getByText(said)).toBeVisible();
-    await unsubscribe.getByRole("button", { name: /Turn off Update email from/u }).click();
+    await expect(unsubscribe.getByRole("heading", { name: "Unsubscribe from update emails" })).toBeVisible();
+    for (const said of [/Current status:/u, /stops update emails from this ministry only/u]) await expect(unsubscribe.getByText(said)).toBeVisible();
+    await unsubscribe.getByRole("button", { name: /Unsubscribe from/u }).click();
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("What turning this off cannot do", { exact: true }), "What the action cannot do is stated before it is confirmed: a submitted notice is not recalled").toBeVisible();
-    for (const said of [/A notice that was already submitted cannot be recalled/u, /every other record about you stay as they are/iu]) await expect(dialog.getByText(said)).toBeVisible();
-    await dialog.getByRole("button", { name: /Turn off Update email from/u }).click();
+    for (const said of [/messages already sent can’t be recalled/u, /other ministries and your contact record stay unchanged/iu]) await expect(dialog.getByText(said)).toBeVisible();
+    await dialog.getByRole("button", { name: /Unsubscribe from/u }).click();
     await expect(page.locator('[data-slot="unsubscribe-confirm-result"]')).toBeVisible();
     await expect(unsubscribe.getByText("Saved", { exact: true })).toBeVisible();
     await expect(unsubscribe.getByText(/Only this membership changed/u).first()).toBeVisible();
@@ -371,7 +371,7 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     expect(fieldAt(own, "state"), "The membership read back as off").toBe("off");
     expect(fieldAt(own, "exclusionReason"), "The read states why it is excluded").toBe("unsubscribed");
     await openAudience(page);
-    await expect(page.getByText(/The person unsubscribed from this publisher and this purpose/u).first()).toBeVisible();
+    await expect(page.getByText(/Previously confirmed, then unsubscribed from your update emails/u).first()).toBeVisible();
     const laterIntent = (await releaseAndNotify(page, EDITION.approvedSupporter)).intentId;
     expect(laterIntent, "Every notice is its own intent").not.toBe(firstIntent);
     const laterResult = await readSendResult(page, laterIntent);
@@ -398,18 +398,18 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
     const everyFailedRowRepeatable = openRows.filter((row) => fieldAt(row, "state") === "failed").every((row) => fieldAt(row, "retry", "available") === true);
     expect(everyFailedRowRepeatable, "The repeatable row is the failed one").toBe(true);
     await openDelivery(page, SEEDED_NOTICE.intentId);
-    await expect(page.getByText("Within its usefulness window").first()).toBeVisible();
+    await expect(page.getByText("Retry window open").first()).toBeVisible();
     const rows = page.getByRole("row");
     await expect(rows.filter({ hasText: "Repeat permitted" })).toHaveCount(1);
     await expect(rows.filter({ hasText: "Repeat not permitted" })).toHaveCount(4);
     await expect(page.getByText(SIMULATED_MAIL).first()).toBeVisible();
-    const repeatControl = page.getByRole("button", { name: "Repeat the failed copies", exact: true }); // The window being open is what puts the repeat control on this surface: the read permits it, its own action names it, and the control submits the copies the service recorded as definite failures. It is never a resend under a new key.
+    const repeatControl = page.getByRole("button", { name: "Retry failed sends", exact: true }); // The window being open is what puts the repeat control on this surface: the read permits it, its own action names it, and the control submits the copies the service recorded as definite failures. It is never a resend under a new key.
     await expect(repeatControl, "Inside the window the read permits a repeat, so the surface offers one").toBeVisible();
     await expect(page.getByRole("button", { name: RESEND_CONTROL }), "The window permits a repeat; it never offers a resend").toHaveCount(0);
     const seededFingerprint = sendResultFingerprint(await readSendResult(page, SEEDED_NOTICE.intentId));
     await repeatControl.click();
     await expect(page.locator('[data-slot="delivery-repeat-result"] [data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted");
-    await expect(page.locator('[data-slot="delivery-repeat-result"]').getByRole("link", { name: "Open the repeated notice's results" })).toBeVisible();
+    await expect(page.locator('[data-slot="delivery-repeat-result"]').getByRole("link", { name: "View retry send results" })).toBeVisible();
     expect(sendResultFingerprint(await readSendResult(page, SEEDED_NOTICE.intentId)), "A repeat leaves the notice it repeated exactly as it was").toBe(seededFingerprint);
     await setClock(page.request, SEEDED_NOTICE.deadline);
     const closed = await readSendResult(page, SEEDED_NOTICE.intentId);
@@ -423,11 +423,11 @@ test.describe("the worker who publishes, holds the audience and can be a recipie
       .join(" ");
     expect(failedReasons, "The failed row states that its window closed").toMatch(/usefulness window has closed/u);
     await openDelivery(page, SEEDED_NOTICE.intentId);
-    await expect(page.getByText("Past its usefulness window").first()).toBeVisible();
+    await expect(page.getByText("Retry window closed").first()).toBeVisible();
     await expect(page.getByText(/24-hour usefulness window has closed, so it cannot be revived as a fresh attempt/u)).toBeVisible();
     await expect(page.getByRole("row").filter({ hasText: "Repeat permitted" })).toHaveCount(0);
     await expect(page.getByText(/No recorded row may be submitted again/u), "At the boundary the surface states the read's own reason for refusing a repeat and offers no control at all").toBeVisible();
-    await expect(page.getByRole("button", { name: "Repeat the failed copies", exact: true }), "A closed window offers no repeat").toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry failed sends", exact: true }), "A closed window offers no repeat").toHaveCount(0);
     await expect(page.locator('[data-slot="delivery-repeat-result"]')).toHaveCount(0);
     const fingerprintBefore = sendResultFingerprint(await readSendResult(page, SEEDED_NOTICE.intentId));
     const refused = await submitNotice(page, { releaseId: SEEDED_NOTICE.releaseId, intendedAt: SEEDED_NOTICE.intendedAt });

@@ -25,28 +25,24 @@ type CommitmentRowFigure = CommitmentsEnvelope["data"]["commitments"][number];
 type FixedTotalFigure = NonNullable<CommitmentRowFigure["fixedTotal"]>;
 export type CommitmentDetailProps = { readonly scope: Scope; readonly commitmentId: string; readonly locale: string; readonly dir?: "ltr" | "rtl"; readonly listQuery?: CommitmentsQuery; readonly className?: string };
 const LABELS = {
-  cadence: "Cadence",
-  perOccurrence: "Per occurrence",
-  currentOutcome: "Current outcome",
-  lastSuccessful: "Last successful collection",
-  nextEligible: "Next eligible date",
+  cadence: "Schedule",
+  perOccurrence: "Amount per gift",
+  currentOutcome: "Current status",
+  lastSuccessful: "Last received",
+  nextEligible: "Next expected",
   resumeOn: "Resumes on",
   source: "Source",
   organization: "Organization",
   ministry: "Ministry",
-  supportSubject: "Support subject",
-  principal: "Acting principal",
+  supportSubject: "Support account",
+  principal: "Signed-in account",
 } as const;
-const LIST_ACTION_LABEL = "Open the commitments list";
+const LIST_ACTION_LABEL = "Back to Commitments";
 const WRAPPING_BADGE_CLASS = "h-auto max-w-full shrink whitespace-normal text-start";
-const OUTCOME_LEAD =
-  "The source states this commitment's current outcome, and one count per outcome across every commitment " +
-  "this read states in this context. It states no occurrence-by-occurrence history, so no history row is " +
-  "written to stand in for one: a date the source did not state stays a gap rather than becoming a received, " +
-  "processing or upcoming occurrence.";
-const NOT_IN_PAGE_DESCRIPTION = "The commitments read states one page of the source's commitments, and no commitment in the page it " + "returned carries this identifier. Either no commitment in this context carries it, or it stands on a page " + "this read did not return. Nothing is filled in for it either way.";
-const DENIED_DESCRIPTION = "The read was refused for the context this session is admitted to. Nothing here states whether a commitment carries that identifier, what it would be, or how large it is.";
-const NO_ANSWER_DESCRIPTION = "The request for this commitment did not come back as an answer this page can present, so nothing is shown and no amount stands in for it: this is not zero and not an empty result.";
+const OUTCOME_LEAD = "Status counts across all commitments in this context. Individual past occurrences aren’t supplied by the source.";
+const NOT_IN_PAGE_DESCRIPTION = "This commitment wasn’t found on this page. It may be on another page or outside your current context.";
+const DENIED_DESCRIPTION = "Your current session doesn’t have permission to view commitment details in this ministry context.";
+const NO_ANSWER_DESCRIPTION = "Couldn’t reach the giving source right now — shown as unavailable rather than zero or empty.";
 const valueStateAt = (valueStates: Readonly<Record<string, ValueState>>, path: string): ValueState => valueStates[path] ?? "unknown";
 const fixedTotalStatePath = (commitmentId: string, field: keyof FixedTotalFigure): string => `commitments.${commitmentId}.fixedTotal.${field}`;
 const perOccurrenceStatePath = (commitmentId: string): string => `commitments.${commitmentId}.perOccurrence`;
@@ -58,22 +54,22 @@ function currenciesOf(row: CommitmentRowFigure): readonly string[] {
 }
 const returnPathOf = (listQuery: CommitmentsQuery): string => `/support/commitments?${toCommitmentsParams({ page: listQuery.page }).toString()}`;
 function pauseReadingOf(pause: CommitmentRowFigure["pause"]): { readonly label: string; readonly tone: StatusTone; readonly sentence: string; readonly resumeOn: string | null } {
-  if (pause.state === "active") return { label: "Running", tone: "positive", sentence: "The source reports this commitment running, so no pause stands in front of the next date it states.", resumeOn: null };
-  if (pause.state === "paused") return { label: "Paused", tone: "caution", resumeOn: pause.resumeOn, sentence: pause.resumeOn === null ? "The source reports this commitment paused and states no date for resuming." : "The source reports this commitment paused; the date it states for resuming is stated below." };
-  return { label: "State not stated", tone: "muted", sentence: "The state the source reported for this commitment is not one this page can present, so no pause or active reading is given to it.", resumeOn: null };
+  if (pause.state === "active") return { label: "Active", tone: "positive", sentence: "Active — scheduled to continue normally.", resumeOn: null };
+  if (pause.state === "paused") return { label: "Paused", tone: "caution", resumeOn: pause.resumeOn, sentence: pause.resumeOn === null ? "Paused with no resume date specified." : "Paused — scheduled to resume on the date below." };
+  return { label: "Unknown", tone: "muted", sentence: "Pause status wasn’t reported by the source.", resumeOn: null };
 }
 const ReturnPath = ({ href }: { readonly href: string }): ReactElement => (
   <nav aria-label="Breadcrumb" className="min-w-0">
-    <Link href={href} aria-label="Return to the commitments list with the filters and page you came from" className="inline-link inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground">
+    <Link href={href} aria-label="Back to Commitments" className="inline-link inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground">
       <ArrowLeftIcon aria-hidden="true" className="size-4 shrink-0 rtl:-scale-x-100" />
-      <span className="min-w-0 break-words">Commitments</span>
+      <span className="min-w-0 break-words">Back to Commitments</span>
     </Link>
   </nav>
 );
 const Fact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1", termClassName: "font-medium text-muted-foreground", valueClassName: "min-w-0 break-words" });
 const Identifier = ({ value }: { readonly value: string }): ReactElement => <bdi className="mono-identifier break-all">{value}</bdi>;
 function SourceDate({ value }: { readonly value: string | null }): ReactElement {
-  if (value === null) return <span className="text-muted-foreground">{"The source states no date"}</span>;
+  if (value === null) return <span className="text-muted-foreground">{"Not specified"}</span>;
   return (
     <bdi>
       <time {...{ dateTime: value, className: "mono-identifier" }}>{value}</time>
@@ -91,7 +87,7 @@ function CountFigure({ count, valueState, locale }: { readonly count: number; re
 }
 const CommitmentDetailSkeleton = ({ dir, className }: { readonly dir?: "ltr" | "rtl"; readonly className?: string }): ReactElement => (
   <div dir={dir} aria-busy={true} className={cn("flex min-w-0 flex-col gap-4", className)}>
-    <output className="flex items-center gap-2 text-sm text-muted-foreground">Reading this commitment…</output>
+    <output className="flex items-center gap-2 text-sm text-muted-foreground">Loading commitment…</output>
     <Card>
       <CardHeader>
         <Skeleton className="h-5 w-2/3 rounded-md" />
@@ -110,7 +106,7 @@ function OverviewCard({ row, valueStates, locale }: { readonly row: CommitmentRo
   const pause = pauseReadingOf(row.pause);
   return (
     <SectionCard
-      title={Object.hasOwn(COMMITMENT_KIND_LABELS, row.kind) ? COMMITMENT_KIND_LABELS[row.kind] : "A kind of commitment this read does not name"}
+      title={Object.hasOwn(COMMITMENT_KIND_LABELS, row.kind) ? COMMITMENT_KIND_LABELS[row.kind] : "Other commitment"}
       headingLevel={1}
       headingId="commitment-overview-heading"
       description={
@@ -129,7 +125,7 @@ function OverviewCard({ row, valueStates, locale }: { readonly row: CommitmentRo
           <AmountValue money={row.perOccurrence} valueState={valueStateAt(valueStates, perOccurrenceStatePath(row.commitmentRowId))} locale={locale} emphasis="headline" />
         </dd>
       </dl>
-      <p className="type-supporting text-pretty">{"A commitment is the source's standing arrangement, not received cash: this amount is never counted as money received, and the outcome beside it states where the collection stands rather than what arrived."}</p>
+      <p className="type-supporting text-pretty">{"Commitments are read-only arrangements from your giving source and aren’t counted as received cash."}</p>
       <Separator />
       <div className="flex min-w-0 flex-col gap-1.5">
         <p className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
@@ -139,10 +135,10 @@ function OverviewCard({ row, valueStates, locale }: { readonly row: CommitmentRo
         <p className="type-supporting text-pretty">{BUCKET_MEANING[row.bucket]}</p>
       </div>
       <Separator />
-      <p className="type-supporting text-pretty">{"This page is read-only: it cannot post, retry, pause, resume or correct a payment, and no control on it changes anything at the source."}</p>
+      <p className="type-supporting text-pretty">{"Mysa can’t pause, edit, retry, or cancel payments here — manage changes directly in your giving system."}</p>
       <Separator />
       <section aria-labelledby="commitment-dates-heading" className="flex min-w-0 flex-col gap-2">
-        <h2 {...{ id: "commitment-dates-heading", className: "type-section-title" }}>Live dates</h2>
+        <h2 {...{ id: "commitment-dates-heading", className: "type-section-title" }}>Schedule &amp; pause</h2>
         <dl className="flex min-w-0 flex-col gap-2 text-sm">
           <Fact term={LABELS.lastSuccessful} value={<SourceDate value={row.lastSuccessfulOn} />} />
           <Fact term={LABELS.nextEligible} value={<SourceDate value={row.nextEligibleOn} />} />
@@ -168,9 +164,9 @@ function OverviewCard({ row, valueStates, locale }: { readonly row: CommitmentRo
     </SectionCard>
   );
 }
-const FIXED_TOTAL_DESCRIPTION = "These are the four amounts the source states for this fixed total, each shown as its own fact: this page does not subtract one from another, does not state a fifth figure and does not present a share of the total.";
+const FIXED_TOTAL_DESCRIPTION = "Each figure comes directly from your giving source without derived percentages or totals.";
 const FixedTotalCard = ({ commitmentId, fixedTotal, valueStates, locale }: { readonly commitmentId: string; readonly fixedTotal: FixedTotalFigure; readonly valueStates: Readonly<Record<string, ValueState>>; readonly locale: string }): ReactElement => (
-  <SectionCard headingId="commitment-fixed-total-heading" region={{ id: "commitment-fixed-total-heading", className: "min-w-0" }} title="Fixed total progress" description={FIXED_TOTAL_DESCRIPTION}>
+  <SectionCard headingId="commitment-fixed-total-heading" region={{ id: "commitment-fixed-total-heading", className: "min-w-0" }} title="Fixed total breakdown" description={FIXED_TOTAL_DESCRIPTION}>
     <dl className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
       {FIXED_TOTAL_FIELDS.map(({ field, label }) => (
         <div key={field} className="flex min-w-0 flex-col gap-1 rounded-xl border border-border/80 bg-surface-subtle p-3.5">
@@ -184,17 +180,17 @@ const FixedTotalCard = ({ commitmentId, fixedTotal, valueStates, locale }: { rea
   </SectionCard>
 );
 const OutcomeHistoryCard = ({ buckets, total, current, locale }: { readonly buckets: readonly CommitmentsEnvelope["data"]["buckets"][number][]; readonly total: number; readonly current: RecurringBucket; readonly locale: string }): ReactElement => (
-  <SectionCard headingId="commitment-outcome-heading" region={{ id: "commitment-outcome-heading", className: "min-w-0" }} title="Outcome history" description={OUTCOME_LEAD} contentClassName="flex min-w-0 flex-col gap-3">
-    <p className="type-supporting">{`The read states ${commitmentCountText(total, locale)} in this context.`}</p>
+  <SectionCard headingId="commitment-outcome-heading" region={{ id: "commitment-outcome-heading", className: "min-w-0" }} title="Recurring status breakdown" description={OUTCOME_LEAD} contentClassName="flex min-w-0 flex-col gap-3">
+    <p className="type-supporting">{`${commitmentCountText(total, locale)} reported in this context.`}</p>
     <ul className="flex min-w-0 flex-col gap-2.5">
       {buckets.map((figure) => {
         const isCurrent = figure.bucket === current;
         return (
           <li key={figure.bucket} data-outcome={figure.bucket} className={cn("flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border/80 bg-card p-3.5 shadow-2xs", figure.bucket === OUTSIDE_PARTITION && "bg-surface-subtle", isCurrent && "ring-1 ring-ring")}>
             <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <StatusBadge {...statusBadgeProps(BUCKET_STATUS, figure.bucket)} srPrefix="Outcome" className={WRAPPING_BADGE_CLASS} />
+              <StatusBadge {...statusBadgeProps(BUCKET_STATUS, figure.bucket)} srPrefix="Status" className={WRAPPING_BADGE_CLASS} />
               <CountFigure count={figure.count} valueState={figure.valueState} locale={locale} />
-              {isCurrent ? <span className="text-xs font-medium">{"This commitment's outcome"}</span> : null}
+              {isCurrent ? <span className="text-xs font-medium">{"This commitment"}</span> : null}
             </div>
             <p className="type-supporting text-pretty">{BUCKET_MEANING[figure.bucket]}</p>
           </li>
@@ -211,7 +207,7 @@ function ProvenanceCard({ envelope, row, locale }: { readonly envelope: Commitme
     [LABELS.principal, envelope.scope.principalId],
   ];
   return (
-    <SectionCard headingId="commitment-provenance-heading" region={{ id: "commitment-provenance-heading", className: "min-w-0" }} title="Provenance and snapshot" contentClassName="flex min-w-0 flex-col gap-4">
+    <SectionCard headingId="commitment-provenance-heading" region={{ id: "commitment-provenance-heading", className: "min-w-0" }} title="Source & snapshot" contentClassName="flex min-w-0 flex-col gap-4">
       <dl className="flex min-w-0 flex-col gap-2 text-sm">
         <Fact term={LABELS.source} value={<bdi className="mono-identifier break-all">{formatSourceReference(envelope.source)}</bdi>} />
         {scoped.map(([term, value]) => (
@@ -227,7 +223,7 @@ function EnvelopeBody({ envelope, commitmentId, locale, returnHref }: { readonly
   const { commitments, buckets, total } = envelope.data;
   const row = commitments.find((candidate) => candidate.commitmentRowId === commitmentId);
   if (total === 0) return <StateNotice kind="empty" headingLevel={1} title={EMPTY_STATES.commitments.title} description={EMPTY_STATES.commitments.body} action={EMPTY_STATES.commitments.action} />;
-  if (row === undefined) return <StateNotice kind="empty" headingLevel={1} title="No commitment in this read carries that identifier" description={NOT_IN_PAGE_DESCRIPTION} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />;
+  if (row === undefined) return <StateNotice kind="empty" headingLevel={1} title="Commitment not found on this page" description={NOT_IN_PAGE_DESCRIPTION} action={{ label: LIST_ACTION_LABEL, href: returnHref }} />;
   return (
     <>
       <OverviewCard row={row} valueStates={envelope.valueStates} locale={locale} />
@@ -241,7 +237,7 @@ type CommitmentDetailBodyProps = CommitmentDetailProps & { readonly listQuery: C
 function CommitmentDetailBody({ scope, commitmentId, locale, dir, listQuery, className }: CommitmentDetailBodyProps): ReactElement {
   const returnHref = useMemo(() => returnPathOf(listQuery), [listQuery]);
   const { data: answer, isError, isPending, refetch } = useCommitments({ scope, query: useMemo<CommitmentsQuery>(() => ({ page: listQuery.page, commitmentId }), [listQuery, commitmentId]) });
-  const retry = { label: "Read this commitment again", onClick: (): void => void refetch() };
+  const retry = { label: "Try again", onClick: (): void => void refetch() };
   const listAction = { label: LIST_ACTION_LABEL, href: returnHref };
   const framed = (content: ReactElement): ReactElement => (
     <div dir={dir} className={cn("flex min-w-0 flex-col gap-4", className)}>
@@ -250,10 +246,10 @@ function CommitmentDetailBody({ scope, commitmentId, locale, dir, listQuery, cla
     </div>
   );
   if (isPending) return framed(<CommitmentDetailSkeleton />);
-  if (isError || answer === undefined) return framed(<StateNotice kind="unavailable" headingLevel={1} title="This commitment has no answer to state" description={NO_ANSWER_DESCRIPTION} retry={retry} />);
-  if (answer.kind === "denied") return framed(<StateNotice kind="denied" headingLevel={1} title="This commitment is not shown in this context" description={DENIED_DESCRIPTION} reasonCode={answer.denied.reasonCode} action={listAction} />);
-  if (answer.kind === "unavailable") return framed(<StateNotice kind="unavailable" headingLevel={1} title="This commitment could not be read" description={answer.unavailable.guidance} source={answer.unavailable.source} action={listAction} retry={retry} />);
-  if (answer.kind === "refused") return framed(<StateNotice kind="refused" headingLevel={1} title="This commitment's request was refused" description={refusalSummary(answer.refused)} action={listAction} />);
+  if (isError || answer === undefined) return framed(<StateNotice kind="unavailable" headingLevel={1} title="Couldn’t load this commitment" description={NO_ANSWER_DESCRIPTION} retry={retry} />);
+  if (answer.kind === "denied") return framed(<StateNotice kind="denied" headingLevel={1} title="This commitment isn’t available in this context" description={DENIED_DESCRIPTION} reasonCode={answer.denied.reasonCode} action={listAction} />);
+  if (answer.kind === "unavailable") return framed(<StateNotice kind="unavailable" headingLevel={1} title="Couldn’t load this commitment" description={answer.unavailable.guidance} source={answer.unavailable.source} action={listAction} retry={retry} />);
+  if (answer.kind === "refused") return framed(<StateNotice kind="refused" headingLevel={1} title="Couldn’t open this commitment" description={refusalSummary(answer.refused)} action={listAction} />);
   return framed(<EnvelopeBody envelope={answer.envelope} commitmentId={commitmentId} locale={locale} returnHref={returnHref} />);
 }
 function UrlDerivedDetail(props: CommitmentDetailProps): ReactElement {

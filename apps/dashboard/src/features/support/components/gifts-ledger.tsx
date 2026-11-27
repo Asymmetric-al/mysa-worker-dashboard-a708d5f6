@@ -49,8 +49,8 @@ const AMOUNT_BAND_EDGES: readonly number[] = [100, 500, 1000, 5000];
 const AMOUNT_BAND_PREFIX = "band";
 const ROW_STATE_PREFIX = "rows.";
 const LEGEND_STATE_ORDER: readonly ValueState[] = ["incomplete-subtotal", "unknown", "withheld", "unavailable"];
-const STATE_WORDS: Readonly<Record<ValueState, string>> = { value: "Amount recorded", zero: "Zero", unknown: "Unknown amount", withheld: "Withheld", unavailable: "Source unavailable", "incomplete-subtotal": "Incomplete subtotal" };
-const DATE_PRECISION_WORD: Readonly<Record<string, string>> = { approximate: "approximate date", unknown: "date not stated" };
+const STATE_WORDS: Readonly<Record<ValueState, string>> = { value: "Recorded", zero: "Recorded zero", unknown: "Unknown", withheld: "Withheld", unavailable: "Unavailable", "incomplete-subtotal": "Incomplete subtotal" };
+const DATE_PRECISION_WORD: Readonly<Record<string, string>> = { approximate: "approximate", unknown: "date unknown" };
 const MUTED_TEXT_CLASS = "text-muted-foreground";
 const PERIOD_PRESET_VALUES: readonly FacetValueSpec[] = [
   { id: GIFTS_DEFAULT_PERIOD_PRESET, label: "This month" },
@@ -60,8 +60,8 @@ const PERIOD_PRESET_VALUES: readonly FacetValueSpec[] = [
   { id: "year-to-date", label: "Year to date" },
 ];
 /** The one notice this ledger states for a period with no gift in it: a period the source does not cover is a gap rather than a zero, and widening the period is the first action a reader actually has, because the ledger always reads one period at a time. */
-const GIFTS_EMPTY_DESCRIPTION = "This ledger reads one period at a time, and a period the source does not cover is a gap rather than a zero: a period with no gift in it and a query that selects nothing look the same here and mean different things. Widen the period to read more of the ledger.";
-const GIFTS_EMPTY_STATE = <StateNotice kind="empty" title={EMPTY_STATES.gifts.title} description={GIFTS_EMPTY_DESCRIPTION} action={{ label: "Read this year's gifts", href: "/support/gifts?period=this-year" }} headingLevel={2} />;
+const GIFTS_EMPTY_DESCRIPTION = "No gifts were found for this period. Uncovered periods appear as gaps rather than zeros — widen the period to see more gifts.";
+const GIFTS_EMPTY_STATE = <StateNotice kind="empty" title={EMPTY_STATES.gifts.title} description={GIFTS_EMPTY_DESCRIPTION} action={{ label: "View this year’s gifts", href: "/support/gifts?period=this-year" }} headingLevel={2} />;
 function isGiftsEnvelope(value: ReadEnvelope<unknown>): value is GiftsEnvelope {
   const data: unknown = value.data;
   if (!isRecord(data)) return false;
@@ -181,8 +181,8 @@ function unavailableReasonOf(envelope: GiftsEnvelope | undefined, actionName: st
   return action === undefined || action.available ? undefined : action.reason === undefined || action.reason.trim() === "" ? undefined : action.reason;
 }
 function amountRangeRuleReason(query: GiftsQuery, report: GiftReport | undefined, exponent: number | undefined): string | undefined {
-  if (query.currency.kind !== "one") return "Amounts in different currencies are not compared, so this range is applied only within one selected currency. Select one currency to compare amounts: a range spans one currency's minor units.";
-  return report === undefined ? undefined : exponent === undefined ? `The source states no exponent for ${query.currency.currency}, so no amount band can be compared in its minor units.` : undefined;
+  if (query.currency.kind !== "one") return "Choose a single currency first to filter by amount range.";
+  return report === undefined ? undefined : exponent === undefined ? `No decimal precision is configured for ${query.currency.currency}, so amount ranges aren’t available.` : undefined;
 }
 const legendStatesOf = (valueStates: Readonly<Record<string, ValueState>>): readonly ValueState[] => {
   const paths = Object.entries(valueStates).filter(([path]) => path.startsWith(ROW_STATE_PREFIX));
@@ -211,7 +211,7 @@ function amountRangeValuesOf(query: GiftsQuery, selected: string | undefined, ex
 /** One offered value with the count the read states for it, so a filter states how many rows each value stands for rather than only naming it; a value the read states no count for is offered without one rather than with an invented zero. */
 const faceted = (id: string, label: string, counted: { readonly count: number; readonly valueState: ValueState } | undefined): FacetValueSpec => (counted === undefined ? { id, label } : { id, label, count: counted.count, countState: counted.valueState });
 const UNNAMED_ATTRIBUTIONS: readonly GiftAttribution[] = [{ kind: "anonymous" }, { kind: "unresolved" }];
-const attributionLabelOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? attribution.partnerId : attribution.kind === "anonymous" ? "Anonymous support" : "Unattributed source support");
+const attributionLabelOf = (attribution: GiftAttribution): string => (attribution.kind === "partner" ? attribution.partnerId : attribution.kind === "anonymous" ? "Anonymous" : "Unattributed");
 /** The attributions the whole filtered result carries — read from the envelope, never from the rows on this page — each partner named by its own opaque reference with no name looked up for it, with anonymous and unattributed support always offered and a value the address already applies kept even when no row matches it. */
 function recipientValuesOf(query: GiftsQuery, facets: ReportFacets | undefined): readonly FacetValueSpec[] {
   const counted = new Map((facets?.attributions ?? []).map((value) => [attributionValueOf(value.attribution), value]));
@@ -242,8 +242,8 @@ function facetsOf(query: GiftsQuery, envelope: GiftsEnvelope | undefined, locale
 }
 function GiftDateCell({ row }: { readonly row: GiftLedgerRow }): ReactElement {
   const date = row.originalGiftOn;
-  if (date === undefined) return <span className={MUTED_TEXT_CLASS}>{"The source states no gift date"}</span>;
-  const precision = row.datePrecision === "date" ? null : (DATE_PRECISION_WORD[row.datePrecision] ?? "date not stated");
+  if (date === undefined) return <span className={MUTED_TEXT_CLASS}>{"No date"}</span>;
+  const precision = row.datePrecision === "date" ? null : (DATE_PRECISION_WORD[row.datePrecision] ?? "date unknown");
   return (
     <span className="flex flex-wrap items-baseline gap-x-1.5">
       <bdi className="tabular-figures">{civilDateText(date)}</bdi>
@@ -260,15 +260,15 @@ function AttributionCell({ attribution }: { readonly attribution: GiftLedgerRow[
       </span>
     );
   }
-  return <span>{attribution.kind === "anonymous" ? "Anonymous support" : "Unattributed source support"}</span>;
+  return <span>{attribution.kind === "anonymous" ? "Anonymous" : "Unattributed"}</span>;
 }
 function GrainCell({ row }: { readonly row: GiftLedgerRow }): ReactElement {
   const isAllocation = row.allocationId !== undefined;
   const refundOf = row.refundOf;
-  if (refundOf === undefined) return <span>{isAllocation ? "One allocation of a split gift" : "Whole gift"}</span>;
+  if (refundOf === undefined) return <span>{isAllocation ? "Split allocation" : "Whole gift"}</span>;
   return (
     <span className="flex flex-wrap items-baseline gap-x-1">
-      <span>{isAllocation ? "A refund allocation of" : "A refund of"}</span>
+      <span>{isAllocation ? "Refund allocation of" : "Refund of"}</span>
       <bdi className="mono-identifier">{refundOf}</bdi>
     </span>
   );
@@ -277,7 +277,7 @@ function ValueStateLegend({ states }: { readonly states: readonly ValueState[] }
   if (states.length === 0) return null;
   return (
     <div data-slot="value-state-legend" className={cn("flex flex-col gap-1 text-xs", MUTED_TEXT_CLASS)}>
-      <h2 className="type-section-title text-foreground">{"How an amount on this page is stated"}</h2>
+      <h2 className="type-section-title text-foreground">{"Amount status key"}</h2>
       <ul className="flex flex-col gap-1">
         {states.map((state) => (
           <li key={state}>
@@ -293,12 +293,12 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
   <Frame spacing="flush">
     <div data-slot="whole-result-summary" className={cn("flex min-w-0 flex-col text-xs", MUTED_TEXT_CLASS)}>
       <FrameHeader className="flex-col items-start gap-0.5 py-2.5">
-        <h2 className="type-section-title text-foreground">{"Whole-result support, by currency"}</h2>
-        <p className="type-supporting">{"These figures are the whole result these filters match, not the rows on this page. Each currency is stated on its own: nothing here is added across currencies and no combined total is stated."}</p>
+        <h2 className="type-section-title text-foreground">{"Totals by currency"}</h2>
+        <p className="type-supporting">{"Totals cover all matching gifts across every page. Currencies are kept separate and never combined."}</p>
       </FrameHeader>
       <FramePanel className="bg-surface-subtle p-2.5">
         {summary.length === 0 ? (
-          <p className="type-supporting">{"This result states no currency, so there is no whole-result figure to state here. That is not a zero."}</p>
+          <p className="type-supporting">{"No currency totals for this filter set (shown as absent rather than zero)."}</p>
         ) : (
           <ul className="grid gap-2 sm:grid-cols-2">
             {summary.map((entry) => {
@@ -306,9 +306,8 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
               return (
                 <li key={entry.currency} className="flex flex-wrap items-baseline gap-x-1.5 rounded-xl border border-border/80 bg-card px-3 py-2 text-sm shadow-2xs">
                   <bdi className="mono-identifier font-semibold text-foreground">{entry.currency}</bdi>
-                  <span>received</span>
                   <AmountValue money={{ currency: entry.currency, minorUnits: entry.received.minorUnits ?? minorUnitsOf(0) }} valueState={entry.received.valueState} locale={locale} />
-                  <span>{`and ${countTextOf(entry.giftCount.count, locale)} ${entry.giftCount.count === 1 ? "gift" : "gifts"}`}</span>
+                  <span>{`· ${countTextOf(entry.giftCount.count, locale)} ${entry.giftCount.count === 1 ? "gift" : "gifts"}`}</span>
                   {countNote === null ? null : <span>{`(${countNote})`}</span>}
                 </li>
               );
@@ -392,12 +391,12 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
           </Link>
         ),
       },
-      { id: "originalGiftOn", header: "Gift date", enableSorting: true, accessorFn: (row) => (row.originalGiftOn === undefined ? "" : civilDateText(row.originalGiftOn)), cell: (context) => <GiftDateCell row={context.row.original} /> },
+      { id: "originalGiftOn", header: "Date given", enableSorting: true, accessorFn: (row) => (row.originalGiftOn === undefined ? "" : civilDateText(row.originalGiftOn)), cell: (context) => <GiftDateCell row={context.row.original} /> },
       { id: "amountMinor", header: "Amount", enableSorting: true, accessorFn: (row) => row.amount.minorUnits, sortDescFirst: false, cell: (context) => <AmountValue money={context.row.original.amount} valueState={stateOf(context.row.index)} locale={locale} /> },
       { id: "currency", header: "Currency", enableSorting: false, cell: (context) => <bdi className="mono-identifier">{context.row.original.amount.currency}</bdi> },
-      { id: "designation", header: "Designation", enableSorting: true, accessorFn: (row) => row.designation ?? "", cell: (context) => (context.row.original.designation === undefined ? <span className={MUTED_TEXT_CLASS}>{"No designation stated"}</span> : <bdi>{context.row.original.designation}</bdi>) },
-      { id: "attribution", header: "Attribution", enableSorting: false, cell: (context) => <AttributionCell attribution={context.row.original.attribution} /> },
-      { id: "grain", header: "Grain and correction", enableSorting: false, cell: (context) => <GrainCell row={context.row.original} /> },
+      { id: "designation", header: "Designation", enableSorting: true, accessorFn: (row) => row.designation ?? "", cell: (context) => (context.row.original.designation === undefined ? <span className={MUTED_TEXT_CLASS}>{"None"}</span> : <bdi>{context.row.original.designation}</bdi>) },
+      { id: "attribution", header: "Partner", enableSorting: false, cell: (context) => <AttributionCell attribution={context.row.original.attribution} /> },
+      { id: "grain", header: "Type", enableSorting: false, cell: (context) => <GrainCell row={context.row.original} /> },
     ];
   }, [envelope, locale, query]);
   const listState: RecordListQueryState = { sort: query.sort === undefined ? [] : [{ id: query.sort.key, desc: query.sort.direction === "desc" }], page: query.page + 1, pageSize: query.pageSize, columnVisibility };
@@ -405,15 +404,15 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
   const retry = { label: "Try again", onClick: (): void => void gifts.refetch() };
   let content: ReactElement | null;
   if (gifts.isPending) {
-    content = <StateNotice kind="loading" title="Reading this ledger" description="The read is in progress. No count, total or empty result is shown until it answers." headingLevel={2} loadingLines={6} />;
+    content = <StateNotice kind="loading" title="Loading received gifts…" description="Fetching matching gifts and currency totals." headingLevel={2} loadingLines={6} />;
   } else if (read === undefined) {
-    content = <StateNotice kind="unavailable" title="The gifts ledger could not be read" description="The source behind these gifts answered nothing this surface can state, so the outage is reported rather than an empty ledger or a zero. Nothing was changed; try again in a moment." retry={retry} headingLevel={2} />;
+    content = <StateNotice kind="unavailable" title="Couldn’t load Gifts" description="The giving source didn’t respond right now. Nothing was changed — try again in a moment." retry={retry} headingLevel={2} />;
   } else if (read.kind === "denied") {
-    content = <StateNotice kind="denied" title="This ledger is not available in the context you are working in" reasonCode={read.denied.reasonCode} headingLevel={2} />;
+    content = <StateNotice kind="denied" title="Gifts aren’t available in this ministry context" reasonCode={read.denied.reasonCode} headingLevel={2} />;
   } else if (read.kind === "unavailable") {
-    content = <StateNotice kind="unavailable" title="The gifts ledger could not be read" description={read.unavailable.guidance} source={read.unavailable.source} retry={retry} headingLevel={2} />;
+    content = <StateNotice kind="unavailable" title="Couldn’t load Gifts" description={read.unavailable.guidance} source={read.unavailable.source} retry={retry} headingLevel={2} />;
   } else if (read.kind === "refused") {
-    content = <StateNotice kind="refused" title="This ledger's request was refused" description={refusalSummary(read.refused)} headingLevel={2} />;
+    content = <StateNotice kind="refused" title="Some gift filters aren’t valid" description={refusalSummary(read.refused)} headingLevel={2} />;
   } else {
     const ledger = read.envelope.data.report;
     const snapshot = ledger.snapshot;
@@ -436,7 +435,7 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
           renderExpandedRow={(row) => (
             <div className="grid gap-3 text-xs sm:grid-cols-3">
               <div className="flex flex-col gap-0.5">
-                <span className="font-medium text-muted-foreground">Gift &amp; allocation grain</span>
+                <span className="font-medium text-muted-foreground">Type &amp; allocation</span>
                 <span className="text-foreground">
                   <GrainCell row={row} />
                 </span>
@@ -447,21 +446,21 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
                 )}
               </div>
               <div className="flex flex-col gap-0.5">
-                <span className="font-medium text-muted-foreground">Attribution &amp; designation</span>
+                <span className="font-medium text-muted-foreground">Partner &amp; designation</span>
                 <span className="text-foreground">
                   <AttributionCell attribution={row.attribution} />
                 </span>
-                <span className="text-muted-foreground">{row.designation ?? "No designation stated"}</span>
+                <span className="text-muted-foreground">{row.designation ?? "No designation"}</span>
               </div>
               <div className="flex flex-col items-start justify-between gap-2">
                 <div className="flex flex-col gap-0.5">
-                  <span className="font-medium text-muted-foreground">Gift date</span>
+                  <span className="font-medium text-muted-foreground">Date given</span>
                   <span className="text-foreground">
                     <GiftDateCell row={row} />
                   </span>
                 </div>
                 <Link href={`/support/gifts/${encodeURIComponent(row.giftId)}?${toGiftsParams(query).toString()}`} className="inline-link inline-flex min-h-6 items-center font-medium text-foreground">
-                  Open full gift record
+                  View gift details
                 </Link>
               </div>
             </div>
@@ -474,7 +473,7 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
       </>
     );
   }
-  const searchFacet = { value: query.search ?? "", onChange: handleSearchChange, placeholder: "Search this ledger" };
+  const searchFacet = { value: query.search ?? "", onChange: handleSearchChange, placeholder: "Search gifts…" };
   const dateSelectorValue: DateSelectorValue = query.period.kind === "custom" ? { kind: "custom", from: query.period.from, to: query.period.to } : { kind: "preset", preset: query.period.preset };
   const anchorDate = report === undefined ? undefined : civilDateText(report.snapshot.period.from);
   return (
@@ -492,8 +491,8 @@ const WholeResultSummary = ({ summary, locale }: { readonly summary: GiftReport[
       />
       {/* Where the whole query leaves the application: the report states this same filter set with its CSV download and its printed page, so the query a worker investigated here is the query those artifacts carry. */}
       <p data-slot="gifts-export-href" className={cn("type-supporting max-w-prose text-balance md:text-pretty")}>
-        {"The received-support report states this same filter set with the CSV download and the printed page, so opening it carries the query you investigated rather than the page on screen. "}
-        <Link {...{ href: exportHref, className: "inline-link rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" }}>{"Open the received-support report for this query"}</Link>
+        {"Need a CSV download or printable copy of these filtered gifts? "}
+        <Link {...{ href: exportHref, className: "inline-link rounded-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" }}>{"Open report & export"}</Link>
       </p>
       {content}
     </div>

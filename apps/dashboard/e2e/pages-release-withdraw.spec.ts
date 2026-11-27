@@ -2,11 +2,11 @@
 import { test, expect, actAs, armLostAcknowledgement, arrayAt, chooseFile, clearFailurePlan, fieldAt, fixturePathOf, isRecord, jsonOf, newAttemptId, requestRendition, stringAt } from "../playwright.config";
 const PAGE_DOCUMENT = "doc-page-harbour-youth";
 const PAGE_FAMILY = "worker-page";
-const PAGE_FAMILY_LABEL = "Worker Page";
+const PAGE_FAMILY_LABEL = "Missionary page";
 const PAGE_TITLE = "Harbour Youth";
 const PROJECT_PAGE_DOCUMENT = "doc-page-harbour-kitchen"; // The Project Page the same seed lays down: the second family, whose one public English edition holds a saved draft and nothing else.
 const PROJECT_PAGE_FAMILY = "project-page";
-const PROJECT_PAGE_FAMILY_LABEL = "Project Page";
+const PROJECT_PAGE_FAMILY_LABEL = "Project page";
 const PROJECT_SECTION_HEADING = "A kitchen the whole week uses"; // The prose this file composes into the Project Page, so the preview assertion is about text only this test wrote.
 const PROJECT_SECTION_BODY = "On Fridays the hall seats forty, and the kitchen is where every one of those plates begins.";
 const PRAYER_SECTION_BODY = ["Give thanks for the six new faces who joined us, and pray for the leaders who welcome them each Friday.", "Ask for the teams who prepare the meal afterwards, and for the families who bring them."] as const; // The two paragraphs this file writes into one Body, separated by the blank line that field's own help text promises a writer.
@@ -14,11 +14,11 @@ const ENGLISH = "en";
 const ARABIC = "ar";
 const ARABIC_DRAFT_PROSE = "أمسيات الجمعة";
 const ADMITTED_SECTION_TYPES = ["Introduction", "Story", "Prayer", "Milestone", "Image", "Video", "Giving", "Support progress"] as const;
-const REACH = { notPublic: "Not public", linkPublic: "Shared by link: public", listed: "Listed publicly" } as const;
+const REACH = { notPublic: "Not public", linkPublic: "Unlisted (link only)", listed: "Listed publicly" } as const;
 // The discovery index's own count sentence, in the two sizes the seed reaches: every list in this application states its total, so an index of nothing and an index of one each say so rather than leaving the reader to count the rows.
 const ONE_LISTED_EDITION = "1 edition is listed publicly.";
 const NO_LISTED_EDITION = "No editions are listed publicly.";
-const GIVING_SIMULATION = "simulated giving destination; no payment is taken";
+const GIVING_SIMULATION = "Simulated giving link — no payment is taken.";
 const APPROVED_DESIGNATION_LABEL = "Harbour Youth general fund"; // The one approved giving designation the seed records, named by the Page whose document carries it.
 const IMAGE_ALT_TEXT = "The youth group gathered in the church hall after a Friday meal."; // The words this file places an image with, so the placement the section states is one only this test wrote.
 const VIDEO_ALT_TEXT = "The youth group's welcome message, filmed in the hall."; // The text alternative criterion 18's video placement carries, written here so the assertion reads the record rather than the form.
@@ -39,9 +39,9 @@ const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, "
 const ANY_REACH_WORD = new RegExp(`(?:${escaped(REACH.notPublic)}|${escaped(REACH.linkPublic)}|${escaped(REACH.listed)})`, "u"); // Any one of the three reach words, so a released edition's row is asserted to state a reach rather than a particular one.
 const nameOfLabelAtPosition = (label: string, position: number): RegExp => new RegExp(`^${escaped(label)}\\s*,\\s*Position ${String(position)}$`, "u");
 const nameOfMove = (direction: "up" | "down", label: string, position: number): RegExp => new RegExp(`^Move ${direction} for ${escaped(label)}\\s*,\\s*Position ${String(position)}$`, "u");
-const builderLinkNameOf = (title: string, familyLabel: string): RegExp => new RegExp(`^${escaped(title)}\\s*,\\s*Open the ${escaped(familyLabel)} builder$`, "u"); // The accessible name of the index row that opens a Page's builder, which names the Page and its family.
+const builderLinkNameOf = (title: string, familyLabel: string): RegExp => new RegExp(`^${escaped(title)}\\s*,\\s*Open ${escaped(familyLabel)} builder$`, "u"); // The accessible name of the index row that opens a Page's builder, which names the Page and its family.
 const BUILDER_LINK_NAME = builderLinkNameOf(PAGE_TITLE, PAGE_FAMILY_LABEL); // The two Pages the seed lays down, each by the name its own index row carries.
-const reviewLinkName = (locale: string): RegExp => new RegExp(`^Review this candidate\\s*,\\s*for the ${escaped(locale)} language edition$`, "u"); // The accessible name of the review entry one frozen candidate holds, which also names the edition it belongs to.
+const reviewLinkName = (locale: string): RegExp => new RegExp(`^Open review\\s*,\\s*\\(${escaped(locale)} edition\\)$`, "u"); // The accessible name of the review entry one frozen candidate holds, which also names the edition it belongs to.
 const paneOf = (page: Page, pane: "outline" | "fields" | "preview") => page.locator(`[data-pane="${pane}"]`); // The three panes the builder shows on a wide screen, so an assertion names the pane it reads rather than the page.
 type SectionRead = { readonly element: string; readonly placements: readonly Record<string, unknown>[] }; // One section of the Page read: the catalogue element it was composed from, and the placements it holds, which is where a registration's own write is read back from the record.
 async function sectionsOfPage(page: Page): Promise<readonly SectionRead[]> {
@@ -80,11 +80,11 @@ async function selectSection(page: Page, position: number, label: string): Promi
   await expect(row).toHaveAttribute("aria-current", "true");
 }
 async function addSection(page: Page, label: string): Promise<void> {
-  const entry = page.getByRole("button", { name: new RegExp(`^Add a section\\s*:\\s*${escaped(label)}\\s*,\\s*Position \\d+$`, "u") });
+  const entry = page.getByRole("button", { name: new RegExp(`^Add section\\s*:\\s*${escaped(label)}\\s*,\\s*Position \\d+$`, "u") });
   await entry.click();
   const catalogue = page.locator('[data-slot="family-catalogue"]');
-  await expect(catalogue.getByRole("heading", { name: `Add a section: ${label}`, exact: true })).toBeVisible();
-  await catalogue.getByRole("button", { name: "Add a section", exact: true }).click();
+  await expect(catalogue.getByRole("heading", { name: `Add section: ${label}`, exact: true })).toBeVisible();
+  await catalogue.getByRole("button", { name: "Add section", exact: true }).click();
   await expect(catalogue.locator('[data-slot="operation-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
 }
 /** Selects one radio option of a group and confirms the group states it: a section form is re-initialised whenever the read states a newer record, so a choice made while that re-read lands is discarded, and the control is chosen again until it is the option the group holds. */
@@ -110,7 +110,7 @@ async function selectEdition(page: Page, locale: string): Promise<void> {
 async function setReachTo(page: Page, words: string): Promise<void> {
   const reach = page.locator('[data-slot="reach-control"]');
   await reach.getByRole("radio", { name: words, exact: true }).click();
-  await reach.getByRole("button", { name: "Save reach", exact: true }).click();
+  await reach.getByRole("button", { name: "Save visibility", exact: true }).click();
   await expect(reach.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
   await reach.getByRole("button", { name: "Done", exact: true }).click();
 }
@@ -126,11 +126,11 @@ async function submitDraftForReview(page: Page, locale: string): Promise<void> {
 }
 async function releaseSelectedEditions(page: Page, locale: string): Promise<void> {
   await page.getByRole("checkbox", { name: `Language ${locale}` }).check();
-  await page.getByRole("button", { name: "Release this edition", exact: true }).click();
+  await page.getByRole("button", { name: "Publish edition", exact: true }).click();
 }
 test("both family catalogues are admitted, and a Page is composed and reordered from the keyboard alone", async ({ page }) => {
   await page.goto(PAGES_INDEX);
-  await expect(page.getByRole("heading", { name: "Your Pages", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your ministry pages", exact: true })).toBeVisible();
   for (const family of [
     { key: PAGE_FAMILY, label: PAGE_FAMILY_LABEL },
     { key: PROJECT_PAGE_FAMILY, label: PROJECT_PAGE_FAMILY_LABEL },
@@ -157,32 +157,32 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await expect(page.locator('[data-slot="section-outline-row"]')).toHaveCount(2);
   await selectSection(page, 2, "Prayer");
   const fields = paneOf(page, "fields");
-  await expect(fields.getByRole("heading", { name: "Prayer — Section fields", exact: true })).toBeVisible();
+  await expect(fields.getByRole("heading", { name: "Prayer — Section details", exact: true })).toBeVisible();
   await fields.getByLabel("Heading", { exact: true }).fill("A prayer for this term");
   await fields.getByLabel("Body", { exact: true }).fill(PRAYER_SECTION_BODY.join("\n\n"));
-  await fields.getByRole("button", { name: "Save this section", exact: true }).click();
+  await fields.getByRole("button", { name: "Save section", exact: true }).click();
   for (const said of ["A prayer for this term", "Give thanks for the six new faces who joined us"]) await expect(paneOf(page, "preview")).toContainText(said);
   const chosenFields = paneOf(page, "fields");
   await expect(chosenFields.getByRole("radio")).toHaveCount(4);
-  for (const option of ["Normal", "Emphasized", "Single column", "Two columns with image and text"]) await expect(chosenFields.getByRole("radio", { name: option, exact: true })).toBeVisible();
+  for (const option of ["Standard", "Highlighted", "Single column", "Image beside text"]) await expect(chosenFields.getByRole("radio", { name: option, exact: true })).toBeVisible();
   await expect(chosenFields.getByLabel("Alignment", { exact: true })).toHaveValue("start");
-  expect(await chosenFields.getByLabel("Alignment", { exact: true }).locator("option").allInnerTexts()).toEqual(["Start", "Center"]);
+  expect(await chosenFields.getByLabel("Alignment", { exact: true }).locator("option").allInnerTexts()).toEqual(["Left aligned", "Centered"]);
   await expect(chosenFields.getByLabel("Image fit", { exact: true })).toHaveCount(0);
   for (const forbidden of [/raw html/iu, /custom css/iu, /stylesheet/iu, /embed/iu, /pixel/iu, /per-page theme/iu]) await expect(chosenFields.getByLabel(forbidden)).toHaveCount(0);
-  await expect(chosenFields.getByText("Presentation is limited to the options a section offers; a page has no styles of its own.", { exact: true })).toBeVisible();
+  await expect(chosenFields.getByText("Each section uses consistent styling from your organization’s page design.", { exact: true })).toBeVisible();
   const renderedPrayer = page.locator('[data-slot="page-preview-frame"]').locator("section.content-section").filter({ hasText: "A prayer for this term" });
   for (const style of [/content-layout-single-column/u, /content-treatment-normal/u]) await expect(renderedPrayer).toHaveClass(style);
   const prayerBody = renderedPrayer.locator(".content-section-text > p").filter({ hasText: /new faces|prepare the meal/u }); // The Body's own paragraphs, told apart from the Heading the same section renders as a paragraph of its own, so the count below is about the blank line rather than about the section's field count.
   await expect(prayerBody, "A blank line in a saved Body separates one paragraph from the next, exactly as the field's own help text promises").toHaveCount(2);
   await expect(prayerBody.nth(1), "The second paragraph is the second block of the saved text, in the author's own order").toContainText(PRAYER_SECTION_BODY[1]);
-  await chooseOption(chosenFields, "Two columns with image and text");
-  await chooseOption(chosenFields, "Emphasized");
-  await chosenFields.getByRole("button", { name: "Save this section", exact: true }).click();
+  await chooseOption(chosenFields, "Image beside text");
+  await chooseOption(chosenFields, "Highlighted");
+  await chosenFields.getByRole("button", { name: "Save section", exact: true }).click();
   await expect(renderedPrayer, "the two-column layout an admitted layout choice sets reaches the rendered section").toHaveClass(/content-layout-two-column-image-text/u);
   await expect(renderedPrayer, "the emphasized treatment an admitted treatment choice sets reaches the rendered section").toHaveClass(/content-treatment-emphasized/u);
   await chooseOption(chosenFields, "Single column");
-  await chooseOption(chosenFields, "Normal");
-  await chosenFields.getByRole("button", { name: "Save this section", exact: true }).click();
+  await chooseOption(chosenFields, "Standard");
+  await chosenFields.getByRole("button", { name: "Save section", exact: true }).click();
   for (const style of [/content-layout-single-column/u, /content-treatment-normal/u]) await expect(renderedPrayer, "the defaults are what a section is rendered in again").toHaveClass(style);
   const pageRead = await jsonOf(await page.request.get(`/api/pages?view=page&documentId=${encodeURIComponent(PAGE_DOCUMENT)}`), "GET /api/pages view=page"); // --- an out-of-set presentation value is refused rather than styled -------------------------- The four choices are judged by the family's own transport, so the value is posted to the handler the field form posts to, presenting the scope and revision the Page read states.
   const composedScope = fieldAt(pageRead, "scope");
@@ -208,22 +208,22 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await selectSection(page, 3, "Image");
   const mediaFields = paneOf(page, "fields");
   await expect(mediaFields.getByLabel("Image fit", { exact: true })).toHaveValue("cover");
-  expect(await mediaFields.getByLabel("Image fit", { exact: true }).locator("option").allInnerTexts()).toEqual(["Fill the frame", "Fit inside the frame"]);
-  await mediaFields.getByRole("button", { name: "Add an image", exact: true }).click();
+  expect(await mediaFields.getByLabel("Image fit", { exact: true }).locator("option").allInnerTexts()).toEqual(["Fill frame", "Fit inside frame"]);
+  await mediaFields.getByRole("button", { name: "Add image", exact: true }).click();
   const picker = page.locator('[data-slot="media-picker"][data-kind="image"]');
   await expect(picker).toBeVisible();
   await picker.locator('input[type="file"]').setInputFiles(fixturePathOf("poster.jpg"));
-  await picker.getByRole("textbox", { name: "Alternative text", exact: true }).fill(IMAGE_ALT_TEXT);
+  await picker.getByRole("textbox", { name: "Alt text", exact: true }).fill(IMAGE_ALT_TEXT);
   await picker.getByRole("button", { name: "Add this image", exact: true }).click();
   const registration = picker.locator('[data-slot="operation-result"]');
   await expect(registration, "The picker reports the attempt as the durable receipt it is, names the asset it registered, and states that preparation is local processing rather than production scanning").toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
   await expect(registration).toContainText(/asset-/u);
-  await expect(picker.getByText("local processing; not production scanning or transcoding", { exact: true }).first()).toBeVisible();
+  await expect(picker.getByText("Processed locally — not production media scanning or transcoding.", { exact: true }).first()).toBeVisible();
   await picker.getByRole("button", { name: "Done", exact: true }).click();
   const mediaAfterRegistration = paneOf(page, "fields");
-  await expect(mediaAfterRegistration, "The registration places the image in the section it was added from, so the section states the placement it now holds rather than an empty panel").toContainText("Placed in this section");
+  await expect(mediaAfterRegistration, "The registration places the image in the section it was added from, so the section states the placement it now holds rather than an empty panel").toContainText("Attached media");
   await expect(mediaAfterRegistration).toContainText(IMAGE_ALT_TEXT);
-  await expect(mediaAfterRegistration.getByRole("button", { name: "Add an image", exact: true })).toBeVisible();
+  await expect(mediaAfterRegistration.getByRole("button", { name: "Add image", exact: true })).toBeVisible();
   const placedImage = page.locator('[data-slot="page-preview-frame"]').locator("img").first();
   await expect(placedImage, "The exact preview renders the placement the image section now holds, so the media a reader meets is the media the record lists").toBeVisible();
   const displaySrc = await placedImage.getAttribute("src");
@@ -243,7 +243,7 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await moveUp.focus();
   await expect(moveUp).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.locator('[data-slot="section-outline-announcement"]')).toContainText("now stands at Position 2");
+  await expect(page.locator('[data-slot="section-outline-announcement"]')).toContainText("moved to Position 2");
   await expect(page.getByRole("button", { name: nameOfLabelAtPosition("Image", 2) })).toBeVisible();
   await expect(page.getByRole("button", { name: nameOfLabelAtPosition("Prayer", 3) })).toBeVisible();
   await expect(page.getByRole("button", { name: nameOfMove("down", "Image", 2) })).toBeVisible();
@@ -253,18 +253,18 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await page.keyboard.press("Enter");
   const announcement = page.locator('[data-slot="section-outline-announcement"]');
   await expect(announcement.locator("bdi").first()).toHaveText("Prayer");
-  await expect(announcement).toContainText("now stands at Position 2");
+  await expect(announcement).toContainText("moved to Position 2");
   await expect(announcement, "A second, different move is an operation of its own: it is never answered as a replay of the first").not.toContainText("already");
   await expect(page.getByRole("button", { name: nameOfLabelAtPosition("Prayer", 2) })).toBeVisible();
   await expect(page.getByRole("button", { name: nameOfLabelAtPosition("Image", 3) })).toBeVisible();
   await addSection(page, "Video"); // --- the video step: a real MP4 with a poster and a WebVTT caption track, placed and played ------------- The finding's record is that a Page's video section could never hold a placement at all, so the whole player is asserted here rather than only the receipt.
   await expect(page.getByRole("button", { name: nameOfLabelAtPosition("Video", 4) })).toBeVisible();
   await selectSection(page, 4, "Video");
-  await paneOf(page, "fields").getByRole("button", { name: "Add a video", exact: true }).click();
+  await paneOf(page, "fields").getByRole("button", { name: "Add video", exact: true }).click();
   const videoPicker = page.locator('[data-slot="media-picker"][data-kind="video"]');
   await expect(videoPicker).toBeVisible();
   await chooseFile(videoPicker, VIDEO_FIXTURES.media);
-  await videoPicker.getByLabel(/^Alternative text/u).fill(VIDEO_ALT_TEXT);
+  await videoPicker.getByLabel(/^Alt text/u).fill(VIDEO_ALT_TEXT);
   await videoPicker.getByLabel(/^Caption(?! track)/u).fill("A short welcome for supporters");
   await videoPicker.getByLabel(/^Credit/u).fill("Harbour Youth");
   await videoPicker.getByLabel(/^Language/u).fill(VIDEO_LANGUAGE);
@@ -277,7 +277,7 @@ test("both family catalogues are admitted, and a Page is composed and reordered 
   await videoPicker.getByRole("button", { name: "Done", exact: true }).click();
   await expect(videoPicker).toBeHidden();
   const videoFieldsAfterRegistration = paneOf(page, "fields");
-  await expect(videoFieldsAfterRegistration, "the video section states the placement it now holds").toContainText("Placed in this section");
+  await expect(videoFieldsAfterRegistration, "the video section states the placement it now holds").toContainText("Attached media");
   await expect(videoFieldsAfterRegistration).toContainText(VIDEO_ALT_TEXT);
   const videoPlacements = sectionOfType(await sectionsOfPage(page), "video").placements;
   expect(videoPlacements, "The Page read lists the one placement the video registration wrote into the video section").toHaveLength(1);
@@ -317,7 +317,7 @@ test("the preview names the revision it renders, and that same revision is revie
   const revision = await previewRevisionOf(page);
   const preview = page.locator('[data-slot="page-preview-frame"]');
   await expect(preview).toContainText(revision);
-  await expect(preview.getByText("This preview is exact and inert: it starts no payment, sends no mail, subscribes nobody and releases nothing.", { exact: true })).toBeVisible();
+  await expect(preview.getByText("Preview only — buttons here don’t take payments, send emails, subscribe anyone, or publish changes.", { exact: true })).toBeVisible();
   await expect(preview.getByRole("button", { name: /pay|donate|checkout|give now|purchase|subscribe/iu }), "The preview shows the giving placement as a display only: no payment control, no field that takes money").toHaveCount(0);
   await expect(preview.locator('input[type="number"], input[name*="card" i], form[action*="checkout" i]')).toHaveCount(0);
   await expect(preview.getByText(GIVING_SIMULATION, { exact: true })).toBeVisible();
@@ -333,7 +333,7 @@ test("the preview names the revision it renders, and that same revision is revie
   await expect(frozen, "The frozen revision the reviewer answers is the revision the preview named, and approving it approves no other edition").toBeVisible();
   await expect(frozen).toContainText(revision);
   await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await page.getByRole("button", { name: "Approve revision", exact: true }).click();
   await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]').or(page.locator('[data-slot="review-recorded-decision"]'))).toBeVisible({ timeout: WRITE_RECEIPT_TIMEOUT_MS }); // The answer is answered where it was made: the receipt, or the recorded decision the surface re-reads in its place, proves the approval was accepted in place rather than carried out by a reload.
   // The surface re-reads the answer it just recorded and offers no second decision: this review page states the decision itself, without navigation.
   await expect(page.locator('[data-slot="review-recorded-decision"]')).toHaveAttribute("data-decision", "approved");
@@ -348,9 +348,9 @@ test("the preview names the revision it renders, and that same revision is revie
   await expect(controls.locator('[data-slot="action-review-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
   await expect(controls.locator('[data-slot="release-variant-results"] li[data-edition-state="released"]')).toHaveCount(1);
   await expect(controls.getByRole("button", { name: /notify|send/iu }), "A Page release sends no notice at all, so no sending control exists on this surface, and the one simulated effect it does have is labelled beside it").toHaveCount(0);
-  await expect(controls.getByText("simulated publication; reach is demonstrated in the receiving preview", { exact: true }).first()).toBeVisible();
+  await expect(controls.getByText("Simulated publishing — preview how readers see it in Reader preview.", { exact: true }).first()).toBeVisible();
   expect(await previewRevisionOf(page), "The release published the very revision the preview named: the preview still names it, the Page now states two published editions, and the edition that was released carries a reach to set").toBe(revision);
-  await expect(controls).toContainText("Withdraw 2 released editions?");
+  await expect(controls).toContainText("Unpublish 2 published language editions?");
   await expect(page.locator('[data-slot="reach-control"]')).toHaveAttribute("data-reach-set", "true");
   await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`)).toHaveAttribute("data-lifecycle-state", "released");
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
@@ -363,7 +363,7 @@ test("each reach value is stated in words and demonstrated at the discovery inde
   await expect(reach).toHaveAttribute("data-current-reach", "listed");
   for (const words of [REACH.notPublic, REACH.linkPublic, REACH.listed]) await expect(reach.getByRole("radio", { name: words, exact: true })).toBeVisible();
   await page.goto(discoveryIndexPath());
-  await expect(page.getByRole("heading", { name: "Pages listed publicly", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Public pages", exact: true })).toBeVisible();
   await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(1);
   await expect(page.locator('[data-slot="discovery-edition"]')).toContainText(PAGE_TITLE);
   await expect(page.locator('[data-slot="discovery-edition"]')).toContainText(REACH.listed);
@@ -374,14 +374,14 @@ test("each reach value is stated in words and demonstrated at the discovery inde
   await expect(page.locator('[data-slot="reach-control"]')).toHaveAttribute("data-current-reach", "link-public");
   await page.goto(discoveryIndexPath());
   await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(0);
-  await expect(page.getByText("Nothing is listed publicly yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("No public pages listed yet", { exact: true })).toBeVisible();
   await expect(page.getByText(NO_LISTED_EDITION, { exact: true }), "The empty index states its total too: zero, in words, rather than only a notice").toBeVisible();
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   const edition = page.locator('[data-slot="public-reading-view-edition"]');
   await expect(edition).toHaveAttribute("data-reach", "link-public");
   await expect(edition).toContainText(REACH.linkPublic);
   await expect(page.locator('head meta[name="robots"]')).toHaveAttribute("content", /noindex/u);
-  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Reading an edition changes nothing.");
+  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Preview only — reading here never takes payments, sends emails, subscribes anyone, or publishes content.");
   await openBuilder(page);
   await selectEdition(page, ENGLISH);
   await setReachTo(page, REACH.listed);
@@ -401,12 +401,12 @@ test("each reach value is stated in words and demonstrated at the discovery inde
   const ownerEdition = page.locator('[data-slot="public-reading-view-edition"]'); // The reach control's own words are that only you can open a Not public edition, so the owner's own reading view serves it here rather than refusing the person who set the reach.
   await expect(ownerEdition).toHaveAttribute("data-reach", "not-public");
   await expect(ownerEdition).toContainText(REACH.notPublic);
-  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Only you can see this edition");
+  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Only visible to you in your workspace preview. Public links won’t work.");
   await expect(page.locator('head meta[name="robots"]')).toHaveAttribute("content", /noindex/u);
   await actAs(page, "reader-unauthorized"); // A reader in the receiving preview reaches the same address across the reading crossing, where a Not public edition is refused exactly as an address naming no edition is.
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   await expect(page.locator('[data-slot="public-reading-view"][data-read-kind="denied"]')).toBeVisible();
-  await expect(page.getByRole("heading", { name: "This address cannot be read", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "This page isn’t available", exact: true })).toBeVisible();
   await expect(page.locator('[data-slot="public-reading-view"]')).not.toContainText(PAGE_TITLE);
 });
 test("Giving unavailable stands with no fallback fund, and containment hides every address without touching the draft", async ({ page }) => {
@@ -414,10 +414,10 @@ test("Giving unavailable stands with no fallback fund, and containment hides eve
   const giving = page.locator('[data-slot="giving-designation"][data-giving-state="unavailable"][data-layout="panel"]');
   await expect(giving, "The Page carries no approved designation, so the placement states *Giving unavailable*: no other fund, no default destination and no amount, rather than a zero or an empty figure").toBeVisible();
   await expect(giving.getByRole("heading", { name: "Giving unavailable", exact: true })).toBeVisible();
-  await expect(giving).toContainText("No other fund and no default designation is used in its place, and no amount is shown.");
-  await expect(giving).toContainText("Giving unavailable is stated in words: the page never shows a zero, an empty figure or a placeholder amount instead.");
+  await expect(giving).toContainText("No other fund or default destination is substituted.");
+  await expect(giving).toContainText("Shown clearly as unavailable rather than a zero or placeholder.");
   await expect(giving.getByText(GIVING_SIMULATION, { exact: true })).toBeVisible();
-  await expect(giving.getByText("This preview shows where giving would go. It cannot start a payment.", { exact: true })).toBeVisible();
+  await expect(giving.getByText("Preview only — displays the approved fund destination without taking payments.", { exact: true })).toBeVisible();
   await expect(giving.getByRole("button", { name: /pay|donate|give/iu })).toHaveCount(0);
   await expect(giving).not.toContainText(/[$€£¥]/u);
   await openBuilder(page); // The Worker Page's document records one approved designation, so the same placement shows the destination its organization approved instead of the unavailable state.
@@ -425,12 +425,12 @@ test("Giving unavailable stands with no fallback fund, and containment hides eve
   await expect(approved, "The approved designation is the one destination this placement states, and it names the fund rather than a default, a zero or an empty figure").toBeVisible();
   await expect(approved).toContainText(APPROVED_DESIGNATION_LABEL);
   await expect(approved.getByText(GIVING_SIMULATION, { exact: true }), "An approved destination is still a simulated one, labelled where the placement states it").toBeVisible();
-  await expect(approved.getByText("This preview shows where giving would go. It cannot start a payment.", { exact: true })).toBeVisible();
+  await expect(approved.getByText("Preview only — displays the approved fund destination without taking payments.", { exact: true })).toBeVisible();
   await expect(approved.getByRole("button", { name: /pay|donate|give/iu }), "The approved destination starts no payment either: the placement shows where giving would go and takes nothing").toHaveCount(0);
   const catalogue = page.locator('[data-slot="family-catalogue"]'); // The two sections a source owns are listed as read-only, so no worker-entered amount can be composed into a Page at all: a progress module appears only where the source qualifies one.
   for (const managed of [
-    { sectionType: "giving", reason: "Managed by the giving designation approved for this page" },
-    { sectionType: "progress", reason: "Managed by the received-support source" },
+    { sectionType: "giving", reason: "Managed by your organization’s approved giving designation (read-only here)." },
+    { sectionType: "progress", reason: "Supplied live from your verified support figures (read-only here)." },
   ] as const) {
     const entry = catalogue.locator(`[data-section-type="${managed.sectionType}"]`);
     await expect(entry).toHaveAttribute("data-managed", "true");
@@ -446,19 +446,19 @@ test("Giving unavailable stands with no fallback fund, and containment hides eve
   const stop = page.locator('[data-slot="stop-showing-publicly"]');
   await expect(stop).toHaveAttribute("data-state", "review");
   await expect(stop).toHaveAttribute("data-edition-count", "2");
-  await stop.getByRole("button", { name: "Stop showing me publicly", exact: true }).click(); // Containment is a reach change, not an editorial one: it is offered while the Arabic edition still holds a draft that was never submitted, and nothing asks for that draft to be fixed first.
+  await stop.getByRole("button", { name: "Hide page from public", exact: true }).click(); // Containment is a reach change, not an editorial one: it is offered while the Arabic edition still holds a draft that was never submitted, and nothing asks for that draft to be fixed first.
   const dialog = page.getByRole("alertdialog");
-  await expect(dialog.getByRole("heading", { name: "Stop showing this Page publicly?", exact: true })).toBeVisible();
-  for (const value of ["This covers all 2 language editions of this Page.", "A copy someone already received, saved or shared stays where it is.", "A message already sent"]) await expect(dialog).toContainText(value);
-  await dialog.getByRole("button", { name: "Stop showing me publicly", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Hide this page from public view?", exact: true })).toBeVisible();
+  for (const value of ["This hides all 2 language editions of this page.", "Copies people have already saved or shared can’t be recalled.", "Emails already sent"]) await expect(dialog).toContainText(value);
+  await dialog.getByRole("button", { name: "Hide page from public", exact: true }).click();
   await expect(page.locator('[data-slot="stop-showing-publicly-result"]')).toHaveAttribute("data-outcome", "accepted", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
-  for (const value of ["Every language edition is contained", "Stop showing publicly applies to all 2 language editions of this Page.", "This is a reach change and not an editorial one"]) await expect(page.locator('[data-slot="stop-showing-publicly-containment"]')).toContainText(value);
+  for (const value of ["Page hidden from public", "Hidden from public view across all 2 language editions.", "This changes visibility only."]) await expect(page.locator('[data-slot="stop-showing-publicly-containment"]')).toContainText(value);
   const builder = builderOf(page);
   await expect(builder.locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`), "Every edition is contained, and the draft that was never submitted is exactly as it was").toHaveAttribute("data-lifecycle-state", "withdrawn");
   await expect(builder.locator(`[data-slot="locale-edition"][data-locale="${ARABIC}"]`)).toHaveAttribute("data-lifecycle-state", "draft");
   await page.goto(discoveryIndexPath());
   await expect(page.locator('[data-slot="discovery-edition"]')).toHaveCount(0);
-  await expect(page.getByText("Nothing is listed publicly yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("No public pages listed yet", { exact: true })).toBeVisible();
   await expect(page.getByText(NO_LISTED_EDITION, { exact: true })).toBeVisible();
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   await expect(page.locator('[data-slot="public-reading-view-withdrawn"]')).toBeVisible();
@@ -474,20 +474,20 @@ test("a public edition serves what it published while its draft stays shut, and 
   await expect(page.locator('[data-slot="public-reading-view"]')).not.toContainText(ARABIC_DRAFT_PROSE);
   await page.goto(readingPath(PROJECT_PAGE_DOCUMENT, ENGLISH)); // A Page whose one edition holds a draft and no release has no admitted edition at all, so nothing may stand in and the address says Language unavailable rather than standing the draft in for a publication.
   await expect(page.locator('[data-slot="public-reading-view-language-unavailable"]')).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Language unavailable", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Language not available", exact: true })).toBeVisible();
   await actAs(page, "reader-unauthorized"); // A reader holding no grant of any kind asks for the same Page. A listed public edition is public, so this reader is served it — that is the public reading experience, and what it must never become is a route to the draft, to another edition, or to a record the published world does not hold.
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   const publicEdition = page.locator('[data-slot="public-reading-view-edition"]');
   await expect(publicEdition).toBeVisible();
   await expect(publicEdition).toContainText(PAGE_TITLE);
-  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Reading an edition changes nothing.");
-  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Access is checked again every time this edition is opened");
+  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Preview only — reading here never takes payments, sends emails, subscribes anyone, or publishes content.");
+  await expect(page.locator('[data-slot="public-reading-view"]')).toContainText("Access is checked each time this page opens");
   await page.goto(readingPath(PAGE_DOCUMENT, ARABIC));
   await expect(page.locator('[data-slot="public-reading-view-edition"]')).toContainText(PAGE_TITLE);
   await expect(page.locator('[data-slot="public-reading-view"]')).not.toContainText(ARABIC_DRAFT_PROSE);
   await page.goto("/preview/pages/doc-page-not-in-this-scope/en"); // An address naming a Page the published world does not hold is refused, and the refusal is the same whether or not such a Page exists: it carries no title, no prose and no existence hint.
   await expect(page.locator('[data-slot="public-reading-view"][data-read-kind="denied"]')).toBeVisible();
-  await expect(page.getByRole("heading", { name: "This address cannot be read", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "This page isn’t available", exact: true })).toBeVisible();
   await expect(page.locator('[data-slot="public-reading-view"]')).not.toContainText(PAGE_TITLE);
   await expect(page.locator('[data-slot="public-reading-view"]')).not.toContainText(ARABIC_DRAFT_PROSE);
   await page.goto(discoveryIndexPath());
@@ -501,17 +501,17 @@ test("a public edition serves what it published while its draft stays shut, and 
   const candidateId = decodeURIComponent(reviewHref.slice(reviewHref.lastIndexOf("/") + 1));
   if (candidateId === "") throw new Error(`The review entry held no candidate identity in its address (${reviewHref}), so the release could not name the candidate it publishes.`);
   await reviewLink.click();
-  await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await page.getByRole("button", { name: "Approve revision", exact: true }).click();
   await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]').or(page.locator('[data-slot="review-recorded-decision"]'))).toBeVisible({ timeout: WRITE_RECEIPT_TIMEOUT_MS }); // The approval settles where it was made: the receipt, or the recorded decision the surface re-reads in its place, proves the answer was accepted before the candidate identity is released below.
   await openBuilder(page);
   const controls = page.locator('[data-slot="release-controls"]');
-  await expect(controls).toContainText("Withdraw 1 released edition?");
+  await expect(controls).toContainText("Unpublish 1 published language edition?");
   await armLostReleaseAcknowledgement(page);
   await page.getByRole("checkbox", { name: `Language ${ARABIC}` }).check();
-  const releaseStep = controls.locator('[data-slot="action-review"]').filter({ has: page.getByRole("heading", { name: "Release this edition", exact: true }) });
+  const releaseStep = controls.locator('[data-slot="action-review"]').filter({ has: page.getByRole("heading", { name: "Publish edition", exact: true }) });
   // The answer to the release is awaited before the same operation is replayed: the replay below asks the application what this attempt did, so it is only a recovery once this attempt has been answered. A replay that reached the service ahead of the click's own request would be the attempt itself, would earn the armed lost acknowledgement in its place, and would leave the recovery asserting an uncertainty that belongs to the request it was sent to follow.
   const releaseAnswer = page.waitForResponse((answer) => new URL(answer.url()).pathname === "/api/pages/release" && answer.request().method() === "POST", { timeout: WRITE_RECEIPT_TIMEOUT_MS });
-  await releaseStep.getByRole("button", { name: "Release this edition", exact: true }).click();
+  await releaseStep.getByRole("button", { name: "Publish edition", exact: true }).click();
   const operationId = (await releaseStep.getAttribute("data-operation-id")) ?? "";
   if (operationId === "") throw new Error("The release step stated no operation identity, so the attempt could not be replayed as the same work.");
   const lostAcknowledgement = await releaseAnswer;
@@ -531,13 +531,13 @@ test("a public edition serves what it published while its draft stays shut, and 
   expect(fieldAt(items[0], "state")).toBe("released");
   await openBuilder(page);
   const published = page.locator('[data-slot="release-controls"]');
-  await expect(published).toContainText("Withdraw 2 released editions?");
+  await expect(published).toContainText("Unpublish 2 published language editions?");
   await expect(page.locator('[data-slot="reach-control"]')).toHaveAttribute("data-reach-set", "true");
   await page.getByRole("checkbox", { name: `Language ${ARABIC}` }).check();
-  const publishStep = published.locator('[data-slot="action-review"]').filter({ has: page.getByRole("heading", { name: "Release this edition", exact: true }) });
-  await expect(publishStep.getByRole("button", { name: "Release this edition", exact: true }), "an edition that publishes this revision already holds no frozen candidate, so the step cannot be confirmed").toBeDisabled();
-  await expect(publishStep).toContainText("Excluded before this step");
-  await expect(publishStep).toContainText("Nothing is selected, so this step has nothing to apply");
+  const publishStep = published.locator('[data-slot="action-review"]').filter({ has: page.getByRole("heading", { name: "Publish edition", exact: true }) });
+  await expect(publishStep.getByRole("button", { name: "Publish edition", exact: true }), "an edition that publishes this revision already holds no frozen candidate, so the step cannot be confirmed").toBeDisabled();
+  await expect(publishStep).toContainText("Excluded:");
+  await expect(publishStep).toContainText("Select at least one row in the list first, then return here to continue.");
   await expect(published.locator(`[data-slot="release-edition"][data-lifecycle-state="released"]`).filter({ has: page.getByRole("checkbox", { name: `Language ${ARABIC}` }) })).toHaveCount(1);
   await page.goto(readingPath(PAGE_DOCUMENT, ENGLISH));
   await expect(page.locator('[data-slot="public-reading-view-edition"]')).toBeVisible();
@@ -545,7 +545,7 @@ test("a public edition serves what it published while its draft stays shut, and 
 });
 test("a Project Page is composed from its own catalogue, reviewed and released, and then reads as published", async ({ page }) => {
   await page.goto(PAGES_INDEX);
-  await expect(page.getByRole("heading", { name: "Your Pages", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your ministry pages", exact: true })).toBeVisible();
   await expect(page.locator(`[data-slot="pages-index-row"][data-family="${PAGE_FAMILY}"]`), "Both families the criterion names hold a Page, and each row states the family it belongs to").toHaveCount(1);
   await expect(page.locator(`[data-slot="pages-index-row"][data-family="${PROJECT_PAGE_FAMILY}"]`)).toHaveCount(1);
   await openProjectBuilder(page);
@@ -563,10 +563,10 @@ test("a Project Page is composed from its own catalogue, reviewed and released, 
   await expect(page.locator('[data-slot="section-outline-row"]')).toHaveCount(2);
   await selectSection(page, 2, "Introduction");
   const fields = paneOf(page, "fields");
-  await expect(fields.getByRole("heading", { name: "Introduction — Section fields", exact: true })).toBeVisible();
+  await expect(fields.getByRole("heading", { name: "Introduction — Section details", exact: true })).toBeVisible();
   await fields.getByLabel("Heading", { exact: true }).fill(PROJECT_SECTION_HEADING);
   await fields.getByLabel("Body", { exact: true }).fill(PROJECT_SECTION_BODY);
-  await fields.getByRole("button", { name: "Save this section", exact: true }).click();
+  await fields.getByRole("button", { name: "Save section", exact: true }).click();
   await expect(paneOf(page, "preview"), "The exact preview renders the draft the save wrote to, so the sentence appearing there is the record's own statement that the text was written rather than the form's echo of what was typed into it").toContainText(PROJECT_SECTION_HEADING);
   await expect(paneOf(page, "preview")).toContainText(PROJECT_SECTION_BODY);
   const revision = await previewRevisionOf(page);
@@ -580,7 +580,7 @@ test("a Project Page is composed from its own catalogue, reviewed and released, 
   await expect(page.locator('[data-slot="page-review-surface"]'), "The review surface states the family of the Page it answers, and the revision it froze is the one on screen").toHaveAttribute("data-page-family", PROJECT_PAGE_FAMILY);
   await expect(page.locator('[data-slot="review-frozen-revision"]')).toContainText(revision);
   await expect(page.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
-  await page.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await page.getByRole("button", { name: "Approve revision", exact: true }).click();
   await expect(page.locator('[data-slot="review-decision"] [data-slot="action-review-result"]').or(page.locator('[data-slot="review-recorded-decision"]'))).toBeVisible({ timeout: WRITE_RECEIPT_TIMEOUT_MS }); // The answer is answered where it was made: the receipt, or the recorded decision the surface re-reads in its place, proves this review was accepted in place.
   // The surface re-reads the answer it just recorded, so this review page states the Project Page's decision and leaves no second one to give.
   await expect(page.locator('[data-slot="review-recorded-decision"]')).toHaveAttribute("data-decision", "approved");
@@ -598,7 +598,7 @@ test("a Project Page is composed from its own catalogue, reviewed and released, 
   await expect(controls.locator('[data-slot="release-variant-results"] li[data-edition-state="released"]')).toHaveCount(1);
   expect(await previewRevisionOf(page), "The release published the very revision the preview named, and the preview still names it").toBe(revision);
   await expect(builderOf(page).locator(`[data-slot="locale-edition"][data-locale="${ENGLISH}"]`)).toHaveAttribute("data-lifecycle-state", "released"); // --- the author state the release leaves, on both author surfaces ---------------------------- The edition states the publication it now has rather than the submission it came from, because the release published exactly the revision its frozen candidate named.
-  await expect(builderOf(page), "no author surface still calls this edition a submission").not.toContainText("Submitted for review");
+  await expect(builderOf(page), "no author surface still calls this edition a submission").not.toContainText("In review");
   await page.goto(PAGES_INDEX);
   const listedRow = page.locator(`[data-slot="pages-index-row"][data-document-id="${PROJECT_PAGE_DOCUMENT}"]`);
   const listedEdition = listedRow.locator(`[data-slot="pages-index-edition"][data-locale="${ENGLISH}"]`);
@@ -607,7 +607,7 @@ test("a Project Page is composed from its own catalogue, reviewed and released, 
   await expect(listedEdition).toContainText("Published");
   await expect(listedEdition, "The reach word belongs to the release that reaches readers now, so it stands beside the lifecycle").toContainText(ANY_REACH_WORD);
   await expect(listedRow.locator('[data-slot="pages-index-review"]'), "No review entry remains for the edition, and nothing on its row still calls it a submission").toHaveCount(0);
-  await expect(listedRow, "the index row states the publication the release produced, not the submission it came from").not.toContainText("Submitted for review");
+  await expect(listedRow, "the index row states the publication the release produced, not the submission it came from").not.toContainText("In review");
 });
 test("every reach press and the withdrawal that follow the Page's own accepted writes are accepted in one page load", async ({ page }) => {
   await openBuilder(page); // One page load carries every write below: the builder is never navigated away from, so each press presents the record the previous acceptance left rather than the revision this view was first handed.
@@ -616,13 +616,13 @@ test("every reach press and the withdrawal that follow the Page's own accepted w
   await setReachTo(page, REACH.linkPublic);
   await setReachTo(page, REACH.listed); // A second change made without reloading: the reach a press presents is the one the acceptance before it produced, and `accepted` here states that a conflict nobody caused is not shown.
   const englishRow = page.locator('[data-slot="release-edition"]').filter({ has: page.getByRole("checkbox", { name: `Language ${ENGLISH}` }) });
-  await englishRow.getByRole("button", { name: "Withdraw this language edition", exact: true }).click();
+  await englishRow.getByRole("button", { name: "Unpublish language", exact: true }).click();
   const step = page.locator('[data-slot="release-edition-step"][data-step="withdraw"]');
   await expect(step).toBeVisible();
-  await step.getByRole("button", { name: "Withdraw this language edition", exact: true }).click(); // A withdrawal is consequential, so the step states what it does before it applies it.
+  await step.getByRole("button", { name: "Unpublish language", exact: true }).click(); // A withdrawal is consequential, so the step states what it does before it applies it.
   const dialog = page.getByRole("alertdialog");
-  await expect(dialog.getByRole("heading", { name: "Withdraw this language edition", exact: true })).toBeVisible();
-  await dialog.getByRole("button", { name: "Withdraw this language edition", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "Unpublish language", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Unpublish language", exact: true }).click();
   await expect(step.locator('[data-slot="action-review-result"]'), "The withdrawal validates the Page's own record, so its first press presents the revision the accepted changes produced rather than a conflict attributed to someone else").toHaveAttribute("data-outcome", "accepted");
   const withdrawnEnglish = page.locator('[data-slot="release-edition"][data-lifecycle-state="withdrawn"]').filter({ has: page.getByRole("checkbox", { name: `Language ${ENGLISH}` }) });
   await expect(withdrawnEnglish, "The withdrawal the press was accepted for is the one the re-read states: this edition is withdrawn and its sibling keeps its own release").toHaveCount(1);

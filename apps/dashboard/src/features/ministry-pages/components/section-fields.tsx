@@ -47,13 +47,13 @@ export type SectionFieldsProps = {
 };
 type FieldControlKind = "text" | "long-text" | "date";
 const FIELD_WORDING: Readonly<Record<SectionFieldKey, { readonly label: string; readonly description: string; readonly control: FieldControlKind }>> = {
-  heading: { label: "Heading", description: "One short line a reader meets first, in plain text.", control: "text" },
-  body: { label: "Body", description: "This section's words, in plain text. A blank line separates one paragraph from the next.", control: "long-text" },
-  date: { label: "Date", description: "The civil date this milestone belongs to, as a calendar date rather than a moment.", control: "date" },
-  altText: { label: "Alternative text", description: "What the media shows, in your words. It is read aloud in place of it.", control: "long-text" },
-  caption: { label: "Caption", description: "Shown beneath the media. Leave it empty when it would only repeat the alternative text.", control: "text" },
-  credit: { label: "Credit", description: "Who made or supplied this media, as it should read beside it.", control: "text" },
-  language: { label: "Language", description: "The language of this media, as a tag such as en or ar-EG. This is the media's language, never the interface's.", control: "text" },
+  heading: { label: "Heading", description: "Short plain-text title readers see first.", control: "text" },
+  body: { label: "Body", description: "Plain text. Use a blank line to start a new paragraph.", control: "long-text" },
+  date: { label: "Date", description: "Calendar date for this milestone.", control: "date" },
+  altText: { label: "Alt text", description: "Describe what the image or video shows for screen readers.", control: "long-text" },
+  caption: { label: "Caption", description: "Shown below the media. Leave blank if it only repeats the alt text.", control: "text" },
+  credit: { label: "Credit", description: "Photographer or source credit shown alongside the media.", control: "text" },
+  language: { label: "Language", description: "Language tag for this media (for example, en or ar-EG).", control: "text" },
 };
 const FIELD_ORDER: readonly SectionFieldKey[] = ["heading", "date", "body", "altText", "caption", "credit", "language"];
 // The edition's direction is stated on the writing surfaces that hold the worker's own words. A calendar date and a BCP-47 tag are not authored prose, and every label, description, choice and status line around them is the application's own English chrome, so those stay at the interface's direction.
@@ -72,47 +72,47 @@ const isAlignment = memberGuard(PRESENTATION_CHOICES.alignment);
 const isImageFit = memberGuard(PRESENTATION_CHOICES.imageFit);
 const FIELDS_COPY = {
   heading: copy.builder.fields,
-  save: "Save this section",
-  saveAgain: "Save my text against the current revision",
-  retrySameChange: "Send this change again",
-  saving: "Saving this section, so its fields are written to this edition's draft…",
-  saved: (revision: string) => `Section saved to this edition's draft at revision ${revision}. Nothing was released.`,
-  savedAlready: (revision: string) => `This change had already been saved at revision ${revision}, so nothing was repeated.`,
-  unchanged: (revision: string) => `Nothing changed at revision ${revision}, so nothing was saved.`,
-  conflictTitle: "A newer version of this edition is on the record",
-  conflictBody: "Your text is still in this form and nothing was overwritten. The edition has been read again, so the record as it now stands is beside this form for comparison.",
-  deniedTitle: "You cannot change this section",
-  deniedBody: "This form holds no count, title or detail about what it could not reach. Your text is still here; nothing was saved.",
-  invalidTitle: "This section cannot be saved as it stands",
-  unavailableTitle: "The source behind this change could not complete it",
-  unknownTitle: "The result of this change is not known yet",
-  unknownBody: "The request may or may not have been applied. Send the same change again with the same operation id: a replay answers with the original result instead of repeating the effect.",
-  noAuthority: "This section cannot be saved from here, because the draft edition's context was not available on this screen. Reopen the edition to change it.",
-  disabledReason: "This edition cannot be changed right now.",
-  enterNote: "Text you have typed stays here until you save it. A refusal or an outage never clears it.",
-  managedFallback: "This section's content is supplied by its source, so it is shown here and changed there.",
-  currentRevisionLabel: "Revision on the record",
-  startedRevisionLabel: "Revision this form opened at",
-  changedIntent: "This change reused an earlier attempt's identity with different text, so it was refused instead of applied twice.",
-  refusalCodeLabel: "Refusal code",
+  save: "Save section",
+  saveAgain: "Save my edits to latest version",
+  retrySameChange: "Try saving again",
+  saving: "Saving section to draft…",
+  saved: (revision: string) => `Saved to draft (revision ${revision}). Nothing was published.`,
+  savedAlready: (revision: string) => `Already saved at revision ${revision}.`,
+  unchanged: (revision: string) => `No changes to save (revision ${revision}).`,
+  conflictTitle: "A newer version of this edition exists",
+  conflictBody: "Your edits are still in this form and weren’t overwritten. The latest version has been loaded so you can compare before saving.",
+  deniedTitle: "You can’t edit this section",
+  deniedBody: "Your edits are still here, but nothing was saved.",
+  invalidTitle: "Please fix the highlighted fields",
+  unavailableTitle: "Couldn’t save right now",
+  unknownTitle: "Save status unconfirmed",
+  unknownBody: "Your save may or may not have completed. Retry to check safely without duplicating the change.",
+  noAuthority: "Couldn’t save from this view. Reopen the draft edition and try again.",
+  disabledReason: "This edition can’t be edited right now.",
+  enterNote: "Your unsaved edits stay in this form even if a save fails.",
+  managedFallback: "This section is managed automatically from its source and can’t be edited here.",
+  currentRevisionLabel: "Latest revision",
+  startedRevisionLabel: "Opened at revision",
+  changedIntent: "This save conflicted with an earlier request using different text. Review and try again.",
+  refusalCodeLabel: "Reason code",
   sourceLabel: "Source",
-  operationLabel: "Operation",
-  storedAsText: " This one is stored as text, so it is shown and edited as text rather than reset to an empty calendar date.",
+  operationLabel: "Operation ID",
+  storedAsText: " Stored as text, so you can edit it directly without resetting to a blank date.",
 } as const;
 const MEDIA_COPY = {
-  heading: "Media in this section",
-  addImage: "Add an image",
-  addVideo: "Add a video",
-  manageImage: "Manage this image",
-  manageVideo: "Manage this video",
-  placedLabel: "Placed in this section",
-  unavailable: "The media placed in this section cannot be shown right now, and no address is served in its place.",
-  nonePlaced: "No media is placed in this section yet.",
-  mediaLanguageNote: "The media's own description is set in the picker; the section's text fields stay separate from it.",
+  heading: "Section media",
+  addImage: "Add image",
+  addVideo: "Add video",
+  manageImage: "Edit image",
+  manageVideo: "Edit video",
+  placedLabel: "Attached media",
+  unavailable: "This media can’t be displayed right now.",
+  nonePlaced: "No media added to this section yet.",
+  mediaLanguageNote: "Media alt text, captions, and credits are managed inside the media picker.",
 } as const;
 const SOURCE_SYSTEM = "data-service";
 const MEDIA_PATH = "/api/media";
-const NO_AUTHORITY_GUIDANCE = "Open the Page's draft edition again and make the change from there: the context this section was read in is the only one its save may act in.";
+const NO_AUTHORITY_GUIDANCE = "Reopen this page’s draft edition and try again.";
 const ISO_CIVIL_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 type SectionFormValues = { readonly [Key in SectionFieldKey]: string } & PresentationChoice;
 const textOf = (fields: Readonly<Record<string, string>>, key: SectionFieldKey): string => fields[key] ?? "";
@@ -208,10 +208,10 @@ const removalIntentOf = (variantId: string, placementId: string): string => JSON
 /** One chosen file as its bytes' base64 half, or as its own text for a caption track, which is carried to the service as WebVTT text rather than as bytes. */ const readChosenFile = (file: File, asText: boolean): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("The browser could not read the chosen file, so nothing was sent."));
+    reader.onerror = () => reject(new Error("Couldn’t read the selected file, so nothing was uploaded."));
     reader.onload = () => {
       const result = reader.result;
-      if (typeof result !== "string") return reject(new Error(asText ? "The browser read the chosen file as something other than text, so nothing was sent." : "The browser read the chosen file as something other than a data URL, so nothing was sent."));
+      if (typeof result !== "string") return reject(new Error(asText ? "Couldn’t read the selected file as text, so nothing was uploaded." : "Couldn’t read the selected file, so nothing was uploaded."));
       if (asText) return resolve(result);
       const separator = result.indexOf(",");
       resolve(separator === -1 ? "" : result.slice(separator + 1));

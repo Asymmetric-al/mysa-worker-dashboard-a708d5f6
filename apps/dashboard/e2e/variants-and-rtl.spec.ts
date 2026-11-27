@@ -25,30 +25,30 @@ const ARABIC_COPY = {
   /** The earlier publication's second paragraph, which the retained prior-good head still serves. */ priorGoodOnly: "وتشاركنا وجبة.",
 } as const;
 const COPY = {
-  overviewHeading: "Editions, candidates and releases",
-  noDraft: "No draft is saved for this edition yet, so there is nothing to submit for review.",
-  noRelease: "This edition publishes nothing yet, so no reader is served a revision of it.",
-  siblingNote: "Nothing here is a rollback, no sibling's release is removed",
-  pageEditionsNote: "A Page variant is a public locale edition",
-  reviewOffer: "Editions waiting for a release",
-  reviewLink: "Open the review",
-  restoreAction: "Restore the published revision as a new draft",
-  restoreConfirm: "Restore as a new draft",
-  withdrawLocaleAction: "Withdraw this language edition",
-  withdrawLocaleConfirm: "Withdraw this edition",
-  withdrawalDoesNotRecall: "does not recall a notice that has already been submitted",
-  languageServed: "Language served",
-  languageRequested: "Language requested",
-  languageUnavailable: "Language unavailable",
-  deliveryHeading: "Delivery results",
-  ceilingLabel: "Eligible recipients the notice could not exceed",
-  servedLabel: "Recipients with a recorded outcome",
-  alreadyCovered: "Already had a copy from an earlier notice",
+  overviewHeading: "Editions & publishing",
+  noDraft: "No draft saved yet.",
+  noRelease: "Not published yet.",
+  siblingNote: "Each edition publishes independently — if one fails, the others remain published without rolling back.",
+  pageEditionsNote: "Each edition pairs one audience with one language.",
+  reviewOffer: "Waiting for review or publish",
+  reviewLink: "Open review",
+  restoreAction: "Restore published version to draft",
+  restoreConfirm: "Restore to draft",
+  withdrawLocaleAction: "Unpublish edition",
+  withdrawLocaleConfirm: "Unpublish edition",
+  withdrawalDoesNotRecall: "can’t recall emails already sent",
+  languageServed: "Language",
+  languageRequested: "Requested language",
+  languageUnavailable: "Language not available",
+  deliveryHeading: "Send results",
+  ceilingLabel: "Eligible audience ceiling",
+  servedLabel: "Recipients with results",
+  alreadyCovered: "Already received a copy from an earlier notification for this update.",
   noticeForEdition: "Notice for this edition:",
-  noticeAccepted: "Accepted — not delivered",
-  noticeTarget: "The notice links to",
-  outboundNotice: "simulated — no mail leaves this application",
-  publicationSimulation: "simulated publication; reach is demonstrated in the receiving preview",
+  noticeAccepted: "Accepted (not delivered)",
+  noticeTarget: "Email link",
+  outboundNotice: "Simulated — no email leaves this workspace.",
+  publicationSimulation: "Simulated publishing — preview how readers see it in Reader preview.",
   devLabel: "Development data",
 } as const;
 const OVERVIEW = `/communication/${UPDATE}`; // Where each surface lives. Addresses are composed here the way a link would, never typed into a browser bar by a person.
@@ -57,9 +57,9 @@ const previewPath = (variantId: string): string => `${editorPath(variantId)}/pre
 const reviewPath = (candidateId: string): string => `/communication/review/${encodeURIComponent(candidateId)}`;
 const receivingPath = (locale: string): string => `/preview/${UPDATE}?locale=${encodeURIComponent(locale)}`;
 const deliveryPath = (intentId: string): string => `/communication/delivery?intentId=${encodeURIComponent(intentId)}`;
-const RELEASE_ACTION = "Release these editions"; // The one release step the overview route composes, and the language names a release receipt states an edition by.
+const RELEASE_ACTION = "Publish selected editions"; // The one release step the overview route composes, and the language names a release receipt states an edition by.
 const LOCALE_NAME = { fr: "Français", ar: "العربية" } as const;
-const RELEASE_MODE = { publishOnly: "Publish only", publishAndNotifyNow: "Publish and notify now" } as const; // The two release modes the editor's submit step offers, in that step's own words, and the mode each of them records.
+const RELEASE_MODE = { publishOnly: "Publish only", publishAndNotifyNow: "Publish and notify partners" } as const; // The two release modes the editor's submit step offers, in that step's own words, and the mode each of them records.
 type ReleaseMode = (typeof RELEASE_MODE)[keyof typeof RELEASE_MODE];
 const MODE_VALUE: Readonly<Record<ReleaseMode, string>> = { [RELEASE_MODE.publishOnly]: "publish-only", [RELEASE_MODE.publishAndNotifyNow]: "publish-and-notify" };
 const STATED_OPERATION = /Operation ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/u; // The operation identity an uncertain result states, so the recovery is read back under the attempt that produced it.
@@ -73,7 +73,7 @@ async function submitForReview(page: Page, variantId: string, revisionId: string
   const editor = page.locator(`[data-slot="editor-shell"][data-edition="${variantId}"]`);
   await expect(editor).toBeVisible();
   const step = editor.locator('[data-slot="action-review"]');
-  await expect(step).toContainText("Submit this edition for review");
+  await expect(step).toContainText("Submit edition for review");
   await expect(step, "The step names the exact revision it freezes, so the submission is a stated identity rather than a guess").toContainText(revisionId);
   const modeGroup = step.locator('[data-slot="submission-release-mode"]');
   await expect(modeGroup, "The choice has to reach the step's own state and not only the radio's DOM, so the click is read back from the mode group and made again while that group still states the other mode").toBeVisible();
@@ -93,7 +93,7 @@ async function approveCandidate(page: Page, variantId: string, revisionId: strin
   await expect(frozen).toHaveCount(1);
   await expect(frozen).toContainText(revisionId);
   await expect(panel.getByRole("radio", { name: "Approve", exact: true })).toBeChecked();
-  await panel.getByRole("button", { name: "Approve this revision", exact: true }).click();
+  await panel.getByRole("button", { name: "Approve revision", exact: true }).click();
   await expect(page.locator('[data-slot="review-recorded-decision"]')).toHaveAttribute("data-decision", "approved");
 }
 const releaseReviewOf = (page: Page): Locator => page.locator('[data-slot="publish-review"]'); // The release review the overview route composes below the variant grid, and one edition's row inside it.
@@ -154,18 +154,18 @@ const editionCell = (page: Page, variantId: string): Locator => page.locator(`[d
     .locator("xpath=following-sibling::dd[1]");
 const lifecycleOfCell = (cell: Locator): Locator => cell.locator('[data-slot="draft-status"]');
 async function identityFactOf(cell: Locator, word: string, subject: string): Promise<string> {
-  const stated = (await factValueOf(cell, "Published revision").innerText()).trim(); // One identity one edition's publication facts state under a word of its own: the revision it publishes, or the publication that holds it.
+  const stated = (await factValueOf(cell, "Published version").innerText()).trim(); // One identity one edition's publication facts state under a word of its own: the revision it publishes, or the publication that holds it.
   const found = new RegExp(`${word}\\s+(\\S+)`, "u").exec(stated);
   if (found === null || found[1] === undefined) throw new Error(`The edition stated no ${subject}, so there is none to compare: ${stated.slice(0, 300)}`);
   return found[1];
 }
 const publishedRevisionOf = (cell: Locator): Promise<string> => identityFactOf(cell, "Revision", "published revision");
-const publicationIdOf = (cell: Locator): Promise<string> => identityFactOf(cell, "Publication", "publication identity");
+const publicationIdOf = (cell: Locator): Promise<string> => identityFactOf(cell, "Release ID", "publication identity");
 test("each language edition of an Update is its own variant with its own draft, candidate and publication", async ({ page }) => {
   await openOverview(page);
   await expect(page.locator('[data-slot="variant-overview"]')).toHaveAttribute("data-edition-count", "4");
   await expect(page.getByRole("heading", { name: COPY.overviewHeading, exact: true })).toBeVisible();
-  for (const said of ["A saved draft is not what readers see", COPY.siblingNote, COPY.pageEditionsNote]) await expect(page.getByText(said, { exact: false }).first()).toBeVisible();
+  for (const said of ["Saved drafts and review copies aren’t visible to partners until published.", COPY.siblingNote, COPY.pageEditionsNote]) await expect(page.getByText(said, { exact: false }).first()).toBeVisible();
   await expect(page.getByText(COPY.devLabel, { exact: true })).toBeVisible();
   await expect(page.locator('[data-slot="edition-cell"]')).toHaveCount(4);
   for (const [variantId, audience, locale] of [
@@ -181,8 +181,8 @@ test("each language edition of an Update is its own variant with its own draft, 
   const english = editionCell(page, EDITION.enPublic);
   await expect(lifecycleOfCell(english)).toHaveAttribute("data-lifecycle-state", "released");
   await expect(await publishedRevisionOf(english)).toBe(SEEDED.enPublicRelease);
-  await expect(factValueOf(english, "Published revision")).toContainText(SEEDED.enPublicPublishedAt);
-  await expect(factValueOf(english, "Published revision")).toContainText("Shared by link: public");
+  await expect(factValueOf(english, "Published version")).toContainText(SEEDED.enPublicPublishedAt);
+  await expect(factValueOf(english, "Published version")).toContainText("Unlisted (link only)");
   await expect(factValueOf(english, "Saved draft")).toHaveText(COPY.noDraft);
   const supporters = editionCell(page, EDITION.enSupporters);
   await expect(lifecycleOfCell(supporters)).toHaveAttribute("data-lifecycle-state", "released");
@@ -190,7 +190,7 @@ test("each language edition of an Update is its own variant with its own draft, 
   const french = editionCell(page, EDITION.frPublic);
   await expect(lifecycleOfCell(french)).toHaveAttribute("data-lifecycle-state", "released");
   await expect(await publishedRevisionOf(french)).toBe(SEEDED.frRelease);
-  await expect(factValueOf(french, "Published revision")).toContainText(SEEDED.frPublishedAt);
+  await expect(factValueOf(french, "Published version")).toContainText(SEEDED.frPublishedAt);
   await expect(factValueOf(french, "Saved draft")).toHaveText(COPY.noDraft);
   const overview = await jsonOf(await page.request.get(`/api/updates?documentId=${encodeURIComponent(UPDATE)}`), "GET /api/updates");
   const frenchEdition = (fieldAt(overview, "data", "editions") as readonly unknown[]).find((edition) => fieldAt(edition, "variantId") === EDITION.frPublic);
@@ -199,11 +199,11 @@ test("each language edition of an Update is its own variant with its own draft, 
   const arabic = editionCell(page, EDITION.arPublic);
   await expect(lifecycleOfCell(arabic)).toHaveAttribute("data-lifecycle-state", "candidate");
   await expect(factValueOf(arabic, "Saved draft")).toHaveText(SEEDED.arDraft);
-  await expect(factValueOf(arabic, "Submitted for review")).toContainText(SEEDED.arCandidate);
-  await expect(factValueOf(arabic, "Published revision")).toHaveText(COPY.noRelease);
-  await expect(arabic.getByRole("link", { name: "Open the preview", exact: true }), "An edition that publishes nothing offers no preview and says why, rather than showing a draft as published").toBeVisible();
+  await expect(factValueOf(arabic, "In review")).toContainText(SEEDED.arCandidate);
+  await expect(factValueOf(arabic, "Published version")).toHaveText(COPY.noRelease);
+  await expect(arabic.getByRole("link", { name: "Preview", exact: true }), "An edition that publishes nothing offers no preview and says why, rather than showing a draft as published").toBeVisible();
   const reviewOffer = page.locator("section").filter({ has: page.getByRole("heading", { name: COPY.reviewOffer, exact: true }) });
-  await expect(reviewOffer).toContainText("1 edition awaiting a release");
+  await expect(reviewOffer).toContainText("1 edition waiting");
   await expect(reviewOffer.getByRole("link", { name: COPY.reviewLink, exact: true })).toHaveAttribute("href", reviewPath(SEEDED.arCandidate));
   expect(await optionValuesOf(page.locator('[data-slot="locale-switcher"]').getByLabel("Language", { exact: true }))).toEqual(["en", "fr", "ar"]);
   await expect(page.locator('[data-slot="variant-switcher"]').getByText("Edition", { exact: true }).first()).toBeVisible();
@@ -219,7 +219,7 @@ test("saving the Arabic draft leaves the English and French drafts and publicati
   await openOverview(page);
   const englishBefore = await publishedRevisionOf(editionCell(page, EDITION.enPublic));
   const frenchBefore = await publishedRevisionOf(editionCell(page, EDITION.frPublic));
-  const frenchPublishedAt = (await factValueOf(editionCell(page, EDITION.frPublic), "Published revision").innerText()).trim();
+  const frenchPublishedAt = (await factValueOf(editionCell(page, EDITION.frPublic), "Published version").innerText()).trim();
   await page.goto(editorPath(EDITION.arPublic));
   const editor = page.locator('[data-slot="editor-shell"][data-edition="' + EDITION.arPublic + '"]');
   await expect(editor).toBeVisible();
@@ -230,17 +230,17 @@ test("saving the Arabic draft leaves the English and French drafts and publicati
   await page.keyboard.press("ControlOrMeta+End");
   const typed = "متطوعون جدد انضموا هذا الأسبوع.";
   await page.keyboard.type(typed);
-  await expect(editor.locator('[data-slot="autosave-status"]')).toContainText(/Saved — acknowledged revision/u);
+  await expect(editor.locator('[data-slot="autosave-status"]')).toContainText(/Draft saved \(revision/u);
   await openOverview(page);
   const arabic = editionCell(page, EDITION.arPublic);
   const draftAfter = (await factValueOf(arabic, "Saved draft").innerText()).trim();
   expect(draftAfter).not.toBe(SEEDED.arDraft);
   expect(draftAfter.length).toBeGreaterThan(0);
-  await expect(factValueOf(arabic, "Submitted for review")).toContainText(SEEDED.arCandidate);
+  await expect(factValueOf(arabic, "In review")).toContainText(SEEDED.arCandidate);
   await expect(lifecycleOfCell(arabic)).toHaveAttribute("data-lifecycle-state", "candidate");
   await expect(await publishedRevisionOf(editionCell(page, EDITION.enPublic)), "Neither sibling moved: the English publication is still the one it had, and the French one still publishes its own revision at its own instant").toBe(englishBefore);
   expect(await publishedRevisionOf(editionCell(page, EDITION.frPublic))).toBe(frenchBefore);
-  expect((await factValueOf(editionCell(page, EDITION.frPublic), "Published revision").innerText()).trim()).toBe(frenchPublishedAt);
+  expect((await factValueOf(editionCell(page, EDITION.frPublic), "Published version").innerText()).trim()).toBe(frenchPublishedAt);
   await page.goto(previewPath(EDITION.arPublic)); // The preview of the Arabic edition renders the acknowledged draft, so the typed sentence is on screen there — the record's own statement that the text was written, not the form's echo of what was typed into it.
   const preview = page.locator('[data-slot="preview-frame"]');
   await expect(preview).toBeVisible();
@@ -269,8 +269,8 @@ test("a release attempt reports one result per edition, and a sibling that canno
   await openOverview(page);
   await expect(await publishedRevisionOf(editionCell(page, EDITION.frPublic))).toBe(restoredDraft);
   const arabic = editionCell(page, EDITION.arPublic);
-  await expect(factValueOf(arabic, "Published revision")).toHaveText(COPY.noRelease);
-  await expect(factValueOf(arabic, "Submitted for review")).toContainText(SEEDED.arCandidate);
+  await expect(factValueOf(arabic, "Published version")).toHaveText(COPY.noRelease);
+  await expect(factValueOf(arabic, "In review")).toContainText(SEEDED.arCandidate);
   await expect(await publishedRevisionOf(editionCell(page, EDITION.enPublic)), "The English editions, which the attempt never named, are untouched").toBe(SEEDED.enPublicRelease);
   await approveCandidate(page, EDITION.arPublic, SEEDED.arCandidate); // The Arabic edition's one review step answers its frozen candidate, and only then is that same revision released — through the same composed release review, at the revision the review answered.
   const arabicRelease = await releaseEditions(page, [EDITION.arPublic]);
@@ -284,7 +284,7 @@ test("a release attempt reports one result per edition, and a sibling that canno
   await expect(page.locator('[data-slot="receiving-post-surface"]')).toHaveAttribute("data-surface", "rendered");
   const post = page.locator('[data-slot="receiving-post"]');
   await expect(post).toContainText(ARABIC_COPY.candidateOnly);
-  await expect(post.getByText("Language served", { exact: false }).first()).toBeVisible();
+  await expect(post.getByText("Language", { exact: false }).first()).toBeVisible();
   expect(await post.locator('div[dir="rtl"][lang="ar"]').count()).toBeGreaterThan(0);
 });
 async function openOverview(page: Page): Promise<void> {
@@ -298,7 +298,7 @@ async function appendToDraft(page: Page, variantId: string, sentence: string): P
   await editor.getByRole("textbox", { name: "The text of this Update edition", exact: true }).click();
   await page.keyboard.press("ControlOrMeta+End");
   await page.keyboard.type(sentence);
-  await expect(editor.locator('[data-slot="autosave-status"]')).toContainText(/Saved — acknowledged revision/u);
+  await expect(editor.locator('[data-slot="autosave-status"]')).toContainText(/Draft saved \(revision/u);
 }
 const optionValuesOf = async (select: Locator): Promise<readonly string[]> => select.locator("option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
 const renderedTextOf = async (scope: Locator): Promise<string> => scope.evaluate((element) => (element as HTMLElement).textContent ?? ""); // The text of one region as the browser renders it, used where a comparison is about characters rather than layout.
@@ -314,12 +314,12 @@ test("a release attempt that failed for one edition keeps that edition's earlier
   await expect(lifecycleOfCell(english)).toHaveAttribute("data-lifecycle-state", "released");
   const arabic = editionCell(page, EDITION.arPublic);
   await expect(await publishedRevisionOf(arabic)).toBe(SEEDED.arPriorGoodRelease);
-  await expect(factValueOf(arabic, "Published revision")).toContainText(SEEDED.arPriorGoodPublishedAt);
-  await expect(factValueOf(arabic, "Published revision")).not.toContainText("2026-11-18");
+  await expect(factValueOf(arabic, "Published version")).toContainText(SEEDED.arPriorGoodPublishedAt);
+  await expect(factValueOf(arabic, "Published version")).not.toContainText("2026-11-18");
   await expect(lifecycleOfCell(arabic), "Beneath that retained publication the edition still holds the frozen candidate the failed attempt never released, and the grid states that as the edition's own lifecycle word rather than as a publication").toHaveAttribute("data-lifecycle-state", "candidate");
-  await expect(factValueOf(arabic, "Submitted for review")).toContainText(SEEDED.arCandidate);
+  await expect(factValueOf(arabic, "In review")).toContainText(SEEDED.arCandidate);
   const french = editionCell(page, EDITION.frPublic);
-  await expect(french.getByText("Translation: Translation stale", { exact: true }), "The French translation of the edition that moved is disclosed as stale, and nothing about it was withdrawn: a stale translation is a fact about the source, not an approval and not a publication event").toBeVisible();
+  await expect(french.getByText("Translation: Translation out of date", { exact: true }), "The French translation of the edition that moved is disclosed as stale, and nothing about it was withdrawn: a stale translation is a fact about the source, not an approval and not a publication event").toBeVisible();
   await expect(lifecycleOfCell(french)).toHaveAttribute("data-lifecycle-state", "released");
   await expect(await publishedRevisionOf(french)).toBe(SEEDED.frRelease);
   await page.goto(receivingPath(ARABIC)); // What a reader is served proves the same thing from the other side: the Arabic edition serves the earlier publication's text, and not a word of the revision the failed attempt would have released.
@@ -359,25 +359,25 @@ test("a release whose acknowledgement was lost is recovered by replaying the sam
   expect(await publicationIdOf(editionCell(page, EDITION.frPublic))).toBe(publicationAfterAttempt);
   await expect(await publishedRevisionOf(editionCell(page, EDITION.frPublic))).toBe(restoredDraft);
   await expect(await publishedRevisionOf(editionCell(page, EDITION.enPublic))).toBe(SEEDED.enPublicRelease);
-  await expect(factValueOf(editionCell(page, EDITION.arPublic), "Published revision")).toHaveText(COPY.noRelease);
+  await expect(factValueOf(editionCell(page, EDITION.arPublic), "Published version")).toHaveText(COPY.noRelease);
   await clearFailurePlan(page.request);
 });
 test("a requested language is answered with the language actually served: the edition asked for, that language's edition, or this document's most recent admitted one, and Language unavailable only when nothing stands in", async ({ page }) => {
   await page.goto(receivingPath("fr"));
   await expect(page.locator('[data-slot="receiving-post-surface"]')).toHaveAttribute("data-surface", "rendered");
   await expect(page.locator('[data-slot="receiving-post"]')).toHaveAttribute("data-fallback", "false");
-  await expect(page.locator('[data-slot="receiving-post"]')).toContainText("Language served: fr");
+  await expect(page.locator('[data-slot="receiving-post"]')).toContainText("Language: fr");
   await expect(page.locator('[data-slot="receiving-post"]')).not.toContainText(COPY.languageRequested);
   await page.goto(receivingPath("fr-CA"));
   const fallbackPost = page.locator('[data-slot="receiving-post"]');
   await expect(fallbackPost).toHaveAttribute("data-fallback", "true");
-  for (const value of ["Language served: fr", "Language requested: fr-CA", "You asked to read this in fr-CA, and it is shown in fr.", "Audience: Public"]) await expect(fallbackPost).toContainText(value);
+  for (const value of ["Language: fr", "Requested language: fr-CA", "Requested in fr-CA — showing the available fr edition instead.", "Audience: Public"]) await expect(fallbackPost).toContainText(value);
   await expect(fallbackPost.locator('div[lang="fr"]')).toHaveCount(1);
   await page.goto(receivingPath("de")); // A language this Update publishes nothing in. No Site declares a default, so the substitute is this document's most recently published admitted public edition — the French one — in the same audience, and the surface names the language actually served beside the one asked for.
   const substitutedPost = page.locator('[data-slot="receiving-post"]');
   await expect(page.locator('[data-slot="receiving-post-surface"]')).toHaveAttribute("data-surface", "rendered");
   await expect(substitutedPost).toHaveAttribute("data-fallback", "true");
-  for (const value of ["Language served: fr", "Language requested: de", "You asked to read this in de, and it is shown in fr.", "Audience: Public"]) await expect(substitutedPost).toContainText(value);
+  for (const value of ["Language: fr", "Requested language: de", "Requested in de — showing the available fr edition instead.", "Audience: Public"]) await expect(substitutedPost).toContainText(value);
   await expect(page.locator('[data-slot="receiving-post-language-unavailable"]')).toHaveCount(0);
   await actAs(page, "reader-unauthorized");
   await page.goto(receivingPath("en"));
@@ -395,9 +395,9 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
   await expect(table).toBeVisible();
   const rows = table.locator("tbody tr");
   await expect(rows).toHaveCount(5);
-  await expect(table.getByText("Accepted — not delivered", { exact: true })).toHaveCount(3);
+  await expect(table.getByText("Accepted (not delivered)", { exact: true })).toHaveCount(3);
   await expect(table.getByText("Failed", { exact: true })).toHaveCount(1);
-  await expect(table.getByText("Outcome unknown", { exact: true })).toHaveCount(1);
+  await expect(table.getByText("Unconfirmed", { exact: true })).toHaveCount(1);
   const recipients: string[] = [];
   for (let index = 0; index < 5; index += 1) {
     const row = rows.nth(index);
@@ -414,7 +414,7 @@ test("one recorded notice gives every recipient one row and one pinned copy, and
   const summary = page.locator('[data-slot="delivery-summary"]');
   await expect(summary).toContainText(SEEDED.noticeIntent);
   await expect(summary).toContainText(SEEDED.enPublicReleaseRecord);
-  await expect(summary).toContainText("Update email");
+  await expect(summary).toContainText("Update emails");
   await expect(summary).toContainText(COPY.ceilingLabel);
   await expect(summary).toContainText(COPY.servedLabel);
   const failedRecipient = await recipientIn(rows.filter({ has: page.getByText("Failed", { exact: true }) }).locator('[data-slot="delivery-dedupe-identity"]'));
@@ -474,7 +474,7 @@ test("the Arabic edition is authored and read right to left, with mixed-directio
   await page.keyboard.press("Enter");
   const mixed = "Harbour Youth — +44 7700 900123 — https://example.org/youth — 2026-11-20";
   await page.keyboard.type(mixed);
-  await expect(editor.locator('[data-slot="autosave-status"]')).toContainText(/Saved — acknowledged revision/u);
+  await expect(editor.locator('[data-slot="autosave-status"]')).toContainText(/Draft saved \(revision/u);
   await page.goto(previewPath(EDITION.arPublic));
   const preview = page.locator('[data-slot="preview-frame"]');
   await expect(preview).toBeVisible();
@@ -511,11 +511,11 @@ test("withdrawing the French edition stops that edition being served and leaves 
   await openOverview(page);
   const withdrawn = editionCell(page, EDITION.frPublic);
   await expect(lifecycleOfCell(withdrawn)).toHaveAttribute("data-lifecycle-state", "withdrawn");
-  for (const said of ["Withdrawn", SEEDED.frRelease]) await expect(factValueOf(withdrawn, "Published revision")).toContainText(said);
+  for (const said of ["Unpublished", SEEDED.frRelease]) await expect(factValueOf(withdrawn, "Published version")).toContainText(said);
   await expect(withdrawn.getByRole("button", { name: COPY.withdrawLocaleAction, exact: true }), "The action a withdrawn edition cannot offer is withheld with its reason rather than shown disabled").toHaveCount(0);
   await expect(await publishedRevisionOf(editionCell(page, EDITION.enPublic))).toBe(SEEDED.enPublicRelease);
   await expect(lifecycleOfCell(editionCell(page, EDITION.enPublic))).toHaveAttribute("data-lifecycle-state", "released");
-  await expect(factValueOf(editionCell(page, EDITION.arPublic), "Published revision")).toHaveText(COPY.noRelease);
+  await expect(factValueOf(editionCell(page, EDITION.arPublic), "Published version")).toHaveText(COPY.noRelease);
   await expect(page.getByText(COPY.devLabel, { exact: true })).toBeVisible();
   await page.goto(receivingPath("fr"));
   await expect(page.locator('[data-slot="receiving-post-surface"]')).toHaveAttribute("data-surface", "language-unavailable");

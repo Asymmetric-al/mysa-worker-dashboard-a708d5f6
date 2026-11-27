@@ -3,11 +3,11 @@ import type { ReactElement } from "react";
 import { ReceivingList, type ReceivingListProps, type ReceivingPersonaView } from "@/features/audience/components/receiving-list";
 import { reads, type Scope } from "@/modules/data-service";
 import { PageSurface } from "../page-frame";
-const SURFACE_TITLE = "Receiving preview";
+const SURFACE_TITLE = "Reader preview";
 /** The interface locale the composed surface formats its counts in. The reading language the list serves is a separate value and travels in the address. */ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: SURFACE_TITLE };
 const NO_AUTHORITY_SCOPE: Scope = { organizationId: "" as Scope["organizationId"], ministryId: "" as Scope["ministryId"], supportSubjectId: "" as Scope["supportSubjectId"], principalId: "" as Scope["principalId"] };
-const UNNAMED_PERSONA: ReceivingPersonaView = { id: "", label: "the session this page is being read in" };
+const UNNAMED_PERSONA: ReceivingPersonaView = { id: "", label: "your current session" };
 function personaOf(result: Awaited<ReturnType<typeof reads.dev.readDevState>>): ReceivingPersonaView {
   if (result.kind !== "envelope") return UNNAMED_PERSONA;
   const { activePersonaId, personaCatalogue } = result.envelope.data;

@@ -42,13 +42,13 @@ const stageTextOf = (stage: string | null): string => (stage === null ? REQUESTE
 const StageFact = factFrame({ rowClassName: "flex min-w-0 flex-wrap items-baseline gap-x-2", termClassName: "font-medium", valueClassName: "min-w-0 wrap-anywhere" });
 const StageComparison = ({ recorded, intended }: { readonly recorded: string | null; readonly intended: string | null }): ReactElement => (
   <dl className="flex min-w-0 flex-col gap-1.5">
-    <StageFact term={"Recorded stage"} value={<bdi>{stageTextOf(recorded)}</bdi>} />
-    <StageFact term={"Stage after this change"} value={<bdi>{stageTextOf(intended)}</bdi>} />
+    <StageFact term={"Current stage"} value={<bdi>{stageTextOf(recorded)}</bdi>} />
+    <StageFact term={"New stage"} value={<bdi>{stageTextOf(intended)}</bdi>} />
   </dl>
 );
-const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", memberId: "Working-list member", stage: STAGE_SELECTOR_COPY.label };
+const FIELD_LABELS: Readonly<Record<string, string>> = { initiativeId: "Initiative", memberId: "Partner", stage: STAGE_SELECTOR_COPY.label };
 function changeRefusalOf(member: StageSelectorMember, stageAction: ReadAction | undefined): string | null {
-  return member.state !== undefined && member.state !== "included" ? MEMBERSHIP_STATE_COPY[member.state].description : stageAction !== undefined && !stageAction.available ? (stageAction.reason ?? "The stage of this working-list member cannot be changed in the current session.") : null;
+  return member.state !== undefined && member.state !== "included" ? MEMBERSHIP_STATE_COPY[member.state].description : stageAction !== undefined && !stageAction.available ? (stageAction.reason ?? "You don’t have permission to update stages in this session.") : null;
 }
 /** One working-list member's stage: the closed choice, the state it stands in, the two explicit actions, and the review-then-receipt every real change goes through. */
 export default function StageSelector({ initiativeId, member, admittedStages, scope, expectedRevision, stageAction, stageSourceState, onOutcome, onReturn, onCheckResult, className }: StageSelectorProps): ReactElement {
@@ -195,7 +195,7 @@ export default function StageSelector({ initiativeId, member, admittedStages, sc
                 <StageComparison recorded={recordedStage} intended={intent.stage} /> {intent.stage === null ? <p>{STAGE_SELECTOR_COPY.clearHelp}</p> : null} <p>{STAGE_SELECTOR_COPY.noTaskCreatedNote}</p>
               </div>
             }
-            confirmLabel={intent.stage === null ? STAGE_SELECTOR_COPY.clearLabel : "Record this stage"}
+            confirmLabel={intent.stage === null ? STAGE_SELECTOR_COPY.clearLabel : "Save stage"}
             onCancel={() => setIntent(null)}
             input={{ scope, expectedRevision: intent.expectedRevision, payload: { initiativeId, memberId: member.memberId, stage: intent.stage } }}
             submit={submit}

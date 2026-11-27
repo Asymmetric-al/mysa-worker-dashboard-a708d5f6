@@ -48,9 +48,9 @@ export type PlanNeedsReviewPanelProps = {
   readonly className?: string;
 };
 const RESOLUTION_FIELD = "resolution";
-const RESOLUTION_GROUP_LEGEND = "How this plan continues";
-const NEXT_DATE_LABEL = "Next date this rule produces";
-const OUTAGE_DESCRIPTION = "The recurring series this review belongs to could not be read, so no resolution is offered over facts that are not here. Nothing has been changed by opening this panel.";
+const RESOLUTION_GROUP_LEGEND = "How should this plan continue?";
+const NEXT_DATE_LABEL = "Next scheduled date";
+const OUTAGE_DESCRIPTION = "We couldn’t load this repeating plan right now, so no changes were made.";
 const COUNT_CLASS = "tabular-figures font-medium text-foreground";
 const SENTENCE_CLASS = "text-sm text-pretty text-muted-foreground";
 const SERIES_STATE_TONES: Readonly<Record<SeriesState, StatusTone>> = { active: "positive", paused: "caution", stopped: "neutral" };
@@ -72,10 +72,10 @@ function ReviewedResolution({ resolution, missedDateCount, nextNominalDate }: { 
       <p className="font-medium text-foreground">{MISSED_PLAN_RESOLUTION_LABELS[resolution]}</p>
       <p>{MISSED_PLAN_RESOLUTION_DESCRIPTIONS[resolution]}</p>
       <p>
-        This review covers <bdi className={COUNT_CLASS}>{String(missedDateCount)}</bdi> dates that passed without an action. It changes this series only, and it records no contact and no completion on your behalf.
+        Covers <bdi className={COUNT_CLASS}>{String(missedDateCount)}</bdi> missed dates. Updates only this repeating plan without logging contact or marking past tasks done.
       </p>
       {!namesNextDate ? null : nextNominalDate === null ? (
-        <p>The series states no next date for its rule right now, so this review names none and leaves that date to the series.</p>
+        <p>No upcoming date is currently scheduled.</p>
       ) : (
         <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
           <span>{NEXT_DATE_LABEL}</span>
@@ -133,7 +133,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
   const offered = MISSED_PLAN_RESOLUTION_ORDER.filter((resolution) => inadmissibleReason(facts, resolution) === undefined);
   const nextNominalDate = facts.nextNominalDate ?? null;
   const title = seriesTitle?.trim() ?? "";
-  const cardTitle = facts.planNeedsReview ? PLAN_NEEDS_REVIEW_HEADING : "This plan's review is settled";
+  const cardTitle = facts.planNeedsReview ? PLAN_NEEDS_REVIEW_HEADING : "Plan updated";
   const headerExtra = (
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       <StatusBadge label={SERIES_STATE_LABELS[facts.state]} tone={SERIES_STATE_TONES[facts.state]} srPrefix="Series status" />
@@ -151,7 +151,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
           <>
             <p className={SENTENCE_CLASS}>{PLAN_NEEDS_REVIEW_EXPLANATION}</p>
             <p className={SENTENCE_CLASS}>
-              This plan carries <bdi className={COUNT_CLASS}>{String(facts.missedDateCount)}</bdi> dates that passed without an action. They are not listed here as overdue work to clear one at a time: the decision below settles the plan.
+              <bdi className={COUNT_CLASS}>{String(facts.missedDateCount)}</bdi> dates passed without action. Choose an option below to get this plan back on track.
             </p>
             {nextNominalDate === null ? null : (
               <p className={cn(SENTENCE_CLASS, "flex min-w-0 flex-wrap items-baseline gap-x-2")}>
@@ -161,7 +161,7 @@ export default function PlanNeedsReviewPanel({ scope, occurrenceId, facts, serie
             )}
           </>
         ) : (
-          <p className={SENTENCE_CLASS}>{"The plan is no longer awaiting a decision, so no resolution is offered here: the result of the one you applied stands below as its record."}</p>
+          <p className={SENTENCE_CLASS}>{"This plan has been updated — see the confirmation below."}</p>
         )}
         {facts.planNeedsReview && offered.length === 0 ? <p className={SENTENCE_CLASS}>{facts.state === "active" ? undefined : facts.state === "paused" ? PAUSED_NOTE : STOPPED_NOTE}</p> : null}
         {facts.planNeedsReview && offered.length > 0 ? (

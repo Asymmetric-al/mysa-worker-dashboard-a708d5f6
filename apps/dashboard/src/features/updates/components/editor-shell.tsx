@@ -37,43 +37,43 @@ type EditorDirection = ContentLocale["direction"];
 type EditorHeadingLevel = 2 | 3 | 4;
 const descriptorOf = (placement: PlacementView): PlacementDescriptor => ({ altText: placement.altText, ...(placement.caption === null ? {} : { caption: placement.caption }), ...(placement.credit === null ? {} : { credit: placement.credit }) });
 const onScreenPlacementOf = (placement: PlacementView): OnScreenPlacement => ({ placementId: placement.placementId, ...descriptorOf(placement) });
-const READING = { title: "This edition is being read", description: "The draft, the edition's own lifecycle and the placement it holds are read together, so nothing is shown until the read answers. An unread draft is never presented as an empty one." } as const;
-const DENIED = { title: "This edition is not available in this session", description: "This session may not write this edition, so no text, revision, placement or release is stated here. A refusal is not an edition with nothing written." } as const;
-const UNAVAILABLE = { title: "This edition could not be read", description: "The records behind this edition could not be read, so no editor, revision or placement is shown in their place. Nothing is written until the read succeeds." } as const;
-const REFUSED = { title: "This editor's address was refused", description: "The request this editor would make is not one the read admits, so nothing was read and nothing is written. Open the Update from its list and choose the edition again." } as const;
-const DRAFT_FACTS = { revision: "Draft revision", checksum: "Content checksum", savedAt: "Read at" } as const;
+const READING = { title: "Loading edition…", description: "Loading your draft, status, and media placements." } as const;
+const DENIED = { title: "This edition isn’t available in this session", description: "Your current session doesn’t have permission to edit this update edition." } as const;
+const UNAVAILABLE = { title: "Couldn’t load this edition", description: "Couldn’t reach the draft service right now. Your saved work is safe — try again in a moment." } as const;
+const REFUSED = { title: "Couldn’t open this edition", description: "Open an update from your Updates list and choose an edition to edit." } as const;
+const DRAFT_FACTS = { revision: "Draft revision", checksum: "Checksum", savedAt: "Loaded at" } as const;
 const REVIEW_CONSEQUENCE = REVIEW_ROUND_NOTE.approvalIsPerVariant + " " + REVIEW_ROUND_NOTE.furtherRoundIsNewSubmission;
 /** The release mode the submission records, in the words the review step states it with: the release does the work, and a mode sends no notice by itself. */ const REVIEW_MODE_SENTENCES: Readonly<Record<SubmissionNotifyMode, string>> = {
-  "publish-only": "It asks for Publish only, so its release publishes the exact frozen candidate and submits no notice.",
-  "publish-and-notify": "It asks for Publish and notify now, so its release also asks for one simulated notice for each eligible recipient.",
+  "publish-only": "Release option: Publish only — publishes without sending email notifications.",
+  "publish-and-notify": "Release option: Publish and notify partners — publishes and sends simulated email notifications to eligible partners.",
 };
-const REVIEW_UNAVAILABLE_FALLBACK = "The read this editor is composed from does not offer submission for this edition yet. Saving a revision is what a submission freezes.";
+const REVIEW_UNAVAILABLE_FALLBACK = "Save a draft first before submitting this edition for review.";
 const MEDIA_PANE_TITLE = "Media in this draft";
 const MEDIA_LISTS = { image: "Images", video: "Videos" } as const;
 const MEDIA_EMPTY = {
-  image: { title: "No image in this draft yet", description: "An image is placed from this panel and travels with the draft: a page or a notice shows only what the released revision places." },
-  video: { title: "No video in this draft yet", description: "A video is placed from this panel with its poster and caption track, and it is prepared on this device before the draft holds it." },
+  image: { title: "No images added yet", description: "Add photos here with alt text. Partners only see images once you publish." },
+  video: { title: "No videos added yet", description: "Add videos here with a poster image and caption track." },
 } as const;
-const PLACEMENT_FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({ mediaPlacements: "Media placements", altText: "Alternative text", caption: "Caption", credit: "Credit", transcript: "Transcript" });
-const PLACEMENT_LABELS = { kind: "Kind", purpose: "Placed for", altText: "Alternative text", caption: "Caption", credit: "Credit", poster: "Poster", captions: "Caption track", transcript: "Transcript", state: "State" } as const;
-const PRESENT = "Present";
+const PLACEMENT_FIELD_LABELS: Readonly<Record<string, string>> = Object.freeze({ mediaPlacements: "Media", altText: "Alt text", caption: "Caption", credit: "Credit", transcript: "Transcript" });
+const PLACEMENT_LABELS = { kind: "Type", purpose: "Used for", altText: "Alt text", caption: "Caption", credit: "Credit", poster: "Poster", captions: "Captions", transcript: "Transcript", state: "Status" } as const;
+const PRESENT = "Included";
 const ABSENT = "None";
-const PICKER_LABELS = { manage: "Manage this placement", addImage: "Add an image", addVideo: "Add a video" } as const;
-const PANE_LABELS = { group: "Which part of this editor to show", write: "Write", media: "Media" } as const;
+const PICKER_LABELS = { manage: "Manage media", addImage: "Add image", addVideo: "Add video" } as const;
+const PANE_LABELS = { group: "Editor view", write: "Write", media: "Media" } as const;
 /** The one type scale's utility for each level, so every heading this surface renders takes the measure of the level it is given rather than one fixed size. */ const HEADING_SCALE: Readonly<Record<EditorHeadingLevel, string>> = { 2: "type-section-title", 3: "type-subsection-title", 4: "type-group-title" };
 const NESTED_HEADING_LEVEL: Readonly<Record<EditorHeadingLevel, EditorHeadingLevel>> = { 2: 3, 3: 4, 4: 4 };
 const LOCAL_RECOVERY = {
-  title: "This browser kept text the service never acknowledged",
-  action: "Use the text this browser kept",
-  whatItIs: "Only this browser holds it: it was typed after a save the service did not confirm, and it is not part of the draft record.",
-  whatAdopting: "Using it puts that text in the editor and saves it like any other change, against the revision the service reports now.",
+  title: "Unsaved browser backup found",
+  action: "Restore backup into editor",
+  whatItIs: "This browser saved text from an earlier unconfirmed save attempt.",
+  whatAdopting: "Restoring loads that text into the editor and saves it to your draft.",
 } as const;
 const COMPARE_UNAVAILABLE = {
-  withdrawn: { title: "The last release of this edition was withdrawn", description: "A withdrawn release is not content a reader can open, so it is not compared with this draft. Restoring an earlier revision as a new draft is offered from the Update's edition list." },
-  unreadable: { title: "The last release could not be read", description: "The revision standing at this edition's head could not be read, so no comparison is shown and nothing is claimed about what is published." },
+  withdrawn: { title: "Previous publication was unpublished", description: "Unpublished editions aren’t shown for comparison. You can restore an earlier version from the Update overview." },
+  unreadable: { title: "Couldn’t load published version", description: "Unable to load the published version for comparison right now." },
 } as const;
-const RELEASE_DENIED = { title: "The last release cannot be compared in this session", description: "This session may not read the release standing at this edition's head, so the comparison states nothing about it — not its revision, its checksum or its content." } as const;
-const EDITIONS_ABSENT = { title: "This Update's other editions could not be listed", description: "The editions of this Update could not be read, so this editor lists no edition to switch to and hides no fact about one. The edition you opened is still editable here." } as const;
+const RELEASE_DENIED = { title: "Published version isn’t available in this session", description: "Your session doesn’t have permission to view the published version for comparison." } as const;
+const EDITIONS_ABSENT = { title: "Couldn’t load other editions", description: "You can keep editing this edition — the switcher for other languages and audiences couldn’t load right now." } as const;
 function placementRefOf(placement: PlacementView): DraftPlacementRef | null {
   const main = placement.renditions.find((rendition) => rendition.purpose === "display" || rendition.purpose === "playback");
   return main === undefined ? null : { assetId: placement.assetId, purpose: main.purpose };
@@ -230,7 +230,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   const revision = data.status === "draft" ? data.revision : null;
   const editorPane = (
     <div className={cn("flex min-w-0 flex-col gap-4", pane === "write" ? "flex" : "hidden", "md:flex")}>
-      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"Write the edition's own text. A save is sent after a short pause, carries the revision the service last acknowledged, and states the media this draft holds."}</p>
+      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"Write your update below. Changes autosave after a brief pause and stay private until you publish."}</p>
       {keptText === null ? null : (
         <Alert>
           <AlertTitle>{LOCAL_RECOVERY.title}</AlertTitle>
@@ -268,8 +268,8 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
   };
   const mediaPane = (
     <section ref={mediaPaneRef} tabIndex={-1} aria-label={MEDIA_PANE_TITLE} data-slot="editor-media-pane" className={cn("min-w-0 flex-col gap-4 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ring)]", pane === "media" ? "flex" : "hidden", "md:flex")}>
-      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"An image or a video is prepared on this device before it is placed, and the limits it must meet are stated in the picker. The editor's own media buttons bring you here."}</p>
-      <FormFieldGroup legend="Add media to this draft" name="add-media" description="The picker states the formats, sizes and lengths it admits before any work begins, requires alternative text, and never keeps the file's own name.">
+      <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"Photos and videos are validated on your device before attaching to this draft."}</p>
+      <FormFieldGroup legend="Add media" name="add-media" description="Supported formats, size limits, and alt text requirements appear inside the media picker. Original file names aren’t kept.">
         {() => (
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Button {...{ type: "button", size: "sm", variant: "outline", onClick: () => setPicker({ kind: "image" }) }}>{PICKER_LABELS.addImage}</Button>
@@ -277,7 +277,7 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
           </div>
         )}
       </FormFieldGroup>
-      <FormErrorSummary errors={mediaRefusal} labels={PLACEMENT_FIELD_LABELS} title="This media was not placed" description="The service refused at least one field, so the draft was not changed by this attempt. The text and the placements already in it are untouched." headingLevel={nestedLevel} />
+      <FormErrorSummary errors={mediaRefusal} labels={PLACEMENT_FIELD_LABELS} title="Couldn’t attach media" description="Fix the errors below and try again. Your draft text wasn’t changed." headingLevel={nestedLevel} />
       <Tabs defaultValue="image" className="min-w-0 gap-3">
         <TabsList aria-label={MEDIA_PANE_TITLE}>
           <TabsTrigger value="image">{MEDIA_LISTS.image}</TabsTrigger>
@@ -300,10 +300,10 @@ function DraftEditor({ scope, variantId, recordRevision, asOf, data, direction, 
     <Card data-slot="editor-shell-body" data-edition={variantId} className="min-w-0">
       <CardHeader>
         <CardTitle>
-          <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty" }}>{"The text of this edition"}</Heading>
+          <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty" }}>{"Draft content"}</Heading>
         </CardTitle>
         {revision === null ? (
-          <p className="min-w-0 type-supporting text-pretty wrap-anywhere">Nothing has been saved for this edition yet. The first save records the text as its draft; nothing is published by it.</p>
+          <p className="min-w-0 type-supporting text-pretty wrap-anywhere">No draft saved yet — start writing to create one. Nothing is published until you release it.</p>
         ) : (
           <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-baseline gap-x-3 gap-y-1 text-xs">
             {[
@@ -367,7 +367,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
       return <StateNotice kind="denied" title={DENIED.title} description={DENIED.description} reasonCode={draftResult.denied.reasonCode} operationId={draftResult.denied.operationId} headingLevel={headingLevel} className={className} />;
     case "unavailable":
       const unavailableDescription = draftResult.unavailable.guidance.trim() === "" ? UNAVAILABLE.description : draftResult.unavailable.guidance;
-      return <StateNotice kind="unavailable" title={UNAVAILABLE.title} description={unavailableDescription} source={draftResult.unavailable.source} retry={{ label: "Read this edition again", onClick: () => draft.refetch() }} headingLevel={headingLevel} className={className} />;
+      return <StateNotice kind="unavailable" title={UNAVAILABLE.title} description={unavailableDescription} source={draftResult.unavailable.source} retry={{ label: "Try again", onClick: () => draft.refetch() }} headingLevel={headingLevel} className={className} />;
     case "refused":
       return <StateNotice kind="refused" title={REFUSED.title} description={REFUSED.description} headingLevel={headingLevel} className={className} />;
     case "envelope":
@@ -398,13 +398,13 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
   let comparison: ReactElement;
   const releaseResult = release.result;
   if (releaseResult === undefined || release.isStale(releaseResult)) {
-    comparison = <StateNotice kind="loading" title="Reading the last release" description="The release standing at this edition's head is being read, so no comparison is shown yet. The editor stays usable while it is." headingLevel={headingLevel} />;
+    comparison = <StateNotice kind="loading" title="Loading published version…" description="You can keep editing while the published version loads for comparison." headingLevel={headingLevel} />;
   } else if (releaseResult.kind === "denied") {
     comparison = <StateNotice {...{ kind: "denied", ...RELEASE_DENIED, reasonCode: releaseResult.denied.reasonCode, operationId: releaseResult.denied.operationId, headingLevel }} />;
   } else if (releaseResult.kind === "unavailable") {
-    comparison = <StateNotice kind="unavailable" title={COMPARE_UNAVAILABLE.unreadable.title} description={COMPARE_UNAVAILABLE.unreadable.description} source={releaseResult.unavailable.source} retry={{ label: "Read the last release again", onClick: () => release.refetch() }} headingLevel={headingLevel} />;
+    comparison = <StateNotice kind="unavailable" title={COMPARE_UNAVAILABLE.unreadable.title} description={COMPARE_UNAVAILABLE.unreadable.description} source={releaseResult.unavailable.source} retry={{ label: "Try again", onClick: () => release.refetch() }} headingLevel={headingLevel} />;
   } else if (releaseResult.kind === "refused") {
-    comparison = <StateNotice kind="refused" title="This comparison's request was refused" description="The request behind this comparison is not one the read admits, so nothing is compared and nothing is claimed about what is published." headingLevel={headingLevel} />;
+    comparison = <StateNotice kind="refused" title="Couldn’t load comparison" description="Unable to compare with the published version right now." headingLevel={headingLevel} />;
   } else {
     const releaseData = releaseResult.envelope.data;
     const draftSide: ComponentProps<typeof CompareWithRelease>["draft"] = data.status === "draft" ? { status: "revision", revision: data.revision, renderedHtml: data.renderedHtml, asOf: envelope.asOf, author: data.revision.authorPrincipalId } : { status: "none" };
@@ -427,15 +427,15 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
   return (
     <section aria-labelledby={titleId} data-slot="editor-shell" data-edition={variantId} className={cn("flex min-w-0 flex-col gap-6 text-start", className)}>
       <header className="flex min-w-0 flex-col gap-3">
-        <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty wrap-anywhere" }}>{"Write this Update edition"}</Heading>
+        <Heading {...{ level: headingLevel, id: titleId, className: "text-pretty wrap-anywhere" }}>{"Edit update"}</Heading>
         <p className="min-w-0 type-supporting text-pretty wrap-anywhere">
           {audience.label} edition in <bdi lang={data.locale.tag}>{languageName === "" ? data.locale.tag : languageName}</bdi>. {audience.whoReceives}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Link {...{ href: `/communication/${encodeURIComponent(updateId)}/${encodeURIComponent(variantId)}/preview`, className: cn(buttonVariants({ variant: "outline", size: "sm" })), "data-slot": "button" }}>Preview this edition</Link>
+          <Link {...{ href: `/communication/${encodeURIComponent(updateId)}/${encodeURIComponent(variantId)}/preview`, className: cn(buttonVariants({ variant: "outline", size: "sm" })), "data-slot": "button" }}>Preview edition</Link>
         </div>
         <Alert>
-          <AlertTitle>A saved draft is not a release, and a release is not a message</AlertTitle>
+          <AlertTitle>Drafts stay private until published</AlertTitle>
           <AlertDescription>
             <p className="type-supporting">{DRAFT_VS_RELEASED.draftIsNotWhatReadersSee}</p>
             <p className="type-supporting">{DRAFT_VS_RELEASED.releaseIsWhatRecipientsReceive}</p>
@@ -446,20 +446,20 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
         <StateNotice {...{ kind: "empty", ...EDITIONS_ABSENT, headingLevel: NESTED_HEADING_LEVEL[headingLevel] }} />
       ) : (
         <div className="flex min-w-0 flex-col gap-4">
-          <VariantSwitcher family="update" variants={tabs} activeVariantId={variantId} onSelect={openEdition} label="Edition being written" />
-          <LocaleSwitcher locales={locales ?? []} requested={data.locale.tag} served={data.locale.tag} onRequest={openLocale} onDirectionChange={(servedDirection: EditorDirection) => setReportedDirection({ edition: variantId, direction: servedDirection })} label="Language edition" />
-          <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"Each edition keeps its own draft. Moving to another edition leaves this one's text in this browser until a save is acknowledged, and offers it back when you return."}</p>
+          <VariantSwitcher family="update" variants={tabs} activeVariantId={variantId} onSelect={openEdition} label="Current edition" />
+          <LocaleSwitcher locales={locales ?? []} requested={data.locale.tag} served={data.locale.tag} onRequest={openLocale} onDirectionChange={(servedDirection: EditorDirection) => setReportedDirection({ edition: variantId, direction: servedDirection })} label="Language" />
+          <p className="min-w-0 type-supporting text-pretty wrap-anywhere">{"Each edition has its own draft. Switching editions keeps any unconfirmed edits backed up in this browser."}</p>
         </div>
       )}
       <DraftEditor scope={scope} variantId={variantId} recordRevision={envelope.revision} asOf={envelope.asOf} data={data} direction={direction} localeTag={data.locale.tag} headingLevel={NESTED_HEADING_LEVEL[headingLevel]} />
       {comparison}
       {draftRevisionId !== undefined && (submitAction === undefined || submitAction.available) && submitPayload !== null ? (
         <ActionReview<SubmitForReviewPayload>
-          title="Submit this edition for review"
+          title="Submit edition for review"
           description={
             // A block container rather than an inline one: the release choice below is a fieldset of real radio inputs.
             <div className="flex min-w-0 flex-col gap-1">
-              <span>{"Submitting freezes the exact revision named here as the candidate one review step answers. Editing the draft afterwards changes nothing about what was submitted."}</span>
+              <span>{"Freezes this saved revision for review. Further draft edits won’t alter what your reviewer sees."}</span>
               {/* The sentence states the mode this submission carries, so it follows the choice recorded above rather than the preference the editor started with. */}
               <span>{REVIEW_MODE_SENTENCES[releaseMode]}</span>
               <span className="min-w-0 wrap-anywhere">
@@ -485,7 +485,7 @@ export function EditorShell({ scope, updateId, variantId, initialDraft, initialR
           headingLevel={headingLevel}
         />
       ) : (
-        <StateNotice kind="empty" title="This draft cannot be submitted yet" description={submitAction?.reason?.trim() === undefined || submitAction.reason.trim() === "" ? REVIEW_UNAVAILABLE_FALLBACK : submitAction.reason.trim()} headingLevel={headingLevel} />
+        <StateNotice kind="empty" title="Not ready to submit yet" description={submitAction?.reason?.trim() === undefined || submitAction.reason.trim() === "" ? REVIEW_UNAVAILABLE_FALLBACK : submitAction.reason.trim()} headingLevel={headingLevel} />
       )}
     </section>
   );

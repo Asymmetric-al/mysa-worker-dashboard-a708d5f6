@@ -52,11 +52,11 @@ const CONTROL_CLASS = `${BUTTON_WRAP_CLASS} text-pretty`;
 const TAG_FIELD_LABEL = "Private tag";
 const FOLLOW_UP_LABELS = { title: "Title", category: "Category", dueOn: "Due date", note: "Note" } as const;
 const CLOSED_INTENT_REASONS: Readonly<Record<BulkIntent, string>> = {
-  "private-tag": "None of the selected rows can be changed from this session, so there is no private tag to apply or remove here.",
-  "create-follow-up-tasks": "None of the selected rows can be changed from this session, so no follow-up task is created from them.",
-  "complete-independent-tasks": "No selected row is open or reopened, so none of them can be completed on its own here.",
-}; /** The one eligibility rule the completion intent applies, stated once because the bar refuses and reports the same sentence. */
-const CLOSED_ROW_REASON = "A task is completed only while it is open or reopened, so a row that is already completed or cancelled is left as it is.";
+  "private-tag": "None of the selected rows can be updated in your current session.",
+  "create-follow-up-tasks": "None of the selected rows can be used to create follow-up tasks in your current session.",
+  "complete-independent-tasks": "None of the selected tasks are currently open or reopened.",
+};
+const CLOSED_ROW_REASON = "Only open or reopened tasks can be completed — completed and cancelled rows are skipped.";
 const COMPLETABLE_STATUSES: readonly TaskRecordStatus[] = ["open", "reopened"];
 const REVIEW_FIELD_LABELS: Readonly<Record<string, string | undefined>> = {
   taskIds: "Selected rows",
@@ -378,7 +378,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
           ) : null}
           {intent === "create-follow-up-tasks" ? (
             <div className={FIELD_STACK_CLASS}>
-              <p className={NOTE_CLASS}>{"Each selected row gets one ordinary follow-up task with these fields; no message is sent and no meeting time is set here."}</p>
+              <p className={NOTE_CLASS}>{"Creates one follow-up task per selected row using the details below."}</p>
               <FieldInput id={`${fieldIdPrefix}-title`} label={FOLLOW_UP_LABELS.title} error={fieldError("template.title")} value={draft.followUpTitle} onChange={(value) => updateDraft("followUpTitle", value)} onBlur={markTouched} />
               <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 <FieldInput id={`${fieldIdPrefix}-category`} label={FOLLOW_UP_LABELS.category} error={fieldError("template.category")} value={draft.followUpCategory} onChange={(value) => updateDraft("followUpCategory", value)} onBlur={markTouched} />
@@ -403,7 +403,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
           )}
           <Separator />
           {reviewTarget === null ? (
-            <p className={NOTE_CLASS}>{"The review step appears here once these fields are valid, so nothing can be submitted that the action would refuse."}</p>
+            <p className={NOTE_CLASS}>{"Fill in the required fields above to review and confirm."}</p>
           ) : (
             <>
               {reviewOf(reviewTarget)}
@@ -418,7 +418,7 @@ export default function BulkActionBar({ scope, expectedRevision, selectedTasks, 
           <SettledRows outcome={settledOutcome} rows={settledRows} />
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" className={CONTROL_CLASS} onClick={dismissResult}>
-              {"Dismiss the result"}
+              {"Dismiss"}
             </Button>
           </div>
         </div>
